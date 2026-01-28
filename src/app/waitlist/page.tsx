@@ -23,13 +23,7 @@ function DarkFloatingTablet() {
         >
             <div className="animate-gentle-float">
                 {/* Tablet Frame - Dark Theme */}
-                <div
-                    className="w-[380px] bg-[#171717] rounded-2xl p-5 shadow-2xl border border-[#2a2a2a]"
-                    style={{
-                        boxShadow:
-                            "-25px 25px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05)",
-                    }}
-                >
+                <div className="w-full max-w-[380px] bg-[#171717] rounded-2xl p-4 sm:p-5 shadow-2xl border border-[#2a2a2a] tablet-shadow">
                     {/* Window Dots */}
                     <div className="flex gap-2 mb-4">
                         <div className="w-3 h-3 rounded-full bg-teal-400"></div>
@@ -39,39 +33,33 @@ function DarkFloatingTablet() {
                     </div>
 
                     {/* Mini Chart Row */}
-                    <div className="flex gap-3 mb-4">
-                        <div className="flex-1 h-14 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600"></div>
-                        <div className="flex-1 h-14 rounded-lg bg-gradient-to-br from-red-500 to-red-600"></div>
-                        <div className="flex-1 h-14 rounded-lg bg-gradient-to-br from-green-500 to-green-600"></div>
+                    <div className="flex gap-2 sm:gap-3 mb-4">
+                        <div className="flex-1 h-12 sm:h-14 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600"></div>
+                        <div className="flex-1 h-12 sm:h-14 rounded-lg bg-gradient-to-br from-red-500 to-red-600"></div>
+                        <div className="flex-1 h-12 sm:h-14 rounded-lg bg-gradient-to-br from-green-500 to-green-600"></div>
                         {/* Pie chart mockup */}
-                        <div
-                            className="w-14 h-14 rounded-full"
-                            style={{
-                                background:
-                                    "conic-gradient(#3b82f6 0% 35%, #60a5fa 35% 60%, #1e3a5f 60% 100%)",
-                            }}
-                        ></div>
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full pie-chart-gradient"></div>
                     </div>
 
                     {/* Subscription List */}
-                    <div className="space-y-2.5">
+                    <div className="space-y-2 sm:space-y-2.5">
                         {subscriptions.map((sub, index) => (
                             <div
                                 key={index}
-                                className="flex items-center justify-between p-3 bg-[#222222] rounded-xl border-l-4 border-leetcode-teal"
+                                className="flex items-center justify-between p-2.5 sm:p-3 bg-[#222222] rounded-xl border-l-4 border-leetcode-teal"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                    <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-green-500 animate-pulse"></div>
                                     <div>
-                                        <p className="text-sm font-semibold text-white">
+                                        <p className="text-xs sm:text-sm font-semibold text-white">
                                             {sub.name}
                                         </p>
-                                        <p className="text-xs text-gray-400">
+                                        <p className="text-[10px] sm:text-xs text-gray-400">
                                             ${sub.amount} USDC / mo
                                         </p>
                                     </div>
                                 </div>
-                                <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-emerald-900/50 text-emerald-400">
+                                <span className="text-[9px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-emerald-900/50 text-emerald-400">
                                     Active
                                 </span>
                             </div>
@@ -80,6 +68,32 @@ function DarkFloatingTablet() {
                 </div>
             </div>
         </motion.div>
+    );
+}
+
+// Success message component with clickable X link
+function SuccessMessage({ message }: { message: string }) {
+    // Parse message to make "X" clickable
+    const parts = message.split(/\b(X)\b/);
+
+    return (
+        <span>
+            {parts.map((part, index) =>
+                part === "X" ? (
+                    <a
+                        key={index}
+                        href="https://x.com/subscript"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-leetcode-teal hover:text-white underline underline-offset-2 transition-colors font-bold"
+                    >
+                        X
+                    </a>
+                ) : (
+                    <span key={index}>{part}</span>
+                )
+            )}
+        </span>
     );
 }
 
@@ -126,7 +140,7 @@ function WaitlistForm() {
                     <motion.button
                         key="button"
                         onClick={() => setState("form")}
-                        className="inline-flex items-center gap-2 bg-leetcode-teal text-white px-8 py-3.5 rounded-full font-semibold text-base
+                        className="inline-flex items-center gap-2 bg-leetcode-teal text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-full font-semibold text-sm sm:text-base
                          hover:brightness-110 hover:-translate-y-0.5 transition-all duration-200
                          shadow-lg shadow-leetcode-teal/30"
                         initial={{ opacity: 0, scale: 0.9 }}
@@ -135,7 +149,7 @@ function WaitlistForm() {
                         transition={{ duration: 0.2 }}
                     >
                         Join Waitlist
-                        <ChevronRight className="w-5 h-5" />
+                        <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                     </motion.button>
                 )}
 
@@ -143,7 +157,7 @@ function WaitlistForm() {
                     <motion.form
                         key="form"
                         onSubmit={handleSubmit}
-                        className="flex flex-col gap-3 max-w-md"
+                        className="flex flex-col gap-3 w-full max-w-md"
                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: -10 }}
@@ -151,31 +165,31 @@ function WaitlistForm() {
                     >
                         {/* Email Input */}
                         <div className="relative">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <Mail className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                             <input
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="Enter your email..."
                                 required
-                                className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-[#1a1a1a] border border-[#333] text-white placeholder-gray-500 
+                                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-3.5 rounded-xl bg-[#1a1a1a] border border-[#333] text-white placeholder-gray-500 
                                 focus:outline-none focus:border-leetcode-teal focus:ring-2 focus:ring-leetcode-teal/20 
-                                text-base transition-all duration-200"
+                                text-sm sm:text-base transition-all duration-200"
                             />
                         </div>
 
                         {/* Wallet Address Input */}
                         <div className="relative">
-                            <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <Wallet className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                             <input
                                 type="text"
                                 value={walletAddress}
                                 onChange={(e) => setWalletAddress(e.target.value)}
-                                placeholder="Enter your wallet address (0x...)"
+                                placeholder="Wallet address (0x...)"
                                 required
-                                className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-[#1a1a1a] border border-[#333] text-white placeholder-gray-500 
+                                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-3.5 rounded-xl bg-[#1a1a1a] border border-[#333] text-white placeholder-gray-500 
                                 focus:outline-none focus:border-leetcode-teal focus:ring-2 focus:ring-leetcode-teal/20 
-                                text-base transition-all duration-200 font-mono text-sm"
+                                text-xs sm:text-sm transition-all duration-200 font-mono"
                             />
                         </div>
 
@@ -183,19 +197,19 @@ function WaitlistForm() {
                         <button
                             type="submit"
                             disabled={isPending}
-                            className="inline-flex items-center justify-center gap-2 bg-leetcode-teal text-white px-8 py-3.5 rounded-xl font-semibold text-base
+                            className="inline-flex items-center justify-center gap-2 bg-leetcode-teal text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base
                              hover:brightness-110 transition-all duration-200
                              shadow-lg shadow-leetcode-teal/30 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                             {isPending ? (
                                 <>
-                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                                     Securing your spot...
                                 </>
                             ) : (
                                 <>
                                     Secure My Spot
-                                    <ChevronRight className="w-5 h-5" />
+                                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                                 </>
                             )}
                         </button>
@@ -205,27 +219,27 @@ function WaitlistForm() {
                 {state === "success" && (
                     <motion.div
                         key="success"
-                        className="inline-flex items-center gap-3 bg-emerald-500/20 text-emerald-400 px-8 py-4 rounded-xl font-semibold text-base
+                        className="inline-flex items-center gap-2 sm:gap-3 bg-emerald-500/20 text-emerald-400 px-4 sm:px-8 py-3 sm:py-4 rounded-xl font-semibold text-sm sm:text-base
                          border border-emerald-500/40"
                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         transition={{ duration: 0.3 }}
                     >
-                        <Check className="w-6 h-6" />
-                        {message}
+                        <Check className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+                        <SuccessMessage message={message} />
                     </motion.div>
                 )}
 
                 {state === "error" && (
                     <motion.div
                         key="error"
-                        className="inline-flex items-center gap-3 bg-red-500/20 text-red-400 px-8 py-4 rounded-xl font-semibold text-base
+                        className="inline-flex items-center gap-2 sm:gap-3 bg-red-500/20 text-red-400 px-4 sm:px-8 py-3 sm:py-4 rounded-xl font-semibold text-sm sm:text-base
                          border border-red-500/40"
                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         transition={{ duration: 0.3 }}
                     >
-                        <AlertCircle className="w-6 h-6" />
+                        <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
                         {message}
                     </motion.div>
                 )}
@@ -236,20 +250,15 @@ function WaitlistForm() {
 
 export default function WaitlistPage() {
     return (
-        <main className="min-h-screen">
+        <main className="min-h-screen overflow-x-hidden">
             <Navbar />
             <section className="relative min-h-screen bg-dark-slate overflow-hidden">
                 {/* Diagonal Dark Stripe */}
-                <div
-                    className="absolute inset-0 z-0"
-                    style={{
-                        background: "linear-gradient(135deg, #181818 0%, #181818 45%, transparent 45%)",
-                    }}
-                ></div>
+                <div className="absolute inset-0 z-0 diagonal-stripe"></div>
 
                 {/* Hero Content */}
-                <div className="relative z-10 max-w-7xl mx-auto px-8 pt-32 pb-20 min-h-screen flex items-center">
-                    <div className="grid lg:grid-cols-2 gap-16 items-center w-full">
+                <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 pt-24 sm:pt-32 pb-16 sm:pb-20 min-h-screen flex items-center">
+                    <div className="grid lg:grid-cols-2 gap-8 sm:gap-16 items-center w-full">
                         {/* Left: Floating Tablet */}
                         <div className="flex justify-center lg:justify-start order-2 lg:order-1">
                             <DarkFloatingTablet />
@@ -258,17 +267,16 @@ export default function WaitlistPage() {
                         {/* Right: Text Content */}
                         <div className="order-1 lg:order-2 text-center lg:text-left">
                             <motion.h1
-                                className="text-5xl lg:text-6xl font-bold text-white leading-tight tracking-tight mb-6"
+                                className="text-3xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight tracking-tight mb-4 sm:mb-6 italic"
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6, delay: 0.2 }}
-                                style={{ fontStyle: "italic" }}
                             >
                                 A New Way to Pay
                             </motion.h1>
 
                             <motion.p
-                                className="text-lg text-muted-gray max-w-md mx-auto lg:mx-0 mb-10 leading-relaxed"
+                                className="text-base sm:text-lg text-muted-gray max-w-md mx-auto lg:mx-0 mb-6 sm:mb-10 leading-relaxed"
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6, delay: 0.4 }}
