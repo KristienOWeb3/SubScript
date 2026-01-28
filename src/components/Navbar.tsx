@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Terminal, X } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Social Media Icons (Custom SVGs for brand accuracy)
@@ -84,8 +84,9 @@ export default function Navbar() {
 
     return (
         <>
+            {/* Main Navbar - z-40 so mobile menu can be on top */}
             <nav
-                className={`fixed top-0 left-0 right-0 z-50 px-4 sm:px-8 py-4 transition-all duration-300 ${scrolled
+                className={`fixed top-0 left-0 right-0 z-40 px-4 sm:px-8 py-4 transition-all duration-300 ${scrolled
                     ? "bg-dark-charcoal/95 backdrop-blur-md shadow-lg"
                     : "bg-transparent"
                     }`}
@@ -114,71 +115,87 @@ export default function Navbar() {
                         ))}
                     </div>
 
-                    {/* Mobile Menu Button */}
-                    <button
-                        className="md:hidden flex flex-col gap-1.5 p-2 -mr-2"
-                        aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                    >
-                        <motion.span
-                            className="w-6 h-0.5 bg-white rounded-full block"
-                            animate={mobileMenuOpen ? { rotate: 45, y: 8 } : { rotate: 0, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                        />
-                        <motion.span
-                            className="w-6 h-0.5 bg-white rounded-full block"
-                            animate={mobileMenuOpen ? { opacity: 0 } : { opacity: 1 }}
-                            transition={{ duration: 0.2 }}
-                        />
-                        <motion.span
-                            className="w-6 h-0.5 bg-white rounded-full block"
-                            animate={mobileMenuOpen ? { rotate: -45, y: -8 } : { rotate: 0, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                        />
-                    </button>
+                    {/* Mobile Menu Button - ONLY visible when menu is CLOSED */}
+                    {!mobileMenuOpen && (
+                        <button
+                            className="md:hidden flex flex-col gap-1.5 p-2 -mr-2"
+                            aria-label="Open menu"
+                            onClick={() => setMobileMenuOpen(true)}
+                        >
+                            <span className="w-6 h-0.5 bg-white rounded-full block" />
+                            <span className="w-6 h-0.5 bg-white rounded-full block" />
+                            <span className="w-6 h-0.5 bg-white rounded-full block" />
+                        </button>
+                    )}
                 </div>
             </nav>
 
-            {/* Mobile Menu Drawer */}
+            {/* Mobile Menu Overlay - z-50 to be ON TOP of navbar */}
             <AnimatePresence>
                 {mobileMenuOpen && (
                     <motion.div
-                        className="fixed inset-0 z-40 md:hidden"
+                        className="fixed inset-0 z-50 md:hidden"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                     >
-                        {/* Backdrop */}
+                        {/* Full-Screen Solid Background - Covers entire screen including navbar/logo */}
                         <motion.div
-                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                            onClick={() => setMobileMenuOpen(false)}
+                            className="absolute inset-0 bg-[#0a0a0a]"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         />
 
-                        {/* Drawer Content */}
+                        {/* Menu Content */}
                         <motion.div
-                            className="absolute top-0 right-0 w-[280px] h-full bg-dark-charcoal border-l border-[#2a2a2a] shadow-2xl"
-                            initial={{ x: "100%" }}
-                            animate={{ x: 0 }}
-                            exit={{ x: "100%" }}
-                            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                            className="relative h-full w-full flex flex-col"
+                            initial={{ x: 20, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: 20, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
                         >
-                            {/* Close Button */}
-                            <div className="flex justify-end p-4">
+                            {/* Header with Logo and Close Button */}
+                            <div className="flex items-center justify-between px-4 py-4">
+                                {/* Logo (visible in menu) */}
+                                <Link
+                                    href="/"
+                                    className="flex items-center gap-2"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                >
+                                    <div className="w-8 h-8 bg-leetcode-teal rounded-lg flex items-center justify-center">
+                                        <Terminal className="w-5 h-5 text-white" />
+                                    </div>
+                                    <span className="text-xl font-bold text-white tracking-tight">
+                                        SubScript
+                                    </span>
+                                </Link>
+
+                                {/* Single Close Button (X icon) */}
                                 <button
                                     onClick={() => setMobileMenuOpen(false)}
-                                    className="p-2 text-gray-400 hover:text-white transition-colors"
+                                    className="p-2 -mr-2 text-white hover:text-gray-300 transition-colors"
                                     aria-label="Close menu"
                                 >
-                                    <X className="w-6 h-6" />
+                                    <svg
+                                        className="w-6 h-6"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
                                 </button>
                             </div>
 
                             {/* Navigation Links */}
-                            <div className="px-6 py-4 space-y-4">
+                            <div className="flex-1 px-6 py-6 space-y-2">
                                 {navLinks.map((link, index) => (
                                     <motion.div
                                         key={link.name}
@@ -189,7 +206,7 @@ export default function Navbar() {
                                         <Link
                                             href={link.href}
                                             onClick={() => setMobileMenuOpen(false)}
-                                            className={`block text-lg font-medium py-2 transition-colors ${link.className}`}
+                                            className={`block text-xl font-medium py-3 transition-colors ${link.className}`}
                                         >
                                             {link.name}
                                         </Link>
@@ -197,11 +214,8 @@ export default function Navbar() {
                                 ))}
                             </div>
 
-                            {/* Divider */}
-                            <div className="mx-6 border-t border-[#2a2a2a] my-4" />
-
-                            {/* Social Icons in Mobile Menu */}
-                            <div className="px-6 py-4">
+                            {/* Social Icons Section - Bottom of menu */}
+                            <div className="px-6 py-6 border-t border-[#2a2a2a]">
                                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-4">Follow Us</p>
                                 <div className="flex items-center gap-4">
                                     {socialLinks.map((social) => (
@@ -210,10 +224,10 @@ export default function Navbar() {
                                             href={social.href}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="w-10 h-10 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:border-leetcode-teal transition-all duration-200"
+                                            className="w-12 h-12 rounded-xl bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:border-leetcode-teal transition-all duration-200"
                                             aria-label={social.name}
                                         >
-                                            <social.icon className="w-5 h-5" />
+                                            <social.icon className="w-6 h-6" />
                                         </a>
                                     ))}
                                 </div>
