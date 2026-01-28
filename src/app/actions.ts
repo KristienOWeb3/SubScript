@@ -28,7 +28,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
 
     try {
         // Check if email already exists
-        const { data: existingEmail } = await supabase
+        const { data: existingEmail } = await supabase!
             .from("waitlist")
             .select("email")
             .eq("email", email.toLowerCase())
@@ -39,7 +39,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
         }
 
         // Check if wallet already exists
-        const { data: existingWallet } = await supabase
+        const { data: existingWallet } = await supabase!
             .from("waitlist")
             .select("wallet_address")
             .eq("wallet_address", walletAddress.toLowerCase())
@@ -50,7 +50,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
         }
 
         // Insert new waitlist entry
-        const { error } = await supabase.from("waitlist").insert({
+        const { error } = await supabase!.from("waitlist").insert({
             email: email.toLowerCase(),
             wallet_address: walletAddress.toLowerCase(),
             created_at: new Date().toISOString(),
