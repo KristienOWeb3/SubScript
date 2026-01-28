@@ -7,24 +7,63 @@
   --foreground: #ffffff;
 }
 
-/* Prevent horizontal overflow on mobile */
-html {
-  scroll-behavior: smooth;
+/* CRITICAL: Force viewport width constraint */
+html,
+body {
+  max-width: 100vw;
   overflow-x: hidden;
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  width: 100%;
 }
 
-/* Prevent content from overflowing container */
+/* Force all elements to respect container bounds */
 * {
   box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* Prevent text overflow */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+span,
+a {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Force all images to be responsive */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Main wrapper constraint */
+main {
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  main {
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 
 /* Custom utilities for the diagonal sections */
@@ -51,6 +90,7 @@ body {
 
 .perspective-container {
   perspective: 1200px;
+  max-width: 100%;
 }
 
 /* Tablet shadow for floating card */
@@ -63,7 +103,7 @@ body {
   background: conic-gradient(#3b82f6 0% 35%, #60a5fa 35% 60%, #1e3a5f 60% 100%);
 }
 
-/* Float animation for tablet */
+/* Float animation for tablet - Desktop */
 @keyframes gentleFloat {
 
   0%,
@@ -80,8 +120,10 @@ body {
   animation: gentleFloat 5s ease-in-out infinite;
 }
 
-/* Responsive adjustments for mobile */
-@media (max-width: 640px) {
+/* MOBILE RESPONSIVE FIXES */
+@media (max-width: 768px) {
+
+  /* Reduce float animation rotation on mobile */
   .animate-gentle-float {
     animation: gentleFloatMobile 5s ease-in-out infinite;
   }
@@ -90,17 +132,39 @@ body {
 
     0%,
     100% {
-      transform: translateY(0px) rotateX(5deg) rotateY(-10deg) rotateZ(1deg);
+      transform: translateY(0px) rotateX(3deg) rotateY(-8deg) rotateZ(0deg);
     }
 
     50% {
-      transform: translateY(-8px) rotateX(5deg) rotateY(-10deg) rotateZ(1deg);
+      transform: translateY(-6px) rotateX(3deg) rotateY(-8deg) rotateZ(0deg);
     }
   }
 
   .tablet-shadow {
-    box-shadow: -15px 15px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    box-shadow: -10px 10px 25px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
   }
+
+  /* Force perspective container to not overflow */
+  .perspective-container {
+    perspective: 800px;
+    max-width: calc(100vw - 2rem);
+    margin: 0 auto;
+  }
+}
+
+/* Extra small devices */
+@media (max-width: 380px) {
+  .perspective-container {
+    perspective: 600px;
+    transform: scale(0.85);
+    transform-origin: center center;
+  }
+}
+
+/* Responsive headline sizing using clamp */
+.hero-headline {
+  font-size: clamp(1.75rem, 6vw, 3.75rem);
+  line-height: 1.1;
 }
 
 /* Mobile menu transition helper */
