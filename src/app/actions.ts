@@ -1,6 +1,6 @@
 "use server";
 
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export type WaitlistResult = {
     success: boolean;
@@ -18,6 +18,12 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
 
     if (!walletAddress || walletAddress.length < 10) {
         return { success: false, message: "Please enter a valid wallet address." };
+    }
+
+    // Guard clause: Check if Supabase is configured
+    if (!isSupabaseConfigured || !supabase) {
+        console.log("Demo mode - Supabase not configured. Email:", email, "Wallet:", walletAddress);
+        return { success: true, message: "Demo mode: You're on the list! (Configure Supabase to save data)" };
     }
 
     try {
