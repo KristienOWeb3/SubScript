@@ -42,7 +42,7 @@ const navLinks = [
     { name: "Premium", href: "#", className: "text-amber-500 hover:text-amber-400" },
     { name: "Explore", href: "#explore", className: "text-muted-gray hover:text-white" },
     { name: "Product", href: "#", className: "text-muted-gray hover:text-white" },
-    { name: "Docs", href: "#", className: "text-muted-gray hover:text-white" },
+    { name: "Docs", href: "/docs", className: "text-muted-gray hover:text-white" },
     { name: "Developer", href: "#", className: "text-muted-gray hover:text-white" },
     { name: "Sign in", href: "#", className: "text-muted-gray hover:text-white" },
 ];
