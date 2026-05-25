@@ -218,7 +218,7 @@ function WaitlistForm() {
     };
 
     return (
-        <div className="min-h-[100px] w-full flex justify-center lg:justify-start">
+        <div className="min-h-[50px] w-full flex justify-center lg:justify-start">
             <AnimatePresence mode="wait">
                 {step === "button" && (
                     <motion.div
@@ -230,7 +230,7 @@ function WaitlistForm() {
                     >
                         <motion.button
                             onClick={() => setStep("email")}
-                            className="liquid-glass rounded-full px-8 py-4 text-white text-sm font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200"
+                            className="liquid-glass rounded-full px-6 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200 h-9 flex items-center"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                         >
@@ -243,13 +243,13 @@ function WaitlistForm() {
                     <motion.form
                         key="email"
                         onSubmit={handleNext}
-                        className="liquid-glass rounded-full px-2 py-0.5 flex items-center justify-between w-full max-w-md shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5"
+                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -15 }}
                         transition={{ duration: 0.3 }}
                     >
-                        <div className="flex items-center flex-1 min-w-0">
+                        <div className="flex items-center flex-1 min-w-0 h-full">
                             <Mail className="ml-2.5 w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <input
                                 type="email"
@@ -257,12 +257,12 @@ function WaitlistForm() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="Enter your email..."
                                 required
-                                className="w-full bg-transparent px-2.5 py-0.5 text-white placeholder-white/40 focus:outline-none text-xs"
+                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
                             />
                         </div>
                         <motion.button
                             type="submit"
-                            className="bg-white text-black p-1.5 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
+                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             aria-label="Next step"
@@ -276,35 +276,35 @@ function WaitlistForm() {
                     <motion.form
                         key="wallet"
                         onSubmit={handleSubmit}
-                        className="liquid-glass rounded-full px-2 py-0.5 flex items-center justify-between w-full max-w-md shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5"
+                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -15 }}
                         transition={{ duration: 0.3 }}
                     >
-                        <div className="flex items-center flex-1 min-w-0">
+                        <div className="flex items-center flex-1 min-w-0 h-full">
                             <button
                                 type="button"
                                 onClick={() => setStep("email")}
-                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0"
+                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
                                 aria-label="Go back"
                             >
                                 <ArrowLeft className="w-3 h-3" />
                             </button>
-                            <Wallet className="ml-1.5 w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                            <Wallet className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <input
                                 type="text"
                                 value={walletAddress}
                                 onChange={(e) => setWalletAddress(e.target.value)}
                                 placeholder="Wallet address (0x...)"
                                 required
-                                className="w-full bg-transparent px-2 py-0.5 text-white placeholder-white/40 focus:outline-none text-xs font-mono"
+                                className="w-full bg-transparent px-2 text-white placeholder-white/40 focus:outline-none text-xs font-mono h-full"
                             />
                         </div>
                         <motion.button
                             type="submit"
                             disabled={isPending}
-                            className="bg-white text-black p-1.5 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
+                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             aria-label="Submit"
