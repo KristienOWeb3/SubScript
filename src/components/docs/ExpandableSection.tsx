@@ -24,20 +24,20 @@ export default function ExpandableSection({
     return (
         <div
             className={`rounded-xl border overflow-hidden ${isDeepDive
-                    ? "border-indigo-500/30 bg-indigo-950/20"
-                    : "border-slate-800 bg-slate-900/30"
+                    ? "border-[#00d2b4]/20 bg-[#00d2b4]/5"
+                    : "border-white/5 bg-[#27272a]/30"
                 }`}
         >
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`w-full flex items-center justify-between px-5 py-4 text-left transition-colors ${isDeepDive
-                        ? "hover:bg-indigo-950/40"
-                        : "hover:bg-slate-800/50"
+                        ? "hover:bg-[#00d2b4]/10"
+                        : "hover:bg-white/5"
                     }`}
             >
-                <span className="font-medium text-white flex items-center gap-2">
+                <span className="font-semibold text-white flex items-center gap-2">
                     {isDeepDive && (
-                        <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#00d2b4]">
                             Deep Dive:
                         </span>
                     )}
@@ -47,7 +47,7 @@ export default function ExpandableSection({
                     animate={{ rotate: isOpen ? 180 : 0 }}
                     transition={{ duration: 0.2 }}
                 >
-                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                    <ChevronDown className="w-5 h-5 text-[#9ca3af]" />
                 </motion.div>
             </button>
 
@@ -59,7 +59,7 @@ export default function ExpandableSection({
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: "easeInOut" }}
                     >
-                        <div className="px-5 pb-5 pt-0 text-slate-300 text-sm leading-relaxed border-t border-slate-800/50">
+                        <div className="px-5 pb-5 pt-0 text-[#9ca3af] text-sm leading-relaxed border-t border-white/5">
                             <div className="pt-4">{children}</div>
                         </div>
                     </motion.div>

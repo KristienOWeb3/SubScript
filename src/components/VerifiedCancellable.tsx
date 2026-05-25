@@ -48,7 +48,7 @@ export default function VerifiedCancellable({
     if (isLoading) {
         return (
             <div
-                className={`inline-flex items-center rounded-full bg-slate-800 text-slate-400 font-medium ${sizeClasses[size]}`}
+                className={`inline-flex items-center rounded-full bg-white/[0.05] border border-white/5 text-white/50 font-medium ${sizeClasses[size]}`}
             >
                 <Loader2 className={`${iconSizes[size]} animate-spin`} />
                 <span>Verifying...</span>
@@ -59,7 +59,7 @@ export default function VerifiedCancellable({
     if (!isVerified) {
         return (
             <div
-                className={`inline-flex items-center rounded-full bg-red-950/50 border border-red-500/30 text-red-400 font-medium ${sizeClasses[size]}`}
+                className={`inline-flex items-center rounded-full bg-red-950/40 border border-red-500/20 text-red-400 font-medium ${sizeClasses[size]}`}
             >
                 <span>Not Verified</span>
             </div>
@@ -73,7 +73,7 @@ export default function VerifiedCancellable({
             className="inline-block"
         >
             <div
-                className={`inline-flex items-center rounded-full bg-emerald-950/50 border border-emerald-500/30 text-emerald-400 font-medium ${sizeClasses[size]}`}
+                className={`inline-flex items-center rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4] font-semibold ${sizeClasses[size]}`}
             >
                 <ShieldCheck className={iconSizes[size]} />
                 <span>Verified Cancellable</span>
@@ -84,7 +84,7 @@ export default function VerifiedCancellable({
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
-                    className="mt-2 text-xs text-slate-500"
+                    className="mt-2 text-xs text-[#9ca3af]"
                 >
                     <p>✓ Kill Switch enabled</p>
                     <p>✓ Session Key revocable by user</p>
@@ -102,7 +102,7 @@ export function VerifiedCancellableBadge() {
             href="https://subscript.io/verify"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-medium hover:brightness-110 transition shadow-lg shadow-emerald-500/20"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#00d2b4] to-[#00a890] text-[#111111] text-sm font-bold hover:brightness-110 transition shadow-lg shadow-[#00d2b4]/20"
         >
             <ShieldCheck className="w-4 h-4" />
             Powered by SubScript

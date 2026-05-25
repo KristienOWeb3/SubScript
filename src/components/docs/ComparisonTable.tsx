@@ -31,21 +31,21 @@ export default function ComparisonTable({
     };
 
     return (
-        <div className="rounded-xl border border-slate-800 overflow-hidden">
+        <div className="rounded-2xl overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-3 bg-slate-950">
-                <div className="p-4 border-r border-slate-800">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <div className="grid grid-cols-3 bg-white/[0.02] border-b border-white/5">
+                <div className="p-4 border-r border-white/5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#9ca3af]">
                         Feature
                     </span>
                 </div>
-                <div className="p-4 border-r border-slate-800 bg-red-950/20">
+                <div className="p-4 border-r border-white/5 bg-red-950/10">
                     <span className="text-xs font-semibold uppercase tracking-wider text-red-400">
                         {legacyTitle}
                     </span>
                 </div>
-                <div className="p-4 bg-emerald-950/20">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                <div className="p-4 bg-emerald-950/10">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#00d2b4]">
                         {subscriptTitle}
                     </span>
                 </div>
@@ -55,15 +55,15 @@ export default function ComparisonTable({
             {rows.map((row, index) => (
                 <div
                     key={index}
-                    className="grid grid-cols-3 border-t border-slate-800 hover:bg-slate-900/50 transition-colors"
+                    className="grid grid-cols-3 border-t border-white/5 hover:bg-white/5 transition-colors"
                 >
-                    <div className="p-4 border-r border-slate-800 text-slate-300 font-medium">
+                    <div className="p-4 border-r border-white/5 text-white font-medium">
                         {row.feature}
                     </div>
-                    <div className="p-4 border-r border-slate-800 flex items-center text-slate-400">
+                    <div className="p-4 border-r border-white/5 flex items-center text-[#9ca3af]">
                         {renderCell(row.legacy, false)}
                     </div>
-                    <div className="p-4 flex items-center text-white">
+                    <div className="p-4 flex items-center text-white font-semibold">
                         {renderCell(row.subscript, true)}
                     </div>
                 </div>

@@ -16,6 +16,8 @@ node_modules/
 # Misc
 .DS_Store
 *.pem
+/*.mp4
+
 
 # Debug
 npm-debug.log*
@@ -24,6 +26,8 @@ yarn-error.log*
 
 # Local env files
 .env
+Keeperbot.env
+.env.txt
 .env.local
 .env.development.local
 .env.test.local

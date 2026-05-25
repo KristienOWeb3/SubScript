@@ -20,23 +20,23 @@ export default function TabBlock({ tabs, defaultTab }: TabBlockProps) {
     const activeContent = tabs.find((tab) => tab.id === activeTab)?.content;
 
     return (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+        <div className="rounded-3xl border border-white/5 bg-white/[0.01] liquid-glass overflow-hidden shadow-2xl">
             {/* Tab Headers */}
-            <div className="flex border-b border-slate-800 bg-slate-950/50">
+            <div className="flex border-b border-white/5 bg-white/[0.02]">
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`relative px-6 py-3 text-sm font-medium transition-colors ${activeTab === tab.id
+                        className={`relative px-6 py-4 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === tab.id
                                 ? "text-white"
-                                : "text-slate-400 hover:text-slate-200"
+                                : "text-white/50 hover:text-white"
                             }`}
                     >
                         {tab.label}
                         {activeTab === tab.id && (
                             <motion.div
                                 layoutId="activeTab"
-                                className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500"
+                                className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4]"
                                 transition={{ type: "spring", stiffness: 500, damping: 30 }}
                             />
                         )}
@@ -75,16 +75,16 @@ export function CodeBlock({ code, language = "typescript" }: CodeBlockProps) {
 
     return (
         <div className="relative group">
-            <div className="absolute top-3 right-3 z-10">
+            <div className="absolute top-4 right-4 z-10">
                 <button
                     onClick={handleCopy}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                    className="px-4 py-1.5 text-xs font-bold rounded-full bg-white text-black hover:bg-white/90 transition-colors"
                 >
                     {copied ? "Copied!" : "Copy"}
                 </button>
             </div>
-            <pre className="bg-slate-950 rounded-lg p-4 overflow-x-auto text-sm">
-                <code className={`language-${language} text-slate-300`}>
+            <pre className="bg-black/50 border border-white/5 rounded-2xl p-6 overflow-x-auto text-xs leading-relaxed font-mono">
+                <code className={`language-${language} text-white/70`}>
                     {code}
                 </code>
             </pre>

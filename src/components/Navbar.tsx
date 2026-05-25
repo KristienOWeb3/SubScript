@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Terminal } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Terminal, Menu, X as CloseIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Social Media Icons (Custom SVGs for brand accuracy)
+// Circular SVGs for Socials
 function TwitterXIcon({ className }: { className?: string }) {
     return (
         <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -30,226 +31,174 @@ function TelegramIcon({ className }: { className?: string }) {
     );
 }
 
-// Social Links Configuration
 const socialLinks = [
     { name: "X (Twitter)", href: "https://x.com/subscript", icon: TwitterXIcon },
     { name: "Discord", href: "https://discord.gg/subscript", icon: DiscordIcon },
     { name: "Telegram", href: "https://t.me/subscript", icon: TelegramIcon },
 ];
 
-// Navigation Links Configuration
-const navLinks = [
-    { name: "Premium", href: "#", className: "text-amber-500 hover:text-amber-400" },
-    { name: "Explore", href: "#explore", className: "text-muted-gray hover:text-white" },
-    { name: "Product", href: "#", className: "text-muted-gray hover:text-white" },
-    { name: "Docs", href: "/docs", className: "text-muted-gray hover:text-white" },
-    { name: "Developer", href: "/docs/developers", className: "text-muted-gray hover:text-white" },
-    { name: "Sign in", href: "#", className: "text-muted-gray hover:text-white" },
-];
-
 export default function Navbar() {
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const pathname = usePathname();
 
     useEffect(() => {
         const handleScroll = () => {
-            setScrolled(window.scrollY > 50);
+            setScrolled(window.scrollY > 30);
         };
         window.addEventListener("scroll", handleScroll);
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    // Close mobile menu on resize to desktop
-    useEffect(() => {
-        const handleResize = () => {
-            if (window.innerWidth >= 768) {
-                setMobileMenuOpen(false);
-            }
-        };
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
-
-    // Prevent body scroll when mobile menu is open
-    useEffect(() => {
-        if (mobileMenuOpen) {
-            document.body.style.overflow = "hidden";
-        } else {
-            document.body.style.overflow = "";
-        }
-        return () => {
-            document.body.style.overflow = "";
-        };
-    }, [mobileMenuOpen]);
+    const navLinks = [
+        { name: "Premium", href: "/premium", className: "text-[#d4a853] hover:text-[#e5be70]" },
+        { name: "Explore", href: "/explore", className: pathname === "/explore" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
+        { name: "Product", href: "/product", className: pathname === "/product" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
+        { name: "Docs", href: "/docs", className: pathname === "/docs" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
+        { name: "Developer", href: "/developer", className: pathname === "/developer" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
+        { name: "Sign in", href: "#", className: "text-[#9ca3af] hover:text-white" },
+    ];
 
     return (
         <>
-            {/* Main Navbar - z-40 so mobile menu can be on top */}
-            <nav
-                className={`fixed top-0 left-0 right-0 z-40 px-4 sm:px-8 py-4 transition-all duration-300 ${scrolled
-                    ? "bg-dark-charcoal/95 backdrop-blur-md shadow-lg"
-                    : "bg-transparent"
-                    }`}
-            >
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    {/* Logo */}
-                    <Link href="/" className="flex items-center gap-2 group">
-                        <div className="w-8 h-8 bg-leetcode-teal rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
-                            <Terminal className="w-5 h-5 text-white" />
+            {/* Main Floating Navbar Container */}
+            <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
+                <nav
+                    className={`w-full max-w-5xl liquid-glass rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/40 backdrop-blur-lg" : ""}`}
+                >
+                    {/* Logo - Icon + Text */}
+                    <Link href="/" className="flex items-center gap-2.5 group">
+                        <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform">
+                            <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
                         </div>
-                        <span className="text-xl font-bold text-white tracking-tight">
+                        <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
                             SubScript
                         </span>
                     </Link>
 
                     {/* Desktop Nav Links */}
-                    <div className="hidden md:flex items-center gap-8">
-                        {navLinks.map((link) => (
+                    <div className="hidden md:flex items-center gap-6">
+                        {navLinks.filter(link => link.name !== "Sign in").map((link) => (
                             <Link
                                 key={link.name}
                                 href={link.href}
-                                className={`text-sm font-medium transition-colors ${link.className}`}
+                                className={`text-xs font-semibold tracking-wide uppercase transition-all duration-200 ${link.className}`}
                             >
                                 {link.name}
                             </Link>
                         ))}
                     </div>
 
-                    {/* Mobile Menu Button - ONLY visible when menu is CLOSED */}
-                    {!mobileMenuOpen && (
-                        <button
-                            className="md:hidden flex flex-col gap-1.5 p-2 -mr-2"
-                            aria-label="Open menu"
-                            onClick={() => setMobileMenuOpen(true)}
-                        >
-                            <span className="w-6 h-0.5 bg-white rounded-full block" />
-                            <span className="w-6 h-0.5 bg-white rounded-full block" />
-                            <span className="w-6 h-0.5 bg-white rounded-full block" />
+                    {/* Right Action buttons */}
+                    <div className="hidden md:flex items-center gap-4">
+                        <button className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors">
+                            Sign Up
                         </button>
-                    )}
-                </div>
-            </nav>
+                        <button className="liquid-glass rounded-full px-5 py-2 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/5 transition-all duration-200">
+                            Connect
+                        </button>
+                    </div>
 
-            {/* Mobile Menu Overlay - z-50 to be ON TOP of navbar */}
+                    {/* Mobile Menu Button */}
+                    <div className="md:hidden flex items-center">
+                        <button
+                            onClick={() => setMobileMenuOpen(true)}
+                            className="p-1.5 text-white/70 hover:text-white transition-colors"
+                            aria-label="Open Menu"
+                        >
+                            <Menu className="w-5 h-5" />
+                        </button>
+                    </div>
+                </nav>
+            </div>
+
+            {/* Mobile Menu Overlay */}
             <AnimatePresence>
                 {mobileMenuOpen && (
                     <motion.div
-                        className="fixed inset-0 z-50 md:hidden"
+                        className="fixed inset-0 z-50 md:hidden flex flex-col bg-black/95 backdrop-blur-xl"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                     >
-                        {/* Full-Screen Solid Background - Covers entire screen including navbar/logo */}
-                        <motion.div
-                            className="absolute inset-0 bg-[#0a0a0a]"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                        />
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+                            {/* Logo */}
+                            <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)}>
+                                <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,210,180,0.4)]">
+                                    <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
+                                </div>
+                                <span className="text-xl font-bold text-white tracking-tight">
+                                    SubScript
+                                </span>
+                            </Link>
 
-                        {/* Menu Content */}
-                        <motion.div
-                            className="relative h-full w-full flex flex-col"
-                            initial={{ x: 20, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            exit={{ x: 20, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            {/* Header with Logo and Close Button */}
-                            <div className="flex items-center justify-between px-4 py-4">
-                                {/* Logo (visible in menu) */}
-                                <Link
-                                    href="/"
-                                    className="flex items-center gap-2"
-                                    onClick={() => setMobileMenuOpen(false)}
+                            <button
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="p-2 text-[#9ca3af] hover:text-white transition-colors"
+                                aria-label="Close Menu"
+                            >
+                                <CloseIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        {/* Navigation Links */}
+                        <div className="flex-1 px-8 py-8 flex flex-col gap-4">
+                            {navLinks.map((link, idx) => (
+                                <motion.div
+                                    key={link.name}
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
                                 >
-                                    <div className="w-8 h-8 bg-leetcode-teal rounded-lg flex items-center justify-center">
-                                        <Terminal className="w-5 h-5 text-white" />
-                                    </div>
-                                    <span className="text-xl font-bold text-white tracking-tight">
-                                        SubScript
-                                    </span>
-                                </Link>
-
-                                {/* Single Close Button (X icon) */}
-                                <button
-                                    onClick={() => setMobileMenuOpen(false)}
-                                    className="p-2 -mr-2 text-white hover:text-gray-300 transition-colors"
-                                    aria-label="Close menu"
-                                >
-                                    <svg
-                                        className="w-6 h-6"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
+                                    <Link
+                                        href={link.href}
+                                        onClick={() => setMobileMenuOpen(false)}
+                                        className={`block text-2xl font-semibold py-2 transition-colors ${link.className}`}
                                     >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M6 18L18 6M6 6l12 12"
-                                        />
-                                    </svg>
-                                </button>
-                            </div>
+                                        {link.name}
+                                    </Link>
+                                </motion.div>
+                            ))}
+                        </div>
 
-                            {/* Navigation Links */}
-                            <div className="flex-1 px-6 py-6 space-y-2">
-                                {navLinks.map((link, index) => (
-                                    <motion.div
-                                        key={link.name}
-                                        initial={{ opacity: 0, x: 20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: index * 0.05 }}
+                        {/* Social Icons inside Mobile Menu */}
+                        <div className="px-8 py-8 border-t border-white/5 bg-[#17171a]/50">
+                            <p className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider mb-4">Community</p>
+                            <div className="flex items-center gap-4">
+                                {socialLinks.map((social) => (
+                                    <a
+                                        key={social.name}
+                                        href={social.href}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
+                                        aria-label={social.name}
                                     >
-                                        <Link
-                                            href={link.href}
-                                            onClick={() => setMobileMenuOpen(false)}
-                                            className={`block text-xl font-medium py-3 transition-colors ${link.className}`}
-                                        >
-                                            {link.name}
-                                        </Link>
-                                    </motion.div>
+                                        <social.icon className="w-6 h-6" />
+                                    </a>
                                 ))}
                             </div>
-
-                            {/* Social Icons Section - Bottom of menu */}
-                            <div className="px-6 py-6 border-t border-[#2a2a2a]">
-                                <p className="text-xs text-gray-500 uppercase tracking-wider mb-4">Follow Us</p>
-                                <div className="flex items-center gap-4">
-                                    {socialLinks.map((social) => (
-                                        <a
-                                            key={social.name}
-                                            href={social.href}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="w-12 h-12 rounded-xl bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:border-leetcode-teal transition-all duration-200"
-                                            aria-label={social.name}
-                                        >
-                                            <social.icon className="w-6 h-6" />
-                                        </a>
-                                    ))}
-                                </div>
-                            </div>
-                        </motion.div>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Desktop Social Icons - Fixed Bottom Right */}
-            <div className="hidden md:flex fixed bottom-6 right-6 z-40 flex-col gap-3">
+            {/* Desktop Social Icons - Vertically Centered on Right Edge */}
+            <div className="hidden md:flex fixed right-6 top-1/2 -translate-y-1/2 z-40 flex-col gap-4">
                 {socialLinks.map((social) => (
-                    <a
+                    <motion.a
                         key={social.name}
                         href={social.href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-11 h-11 rounded-xl bg-dark-charcoal/90 backdrop-blur-sm border border-[#2a2a2a] flex items-center justify-center text-gray-400 hover:text-white hover:border-leetcode-teal hover:scale-110 transition-all duration-200 shadow-lg"
+                        className="w-11 h-11 rounded-full liquid-glass flex items-center justify-center text-white/50 hover:text-[#00d2b4] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
                         aria-label={social.name}
+                        whileHover={{ scale: 1.1, rotate: -6 }}
+                        whileTap={{ scale: 0.95 }}
                     >
-                        <social.icon className="w-5 h-5" />
-                    </a>
+                        <social.icon className="w-4 h-4" />
+                    </motion.a>
                 ))}
             </div>
         </>
