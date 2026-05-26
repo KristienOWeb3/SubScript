@@ -56,7 +56,7 @@ export default function Navbar() {
         { name: "Product", href: "/product", className: pathname === "/product" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
         { name: "Docs", href: "/docs", className: pathname === "/docs" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
         { name: "Developer", href: "/developer", className: pathname === "/developer" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
-        { name: "Sign in", href: "#", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Sign in", href: "/dashboard", className: "text-[#9ca3af] hover:text-white" },
     ];
 
     return (
@@ -68,9 +68,11 @@ export default function Navbar() {
                 >
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group">
-                        <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform">
-                            <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
-                        </div>
+                        <img 
+                            src="/logo.png" 
+                            alt="SubScript Logo" 
+                            className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
+                        />
                         <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
                             SubScript
                         </span>
@@ -90,13 +92,19 @@ export default function Navbar() {
                     </div>
 
                     {/* Right Action buttons */}
-                    <div className="hidden md:flex items-center gap-4">
-                        <button className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors">
+                    <div className="hidden md:flex items-center gap-6">
+                        <Link 
+                            href="/dashboard"
+                            className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
+                        >
+                            Sign In
+                        </Link>
+                        <Link 
+                            href="/#waitlist"
+                            className="liquid-glass rounded-full px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/5 transition-all duration-200"
+                        >
                             Sign Up
-                        </button>
-                        <button className="liquid-glass rounded-full px-5 py-2 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/5 transition-all duration-200">
-                            Connect
-                        </button>
+                        </Link>
                     </div>
 
                     {/* Mobile Menu Button */}
@@ -125,9 +133,11 @@ export default function Navbar() {
                         <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
                             {/* Logo */}
                             <Link href="/" className="flex items-center gap-2.5" onClick={() => setMobileMenuOpen(false)}>
-                                <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,210,180,0.4)]">
-                                    <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
-                                </div>
+                                <img 
+                                    src="/logo.png" 
+                                    alt="SubScript Logo" 
+                                    className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
+                                />
                                 <span className="text-xl font-bold text-white tracking-tight">
                                     SubScript
                                 </span>

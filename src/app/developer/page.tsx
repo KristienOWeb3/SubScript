@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Terminal as TerminalIcon, ArrowLeft, Server, Key, Power, Code2 } from "lucide-react";
@@ -124,9 +125,194 @@ export function CancelButton({ sessionKeyId }) {
     );
 }`;
 
-export default function DeveloperPage() {
+function Sandbox() {
+    const [selectedTab, setSelectedTab] = useState<"create" | "revoke" | "webhook">("create");
+    const [terminalOutput, setTerminalOutput] = useState<string>("Click 'Generate Test Session' to fetch response...");
+    const [isSimulating, setIsSimulating] = useState(false);
+
+    const codeTemplates = {
+        create: `import { SubScript } from "@subscript/sdk";
+
+const subscript = new SubScript({ apiKey: "sk_test_51Px..." });
+
+// Initiate automated subscription session for an AI agent
+const session = await subscript.sessions.create({
+  merchantId: "0x7a8d...f1e9",
+  clientReferenceId: "agent-run-9843",
+  maxAllowance: "100.00", // USDC
+  interval: "monthly",
+  fundingChain: "base", // Native CCTP auto-routing
+  fiatEscapeHatch: {
+    enabled: true,
+    bankRoutingPercentage: 70
+  }
+});
+
+console.log(session);`,
+        revoke: `import { SubScript } from "@subscript/sdk";
+
+const subscript = new SubScript({ apiKey: "sk_test_51Px..." });
+
+// Revoke the session key instantly (Kill Switch)
+const revocation = await subscript.sessions.revoke({
+  sessionId: "sub_session_01HjX729Z7Z4M19",
+  reason: "Agent budget exceeded limit"
+});
+
+console.log(revocation);`,
+        webhook: `import { SubScript } from "@subscript/sdk";
+
+const subscript = new SubScript({ apiKey: "sk_test_51Px..." });
+
+// Test webhook delivery for payment.renewed
+const result = await subscript.webhooks.replayEvent({
+  eventId: "evt_01HjY892M19XQY1R93B882K",
+  endpoint: "https://api.yourdomain.com/webhooks"
+});
+
+console.log(result);`
+    };
+
+    const mockResponses = {
+        create: {
+            id: "sub_session_01HjX729Z7Z4M19XQY1R93B",
+            object: "subscription.session",
+            clientReferenceId: "agent-run-9843",
+            merchantId: "0x7a8d9b1c2e3f4a5b6c7d8e9f0a1b2c3d4e5f6g7h",
+            status: "authorized",
+            currency: "usdc",
+            maxAllowance: "100.00",
+            interval: "monthly",
+            fundingChain: "base",
+            fiatEscapeHatch: {
+                enabled: true,
+                bankRoutingPercentage: 70,
+                destination: "Chase Checking (...4829)"
+            },
+            cctpMetadata: {
+                sourceTokenBurnTx: "0x8f3c4db239ac98ea24268e6f1f3a2b4c1078e9f2",
+                destinationTokenMintTx: "0x1d4ae8f2b5c0b4a69c71a3e8f2b5c1d0e9a8f4c2",
+                bridgingStatus: "finalized"
+            },
+            expiresAt: 1782297600,
+            createdAt: 1779878400
+        },
+        revoke: {
+            id: "sub_session_01HjX729Z7Z4M19XQY1R93B",
+            object: "subscription.session",
+            status: "revoked",
+            revokedAt: 1779878450,
+            revocationReason: "Agent budget exceeded limit",
+            signatureRevocationTx: "0x9c3a2f8b7e1d5c0b4a69c71a3e8f2b5c1d0e9a8f",
+            malachiteFinalitySeconds: 0.42
+        },
+        webhook: {
+            eventId: "evt_01HjY892M19XQY1R93B882K",
+            object: "webhook.event",
+            eventType: "subscription.renewed",
+            deliveryStatus: "success",
+            httpResponseCode: 200,
+            payload: {
+                subscriptionId: "sub_session_01HjX729Z7Z4M19XQY1R93B",
+                amount: "100.00",
+                currency: "usdc",
+                executedAt: 1779878400,
+                keeperRewardUsdc: "0.15"
+            }
+        }
+    };
+
+    const handleSimulate = () => {
+        setIsSimulating(true);
+        setTerminalOutput("Connecting to Arc SubScript Relayer...\nVerifying Session Signatures...\nResolving CCTP bridge status...");
+        
+        setTimeout(() => {
+            setTerminalOutput(JSON.stringify(mockResponses[selectedTab], null, 2));
+            setIsSimulating(false);
+        }, 600);
+    };
+
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch mb-16">
+            {/* Left Column: Code Panel */}
+            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl">
+                <div className="flex border-b border-white/5 bg-white/[0.02] p-1.5 gap-2">
+                    {(["create", "revoke", "webhook"] as const).map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => {
+                                setSelectedTab(tab);
+                                setTerminalOutput("Click 'Generate Test Session' to fetch response...");
+                            }}
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
+                                selectedTab === tab
+                                    ? "bg-white/10 text-white shadow-inner"
+                                    : "text-white/50 hover:text-white hover:bg-white/[0.03]"
+                            }`}
+                        >
+                            {tab === "create" ? "createSession" : tab === "revoke" ? "revokeSession" : "replayWebhook"}
+                        </button>
+                    ))}
+                </div>
+                
+                <div className="flex-1 relative font-mono text-xs p-6 bg-black/40 overflow-x-auto min-h-[300px]">
+                    <pre className="text-white/85 leading-relaxed">
+                        <code>{codeTemplates[selectedTab]}</code>
+                    </pre>
+                </div>
+                
+                <div className="border-t border-white/5 p-4 bg-white/[0.01] flex justify-end">
+                    <button
+                        onClick={handleSimulate}
+                        disabled={isSimulating}
+                        className="px-6 py-3 bg-[#00d2b4] text-[#111111] text-xs font-bold uppercase tracking-wider rounded-xl hover:brightness-110 shadow-[0_0_15px_rgba(0,210,180,0.3)] disabled:opacity-50 transition-all flex items-center gap-2 font-sans"
+                    >
+                        {isSimulating ? (
+                            <>
+                                <span className="w-3.5 h-3.5 border-2 border-[#111111] border-t-transparent rounded-full animate-spin" />
+                                Executing...
+                            </>
+                        ) : (
+                            <>
+                                <TerminalIcon className="w-3.5 h-3.5" />
+                                Generate Test Session
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+            
+            {/* Right Column: Terminal Panel */}
+            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between bg-black/80 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.02]">
+                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Response Terminal
+                    </span>
+                    <span className="text-[10px] font-mono text-white/40">HTTP/1.1 200 OK</span>
+                </div>
+                
+                <div className="flex-1 p-6 font-mono text-xs overflow-auto text-emerald-400/90 min-h-[300px] max-h-[400px] leading-relaxed whitespace-pre">
+                    {terminalOutput}
+                </div>
+                
+                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
+                    <span>Relayer latency: {isSimulating ? "..." : "420ms"}</span>
+                    <span>Consensus: Malachite BFT</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default function DeveloperPage() {
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    return (
+        <main data-mounted={isMounted} className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
             <Navbar />
 
             {/* Background Orbs */}
@@ -203,6 +389,18 @@ export default function DeveloperPage() {
                                 </div>
                             </div>
                         </div>
+                    </section>
+
+                    {/* Interactive API Sandbox */}
+                    <section className="mb-16">
+                        <h2 className="text-xl font-bold mb-3 flex items-center gap-2 text-white uppercase tracking-wider">
+                            <TerminalIcon className="w-5 h-5 text-[#00d2b4]" />
+                            Interactive API Sandbox
+                        </h2>
+                        <p className="text-xs sm:text-sm text-white/50 mb-6 leading-relaxed">
+                            Simulate SDK methods in real time. Choose an endpoint, configure parameters, and generate mock payloads with Malachite consensus finality.
+                        </p>
+                        <Sandbox />
                     </section>
 
                     {/* Session Key Integration */}

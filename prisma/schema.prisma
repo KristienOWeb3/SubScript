@@ -1,0 +1,19 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model WaitlistLead {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String   @unique
+  companyName   String   @map("company_name")
+  useCase       String   @map("use_case")
+  monthlyVolume String   @map("monthly_volume")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("waitlist_leads")
+}

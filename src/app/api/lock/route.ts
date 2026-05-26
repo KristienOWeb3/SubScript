@@ -16,6 +16,15 @@ export async function POST(request: Request) {
                 maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
             });
 
+            // Set client-accessible cookie for dev/test bypass checks
+            response.cookies.set("subscript_page_lock_client", "SexyKristien", {
+                httpOnly: false,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "strict",
+                path: "/",
+                maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
+            });
+
             return response;
         }
 

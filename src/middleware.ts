@@ -10,11 +10,7 @@ export function middleware(request: NextRequest) {
         pathname === "/waitlist" || 
         pathname === "/lock" ||
         pathname === "/api/lock" ||
-        pathname === "/subscript_human.mp4" || 
-        pathname === "/favicon.ico" ||
-        pathname === "/subscript_hero_3d_1768947910755.png" ||
-        pathname.startsWith("/_next/static") ||
-        pathname.startsWith("/_next/image");
+        pathname === "/api/waitlist";
 
     if (isPublicRoute) {
         return NextResponse.next();
@@ -34,6 +30,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    // Run on all paths except for static assets
     matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.mp4|.*\\.png|.*\\.jpg|.*\\.svg).*)"],
 };

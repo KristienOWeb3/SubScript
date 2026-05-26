@@ -9,7 +9,7 @@ export default function PrivyProviderWrapper({
 }) {
     return (
         <PrivyProvider
-            appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || "your-privy-app-id"}
+            appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || "clpispdty00ycl80fpueukbhl"}
             config={{
                 appearance: {
                     theme: "dark",

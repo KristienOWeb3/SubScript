@@ -16,7 +16,7 @@ interface ComparisonTableProps {
 
 export default function ComparisonTable({
     rows,
-    legacyTitle = "Legacy Pull (Banks)",
+    legacyTitle = "Stripe / KYC Pull",
     subscriptTitle = "SubScript Push (Arc)",
 }: ComparisonTableProps) {
     const renderCell = (value: string | boolean, isSubScript: boolean) => {
@@ -75,33 +75,33 @@ export default function ComparisonTable({
 // Pre-configured comparison data for Push vs Pull
 export const pushVsPullComparison: ComparisonRow[] = [
     {
-        feature: "Cancel Anytime",
-        legacy: false,
-        subscript: true,
+        feature: "KYC / ID Checks",
+        legacy: "Required (Human only)",
+        subscript: "None (Software-native)",
     },
     {
-        feature: "Double-Billing Protection",
-        legacy: false,
-        subscript: true,
+        feature: "User Approval",
+        legacy: "Manual sign-in & click",
+        subscript: "Zero-Click Session Key",
     },
     {
-        feature: "Instant Revocation",
-        legacy: "3-5 business days",
-        subscript: "Sub-second",
+        feature: "Charge Control",
+        legacy: "Merchant pulls any amount",
+        subscript: "Value-capped smart budgets",
     },
     {
-        feature: "Overdraft Fees",
-        legacy: "$35 bank fee",
-        subscript: "Transaction reverts",
+        feature: "Cross-Chain Assets",
+        legacy: "Manual bridge + drop-off",
+        subscript: "Invisible CCTP background routing",
     },
     {
-        feature: "Payment Control",
-        legacy: "Merchant pulls",
-        subscript: "You push",
+        feature: "Settlement Timeline",
+        legacy: "2-7 days (pending hold)",
+        subscript: "~0.4s Malachite finality",
     },
     {
-        feature: "Gas Token",
-        legacy: "N/A",
-        subscript: "USDC (stable)",
+        feature: "Failed Payments",
+        legacy: "Silent page bounce",
+        subscript: "Auto-retry webhooks & API logs",
     },
 ];

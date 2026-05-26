@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
-// TODO: Re-enable PrivyProviderWrapper once API keys are configured
-// import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
+import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 
 const inter = Inter({
     subsets: ["latin"],
@@ -37,10 +36,9 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
-                {/* TODO: Re-enable PrivyProviderWrapper once API keys are configured */}
-                {/* <PrivyProviderWrapper> */}
-                {children}
-                {/* </PrivyProviderWrapper> */}
+                <PrivyProviderWrapper>
+                    {children}
+                </PrivyProviderWrapper>
             </body>
         </html>
     );

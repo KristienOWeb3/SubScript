@@ -97,7 +97,7 @@ export default function LockScreen() {
                     playsInline
                     className="w-full h-full object-cover"
                 >
-                    <source src="/subscript_human.mp4" type="video/mp4" />
+                    <source src="/subscript_media.mp4" type="video/mp4" />
                 </video>
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
             </div>

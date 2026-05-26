@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { LogOut, Wallet, ChevronDown, Terminal } from "lucide-react";
 import DepositModal from "./DepositModal";
@@ -50,9 +50,11 @@ export default function DashboardHeader() {
                         <div className="flex items-center gap-6">
                             {/* Logo */}
                             <a href="/" className="flex items-center gap-2 group">
-                                <div className="w-7 h-7 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform">
-                                    <Terminal className="w-3.5 h-3.5 text-[#111111] stroke-[2.5]" />
-                                </div>
+                                <img 
+                                    src="/logo.png" 
+                                    alt="SubScript Logo" 
+                                    className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
+                                />
                                 <span className="text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
                                     SubScript
                                 </span>

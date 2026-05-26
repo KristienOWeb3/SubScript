@@ -18,8 +18,8 @@ export default function KillSwitchDemo() {
     const [state, setState] = useState<DemoState>("disconnected");
     const [subscription, setSubscription] = useState<Subscription>({
         id: "sub_001",
-        name: "StreamPro Premium",
-        amount: "14.99",
+        name: "DeepSeek AI Inference",
+        amount: "150.00",
         nextBilling: "Feb 15, 2026",
         status: "active",
     });
@@ -119,7 +119,7 @@ export default function KillSwitchDemo() {
                                                     {subscription.name}
                                                 </h4>
                                                 <p className="text-xs text-[#9ca3af] mt-0.5">
-                                                    ${subscription.amount} USDC / month
+                                                    ${subscription.amount} USDC / month budget cap
                                                 </p>
                                             </div>
                                         </div>

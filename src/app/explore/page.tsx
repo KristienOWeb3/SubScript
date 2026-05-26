@@ -246,10 +246,12 @@ export default function ExplorePage() {
             <footer className="border-t border-white/5 py-16 bg-[#111111]/30 mt-16">
                 <div className="max-w-7xl mx-auto px-6 sm:px-12 grid grid-cols-1 md:grid-cols-4 gap-12">
                     <div className="md:col-span-2">
-                        <Link href="/" className="logo text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                            <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(0,210,180,0.4)]">
-                                <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
-                            </div>
+                        <Link href="/" className="logo text-lg font-bold text-white tracking-tight flex items-center gap-2 group">
+                            <img 
+                                src="/logo.png" 
+                                alt="SubScript Logo" 
+                                className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
+                            />
                             SubScript
                         </Link>
                         <p className="text-xs text-white/50 mt-4 max-w-sm leading-relaxed">

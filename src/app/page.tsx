@@ -2,15 +2,14 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, Check, Mail, Wallet, Loader2, AlertCircle } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3 } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import { submitWaitlist } from "@/app/actions";
 
 const subscriptions = [
-    { name: "Netflix", amount: "15.99", status: "active" },
-    { name: "Vercel Pro", amount: "20.00", status: "active" },
-    { name: "Spotify", amount: "9.99", status: "active" },
-    { name: "GitHub Copilot", amount: "10.00", status: "active" },
+    { name: "LLM Inference API", amount: "99.00", status: "active" },
+    { name: "Vector DB Storage", amount: "49.00", status: "active" },
+    { name: "Web Scraping Cluster", amount: "25.00", status: "active" },
+    { name: "Decentralized Compute", amount: "120.00", status: "active" },
 ];
 
 function RedactedShuffleText({ text, isHovered }: { text: string; isHovered: boolean }) {
@@ -73,13 +72,13 @@ function MockupDashboardCard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
         >
-            {/* 3D tilted float card container */}
+            {/* 3D tilted float card container (made wider and more horizontal) */}
             <motion.div
-                className="w-full max-w-[270px] sm:max-w-[290px] cursor-pointer"
+                className="w-full max-w-[420px] sm:max-w-[460px] cursor-pointer"
                 animate={{
-                    y: [0, -12, 0],
-                    rotateX: [12, 10, 12],
-                    rotateY: [-18, -15, -18],
+                    y: [0, -10, 0],
+                    rotateX: [8, 6, 8],
+                    rotateY: [-12, -9, -12],
                 }}
                 transition={{
                     duration: 6,
@@ -90,16 +89,16 @@ function MockupDashboardCard() {
                     transformStyle: "preserve-3d",
                 }}
                 whileHover={{
-                    scale: 1.05,
-                    rotateX: 5,
-                    rotateY: -5,
+                    scale: 1.03,
+                    rotateX: 4,
+                    rotateY: -4,
                     transition: { duration: 0.3 }
                 }}
             >
                 {/* Dashboard mock card using .liquid-glass class */}
-                <div className="w-full liquid-glass rounded-3xl p-6 tablet-shadow">
+                <div className="w-full liquid-glass rounded-3xl p-5 sm:p-6 tablet-shadow">
                     {/* Window Control Dots: Red, Green, Blue */}
-                    <div className="flex gap-1.5 mb-5">
+                    <div className="flex gap-1.5 mb-4">
                         <div className="w-2.5 h-2.5 rounded-full bg-[#ef4444]" />
                         <div className="w-2.5 h-2.5 rounded-full bg-[#22c55e]" />
                         <div className="w-2.5 h-2.5 rounded-full bg-[#3b82f6]" />
@@ -107,36 +106,36 @@ function MockupDashboardCard() {
 
                     {/* Card Title */}
                     <div className="mb-4">
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-[#00d2b4]">Arc Protocol</span>
-                        <h3 className="text-sm font-bold text-white tracking-tight">Active Subscriptions</h3>
+                        <span className="text-[9px] uppercase font-bold tracking-widest text-[#00d2b4]">Agent Allowance</span>
+                        <h3 className="text-xs font-bold text-white tracking-tight">Active Subscriptions</h3>
                     </div>
 
-                    {/* Subscription Rows */}
-                    <div className="space-y-2">
+                    {/* Subscription Rows (2-column grid layout to reduce vertical height and stretch horizontally) */}
+                    <div className="grid grid-cols-2 gap-2">
                         {subscriptions.map((sub, idx) => (
                             <motion.div
                                 key={idx}
-                                className="flex items-center justify-between p-3.5 bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 rounded-2xl transition-all duration-300"
+                                className="flex items-center justify-between p-2.5 bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 rounded-xl transition-all duration-300"
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: idx * 0.1 }}
                                 onMouseEnter={() => setHoveredIdx(idx)}
                                 onMouseLeave={() => setHoveredIdx(null)}
                             >
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 min-w-0">
                                     {/* Indicator Dot */}
-                                    <div className="w-2 h-2 rounded-full bg-[#00d2b4] animate-pulse" />
-                                    <div>
-                                        <p className="text-xs font-semibold text-white">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#00d2b4] animate-pulse flex-shrink-0" />
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] sm:text-xs font-semibold text-white truncate">
                                             <RedactedShuffleText text={sub.name} isHovered={hoveredIdx === idx} />
                                         </p>
-                                        <p className="text-[10px] text-white/40 font-mono tracking-wider mt-0.5">
+                                        <p className="text-[9px] text-white/40 font-mono tracking-wider mt-0.5">
                                             $██.██ USDC
                                         </p>
                                     </div>
                                 </div>
                                 {/* Green Active Pill Badge */}
-                                <span className="text-[9px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
                                     Active
                                 </span>
                             </motion.div>
@@ -144,8 +143,8 @@ function MockupDashboardCard() {
                     </div>
 
                     {/* Card Footer Metric */}
-                    <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between">
-                        <span className="text-[10px] text-white/50">Monthly Total</span>
+                    <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+                        <span className="text-[9px] text-white/50">Monthly Total</span>
                         <span className="text-xs font-bold text-[#00d2b4] font-mono tracking-wider">
                             $██.██ USDC
                         </span>
@@ -181,37 +180,78 @@ function SuccessMessage({ message }: { message: string }) {
 }
 
 function WaitlistForm() {
-    const [step, setStep] = useState<"button" | "email" | "wallet" | "success" | "error">("button");
+    const [step, setStep] = useState<"button" | "email" | "company" | "useCase" | "monthlyVolume" | "success" | "error">("button");
     const [email, setEmail] = useState("");
-    const [walletAddress, setWalletAddress] = useState("");
+    const [companyName, setCompanyName] = useState("");
+    const [useCase, setUseCase] = useState("");
+    const [monthlyVolume, setMonthlyVolume] = useState("");
+    const [honeypot, setHoneypot] = useState("");
     const [message, setMessage] = useState("");
     const [isPending, startTransition] = useTransition();
 
-    const handleNext = (e: React.FormEvent) => {
+    const handleEmailSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (email.includes("@")) {
-            setStep("wallet");
+            setStep("company");
+        }
+    };
+
+    const handleCompanySubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (companyName.trim()) {
+            setStep("useCase");
+        }
+    };
+
+    const handleUseCaseSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (useCase) {
+            setStep("monthlyVolume");
         }
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-
-        const formData = new FormData();
-        formData.append("email", email);
-        formData.append("walletAddress", walletAddress);
+        if (!email || !companyName || !useCase || !monthlyVolume) {
+            setMessage("Please complete all sections.");
+            setStep("error");
+            return;
+        }
 
         startTransition(async () => {
-            const result = await submitWaitlist(formData);
+            try {
+                const response = await fetch("/api/waitlist", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        email,
+                        companyName,
+                        useCase,
+                        monthlyVolume,
+                        honeypot,
+                    }),
+                });
 
-            if (result.success) {
-                setMessage(result.message);
-                setStep("success");
-            } else {
-                setMessage(result.message);
+                const data = await response.json();
+
+                if (response.ok) {
+                    setMessage(data.message || "Spot secured on priority list.");
+                    setStep("success");
+                } else {
+                    setMessage(data.error || "Something went wrong.");
+                    setStep("error");
+                    setTimeout(() => {
+                        setStep("monthlyVolume");
+                    }, 3000);
+                }
+            } catch (err) {
+                console.error("Submission error:", err);
+                setMessage("Network error. Please try again.");
                 setStep("error");
                 setTimeout(() => {
-                    setStep("wallet");
+                    setStep("monthlyVolume");
                 }, 3000);
             }
         });
@@ -242,7 +282,7 @@ function WaitlistForm() {
                 {step === "email" && (
                     <motion.form
                         key="email"
-                        onSubmit={handleNext}
+                        onSubmit={handleEmailSubmit}
                         className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -255,7 +295,7 @@ function WaitlistForm() {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Enter your email..."
+                                placeholder="Enter your business email..."
                                 required
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
                             />
@@ -272,10 +312,10 @@ function WaitlistForm() {
                     </motion.form>
                 )}
 
-                {step === "wallet" && (
+                {step === "company" && (
                     <motion.form
-                        key="wallet"
-                        onSubmit={handleSubmit}
+                        key="company"
+                        onSubmit={handleCompanySubmit}
                         className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -291,19 +331,125 @@ function WaitlistForm() {
                             >
                                 <ArrowLeft className="w-3 h-3" />
                             </button>
-                            <Wallet className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                            <Building2 className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <input
                                 type="text"
-                                value={walletAddress}
-                                onChange={(e) => setWalletAddress(e.target.value)}
-                                placeholder="Wallet address (0x...)"
+                                value={companyName}
+                                onChange={(e) => setCompanyName(e.target.value)}
+                                placeholder="Company name..."
                                 required
-                                className="w-full bg-transparent px-2 text-white placeholder-white/40 focus:outline-none text-xs font-mono h-full"
+                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
                             />
                         </div>
                         <motion.button
                             type="submit"
-                            disabled={isPending}
+                            disabled={!companyName.trim()}
+                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            aria-label="Next step"
+                        >
+                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                        </motion.button>
+                    </motion.form>
+                )}
+
+                {step === "useCase" && (
+                    <motion.form
+                        key="useCase"
+                        onSubmit={handleUseCaseSubmit}
+                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -15 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <div className="flex items-center flex-1 min-w-0 h-full relative">
+                            <button
+                                type="button"
+                                onClick={() => setStep("company")}
+                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
+                                aria-label="Go back"
+                            >
+                                <ArrowLeft className="w-3 h-3" />
+                            </button>
+                            <HelpCircle className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                            <select
+                                value={useCase}
+                                onChange={(e) => setUseCase(e.target.value)}
+                                required
+                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8"
+                                style={{ colorScheme: "dark" }}
+                            >
+                                <option value="" disabled className="bg-[#121212] text-white/40">Select use case...</option>
+                                <option value="AI Agents/Tooling" className="bg-[#121212] text-white">AI Agents/Tooling</option>
+                                <option value="Global SaaS" className="bg-[#121212] text-white">Global SaaS</option>
+                                <option value="API Provider" className="bg-[#121212] text-white">API Provider</option>
+                                <option value="Web3 Infrastructure" className="bg-[#121212] text-white">Web3 Infrastructure</option>
+                            </select>
+                            <span className="absolute right-3 pointer-events-none text-white/40 text-[9px]">&#9662;</span>
+                        </div>
+                        <motion.button
+                            type="submit"
+                            disabled={!useCase}
+                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            aria-label="Next step"
+                        >
+                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                        </motion.button>
+                    </motion.form>
+                )}
+
+                {step === "monthlyVolume" && (
+                    <motion.form
+                        key="monthlyVolume"
+                        onSubmit={handleSubmit}
+                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -15 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        {/* Honeypot field */}
+                        <input
+                            type="text"
+                            value={honeypot}
+                            onChange={(e) => setHoneypot(e.target.value)}
+                            className="hidden"
+                            tabIndex={-1}
+                            autoComplete="off"
+                        />
+                        <div className="flex items-center flex-1 min-w-0 h-full relative">
+                            <button
+                                type="button"
+                                onClick={() => setStep("useCase")}
+                                disabled={isPending}
+                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1 disabled:opacity-50"
+                                aria-label="Go back"
+                            >
+                                <ArrowLeft className="w-3 h-3" />
+                            </button>
+                            <BarChart3 className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                            <select
+                                value={monthlyVolume}
+                                onChange={(e) => setMonthlyVolume(e.target.value)}
+                                required
+                                disabled={isPending}
+                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8 disabled:opacity-50"
+                                style={{ colorScheme: "dark" }}
+                            >
+                                <option value="" disabled className="bg-[#121212] text-white/40">Select volume...</option>
+                                <option value="< $10k" className="bg-[#121212] text-white">&lt; $10k</option>
+                                <option value="$10k - $50k" className="bg-[#121212] text-white">$10k - $50k</option>
+                                <option value="$50k+" className="bg-[#121212] text-white">$50k+</option>
+                            </select>
+                            <span className="absolute right-3 pointer-events-none text-white/40 text-[9px]">&#9662;</span>
+                        </div>
+                        <motion.button
+                            type="submit"
+                            disabled={isPending || !monthlyVolume}
                             className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
@@ -376,7 +522,7 @@ export default function Home() {
                     playsInline
                     className="w-full h-full object-cover"
                 >
-                    <source src="/subscript_human.mp4" type="video/mp4" />
+                    <source src="/subscript_media.mp4" type="video/mp4" />
                 </video>
                 {/* Dark Vignette Overlay to ensure contrast and readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
@@ -386,7 +532,7 @@ export default function Home() {
             <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] bg-[#d4a853]/3 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
-            <section className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
+            <section id="waitlist" className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
                 <div className="max-w-7xl mx-auto w-full px-6 sm:px-12">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                         
@@ -404,18 +550,18 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6 }}
                             >
-                                Automated Crypto Life
+                                Agentic Billing Infrastructure
                             </motion.span>
 
                             {/* Heading: Massive, mixing standard sans with italic Instrument Serif */}
                             <motion.h1
-                                className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white mb-8 leading-[1.05] uppercase"
+                                className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white mb-8 leading-[1.05] uppercase"
                                 initial={{ opacity: 0, y: 40 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.15 }}
                             >
-                                A New Way<br />
-                                <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">to Pay</span>
+                                Autonomous Billing<br />
+                                <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">for the</span> Machine Economy
                             </motion.h1>
 
                             {/* Subtext Paragraph */}
@@ -425,9 +571,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.3 }}
                             >
-                                Reimagining subscription billing for Web3. SubScript automates your recurring expenses 
-                                with stable USDC payments powered by the decentralized Arc network. 
-                                Secure, self-custodial, and entirely user-controlled.
+                                The programmatic recurring payment infrastructure for AI toolchains, autonomous agents, and developer APIs. By combining zero-click smart allowances with invisible cross-chain routing, we enable software to pay software reliably, globally, and autonomously.
                             </motion.p>
 
                             <WaitlistForm />

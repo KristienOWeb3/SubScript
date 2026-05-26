@@ -45,8 +45,8 @@ export default function DocsOverview() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.15 }}
                     >
-                        SubScript: The<br />
-                        <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">"push" payment</span> protocol
+                        SubScript for the<br />
+                        <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">machine economy</span>
                     </motion.h1>
 
                     {/* Subtitle */}
@@ -56,8 +56,7 @@ export default function DocsOverview() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.3 }}
                     >
-                        You control when, how much, and to whom payments are made.
-                        One function call cancels everything. <strong className="text-white">That's sovereignty.</strong>
+                        Frictionless recurring payments for AI agents, APIs, and cloud services. Zero-click allowances, invisible cross-chain routing, and automatic fiat off-ramps.
                     </motion.p>
 
                     {/* Component 2: Inline Glass Input Form */}
@@ -152,10 +151,10 @@ export default function DocsOverview() {
             {/* Comparison Table */}
             <section className="py-20 px-6 sm:px-12 bg-white/[0.01] border-y border-white/5">
                 <div className="max-w-4xl mx-auto">
-                    <h2 className="text-3xl font-extrabold text-white uppercase text-center mb-4">Legacy Pull vs. SubScript Push</h2>
+                    <h2 className="text-3xl font-extrabold text-white uppercase text-center mb-4">Stripe / KYC Pull vs. SubScript Push</h2>
                     <p className="text-xs text-white/50 text-center mb-12 max-w-2xl mx-auto">
-                        Traditional banking lets merchants "pull" funds from your account.
-                        SubScript flips this: <strong className="text-white">you push payments on your terms.</strong>
+                        Traditional billing gateways (Stripe/PayPal) require human identity verification (KYC), manual approvals, and manual bridging.
+                        SubScript lets autonomous code push programmatic USDC budgets on-chain with zero-click allowances.
                     </p>
 
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
@@ -274,10 +273,12 @@ export default function DocsOverview() {
             <footer className="border-t border-white/5 py-16 bg-[#111111]/30">
                 <div className="max-w-7xl mx-auto px-6 sm:px-12 grid grid-cols-1 md:grid-cols-4 gap-12">
                     <div className="md:col-span-2">
-                        <Link href="/" className="logo text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                            <div className="w-8 h-8 bg-[#00d2b4] rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(0,210,180,0.4)]">
-                                <Terminal className="w-4 h-4 text-[#111111] stroke-[2.5]" />
-                            </div>
+                        <Link href="/" className="logo text-lg font-bold text-white tracking-tight flex items-center gap-2 group">
+                            <img 
+                                src="/logo.png" 
+                                alt="SubScript Logo" 
+                                className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
+                            />
                             SubScript
                         </Link>
                         <p className="text-xs text-white/50 mt-4 max-w-sm leading-relaxed">
