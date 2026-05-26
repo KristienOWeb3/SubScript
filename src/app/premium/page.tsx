@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, X as Cross, Zap, BarChart3, Wallet, Award, ChevronDown, Terminal } from "lucide-react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 // Perks Configurations
 const perks = [
@@ -59,10 +60,8 @@ export default function PremiumPage() {
 
     return (
         <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#d4a853]/30 selection:text-white">
+            <AnimatedGradientBg />
             <Navbar />
-
-            {/* Background Orbs */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[500px] bg-[#d4a853]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
             {/* Hero Section */}
             <section className="pt-36 pb-16 px-6 sm:px-12 text-center max-w-4xl mx-auto flex flex-col items-center">

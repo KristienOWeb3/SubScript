@@ -7,6 +7,7 @@ import {
     ArrowRight, Star, Heart, TrendingUp, CheckCircle, Terminal 
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Link from "next/link";
 
 // Categories Configuration
@@ -64,11 +65,8 @@ export default function ExplorePage() {
 
     return (
         <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+            <AnimatedGradientBg />
             <Navbar />
-
-            {/* Background Orbs */}
-            <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
-            <div className="absolute bottom-1/4 right-0 w-[400px] h-[400px] bg-[#d4a853]/3 rounded-full blur-[100px] -z-10 pointer-events-none" />
 
             {/* Hero Section */}
             <section className="pt-36 pb-16 px-6 sm:px-12 text-center max-w-4xl mx-auto flex flex-col items-center">

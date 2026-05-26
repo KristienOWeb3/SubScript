@@ -9,6 +9,7 @@ import TabBlock, { CodeBlock } from "@/components/docs/TabBlock";
 import ExpandableSection from "@/components/docs/ExpandableSection";
 import { FeatureItem } from "@/components/docs/FeatureCard";
 import Navbar from "@/components/Navbar";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 // Code snippets
 const sessionKeyConceptCode = `// The Session Key Pattern
@@ -313,10 +314,8 @@ export default function DeveloperPage() {
 
     return (
         <main data-mounted={isMounted} className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+            <AnimatedGradientBg />
             <Navbar />
-
-            {/* Background Orbs */}
-            <div className="absolute top-0 right-1/4 w-[600px] h-[400px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
             {/* Content */}
             <div className="pt-36 pb-16 px-6 sm:px-12">

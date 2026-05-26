@@ -1,313 +1,496 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import {
     Shield, Zap, RefreshCw, Lock, ArrowRight, Search,
-    Code2, Blocks, Users, ChevronRight, Terminal
+    Code2, Blocks, Users, ChevronRight, Terminal, Star, Key, Webhook, Activity, FileText
 } from "lucide-react";
-
-import FeatureCard from "@/components/docs/FeatureCard";
-import ComparisonTable, { pushVsPullComparison } from "@/components/docs/ComparisonTable";
-import ExpandableSection from "@/components/docs/ExpandableSection";
-import VerifiedCancellable from "@/components/VerifiedCancellable";
 import Navbar from "@/components/Navbar";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 export default function DocsOverview() {
     const [searchQuery, setSearchQuery] = useState("");
+    const [activeSection, setActiveSection] = useState("overview");
+    const gridRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Safe check for browser environment
+        if (typeof window !== "undefined") {
+            gsap.registerPlugin(ScrollTrigger);
+
+            // Staggered reveal animation for Bento cards
+            gsap.fromTo(
+                ".bento-card",
+                { 
+                    opacity: 0, 
+                    y: 40 
+                },
+                {
+                    opacity: 1,
+                    y: 0,
+                    stagger: 0.1,
+                    duration: 0.8,
+                    ease: "power3.out",
+                    scrollTrigger: {
+                        trigger: gridRef.current,
+                        start: "top 85%",
+                        toggleActions: "play none none none"
+                    }
+                }
+            );
+        }
+    }, []);
+
+    const sidebarLinks = [
+        { id: "overview", label: "00 Overview", href: "#overview" },
+        { id: "introduction", label: "01 Introduction", href: "#introduction" },
+        { id: "getting-started", label: "02 Getting Started", href: "#getting-started" },
+        { id: "core-features", label: "03 Core Features", href: "#core-features" },
+        { id: "api-reference", label: "04 API Reference", href: "#api-reference" },
+        { id: "global-payments", label: "05 Global Payments", href: "#global-payments" },
+        { id: "vision", label: "06 Vision & Goals", href: "#vision" },
+        { id: "roadmap", label: "07 Roadmap", href: "#roadmap" },
+        { id: "assets", label: "08 Product Assets", href: "#assets" },
+    ];
 
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-[#030303] text-white selection:bg-[#ccff00]/30 selection:text-white">
+            <AnimatedGradientBg />
             <Navbar />
 
-            {/* Background Orbs */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
-
-            {/* Hero Section */}
-            <section className="pt-36 pb-16 px-6 sm:px-12 relative overflow-hidden flex flex-col items-center">
-                <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
-                    
-                    {/* Component 4: Eyebrow label */}
-                    <motion.span
-                        className="text-xs sm:text-sm tracking-[0.2em] font-semibold text-white/40 uppercase mb-4"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.6 }}
-                    >
-                        Developer Documentation
-                    </motion.span>
-
-                    {/* Component 4: Title */}
-                    <motion.h1
-                        className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white uppercase leading-[1.05] mb-8"
-                        initial={{ opacity: 0, y: 40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.15 }}
-                    >
-                        SubScript for the<br />
-                        <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">machine economy</span>
-                    </motion.h1>
-
-                    {/* Subtitle */}
-                    <motion.p
-                        className="text-sm sm:text-base text-white/50 max-w-xl mx-auto leading-relaxed mb-10"
-                        initial={{ opacity: 0, y: 30 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.3 }}
-                    >
-                        Frictionless recurring payments for AI agents, APIs, and cloud services. Zero-click allowances, invisible cross-chain routing, and automatic fiat off-ramps.
-                    </motion.p>
-
-                    {/* Component 2: Inline Glass Input Form */}
-                    <motion.div
-                        className="liquid-glass rounded-full px-2 py-0.5 flex items-center justify-between w-full max-w-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 mb-12"
-                        initial={{ opacity: 0, y: 30 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, delay: 0.4 }}
-                    >
-                        <div className="flex items-center flex-1 min-w-0">
-                            <Search className="ml-3 w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Ask or search... (e.g., 'How to cancel')"
-                                className="w-full bg-transparent px-3 py-0.5 text-white placeholder-white/40 focus:outline-none text-xs"
-                            />
+            <div className="pt-28 pb-20 max-w-7xl mx-auto px-6 lg:px-8 flex gap-8">
+                {/* Left Column: Sticky Sidebar */}
+                <aside className="hidden lg:block w-64 shrink-0 sticky top-28 h-[calc(100vh-8rem)] overflow-y-auto pr-6 border-r border-white/5">
+                    <div className="space-y-6">
+                        <div>
+                            <span className="text-[10px] tracking-[0.2em] font-semibold text-white/40 uppercase">
+                                Navigation
+                            </span>
+                            <div className="mt-3 flex flex-col gap-1">
+                                {sidebarLinks.map((link) => (
+                                    <a
+                                        key={link.id}
+                                        href={link.href}
+                                        onClick={() => setActiveSection(link.id)}
+                                        className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
+                                            activeSection === link.id
+                                                ? "bg-[#ccff00] text-black shadow-[0_0_15px_rgba(204,255,0,0.2)]"
+                                                : "text-white/60 hover:text-white hover:bg-white/[0.02]"
+                                        }`}
+                                    >
+                                        {link.label}
+                                    </a>
+                                ))}
+                            </div>
                         </div>
-                        <motion.button
-                            className="bg-white text-black p-1.5 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            aria-label="Search"
-                        >
-                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
-                        </motion.button>
-                    </motion.div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <div className="pt-6 border-t border-white/5">
+                            <span className="text-[10px] tracking-[0.2em] font-semibold text-white/40 uppercase">
+                                Quick Searches
+                            </span>
+                            <div className="mt-3 relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Filter docs..."
+                                    className="w-full bg-white/[0.02] border border-white/5 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#ccff00]/40 transition-colors"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="pt-6 border-t border-white/5">
                             <Link
                                 href="/developer"
-                                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] text-[#111111] rounded-full font-bold hover:brightness-110 shadow-[0_0_20px_rgba(0,210,180,0.3)] transition text-xs uppercase tracking-wider"
+                                className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-[#ccff00]/25 group transition-all"
                             >
-                                <Code2 className="w-4 h-4 stroke-[2.5]" />
-                                View SDK Docs
+                                <div className="flex items-center gap-2.5">
+                                    <Code2 className="w-4 h-4 text-[#ccff00]" />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-white">Developer SDK</span>
+                                </div>
+                                <ChevronRight className="w-3.5 h-3.5 text-white/40 group-hover:translate-x-0.5 transition-transform" />
                             </Link>
-                        </motion.div>
-                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                            <Link
-                                href="/docs/demo"
-                                className="inline-flex items-center justify-center gap-2 px-8 py-4 liquid-glass border border-white/5 text-white rounded-full font-bold hover:bg-white/5 transition text-xs uppercase tracking-wider"
-                            >
-                                Try Kill Switch Demo
-                                <ArrowRight className="w-4 h-4" />
-                            </Link>
-                        </motion.div>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </aside>
 
-            {/* Core Features */}
-            <section className="py-16 px-6 sm:px-12 max-w-6xl mx-auto">
-                <h2 className="text-3xl font-extrabold text-white uppercase text-center mb-16">Core Protocol Features</h2>
-
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <FeatureCard
-                        icon={Shield}
-                        title="The Kill Switch"
-                        description="Revoke your session key instantly. The merchant cannot charge you again. Period."
-                        badge="Core"
-                    />
-                    <FeatureCard
-                        icon={RefreshCw}
-                        title="Stablecoin Gas"
-                        description="Pay fees in USDC. No volatile gas tokens. A $10 subscription costs $10.01."
-                    />
-                    <FeatureCard
-                        icon={Lock}
-                        title="Atomic Transactions"
-                        description="No overdrafts. If you don't have funds, the transaction reverts. No $35 bank fees."
-                    />
-                    <FeatureCard
-                        icon={Zap}
-                        title="Instant Finality"
-                        description="Sub-second settlement via Malachite BFT. No 'pending' states. No race conditions."
-                    />
-                    <FeatureCard
-                        icon={Blocks}
-                        title="Session Keys (ERC-4337)"
-                        description="Users sign once. The protocol handles recurring billing with strict guardrails."
-                    />
-                    <FeatureCard
-                        icon={Users}
-                        title="Verified Cancellable"
-                        description="Merchants can embed a trust badge proving users can cancel anytime."
-                    />
-                </div>
-            </section>
-
-            {/* Comparison Table */}
-            <section className="py-20 px-6 sm:px-12 bg-white/[0.01] border-y border-white/5">
-                <div className="max-w-4xl mx-auto">
-                    <h2 className="text-3xl font-extrabold text-white uppercase text-center mb-4">Stripe / KYC Pull vs. SubScript Push</h2>
-                    <p className="text-xs text-white/50 text-center mb-12 max-w-2xl mx-auto">
-                        Traditional billing gateways (Stripe/PayPal) require human identity verification (KYC), manual approvals, and manual bridging.
-                        SubScript lets autonomous code push programmatic USDC budgets on-chain with zero-click allowances.
-                    </p>
-
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
-                        <ComparisonTable rows={pushVsPullComparison} />
-                    </div>
-                </div>
-            </section>
-
-            {/* Deep Dive Section */}
-            <section className="py-20 px-6 sm:px-12">
-                <div className="max-w-4xl mx-auto space-y-4">
-                    <h2 className="text-3xl font-extrabold text-white uppercase mb-12">Technical Deep Dives</h2>
-
-                    <ExpandableSection title="How does double-billing protection work?" variant="deep-dive">
-                        <p className="mb-4 text-xs sm:text-sm">
-                            The SubScript smart contract stores <code className="text-[#00d2b4] font-mono">lastPaymentTimestamp</code> for
-                            each subscription. Before processing a charge, it checks:
-                        </p>
-                        <pre className="bg-black/40 p-5 rounded-2xl text-xs overflow-x-auto mb-4 border border-white/5 font-mono text-white/50">
-                            <code>
-                                {`require(
-    block.timestamp >= lastPaymentTimestamp + 30 days,
-    "SubScript: Payment interval not reached"
-);`}
-                            </code>
-                        </pre>
-                        <p className="text-xs sm:text-sm">
-                            If a merchant tries to charge early, the transaction <strong className="text-white">reverts on-chain</strong>.
-                            No chargebacks needed. No disputes. Math enforces the rules.
-                        </p>
-                    </ExpandableSection>
-
-                    <ExpandableSection title="What is Malachite BFT consensus?" variant="deep-dive">
-                        <p className="mb-4 text-xs sm:text-sm">
-                            Arc Network uses <strong className="text-white">Malachite BFT</strong> (Byzantine Fault Tolerant)
-                            consensus, achieving:
-                        </p>
-                        <ul className="list-disc list-inside text-xs sm:text-sm text-white/50 space-y-2 mb-4">
-                            <li><strong className="text-white">Sub-second finality</strong> - Transactions confirm in ~0.4 seconds</li>
-                            <li><strong className="text-white">No reorgs</strong> - Once finalized, the transaction is permanent</li>
-                            <li><strong className="text-white">Deterministic ordering</strong> - No MEV or front-running</li>
-                        </ul>
-                        <p className="text-xs sm:text-sm">
-                            This means when you click "Revoke," the merchant's ability to charge you is
-                            terminated <strong className="text-white">within half a second</strong>.
-                        </p>
-                    </ExpandableSection>
-
-                    <ExpandableSection title="Why USDC for gas instead of a native token?" variant="deep-dive">
-                        <p className="text-white/50 text-xs sm:text-sm mb-4">
-                            Arc Network's <strong className="text-white">Stablecoin Gas</strong> feature lets you pay
-                            transaction fees directly in USDC. This means:
-                        </p>
-                        <ul className="list-disc list-inside text-xs sm:text-sm text-white/50 space-y-2">
-                            <li>No need to hold volatile ETH or native tokens</li>
-                            <li>Predictable costs: a $10 subscription costs ~$10.01</li>
-                            <li>Better UX for mainstream users unfamiliar with crypto</li>
-                        </ul>
-                    </ExpandableSection>
-                </div>
-            </section>
-
-            {/* Verified Cancellable Badge Preview */}
-            <section className="py-20 px-6 sm:px-12 bg-white/[0.01] border-t border-white/5">
-                <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
-                    <h2 className="text-3xl font-extrabold text-white uppercase mb-4">The Verified Cancellable Badge</h2>
-                    <p className="text-xs text-white/50 mb-10 max-w-xl mx-auto">
-                        Merchants can embed this trust indicator to prove their subscription
-                        supports instant, user-controlled cancellation.
-                    </p>
-
-                    <div className="flex flex-col items-center gap-4">
-                        <VerifiedCancellable size="lg" showDetails={true} />
-                    </div>
-                </div>
-            </section>
-
-            {/* Quick Links */}
-            <section className="py-20 px-6 sm:px-12 border-t border-white/5">
-                <div className="max-w-4xl mx-auto">
-                    <h2 className="text-3xl font-extrabold text-white uppercase mb-12">Quick Links</h2>
-
-                    <div className="grid sm:grid-cols-2 gap-6">
-                        <Link
-                            href="/developer"
-                            className="group p-8 rounded-3xl border border-white/5 liquid-glass hover:bg-white/[0.03] transition duration-300"
+                {/* Right Column: Bento Grid Main Content */}
+                <div ref={gridRef} className="flex-1 min-w-0 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bento-grid">
+                        
+                        {/* Module 1: Title & Hero */}
+                        <div 
+                            id="overview"
+                            className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 md:p-10 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group relative overflow-hidden flex flex-col justify-between min-h-[380px]"
                         >
-                            <Code2 className="w-8 h-8 text-[#00d2b4] mb-5" />
-                            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                Developer SDK
-                                <ChevronRight className="w-4 h-4 text-white/40 group-hover:translate-x-1 transition-transform" />
-                            </h3>
-                            <p className="text-xs text-white/50 leading-relaxed">
-                                Copy-paste code snippets for SessionKey and Kill Switch integration.
-                            </p>
-                        </Link>
+                            <div className="flex justify-between items-start text-[10px] text-white/30 font-mono tracking-widest uppercase">
+                                <span>O COMPANY</span>
+                                <span className="hidden sm:inline">March 26th, 2026</span>
+                                <span>2045</span>
+                            </div>
 
-                        <Link
-                            href="/docs/demo"
-                            className="group p-8 rounded-3xl border border-white/5 liquid-glass hover:bg-white/[0.03] transition duration-300"
+                            <div className="my-8 max-w-2xl relative z-10">
+                                <div className="flex items-center gap-4 mb-2">
+                                    <span className="text-[10px] font-extrabold text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-3 py-1 rounded-full uppercase tracking-widest">
+                                        PROTOCOLS V1.0
+                                    </span>
+                                    <span className="text-white/40 text-xs">/ System Architecture</span>
+                                </div>
+                                <h1 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase tracking-tighter text-white leading-none">
+                                    DOCUMENTATION <br />
+                                    <span className="text-neutral-400 font-serif italic lowercase font-normal tracking-tight">overview</span>
+                                </h1>
+                            </div>
+
+                            {/* Abstract Liquid Shape/Gradient & Footer Info */}
+                            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 relative z-10">
+                                <p className="text-xs text-white/50 max-w-sm leading-relaxed font-sans">
+                                    SubScript Protocol Documentation. Deep-dive into decentralized recurring push allowances, automatic keeper relayer architectures, and on-chain metrics.
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#ccff00] animate-pulse" />
+                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Arc Network Validated</span>
+                                    <Star className="w-4 h-4 text-[#ccff00] fill-[#ccff00] animate-spin-slow ml-1" />
+                                </div>
+                            </div>
+
+                            {/* Abstract Grayscale Liquid fluid background representation */}
+                            <div className="absolute right-0 bottom-0 w-80 h-80 bg-gradient-to-t from-neutral-900/60 to-transparent rounded-full blur-3xl -z-10 pointer-events-none" />
+                        </div>
+
+                        {/* Module 2: Nav Grid (01, 02, 03, 04) */}
+                        <div 
+                            className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between"
                         >
-                            <Zap className="w-8 h-8 text-[#d4a853] mb-5" />
-                            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                Interactive Demo
-                                <ChevronRight className="w-4 h-4 text-white/40 group-hover:translate-x-1 transition-transform" />
-                            </h3>
-                            <p className="text-xs text-white/50 leading-relaxed">
-                                Try the Kill Switch in action with a simulated wallet flow.
-                            </p>
-                        </Link>
-                    </div>
-                </div>
-            </section>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {/* Nav Column 1 */}
+                                <div id="introduction" className="space-y-3.5 border-l border-white/5 pl-4 first:border-0 first:pl-0">
+                                    <div className="text-3xl font-black text-[#ccff00] tracking-tight">01</div>
+                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Introduction</h3>
+                                    <p className="text-[11px] text-white/40 leading-relaxed font-sans">
+                                        Understanding the core problem: push vs pull mechanisms in decentralized wallet environments.
+                                    </p>
+                                </div>
 
-            {/* Footer */}
-            <footer className="border-t border-white/5 py-16 bg-[#111111]/30">
-                <div className="max-w-7xl mx-auto px-6 sm:px-12 grid grid-cols-1 md:grid-cols-4 gap-12">
-                    <div className="md:col-span-2">
-                        <Link href="/" className="logo text-lg font-bold text-white tracking-tight flex items-center gap-2 group">
-                            <img 
-                                src="/logo.png" 
-                                alt="SubScript Logo" 
-                                className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
-                            />
-                            SubScript
-                        </Link>
-                        <p className="text-xs text-white/50 mt-4 max-w-sm leading-relaxed">
-                            Decentralized subscription management powered by the Arc Network. Automate your crypto life.
-                        </p>
-                    </div>
-                    <div>
-                        <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-5">Protocol</h4>
-                        <ul className="space-y-3 text-xs text-white/50">
-                            <li><Link href="/explore" className="hover:text-white transition">Explore</Link></li>
-                            <li><Link href="/product" className="hover:text-white transition">Product</Link></li>
-                            <li><Link href="/premium" className="hover:text-[#d4a853] transition">Premium</Link></li>
-                            <li><a href="#" className="hover:text-white transition">Governance</a></li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-5">Developers</h4>
-                        <ul className="space-y-3 text-xs text-white/50">
-                            <li><Link href="/docs" className="hover:text-white transition">Documentation</Link></li>
-                            <li><Link href="/developer" className="hover:text-white transition">Developer Portal</Link></li>
-                            <li><a href="#" className="hover:text-white transition">GitHub</a></li>
-                        </ul>
+                                {/* Nav Column 2 */}
+                                <div id="getting-started" className="space-y-3.5 border-l border-white/5 pl-4">
+                                    <div className="text-3xl font-black text-[#ccff00] tracking-tight">02</div>
+                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Getting Started</h3>
+                                    <p className="text-[11px] text-white/40 leading-relaxed font-sans">
+                                        Configuring allowances, initializing merchant vaults, and subscribing on the Arc network.
+                                    </p>
+                                </div>
+
+                                {/* Nav Column 3 */}
+                                <div id="core-features" className="space-y-3.5 border-l border-white/5 pl-4">
+                                    <div className="text-3xl font-black text-[#ccff00] tracking-tight">03</div>
+                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Core Features</h3>
+                                    <p className="text-[11px] text-white/40 leading-relaxed font-sans">
+                                        The details behind double-billing protection, instant BFT consensus finality, and stablecoin gas.
+                                    </p>
+                                </div>
+
+                                {/* Nav Column 4 */}
+                                <div id="api-reference" className="space-y-3.5 border-l border-white/5 pl-4">
+                                    <div className="text-3xl font-black text-[#ccff00] tracking-tight">04</div>
+                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">API Reference</h3>
+                                    <p className="text-[11px] text-white/40 leading-relaxed font-sans">
+                                        Integrating the SubScript smart contract hooks and Webhook relay handlers in your app.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Bottom Progress Bar */}
+                            <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between">
+                                <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden mr-4">
+                                    <div className="w-1/4 h-full bg-[#ccff00] rounded-full" />
+                                </div>
+                                <span className="text-[9px] text-white/40 font-mono">25% READ</span>
+                            </div>
+                        </div>
+
+                        {/* Module 3: Features - Introducing SubScript */}
+                        <div 
+                            className="bento-card bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between min-h-[360px]"
+                        >
+                            <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase">
+                                <span>G PROJECT</span>
+                                <span>2045</span>
+                            </div>
+
+                            <div className="my-6">
+                                <h3 className="text-2xl font-bold uppercase tracking-tight text-white mb-3">
+                                    Introducing SubScript
+                                </h3>
+                                <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                    SubScript bridges traditional SaaS billing reliability with Web3's on-chain trustlessness. Built on Arc's stablecoin-native Layer 1, the protocol enables recurring "pull" budgets by managing ERC-20 allowances with automated off-chain relayer triggers.
+                                </p>
+                            </div>
+
+                            {/* 3D organic fluid representation */}
+                            <div className="relative h-20 w-full rounded-2xl bg-gradient-to-r from-neutral-900 to-black overflow-hidden border border-white/5">
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-800 via-neutral-900 to-black opacity-60" />
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-gradient-to-br from-[#ccff00]/20 to-transparent blur-md" />
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-between">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                    GETTING STARTED
+                                </button>
+                                <span className="text-[10px] text-white/40 font-mono">03 SECONDS LOAD</span>
+                            </div>
+                        </div>
+
+                        {/* Module 4: Executive Summary */}
+                        <div 
+                            className="bento-card bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between min-h-[360px]"
+                        >
+                            <div>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-base font-bold uppercase tracking-wider text-white">Executive Summary</h3>
+                                    <span className="text-[10px] text-white/40 font-mono">CORE INITIATIVES</span>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl relative">
+                                        <div className="absolute top-3.5 right-3.5">
+                                            <Star className="w-3.5 h-3.5 text-[#ccff00] fill-[#ccff00]" />
+                                        </div>
+                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1.5">
+                                            Sustainable Recurring Billing
+                                        </h4>
+                                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                                            Enabling machine-to-machine recurring budgets without human intervention. Guardrails ensure funds cannot be overdrawn beyond active allowance caps.
+                                        </p>
+                                    </div>
+
+                                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl relative">
+                                        <div className="absolute top-3.5 right-3.5">
+                                            <Star className="w-3.5 h-3.5 text-[#ccff00] fill-[#ccff00]" />
+                                        </div>
+                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1.5">
+                                            Arc Network Efficiency
+                                        </h4>
+                                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                                            Leveraging Malachite BFT consensus finality to execute subscription checks and revokes within 0.4 seconds. No high gas bottlenecks.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 text-right">
+                                <span className="text-[9px] text-white/30 font-mono uppercase">V1.0 SPECS OUT</span>
+                            </div>
+                        </div>
+
+                        {/* Module 5: Specific Solution & Verbatim Text */}
+                        <div 
+                            id="global-payments"
+                            className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between"
+                        >
+                            <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase mb-6">
+                                <span>SOLUTION FLOW</span>
+                                <span>GLOBAL SCALING</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+                                {/* Left Side: Grayscale Spheres Visual */}
+                                <div className="md:col-span-5 relative h-36 rounded-2xl bg-gradient-to-br from-neutral-900 to-black overflow-hidden border border-white/5 flex items-center justify-center">
+                                    <div className="flex -space-x-4">
+                                        <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 shadow-xl" />
+                                        <div className="w-12 h-12 rounded-full bg-neutral-700 border border-neutral-600 shadow-2xl relative z-10" />
+                                        <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 shadow-xl" />
+                                    </div>
+                                    <div className="absolute bottom-2.5 text-[9px] font-mono text-white/20">Stylized Payment Spheres</div>
+                                </div>
+
+                                {/* Right Side: Verbatim Content */}
+                                <div className="md:col-span-7 space-y-4">
+                                    <h3 className="text-xl font-bold uppercase tracking-tight text-white">
+                                        Sustainable Global Payments
+                                    </h3>
+                                    <div className="p-4 bg-[#ccff00]/5 border border-[#ccff00]/20 rounded-2xl text-xs text-white/90 leading-relaxed font-sans relative">
+                                        <span className="text-[10px] text-white/40 font-mono block mb-1">VERBATIM CASE LOG:</span>
+                                        "The dollar card, a tool used for payment globally, yes, it works, and we have been using this for a while."
+                                    </div>
+                                    <p className="text-[11px] text-white/40 leading-relaxed font-sans">
+                                        By mapping traditional credit/debit operations to trustless stablecoin allowances, we retain global transaction capabilities while eliminating processing fees and identity barriers.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Footer & Progress */}
+                            <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                    GETTEN TITLE
+                                </button>
+                                <div className="flex items-center gap-3">
+                                    <div className="h-1 w-16 bg-white/5 rounded-full overflow-hidden">
+                                        <div className="w-1/2 h-full bg-[#ccff00]" />
+                                    </div>
+                                    <span className="text-[9px] text-white/40 font-mono">FLOW ACTIVE</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Module 6: Vision & Goals */}
+                        <div 
+                            id="vision"
+                            className="bento-card bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between min-h-[360px]"
+                        >
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-base font-bold uppercase tracking-wider text-white">A Vision Backed by Clear Goals</h3>
+                                <Star className="w-4 h-4 text-[#ccff00] fill-[#ccff00]" />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center flex-1">
+                                {/* Left Side: 3D Liquid textured visual */}
+                                <div className="sm:col-span-5 h-28 rounded-2xl bg-gradient-to-t from-neutral-800 to-black overflow-hidden border border-white/5 relative">
+                                    <div className="absolute inset-0 bg-neutral-900 opacity-80" />
+                                    <div className="absolute inset-0 bg-gradient-to-tr from-[#ccff00]/10 to-transparent blur-sm" />
+                                </div>
+
+                                {/* Right Side: Content grid */}
+                                <div className="sm:col-span-7 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#ccff00] mt-1.5 shrink-0" />
+                                        <div>
+                                            <h4 className="text-[10px] font-bold uppercase text-white">M2M Budgets</h4>
+                                            <p className="text-[9px] text-white/40 font-sans">USDC flowing seamlessly between autonomous programs.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#ccff00] mt-1.5 shrink-0" />
+                                        <div>
+                                            <h4 className="text-[10px] font-bold uppercase text-white">Atomic Reverts</h4>
+                                            <p className="text-[9px] text-white/40 font-sans">Zero overdraft fees. If funds are missing, transaction reverts on-chain.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 pt-4 border-t border-white/5 text-[9px] text-white/30 font-mono">
+                                OBJECTIVE 2026: STABLECOIN STANDARD
+                            </div>
+                        </div>
+
+                        {/* Module 7: Roadmap */}
+                        <div 
+                            id="roadmap"
+                            className="bento-card bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between min-h-[360px]"
+                        >
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-base font-bold uppercase tracking-wider text-white">Development Roadmap</h3>
+                                <span className="text-[10px] text-white/40 font-mono">MARKET ANALYSIS</span>
+                            </div>
+
+                            <div className="space-y-3.5">
+                                {/* Yellow/Lime Block */}
+                                <div className="p-4 bg-[#ccff00] text-black rounded-2xl shadow-lg">
+                                    <h4 className="text-[10px] font-extrabold uppercase tracking-wider mb-0.5">Current Status</h4>
+                                    <p className="text-xs font-black uppercase tracking-tight">Active Development</p>
+                                    <p className="text-[9px] text-black/60 font-sans mt-1">Smart contracts deployed to Arc network testnet. Keel relays active.</p>
+                                </div>
+
+                                {/* White Block */}
+                                <div className="p-4 bg-white text-black rounded-2xl shadow-md">
+                                    <h4 className="text-[10px] font-extrabold uppercase tracking-wider mb-0.5">Upcoming Milestones</h4>
+                                    <p className="text-xs font-black uppercase tracking-tight">Beta Release</p>
+                                    <p className="text-[9px] text-black/60 font-sans mt-1">Public beta launch featuring SDK hooks and multi-signature support.</p>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                    GETTING STARTED
+                                </button>
+                                <span className="text-[9px] text-white/30 font-mono">V1.2 OUT</span>
+                            </div>
+                        </div>
+
+                        {/* Module 8: Asset Overview & Mobile Dashboard */}
+                        <div 
+                            id="assets"
+                            className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between"
+                        >
+                            <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase mb-6">
+                                <span>O COMPANY</span>
+                                <span>2045</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+                                {/* Left Side: Text and Main Callout */}
+                                <div className="md:col-span-6 space-y-4">
+                                    <h3 className="text-2xl font-black uppercase tracking-tighter text-white">
+                                        Product & Asset Overview
+                                    </h3>
+                                    <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                        Providing affordable, dependable options delivering excellent value consistently across the entire subscription life cycle.
+                                    </p>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-5xl font-black text-[#ccff00] tracking-tighter">15+</span>
+                                        <span className="text-xs font-bold uppercase tracking-wider text-white">Main Features</span>
+                                    </div>
+                                    <p className="text-[10px] text-white/40 font-sans">
+                                        Including real-time webhook updates, sandbox execution testing environments, off-chain relay loops, and audited Solidity allowances.
+                                    </p>
+                                </div>
+
+                                {/* Right Side: Smartphone Device Mockup */}
+                                <div className="md:col-span-6 flex justify-center">
+                                    <div className="w-56 h-80 bg-black border-4 border-neutral-800 rounded-[36px] p-3 shadow-2xl relative overflow-hidden flex flex-col justify-between">
+                                        {/* Phone camera dot */}
+                                        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-neutral-800" />
+                                        
+                                        {/* Inside Phone Content */}
+                                        <div className="flex justify-between items-center text-[7px] text-white/30 font-mono mt-3">
+                                            <span>SubScript</span>
+                                            <span>Active</span>
+                                        </div>
+
+                                        {/* Mock dashboard card */}
+                                        <div className="p-3 bg-neutral-900 border border-white/5 rounded-2xl my-2 flex-1 flex flex-col justify-between">
+                                            <div>
+                                                <span className="text-[7px] text-white/40 uppercase font-bold tracking-widest">Active Allowance</span>
+                                                <p className="text-lg font-black text-[#ccff00] mt-0.5">$980.00 <span className="text-[8px] font-normal text-white/40">USDC</span></p>
+                                            </div>
+
+                                            <div className="space-y-1.5 mt-2">
+                                                <div className="flex justify-between items-center p-1.5 bg-white/[0.02] border border-white/5 rounded-lg text-[8px]">
+                                                    <span className="text-white/60">Vercel Pro</span>
+                                                    <span className="text-[#ccff00] font-mono">$20.00</span>
+                                                </div>
+                                                <div className="flex justify-between items-center p-1.5 bg-white/[0.02] border border-white/5 rounded-lg text-[8px]">
+                                                    <span className="text-white/60">Copilot</span>
+                                                    <span className="text-[#ccff00] font-mono">$10.00</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-2 text-[7px] text-white/30 text-center font-mono">
+                                                March 20th, 2045
+                                            </div>
+                                        </div>
+
+                                        <div className="h-1 w-20 bg-neutral-800 rounded-full mx-auto mb-1" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between">
+                                <span className="text-[9px] text-white/30 font-mono">PROJECT STACK: NEXTJS / TAILWIND / GSAP</span>
+                                <Star className="w-4 h-4 text-[#ccff00] fill-[#ccff00] animate-pulse" />
+                            </div>
+                        </div>
+
                     </div>
                 </div>
-                <div className="max-w-7xl mx-auto px-6 sm:px-12 mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
-                    <span>© 2026 SubScript Protocol. All rights reserved.</span>
-                    <span>Built on Arc Network</span>
-                </div>
-            </footer>
+            </div>
         </main>
     );
 }

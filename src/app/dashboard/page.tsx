@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
@@ -671,6 +672,7 @@ export default function DashboardPage() {
 
     return (
         <div data-mounted={isMounted} className={`min-h-screen bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white transition-all duration-500 ${isMainnet ? 'border-t-4 border-red-500' : 'border-t-4 border-[#00d2b4]'}`}>
+            <AnimatedGradientBg />
             <DashboardHeader />
 
             {/* Dashboard Content */}
