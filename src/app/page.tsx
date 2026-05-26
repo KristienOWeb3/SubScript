@@ -513,8 +513,8 @@ export default function Home() {
         <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative z-0 bg-transparent selection:bg-[#00d2b4]/30 selection:text-white">
             <Navbar />
 
-            {/* Background Video */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30">
+            {/* Background Video (PC/Desktop) */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30 hidden md:block">
                 <video
                     autoPlay
                     muted
@@ -522,7 +522,22 @@ export default function Home() {
                     playsInline
                     className="w-full h-full object-cover"
                 >
-                    <source src="/subscript_media.mp4" type="video/mp4" />
+                    <source src="/subscript_video_pc.mp4" type="video/mp4" />
+                </video>
+                {/* Dark Vignette Overlay to ensure contrast and readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
+            </div>
+
+            {/* Background Video (Mobile) */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30 md:hidden">
+                <video
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full h-full object-cover"
+                >
+                    <source src="/subscript_video_mobile.mp4" type="video/mp4" />
                 </video>
                 {/* Dark Vignette Overlay to ensure contrast and readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />

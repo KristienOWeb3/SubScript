@@ -88,8 +88,8 @@ function LockForm() {
 export default function LockScreen() {
     return (
         <main className="min-h-screen w-full bg-black text-white flex items-center justify-center relative overflow-hidden px-6 selection:bg-[#00d2b4]/30 selection:text-white">
-            {/* Background Video */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-20">
+            {/* Background Video (PC/Desktop) */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-20 hidden md:block">
                 <video
                     autoPlay
                     muted
@@ -97,7 +97,21 @@ export default function LockScreen() {
                     playsInline
                     className="w-full h-full object-cover"
                 >
-                    <source src="/subscript_media.mp4" type="video/mp4" />
+                    <source src="/subscript_video_pc.mp4" type="video/mp4" />
+                </video>
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
+            </div>
+
+            {/* Background Video (Mobile) */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-20 md:hidden">
+                <video
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full h-full object-cover"
+                >
+                    <source src="/subscript_video_mobile.mp4" type="video/mp4" />
                 </video>
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
             </div>
