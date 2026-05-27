@@ -44,6 +44,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {},
         },
       },
+      {
+        name: "get_zk_integration_guide",
+        description: "Returns the developer integration guide for SubScript's Zero-Knowledge (ZK) privacy architecture.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -57,10 +65,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const config = {
         network: "Arc Testnet",
         chainId: 5042002,
-        routerAddress: "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29",
+        routerAddress: "[Leave Placeholder]",
+        verifierAddress: "[Leave Placeholder]",
         gasToken: "USDC",
-        usdcAddress: "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc",
-        standardPeriod: 2592000, // 30 days in seconds
+        protocolFeeBps: 100, // 1% fee
       };
       return {
         content: [
@@ -79,6 +87,84 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: abiContent,
+          },
+        ],
+      };
+    }
+
+    if (name === "get_zk_integration_guide") {
+      const guide = `
+# SubScript Zero-Knowledge (ZK) Integration Guide
+
+SubScript utilizes a Tornado Cash-style commitment architecture to mathematically decouple the user's funding wallet (Payer) from the user's service access wallet (Burner). 
+
+A 1% protocol fee (100 basis points) is automatically deducted at the contract level from all subscription payments, leaving 99% routed directly to the merchant.
+
+## Three-Step Integration Workflow
+
+### Step 1: Deposit and Commitment (Payer Wallet)
+The user's funding wallet approves the SubScript Router to spend USDC, then calls the \`depositAndCommit\` function with a hashed secret (the commitment).
+- **USDC Approval:** approve the router to spend \`depositAmount\`.
+- **Function Call:** \`depositAndCommit(bytes32 commitment, uint256 amount)\`
+
+\`\`\`typescript
+// Example using Wagmi/Viem
+import { useWriteContract } from 'wagmi';
+import { parseUnits } from 'viem';
+
+const { writeContractAsync: deposit } = useWriteContract();
+
+// Generate a random 32-byte secret and hash it to create the commitment
+const secret = crypto.getRandomValues(new Uint8Array(32));
+const commitment = keccak256(secret);
+
+await deposit({
+  address: ROUTER_ADDRESS,
+  abi: SUBSCRIPT_ABI,
+  functionName: 'depositAndCommit',
+  args: [commitment, parseUnits("10", 6)]
+});
+\`\`\`
+
+---
+
+### Step 2: Local ZK-SNARK Proof Generation
+The frontend uses \`snarkjs\` to generate a ZK-SNARK proof locally. The proof demonstrates that the user knows the secret pre-image corresponding to a valid commitment on-chain, without revealing the secret itself.
+
+\`\`\`typescript
+import * as snarkjs from 'snarkjs';
+
+// Load circuit wasm and zkey files to generate proof
+const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+  { secret: secret, commitment: commitment },
+  "subscript.wasm",
+  "subscript_final.zkey"
+);
+\`\`\`
+
+---
+
+### Step 3: Verify and Activate (Burner Wallet)
+The user switches to a clean, unlinkable **burner wallet** (to ensure privacy) and calls the \`verifyAndActivate\` function. This burner wallet acts as the subscriber and authorizes the merchant to trigger monthly payments anonymously.
+- **Function Call:** \`verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period)\`
+
+\`\`\`typescript
+const { writeContractAsync: activate } = useWriteContract();
+
+await activate({
+  address: ROUTER_ADDRESS,
+  abi: SUBSCRIPT_ABI,
+  functionName: 'verifyAndActivate',
+  args: [proof, nullifierHash, merchantAddress, parseUnits("10", 6), 2592000n]
+});
+\`\`\`
+      `.trim();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: guide,
           },
         ],
       };
