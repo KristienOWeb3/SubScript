@@ -45,3 +45,7 @@ Keeperbot.env
 Thumbs.db
 .vercel
 .env*.local
+
+# Hardhat
+artifacts/
+cache/
