@@ -1,0 +1,89 @@
+# SubScript Web3 Payment Protocol Documentation
+SubScript is a decentralized recurring subscription protocol natively built on the Arc Network.
+
+## Quick Facts for AI Agents
+- Network: Arc Network Testnet (Chain ID: 5042002)
+- Testnet RPC URL: https://rpc.testnet.arc.network
+- SubScript Router Contract Address: 0x835A9aEd7287068778e11df9D922B3FfaC7cFc29
+- MockUSDC Token Contract Address: 0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc
+- Core Ecosystem: Next.js, Wagmi, Viem, and Ethers.js.
+
+## Core Smart Contract Interface (ABI Summary)
+
+### createSubscription
+Creates a new recurring billing plan.
+- Signature: `createSubscription(address _merchant, uint256 _amount, uint256 _period)`
+- Parameters:
+  - `_merchant` (address): Wallet/treasury address receiving the recurring payouts.
+  - `_amount` (uint256): Amount of paymentToken (USDC, 6 decimals) to charge per billing cycle.
+  - `_period` (uint256): Interval duration of the billing cycle in seconds (e.g. 2592000 for 30 days).
+- Returns: `subId` (uint256) - A unique global ID identifying this subscription.
+
+### cancelSubscription
+Cancels an active subscription. Can be invoked by either the subscriber or the merchant.
+- Signature: `cancelSubscription(uint256 _subId)`
+
+### executePayment
+Executes the next due payout. Usually called by off-chain keepers or relayers.
+- Signature: `executePayment(uint256 _subId)`
+- Reverts with `PaymentNotDue` if the current time is less than `nextPayment` timestamp.
+
+---
+
+## How to Integrate SubScript in React/Next.js (Wagmi & Viem)
+
+To initiate a subscription, the user must first approve the SubScript router contract to pull USDC from their wallet, and then call the `createSubscription` function.
+
+### Step 1: Approve USDC Allowance
+```typescript
+import { useWriteContract } from 'wagmi';
+import { parseUnits } from 'viem';
+
+const USDC_ABI = [
+  "function approve(address spender, uint256 amount) public returns (bool)"
+];
+
+const { writeContractAsync: approveUsdc } = useWriteContract();
+
+// Approve enough USDC for e.g. 6 months
+const amountPerPeriod = parseUnits("10", 6); // 10 USDC (6 decimals)
+const periodsToApprove = 6n;
+const totalApprovalAmount = amountPerPeriod * periodsToApprove;
+
+await approveUsdc({
+  address: "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc", // MockUSDC
+  abi: USDC_ABI,
+  functionName: "approve",
+  args: [
+    "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29", // SubScript Router
+    totalApprovalAmount
+  ]
+});
+```
+
+### Step 2: Create the Subscription
+```typescript
+import { useWriteContract } from 'wagmi';
+import { parseUnits } from 'viem';
+
+const SUBSCRIPT_ABI = [
+  "function createSubscription(address _merchant, uint256 _amount, uint256 _period) public returns (uint256)"
+];
+
+const { writeContractAsync: createSub } = useWriteContract();
+
+const merchantAddress = "0x..."; // Merchant treasury
+const amountPerPeriod = parseUnits("10", 6); // 10 USDC per cycle
+const periodSeconds = 2592000n; // 30 days
+
+const txHash = await createSub({
+  address: "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29", // SubScript Router
+  abi: SUBSCRIPT_ABI,
+  functionName: "createSubscription",
+  args: [
+    merchantAddress,
+    amountPerPeriod,
+    periodSeconds
+  ]
+});
+```

@@ -10,6 +10,7 @@ import {
 
 import Navbar from "@/components/Navbar";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import PromptGenerator from "@/components/PromptGenerator";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 
@@ -417,7 +418,7 @@ export default function DeveloperPage() {
             });
 
             // Update sidebar active section on scroll
-            const sections = document.querySelectorAll("#overview, #network, #sandbox, #session-keys, #kill-switch, #deep-dives, #next-steps");
+            const sections = document.querySelectorAll("#overview, #network, #sandbox, #session-keys, #kill-switch, #deep-dives, #prompt-generator, #next-steps");
             sections.forEach((section) => {
                 ScrollTrigger.create({
                     trigger: section,
@@ -511,7 +512,8 @@ export default function DeveloperPage() {
         { id: "session-keys", label: "03 Session Keys", href: "#session-keys" },
         { id: "kill-switch", label: "04 Kill Switch", href: "#kill-switch" },
         { id: "deep-dives", label: "05 Technical Specs", href: "#deep-dives" },
-        { id: "next-steps", label: "06 Next Steps", href: "#next-steps" },
+        { id: "prompt-generator", label: "06 Prompt Generator", href: "#prompt-generator" },
+        { id: "next-steps", label: "07 Next Steps", href: "#next-steps" },
     ];
 
     return (
@@ -926,6 +928,11 @@ export default function DeveloperPage() {
                                 <span className="text-[9px] text-white/30 font-mono">ARCHITECTURE: ERC-4337 + MALACHITE BFT</span>
                                 <Star className="w-4 h-4 text-[#ccff00] fill-[#ccff00] animate-pulse" />
                             </div>
+                        </div>
+
+                        {/* Prompt Generator for AI integrations */}
+                        <div id="prompt-generator" className="bento-card md:col-span-2">
+                            <PromptGenerator />
                         </div>
 
                         {/* ── Card 9: Next Steps & Demo ── */}

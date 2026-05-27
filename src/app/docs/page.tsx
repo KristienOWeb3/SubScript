@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import PromptGenerator from "@/components/PromptGenerator";
 
 export default function DocsOverview() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -60,7 +61,7 @@ export default function DocsOverview() {
             });
 
             // Update sidebar active section on scroll
-            const sections = document.querySelectorAll("#overview, #introduction, #getting-started, #core-features, #api-reference, #global-payments, #vision, #roadmap, #assets");
+            const sections = document.querySelectorAll("#overview, #introduction, #getting-started, #core-features, #api-reference, #global-payments, #vision, #roadmap, #prompt-generator, #assets");
             sections.forEach((section) => {
                 ScrollTrigger.create({
                     trigger: section,
@@ -110,7 +111,8 @@ export default function DocsOverview() {
         { id: "global-payments", label: "05 Global Payments", href: "#global-payments" },
         { id: "vision", label: "06 Vision & Goals", href: "#vision" },
         { id: "roadmap", label: "07 Roadmap", href: "#roadmap" },
-        { id: "assets", label: "08 Product Assets", href: "#assets" },
+        { id: "prompt-generator", label: "08 Prompt Generator", href: "#prompt-generator" },
+        { id: "assets", label: "09 Product Assets", href: "#assets" },
     ];
 
     return (
@@ -470,7 +472,12 @@ export default function DocsOverview() {
                             </div>
                         </div>
 
-                        {/* Module 8: Asset Overview & Mobile Dashboard */}
+                        {/* Module 8: Prompt Generator for AI integrations */}
+                        <div id="prompt-generator" className="bento-card md:col-span-2">
+                            <PromptGenerator />
+                        </div>
+
+                        {/* Module 9: Asset Overview & Mobile Dashboard */}
                         <div 
                             id="assets"
                             className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between"
