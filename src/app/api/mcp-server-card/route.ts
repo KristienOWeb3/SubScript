@@ -1,27 +1,33 @@
 import { NextResponse } from "next/server";
 
+const serverCard = {
+    name: "subscript",
+    version: "1.0.0",
+    description: "SubScript ZK Protocol MCP Server",
+    configSchema: {}
+};
+
+const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+};
+
 export async function GET() {
-    return NextResponse.json({
-        name: "subscript",
-        version: "1.0.0",
-        description: "SubScript ZK Protocol MCP Server",
-        configSchema: {}
-    }, {
-        headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-        }
-    });
+    return NextResponse.json(serverCard, { headers });
+}
+
+export async function POST() {
+    return NextResponse.json(serverCard, { headers });
+}
+
+export async function PUT() {
+    return NextResponse.json(serverCard, { headers });
 }
 
 export async function OPTIONS() {
     return new Response(null, {
         status: 204,
-        headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-        }
+        headers,
     });
 }
