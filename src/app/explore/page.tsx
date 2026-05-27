@@ -50,22 +50,13 @@ const categories = [
     },
 ];
 
-// Trending Subscriptions Configuration
-const trending = [
-    { name: "Netflix", price: "15.99", subscribers: "1,247" },
-    { name: "Vercel Pro", price: "20.00", subscribers: "892" },
-    { name: "Spotify", price: "9.99", subscribers: "2,103" },
-    { name: "GitHub Copilot", price: "10.00", subscribers: "1,567" },
-    { name: "Alchemy Growth", price: "49.00", subscribers: "384" },
-    { name: "The Graph", price: "25.00", subscribers: "612" },
-];
-
 export default function ExplorePage() {
     const [searchQuery, setSearchQuery] = useState("");
 
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
             <AnimatedGradientBg />
+            <div className="relative z-10">
             <Navbar />
 
             {/* Hero Section */}
@@ -104,28 +95,28 @@ export default function ExplorePage() {
 
                 {/* Component 2: Inline Glass Input Form */}
                 <motion.div
-                    className="liquid-glass rounded-full px-2 py-0.5 flex items-center justify-between w-full max-w-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5"
+                    className="liquid-glass rounded-full px-4 py-3 h-12 flex items-center justify-between w-full max-w-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5"
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, delay: 0.4 }}
                 >
-                    <div className="flex items-center flex-1 min-w-0">
-                        <Search className="ml-3 w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                    <div className="flex items-center flex-1 min-w-0 h-full">
+                        <Search className="ml-1 w-4 h-4 text-white/40 flex-shrink-0" />
                         <input
                             type="text"
                             placeholder="Search services, categories, or merchants..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-transparent px-3 py-0.5 text-white placeholder-white/40 focus:outline-none text-xs"
+                            className="w-full bg-transparent px-3 h-full text-white placeholder-white/40 focus:outline-none text-xs"
                         />
                     </div>
                     <motion.button
-                        className="bg-white text-black p-1.5 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
+                        className="bg-white text-black p-2 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         aria-label="Search"
                     >
-                        <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                        <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
                     </motion.button>
                 </motion.div>
             </section>
@@ -155,47 +146,6 @@ export default function ExplorePage() {
                             <span className="text-[10px] font-bold text-[#00d2b4] tracking-widest uppercase">
                                 {cat.count} services available
                             </span>
-                        </motion.div>
-                    ))}
-                </div>
-            </section>
-
-            {/* Trending Section */}
-            <section className="py-16 px-6 sm:px-12 max-w-7xl mx-auto overflow-hidden">
-                <div className="text-center md:text-left mb-10">
-                    <span className="text-xs tracking-[0.2em] font-semibold text-white/40 uppercase">Popular Right Now</span>
-                    <h2 className="text-3xl font-extrabold text-white uppercase mt-1">Trending Subscriptions</h2>
-                </div>
-
-                {/* Horizontal scroll grid */}
-                <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-thin">
-                    {trending.map((trend, idx) => (
-                        <motion.div
-                            key={idx}
-                            className="min-w-[300px] liquid-glass border border-white/5 rounded-3xl p-6 flex flex-col justify-between shadow-md group"
-                            whileHover={{ y: -6, scale: 1.02 }}
-                            transition={{ duration: 0.3 }}
-                        >
-                            <div>
-                                <div className="flex items-start justify-between mb-4">
-                                    <h4 className="text-sm font-bold text-white group-hover:text-[#00d2b4] transition-colors">{trend.name}</h4>
-                                    <p className="text-lg font-extrabold text-[#00d2b4]">
-                                        ${trend.price} <span className="text-[10px] text-white/40 font-normal">/mo</span>
-                                    </p>
-                                </div>
-                                <p className="text-[11px] text-white/50 flex items-center gap-1.5 mb-8">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[#00d2b4] animate-pulse" />
-                                    {trend.subscribers} active subscribers
-                                </p>
-                            </div>
-                            {/* Interactive glass button */}
-                            <motion.button 
-                                className="w-full liquid-glass rounded-full py-3 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200"
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                            >
-                                Subscribe
-                            </motion.button>
                         </motion.div>
                     ))}
                 </div>
@@ -276,9 +226,14 @@ export default function ExplorePage() {
                 </div>
                 <div className="max-w-7xl mx-auto px-6 sm:px-12 mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
                     <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                    <div className="flex gap-4">
+                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                    </div>
                     <span>Built on Arc Network</span>
                 </div>
             </footer>
+            </div>
         </main>
     );
 }

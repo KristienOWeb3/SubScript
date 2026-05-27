@@ -51,8 +51,9 @@ const bentoCards = [
 
 export default function ProductPage() {
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white">
+        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
             <AnimatedGradientBg />
+            <div className="relative z-10">
             <Navbar />
 
             {/* Hero Section */}
@@ -324,9 +325,14 @@ export default function ProductPage() {
                 </div>
                 <div className="max-w-7xl mx-auto px-6 sm:px-12 mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
                     <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                    <div className="flex gap-4">
+                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                    </div>
                     <span>Built on Arc Network</span>
                 </div>
             </footer>
+            </div>
         </main>
     );
 }

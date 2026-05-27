@@ -10,7 +10,9 @@ export function middleware(request: NextRequest) {
         pathname === "/waitlist" || 
         pathname === "/lock" ||
         pathname === "/api/lock" ||
-        pathname === "/api/waitlist";
+        pathname === "/api/waitlist" ||
+        pathname.startsWith("/docs") ||
+        pathname.startsWith("/developer");
 
     if (isPublicRoute) {
         return NextResponse.next();

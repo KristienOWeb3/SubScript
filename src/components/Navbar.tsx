@@ -40,14 +40,113 @@ const socialLinks = [
 export default function Navbar() {
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [socialToast, setSocialToast] = useState<string | null>(null);
+    const [wrongNetwork, setWrongNetwork] = useState(false);
+    const [walletConnected, setWalletConnected] = useState(false);
     const pathname = usePathname();
+
+    const showSocialToast = (name: string) => {
+        setSocialToast(`${name} is not available because there's currently no socials for now`);
+        setTimeout(() => setSocialToast(null), 2500);
+    };
+
+    const checkNetwork = async () => {
+        if (typeof window === "undefined") return;
+        const ethereum = (window as any).ethereum;
+        if (!ethereum) return;
+
+        try {
+            const accounts = await ethereum.request({ method: "eth_accounts" });
+            if (accounts && accounts.length > 0) {
+                setWalletConnected(true);
+                const chainIdHex = await ethereum.request({ method: "eth_chainId" });
+                const targetChainIdHex = "0x" + (5042002).toString(16); // "0x4ceef2"
+                setWrongNetwork(chainIdHex !== targetChainIdHex);
+            } else {
+                setWalletConnected(false);
+                setWrongNetwork(false);
+            }
+        } catch (err) {
+            console.error("Network check error:", err);
+        }
+    };
+
+    const switchToArcTestnet = async () => {
+        if (typeof window === "undefined") return;
+        const ethereum = (window as any).ethereum;
+        if (!ethereum) {
+            alert("No Web3 wallet detected. Please install Metamask or Rabby.");
+            return;
+        }
+
+        const chainIdHex = "0x" + (5042002).toString(16); // "0x4ceef2"
+        try {
+            await ethereum.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: chainIdHex }],
+            });
+            setWrongNetwork(false);
+        } catch (switchError: any) {
+            if (switchError.code === 4001) {
+                setSocialToast("Network switch cancelled");
+                setTimeout(() => setSocialToast(null), 3000);
+                return;
+            }
+
+            if (switchError.code === 4902) {
+                try {
+                    await ethereum.request({
+                        method: "wallet_addEthereumChain",
+                        params: [
+                            {
+                                chainId: chainIdHex,
+                                chainName: "Arc Testnet",
+                                rpcUrls: ["https://5042002.rpc.thirdweb.com"],
+                                nativeCurrency: {
+                                    name: "USDC",
+                                    symbol: "USDC",
+                                    decimals: 6,
+                                },
+                                blockExplorerUrls: ["https://explorer.arc.network"],
+                            },
+                        ],
+                    });
+                    setWrongNetwork(false);
+                } catch (addError: any) {
+                    if (addError.code === 4001) {
+                        setSocialToast("Network switch cancelled");
+                        setTimeout(() => setSocialToast(null), 3000);
+                        return;
+                    }
+                    console.error("Failed to add Arc Testnet:", addError);
+                }
+            } else {
+                console.error("Failed to switch to Arc Testnet:", switchError);
+            }
+        }
+    };
 
     useEffect(() => {
         const handleScroll = () => {
             setScrolled(window.scrollY > 30);
         };
         window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
+
+        checkNetwork();
+
+        const ethereum = (window as any).ethereum;
+        if (ethereum && ethereum.on) {
+            ethereum.on("chainChanged", checkNetwork);
+            ethereum.on("accountsChanged", checkNetwork);
+        }
+
+        return () => {
+            window.removeEventListener("scroll", handleScroll);
+            if (ethereum && ethereum.removeListener) {
+                ethereum.removeListener("chainChanged", checkNetwork);
+                ethereum.removeListener("accountsChanged", checkNetwork);
+            }
+        };
     }, []);
 
     const navLinks = [
@@ -93,6 +192,14 @@ export default function Navbar() {
 
                     {/* Right Action buttons */}
                     <div className="hidden md:flex items-center gap-6">
+                        {wrongNetwork && walletConnected && (
+                            <button
+                                onClick={switchToArcTestnet}
+                                className="bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-wider px-3.5 py-2 rounded-full transition-all duration-200"
+                            >
+                                Switch to Arc Testnet
+                            </button>
+                        )}
                         <Link 
                             href="/dashboard"
                             className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
@@ -108,7 +215,15 @@ export default function Navbar() {
                     </div>
 
                     {/* Mobile Menu Button */}
-                    <div className="md:hidden flex items-center">
+                    <div className="md:hidden flex items-center gap-3">
+                        {wrongNetwork && walletConnected && (
+                            <button
+                                onClick={switchToArcTestnet}
+                                className="bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full transition-all duration-200 pointer-events-auto"
+                            >
+                                Switch Chain
+                            </button>
+                        )}
                         <button
                             onClick={() => setMobileMenuOpen(true)}
                             className="p-1.5 text-white/70 hover:text-white transition-colors"
@@ -177,16 +292,14 @@ export default function Navbar() {
                             <p className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider mb-4">Community</p>
                             <div className="flex items-center gap-4">
                                 {socialLinks.map((social) => (
-                                    <a
+                                    <button
                                         key={social.name}
-                                        href={social.href}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                        onClick={() => { showSocialToast(social.name); setMobileMenuOpen(false); }}
                                         className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
                                         aria-label={social.name}
                                     >
                                         <social.icon className="w-6 h-6" />
-                                    </a>
+                                    </button>
                                 ))}
                             </div>
                         </div>
@@ -197,20 +310,33 @@ export default function Navbar() {
             {/* Desktop Social Icons - Vertically Centered on Right Edge */}
             <div className="hidden md:flex fixed right-6 top-1/2 -translate-y-1/2 z-40 flex-col gap-4">
                 {socialLinks.map((social) => (
-                    <motion.a
+                    <motion.button
                         key={social.name}
-                        href={social.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        onClick={() => showSocialToast(social.name)}
                         className="w-11 h-11 rounded-full liquid-glass flex items-center justify-center text-white/50 hover:text-[#00d2b4] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
                         aria-label={social.name}
                         whileHover={{ scale: 1.1, rotate: -6 }}
                         whileTap={{ scale: 0.95 }}
                     >
                         <social.icon className="w-4 h-4" />
-                    </motion.a>
+                    </motion.button>
                 ))}
             </div>
+
+            {/* Social Toast Notification */}
+            <AnimatePresence>
+                {socialToast && (
+                    <motion.div
+                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass rounded-full px-5 py-2.5 text-xs font-semibold text-white/80 tracking-wide uppercase border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.25 }}
+                    >
+                        {socialToast}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 }

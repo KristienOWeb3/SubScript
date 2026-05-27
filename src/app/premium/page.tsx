@@ -59,8 +59,9 @@ export default function PremiumPage() {
     const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-black text-white selection:bg-[#d4a853]/30 selection:text-white">
+        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-transparent text-white selection:bg-[#d4a853]/30 selection:text-white">
             <AnimatedGradientBg />
+            <div className="relative z-10">
             <Navbar />
 
             {/* Hero Section */}
@@ -357,7 +358,7 @@ export default function PremiumPage() {
                     Elevate your Web3 payroll and recurring subscription flows to the premium standard.
                 </p>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                    <button className="bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest px-10 py-4.5 rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all">
+                    <button className="bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest px-10 py-4 h-14 rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all">
                         Upgrade Now ✦
                     </button>
                 </motion.div>
@@ -399,9 +400,14 @@ export default function PremiumPage() {
                 </div>
                 <div className="max-w-7xl mx-auto px-6 sm:px-12 mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
                     <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                    <div className="flex gap-4">
+                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                    </div>
                     <span>Built on Arc Network</span>
                 </div>
             </footer>
+            </div>
         </main>
     );
 }

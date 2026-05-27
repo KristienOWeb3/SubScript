@@ -10,9 +10,10 @@ generator client {
 model WaitlistLead {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email         String   @unique
-  companyName   String   @map("company_name")
-  useCase       String   @map("use_case")
-  monthlyVolume String   @map("monthly_volume")
+  userType      String?  @map("user_type")
+  companyName   String?  @map("company_name")
+  useCase       String?  @map("use_case")
+  monthlyVolume String?  @map("monthly_volume")
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("waitlist_leads")

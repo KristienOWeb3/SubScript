@@ -39,6 +39,8 @@ const ALLOWED_MONTHLY_VOLUMES = [
   "$50k+"
 ];
 
+const ALLOWED_USER_TYPES = ["user", "enterprise"];
+
 export async function POST(request: Request) {
   try {
     // 1. Get client IP and check rate limiting
@@ -52,54 +54,34 @@ export async function POST(request: Request) {
 
     // 2. Parse request body
     const body = await request.json();
-    const { email, companyName, useCase, monthlyVolume, honeypot } = body;
+    const { email, userType, companyName, useCase, monthlyVolume, honeypot } = body;
 
     // 3. Honeypot check (Spam Protection)
-    // If the honeypot field is filled, it's a bot submission. Return 200 to trick the bot but do not store it.
     if (honeypot) {
       console.warn("Honeypot triggered, ignoring spam submission.");
       return NextResponse.json({ success: true, message: "Spot secured on priority list." });
     }
 
-    // 4. Input validation (Presence and types)
+    // 4. Validate userType
+    if (!userType || !ALLOWED_USER_TYPES.includes(userType)) {
+      return NextResponse.json({ error: "Invalid user type." }, { status: 400 });
+    }
+
+    // 5. Email validation (required for both paths)
     if (!email || typeof email !== "string" || email.trim() === "") {
       return NextResponse.json({ error: "Email is required." }, { status: 400 });
     }
-    if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
-      return NextResponse.json({ error: "Company name is required." }, { status: 400 });
-    }
-    if (!useCase || typeof useCase !== "string" || useCase.trim() === "") {
-      return NextResponse.json({ error: "Use case is required." }, { status: 400 });
-    }
-    if (!monthlyVolume || typeof monthlyVolume !== "string" || monthlyVolume.trim() === "") {
-      return NextResponse.json({ error: "Monthly volume is required." }, { status: 400 });
-    }
 
-    // Trim inputs
     const trimmedEmail = email.trim().toLowerCase();
-    const trimmedCompany = companyName.trim();
-    const trimmedUseCase = useCase.trim();
-    const trimmedVolume = monthlyVolume.trim();
 
-    // 5. Strict Validation rules (Format and values)
     if (!EMAIL_REGEX.test(trimmedEmail)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
     if (trimmedEmail.length > 255) {
       return NextResponse.json({ error: "Email is too long." }, { status: 400 });
     }
-    if (trimmedCompany.length > 255) {
-      return NextResponse.json({ error: "Company name is too long." }, { status: 400 });
-    }
-    if (!ALLOWED_USE_CASES.includes(trimmedUseCase)) {
-      return NextResponse.json({ error: "Invalid use case selected." }, { status: 400 });
-    }
-    if (!ALLOWED_MONTHLY_VOLUMES.includes(trimmedVolume)) {
-      return NextResponse.json({ error: "Invalid monthly volume selected." }, { status: 400 });
-    }
 
-    // 6. DB operations (Check duplicate and insert)
-    // Prisma client parameterized queries prevent any SQL injection.
+    // 6. Check for duplicate email
     const existing = await prisma.waitlistLead.findUnique({
       where: { email: trimmedEmail }
     });
@@ -111,10 +93,51 @@ export async function POST(request: Request) {
       );
     }
 
-    // Save lead
+    // 7. Branch logic based on userType
+    if (userType === "user") {
+      // ── User path: only email required ──
+      await prisma.waitlistLead.create({
+        data: {
+          email: trimmedEmail,
+          userType: "user",
+        }
+      });
+
+      return NextResponse.json(
+        { success: true, message: "You're on the list. We'll notify you when SubScript launches." },
+        { status: 200 }
+      );
+    }
+
+    // ── Enterprise path: all fields required ──
+    if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
+      return NextResponse.json({ error: "Company name is required." }, { status: 400 });
+    }
+    if (!useCase || typeof useCase !== "string" || useCase.trim() === "") {
+      return NextResponse.json({ error: "Use case is required." }, { status: 400 });
+    }
+    if (!monthlyVolume || typeof monthlyVolume !== "string" || monthlyVolume.trim() === "") {
+      return NextResponse.json({ error: "Monthly volume is required." }, { status: 400 });
+    }
+
+    const trimmedCompany = companyName.trim();
+    const trimmedUseCase = useCase.trim();
+    const trimmedVolume = monthlyVolume.trim();
+
+    if (trimmedCompany.length > 255) {
+      return NextResponse.json({ error: "Company name is too long." }, { status: 400 });
+    }
+    if (!ALLOWED_USE_CASES.includes(trimmedUseCase)) {
+      return NextResponse.json({ error: "Invalid use case selected." }, { status: 400 });
+    }
+    if (!ALLOWED_MONTHLY_VOLUMES.includes(trimmedVolume)) {
+      return NextResponse.json({ error: "Invalid monthly volume selected." }, { status: 400 });
+    }
+
     await prisma.waitlistLead.create({
       data: {
         email: trimmedEmail,
+        userType: "enterprise",
         companyName: trimmedCompany,
         useCase: trimmedUseCase,
         monthlyVolume: trimmedVolume,

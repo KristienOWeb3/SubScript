@@ -15,35 +15,91 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 export default function DocsOverview() {
     const [searchQuery, setSearchQuery] = useState("");
     const [activeSection, setActiveSection] = useState("overview");
+    const [isDesktop, setIsDesktop] = useState(false);
     const gridRef = useRef<HTMLDivElement>(null);
+    const rightScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        // Safe check for browser environment
-        if (typeof window !== "undefined") {
-            gsap.registerPlugin(ScrollTrigger);
-
-            // Staggered reveal animation for Bento cards
-            gsap.fromTo(
-                ".bento-card",
-                { 
-                    opacity: 0, 
-                    y: 40 
-                },
-                {
-                    opacity: 1,
-                    y: 0,
-                    stagger: 0.1,
-                    duration: 0.8,
-                    ease: "power3.out",
-                    scrollTrigger: {
-                        trigger: gridRef.current,
-                        start: "top 85%",
-                        toggleActions: "play none none none"
-                    }
-                }
-            );
-        }
+        if (typeof window === "undefined") return;
+        const handleResize = () => {
+            setIsDesktop(window.innerWidth >= 1024);
+        };
+        handleResize();
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
     }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        gsap.registerPlugin(ScrollTrigger);
+
+        const ctx = gsap.context(() => {
+            const scroller = isDesktop && rightScrollRef.current ? rightScrollRef.current : window;
+
+            // Each bento card gets a scroll-triggered reveal from the bottom
+            const cards = gsap.utils.toArray<HTMLElement>(".bento-card");
+
+            cards.forEach((card) => {
+                gsap.fromTo(
+                    card,
+                    { opacity: 0, y: 100, scale: 0.98 },
+                    {
+                        opacity: 1,
+                        y: 0,
+                        scale: 1,
+                        duration: 0.8,
+                        ease: "power2.out",
+                        scrollTrigger: {
+                            trigger: card,
+                            scroller: scroller,
+                            start: "top 95%",
+                            toggleActions: "play none none reverse",
+                        },
+                    }
+                );
+            });
+
+            // Update sidebar active section on scroll
+            const sections = document.querySelectorAll("#overview, #introduction, #getting-started, #core-features, #api-reference, #global-payments, #vision, #roadmap, #assets");
+            sections.forEach((section) => {
+                ScrollTrigger.create({
+                    trigger: section,
+                    scroller: scroller,
+                    start: "top 40%",
+                    end: "bottom 40%",
+                    onEnter: () => setActiveSection(section.id),
+                    onEnterBack: () => setActiveSection(section.id),
+                });
+            });
+        }, rightScrollRef);
+
+        return () => {
+            ctx.revert();
+        };
+    }, [isDesktop]);
+
+    const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+        e.preventDefault();
+        setActiveSection(id);
+        const targetEl = document.getElementById(id);
+        if (!targetEl) return;
+        if (isDesktop && rightScrollRef.current) {
+            const container = rightScrollRef.current;
+            const containerRect = container.getBoundingClientRect();
+            const targetRect = targetEl.getBoundingClientRect();
+            const offset = targetRect.top - containerRect.top + container.scrollTop;
+            container.scrollTo({
+                top: offset - 20,
+                behavior: "smooth"
+            });
+        } else {
+            const offset = targetEl.getBoundingClientRect().top + window.scrollY - 100;
+            window.scrollTo({
+                top: offset,
+                behavior: "smooth"
+            });
+        }
+    };
 
     const sidebarLinks = [
         { id: "overview", label: "00 Overview", href: "#overview" },
@@ -58,13 +114,14 @@ export default function DocsOverview() {
     ];
 
     return (
-        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-[#030303] text-white selection:bg-[#ccff00]/30 selection:text-white">
+        <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white">
             <AnimatedGradientBg />
+            <div className="relative z-10">
             <Navbar />
 
-            <div className="pt-28 pb-20 max-w-7xl mx-auto px-6 lg:px-8 flex gap-8">
+            <div className="pt-28 pb-20 lg:pb-8 max-w-7xl mx-auto px-6 lg:px-8 flex flex-col lg:flex-row gap-8 lg:h-screen lg:overflow-hidden">
                 {/* Left Column: Sticky Sidebar */}
-                <aside className="hidden lg:block w-64 shrink-0 sticky top-28 h-[calc(100vh-8rem)] overflow-y-auto pr-6 border-r border-white/5">
+                <aside className="hidden lg:block w-64 shrink-0 lg:h-full lg:overflow-y-auto pr-6 border-r border-white/5">
                     <div className="space-y-6">
                         <div>
                             <span className="text-[10px] tracking-[0.2em] font-semibold text-white/40 uppercase">
@@ -75,7 +132,7 @@ export default function DocsOverview() {
                                     <a
                                         key={link.id}
                                         href={link.href}
-                                        onClick={() => setActiveSection(link.id)}
+                                        onClick={(e) => handleLinkClick(e, link.id)}
                                         className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 ${
                                             activeSection === link.id
                                                 ? "bg-[#ccff00] text-black shadow-[0_0_15px_rgba(204,255,0,0.2)]"
@@ -120,7 +177,7 @@ export default function DocsOverview() {
                 </aside>
 
                 {/* Right Column: Bento Grid Main Content */}
-                <div ref={gridRef} className="flex-1 min-w-0 space-y-6">
+                <div ref={rightScrollRef} className="flex-1 min-w-0 space-y-6 lg:h-full lg:overflow-y-auto lg:pb-24 lg:pr-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bento-grid">
                         
                         {/* Module 1: Title & Hero */}
@@ -129,9 +186,9 @@ export default function DocsOverview() {
                             className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 md:p-10 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group relative overflow-hidden flex flex-col justify-between min-h-[380px]"
                         >
                             <div className="flex justify-between items-start text-[10px] text-white/30 font-mono tracking-widest uppercase">
-                                <span>O COMPANY</span>
-                                <span className="hidden sm:inline">March 26th, 2026</span>
-                                <span>2045</span>
+                                <span>SUBSCRIPT PROTOCOL</span>
+                                <span className="hidden sm:inline">TESTNET PHASE</span>
+                                <span>v1.0</span>
                             </div>
 
                             <div className="my-8 max-w-2xl relative z-10">
@@ -219,8 +276,8 @@ export default function DocsOverview() {
                             className="bento-card bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between min-h-[360px]"
                         >
                             <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase">
-                                <span>G PROJECT</span>
-                                <span>2045</span>
+                                <span>SUBSCRIPT</span>
+                                <span>TESTNET</span>
                             </div>
 
                             <div className="my-6">
@@ -239,7 +296,7 @@ export default function DocsOverview() {
                             </div>
 
                             <div className="mt-4 flex items-center justify-between">
-                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-5 py-2.5 rounded-full hover:bg-[#ccff00]/25 transition-all">
                                     GETTING STARTED
                                 </button>
                                 <span className="text-[10px] text-white/40 font-mono">03 SECONDS LOAD</span>
@@ -326,7 +383,7 @@ export default function DocsOverview() {
 
                             {/* Footer & Progress */}
                             <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between">
-                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-5 py-2.5 rounded-full hover:bg-[#ccff00]/25 transition-all">
                                     GETTEN TITLE
                                 </button>
                                 <div className="flex items-center gap-3">
@@ -375,7 +432,7 @@ export default function DocsOverview() {
                             </div>
 
                             <div className="mt-4 pt-4 border-t border-white/5 text-[9px] text-white/30 font-mono">
-                                OBJECTIVE 2026: STABLECOIN STANDARD
+                                OBJECTIVE TESTNET: STABLECOIN STANDARD
                             </div>
                         </div>
 
@@ -406,7 +463,7 @@ export default function DocsOverview() {
                             </div>
 
                             <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4.5 py-2 rounded-full">
+                                <button className="text-[9px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-5 py-2.5 rounded-full hover:bg-[#ccff00]/25 transition-all">
                                     GETTING STARTED
                                 </button>
                                 <span className="text-[9px] text-white/30 font-mono">V1.2 OUT</span>
@@ -419,13 +476,13 @@ export default function DocsOverview() {
                             className="bento-card md:col-span-2 bg-[#0a0a0c] border border-white/5 rounded-[32px] p-8 transition-all duration-300 hover:scale-[1.005] hover:border-[#ccff00]/30 hover:shadow-[0_0_30px_rgba(204,255,0,0.03)] group flex flex-col justify-between"
                         >
                             <div className="flex justify-between items-center text-[9px] text-white/30 font-mono uppercase mb-6">
-                                <span>O COMPANY</span>
-                                <span>2045</span>
+                                <span>SUBSCRIPT</span>
+                                <span>TESTNET</span>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
                                 {/* Left Side: Text and Main Callout */}
-                                <div className="md:col-span-6 space-y-4">
+                                <div className="md:col-span-12 space-y-4">
                                     <h3 className="text-2xl font-black uppercase tracking-tighter text-white">
                                         Product & Asset Overview
                                     </h3>
@@ -440,45 +497,6 @@ export default function DocsOverview() {
                                         Including real-time webhook updates, sandbox execution testing environments, off-chain relay loops, and audited Solidity allowances.
                                     </p>
                                 </div>
-
-                                {/* Right Side: Smartphone Device Mockup */}
-                                <div className="md:col-span-6 flex justify-center">
-                                    <div className="w-56 h-80 bg-black border-4 border-neutral-800 rounded-[36px] p-3 shadow-2xl relative overflow-hidden flex flex-col justify-between">
-                                        {/* Phone camera dot */}
-                                        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-neutral-800" />
-                                        
-                                        {/* Inside Phone Content */}
-                                        <div className="flex justify-between items-center text-[7px] text-white/30 font-mono mt-3">
-                                            <span>SubScript</span>
-                                            <span>Active</span>
-                                        </div>
-
-                                        {/* Mock dashboard card */}
-                                        <div className="p-3 bg-neutral-900 border border-white/5 rounded-2xl my-2 flex-1 flex flex-col justify-between">
-                                            <div>
-                                                <span className="text-[7px] text-white/40 uppercase font-bold tracking-widest">Active Allowance</span>
-                                                <p className="text-lg font-black text-[#ccff00] mt-0.5">$980.00 <span className="text-[8px] font-normal text-white/40">USDC</span></p>
-                                            </div>
-
-                                            <div className="space-y-1.5 mt-2">
-                                                <div className="flex justify-between items-center p-1.5 bg-white/[0.02] border border-white/5 rounded-lg text-[8px]">
-                                                    <span className="text-white/60">Vercel Pro</span>
-                                                    <span className="text-[#ccff00] font-mono">$20.00</span>
-                                                </div>
-                                                <div className="flex justify-between items-center p-1.5 bg-white/[0.02] border border-white/5 rounded-lg text-[8px]">
-                                                    <span className="text-white/60">Copilot</span>
-                                                    <span className="text-[#ccff00] font-mono">$10.00</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-2 text-[7px] text-white/30 text-center font-mono">
-                                                March 20th, 2045
-                                            </div>
-                                        </div>
-
-                                        <div className="h-1 w-20 bg-neutral-800 rounded-full mx-auto mb-1" />
-                                    </div>
-                                </div>
                             </div>
 
                             {/* Footer */}
@@ -487,9 +505,19 @@ export default function DocsOverview() {
                                 <Star className="w-4 h-4 text-[#ccff00] fill-[#ccff00] animate-pulse" />
                             </div>
                         </div>
-
                     </div>
+
+                    {/* Footer */}
+                    <footer className="mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4 pb-8">
+                        <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                        <div className="flex gap-4">
+                            <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                            <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                        </div>
+                        <span>Built on Arc Network</span>
+                    </footer>
                 </div>
+            </div>
             </div>
         </main>
     );

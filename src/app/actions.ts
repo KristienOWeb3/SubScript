@@ -10,25 +10,25 @@ export type WaitlistResult = {
 
 export async function submitWaitlist(formData: FormData): Promise<WaitlistResult> {
     const email = formData.get("email") as string;
+    const userType = (formData.get("userType") as string) || "user";
     const walletAddress = formData.get("walletAddress") as string;
+    const companyName = formData.get("companyName") as string;
+    const useCase = formData.get("useCase") as string;
+    const monthlyVolume = formData.get("monthlyVolume") as string;
 
     // Basic validation
     if (!email || !email.includes("@")) {
         return { success: false, message: "Please enter a valid email address." };
     }
 
-    if (!walletAddress || walletAddress.length < 10) {
-        return { success: false, message: "Please enter a valid wallet address." };
-    }
-
     // Guard clause: Check if Supabase is configured
     if (!isSupabaseConfigured || !supabase) {
-        console.log("Demo mode - Supabase not configured. Email:", email, "Wallet:", walletAddress);
+        console.log("Demo mode - Supabase not configured. Email:", email, "userType:", userType);
         return { success: true, message: "Added to the waitlist! Follow our X for more updates." };
     }
 
     try {
-        // Check if email OR wallet already exists (single query for efficiency)
+        // Check if email already exists
         const { data: existingEmail } = await supabase
             .from("waitlist")
             .select("email")
@@ -43,26 +43,43 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
             };
         }
 
-        const { data: existingWallet } = await supabase
-            .from("waitlist")
-            .select("wallet_address")
-            .eq("wallet_address", walletAddress.toLowerCase())
-            .maybeSingle();
+        if (walletAddress) {
+            const { data: existingWallet } = await supabase
+                .from("waitlist")
+                .select("wallet_address")
+                .eq("wallet_address", walletAddress.toLowerCase())
+                .maybeSingle();
 
-        if (existingWallet) {
-            return {
-                success: true,
-                message: "You're already on the list! Follow our X for updates.",
-                isAlreadyRegistered: true
-            };
+            if (existingWallet) {
+                return {
+                    success: true,
+                    message: "You're already on the list! Follow our X for updates.",
+                    isAlreadyRegistered: true
+                };
+            }
+        }
+
+        const insertPayload: Record<string, any> = {
+            email: email.toLowerCase(),
+            user_type: userType,
+            created_at: new Date().toISOString(),
+        };
+
+        if (walletAddress) {
+            insertPayload.wallet_address = walletAddress.toLowerCase();
+        }
+        if (companyName) {
+            insertPayload.company_name = companyName;
+        }
+        if (useCase) {
+            insertPayload.use_case = useCase;
+        }
+        if (monthlyVolume) {
+            insertPayload.monthly_volume = monthlyVolume;
         }
 
         // Insert new waitlist entry
-        const { error } = await supabase.from("waitlist").insert({
-            email: email.toLowerCase(),
-            wallet_address: walletAddress.toLowerCase(),
-            created_at: new Date().toISOString(),
-        });
+        const { error } = await supabase.from("waitlist").insert(insertPayload);
 
         if (error) {
             console.error("Supabase insert error:", error);

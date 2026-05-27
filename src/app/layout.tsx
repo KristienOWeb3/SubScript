@@ -24,8 +24,37 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+    metadataBase: new URL("https://subscript.network"),
     title: "SubScript | Automated Crypto Subscriptions",
     description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
+    alternates: {
+        canonical: "/",
+    },
+    openGraph: {
+        title: "SubScript | Automated Crypto Subscriptions",
+        description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
+        url: "https://subscript.network",
+        siteName: "SubScript Protocol",
+        images: [
+            {
+                url: "/logo-colored.png",
+                width: 800,
+                height: 800,
+                alt: "SubScript Logo",
+            },
+        ],
+        locale: "en_US",
+        type: "website",
+    },
+    twitter: {
+        card: "summary_large_image",
+        title: "SubScript | Automated Crypto Subscriptions",
+        description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
+        images: ["/logo-colored.png"],
+    },
+    verification: {
+        google: "google-site-verification-placeholder",
+    },
 };
 
 export default function RootLayout({

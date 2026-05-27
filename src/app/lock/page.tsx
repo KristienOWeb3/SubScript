@@ -41,7 +41,7 @@ function LockForm() {
 
     return (
         <form onSubmit={handleSubmit} className="w-full relative">
-            <div className="liquid-glass rounded-full px-2 py-0.5 flex items-center justify-between w-full max-w-sm mx-auto shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5">
+            <div className="liquid-glass rounded-full px-3 py-1 flex items-center justify-between w-full max-w-sm mx-auto shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-12">
                 <input
                     type="password"
                     value={password}
@@ -49,20 +49,20 @@ function LockForm() {
                     placeholder="Enter password..."
                     required
                     autoFocus
-                    className="w-full bg-transparent px-3.5 py-0.5 text-white placeholder-white/40 focus:outline-none text-xs text-center"
+                    className="w-full bg-transparent px-4 py-2 text-white placeholder-white/40 focus:outline-none text-sm text-center"
                 />
                 <motion.button
                     type="submit"
                     disabled={isPending}
-                    className="bg-white text-black p-1.5 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
+                    className="bg-white text-black p-2 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     aria-label="Unlock"
                 >
                     {isPending ? (
-                        <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
+                        <Loader2 className="w-4 h-4 animate-spin stroke-[2.5]" />
                     ) : (
-                        <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                        <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                     )}
                 </motion.button>
             </div>

@@ -671,8 +671,9 @@ export default function DashboardPage() {
     };
 
     return (
-        <div data-mounted={isMounted} className={`min-h-screen bg-black text-white selection:bg-[#00d2b4]/30 selection:text-white transition-all duration-500 ${isMainnet ? 'border-t-4 border-red-500' : 'border-t-4 border-[#00d2b4]'}`}>
+        <div data-mounted={isMounted} className={`min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white transition-all duration-500 ${isMainnet ? 'border-t-4 border-red-500' : 'border-t-4 border-[#00d2b4]'}`}>
             <AnimatedGradientBg />
+            <div className="relative z-10">
             <DashboardHeader />
 
             {/* Dashboard Content */}
@@ -750,6 +751,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </main>
+            </div>
         </div>
     );
 }

@@ -132,8 +132,13 @@ export default function DemoPage() {
 
             {/* Footer */}
             <footer className="border-t border-white/5 py-12 bg-[#111111]/30">
-                <div className="max-w-7xl mx-auto px-6 sm:px-12 text-center text-xs text-white/40">
-                    © 2026 SubScript Protocol. Built on Arc Network.
+                <div className="max-w-7xl mx-auto px-6 sm:px-12 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
+                    <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                    <div className="flex gap-4">
+                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                    </div>
+                    <span>Built on Arc Network</span>
                 </div>
             </footer>
         </main>

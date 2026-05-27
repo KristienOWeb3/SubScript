@@ -180,7 +180,8 @@ function SuccessMessage({ message }: { message: string }) {
 }
 
 function WaitlistForm() {
-    const [step, setStep] = useState<"button" | "email" | "company" | "useCase" | "monthlyVolume" | "success" | "error">("button");
+    const [step, setStep] = useState<"button" | "selectType" | "email" | "company" | "useCase" | "monthlyVolume" | "success" | "error">("button");
+    const [userType, setUserType] = useState<"user" | "enterprise" | "">("");
     const [email, setEmail] = useState("");
     const [companyName, setCompanyName] = useState("");
     const [useCase, setUseCase] = useState("");
@@ -191,7 +192,13 @@ function WaitlistForm() {
 
     const handleEmailSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (email.includes("@")) {
+        if (!email.includes("@")) return;
+
+        if (userType === "user") {
+            // User path: submit directly after email
+            submitToApi();
+        } else {
+            // Enterprise path: continue multi-step
             setStep("company");
         }
     };
@@ -210,28 +217,26 @@ function WaitlistForm() {
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!email || !companyName || !useCase || !monthlyVolume) {
-            setMessage("Please complete all sections.");
-            setStep("error");
-            return;
-        }
-
+    const submitToApi = () => {
         startTransition(async () => {
             try {
+                const payload: Record<string, string> = {
+                    email,
+                    userType: userType as string,
+                    honeypot,
+                };
+
+                // Enterprise fields
+                if (userType === "enterprise") {
+                    payload.companyName = companyName;
+                    payload.useCase = useCase;
+                    payload.monthlyVolume = monthlyVolume;
+                }
+
                 const response = await fetch("/api/waitlist", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        email,
-                        companyName,
-                        useCase,
-                        monthlyVolume,
-                        honeypot,
-                    }),
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
                 });
 
                 const data = await response.json();
@@ -243,7 +248,7 @@ function WaitlistForm() {
                     setMessage(data.error || "Something went wrong.");
                     setStep("error");
                     setTimeout(() => {
-                        setStep("monthlyVolume");
+                        setStep(userType === "user" ? "email" : "monthlyVolume");
                     }, 3000);
                 }
             } catch (err) {
@@ -251,10 +256,20 @@ function WaitlistForm() {
                 setMessage("Network error. Please try again.");
                 setStep("error");
                 setTimeout(() => {
-                    setStep("monthlyVolume");
+                    setStep(userType === "user" ? "email" : "monthlyVolume");
                 }, 3000);
             }
         });
+    };
+
+    const handleEnterpriseSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email || !companyName || !useCase || !monthlyVolume) {
+            setMessage("Please complete all sections.");
+            setStep("error");
+            return;
+        }
+        submitToApi();
     };
 
     return (
@@ -269,12 +284,50 @@ function WaitlistForm() {
                         transition={{ duration: 0.2 }}
                     >
                         <motion.button
-                            onClick={() => setStep("email")}
+                            onClick={() => setStep("selectType")}
                             className="liquid-glass rounded-full px-6 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200 h-9 flex items-center"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                         >
                             Join Waitlist <span className="text-[#00d2b4] ml-1">&gt;</span>
+                        </motion.button>
+                    </motion.div>
+                )}
+
+                {step === "selectType" && (
+                    <motion.div
+                        key="selectType"
+                        className="flex items-center gap-2 w-full max-w-sm"
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -15 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setStep("button")}
+                            className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0"
+                            aria-label="Go back"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <motion.button
+                            onClick={() => { setUserType("user"); setStep("email"); }}
+                            className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#00d2b4]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                        >
+                            <Mail className="w-3 h-3 text-[#00d2b4]" />
+                            For Users
+                        </motion.button>
+                        <motion.button
+                            onClick={() => { setUserType("enterprise"); setStep("email"); }}
+                            className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#d4a853]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                        >
+                            <Building2 className="w-3 h-3 text-[#d4a853]" />
+                            Enterprise
                         </motion.button>
                     </motion.div>
                 )}
@@ -290,24 +343,39 @@ function WaitlistForm() {
                         transition={{ duration: 0.3 }}
                     >
                         <div className="flex items-center flex-1 min-w-0 h-full">
-                            <Mail className="ml-2.5 w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                            <button
+                                type="button"
+                                onClick={() => setStep("selectType")}
+                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
+                                aria-label="Go back"
+                            >
+                                <ArrowLeft className="w-3 h-3" />
+                            </button>
+                            <Mail className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <input
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Enter your business email..."
+                                placeholder={userType === "user" ? "Enter your email..." : "Enter your business email..."}
                                 required
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
                             />
                         </div>
                         <motion.button
                             type="submit"
+                            disabled={isPending}
                             className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            aria-label="Next step"
+                            aria-label={userType === "user" ? "Submit" : "Next step"}
                         >
-                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                            {isPending ? (
+                                <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
+                            ) : userType === "user" ? (
+                                <Check className="w-3 h-3 stroke-[2.5]" />
+                            ) : (
+                                <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                            )}
                         </motion.button>
                     </motion.form>
                 )}
@@ -405,7 +473,7 @@ function WaitlistForm() {
                 {step === "monthlyVolume" && (
                     <motion.form
                         key="monthlyVolume"
-                        onSubmit={handleSubmit}
+                        onSubmit={handleEnterpriseSubmit}
                         className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
