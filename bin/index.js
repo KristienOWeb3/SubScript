@@ -196,10 +196,31 @@ async function main() {
     writeFile(path.join(targetDir, "SubScriptPaywall.tsx"), paywallTsx, "utf8"),
   ]);
 
-  console.log("SubScript integration scaffold generated in ./subscript");
-  console.log(`Arc Testnet: ${ARC_TESTNET_CHAIN_ID}`);
-  console.log(`Router: ${SUBSCRIPT_ROUTER_ADDRESS}`);
-  console.log(`USDC native gas: ${USDC_NATIVE_GAS_ADDRESS}`);
+  // ANSI escape codes for terminal styling
+  const green = "\x1b[38;2;0;255;0m"; 
+  const bold = "\x1b[1m";
+  const reset = "\x1b[0m";
+
+  console.log(green + bold);
+  console.log("███████╗██╗   ██╗██████╗ ███████╗██████╗ ██████╗ ██╗██████╗ ████████╗");
+  console.log("██╔════╝██║   ██║██╔══██╗██╔════╝██╔════╝██╔══██╗██║██╔══██╗╚══██╔══╝");
+  console.log("███████╗██║   ██║██████╔╝███████╗██║     ██████╔╝██║██████╔╝   ██║   ");
+  console.log("╚════██║██║   ██║██╔══██╗╚════██║██║     ██╔══██╗██║██╔═══╝    ██║   ");
+  console.log("███████║╚██████╔╝██████╔╝███████║╚██████╗██║  ██║██║██║        ██║   ");
+  console.log("╚══════╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝   ");
+  console.log("                                               ██████╗██╗     ██╗    ");
+  console.log("                                              ██╔════╝██║     ██║    ");
+  console.log("                                              ██║     ██║     ██║    ");
+  console.log("                                              ██║     ██║     ██║    ");
+  console.log("                                              ╚██████╗███████╗██║    ");
+  console.log("                                               ╚═════╝╚══════╝╚═╝    ");
+  console.log(reset);
+  
+  console.log("─────── Files successfully injected into ./subscript/ ───────");
+  console.log(" 👉 constants.ts (Arc Network Deployments & 1% Fee Parameters)");
+  console.log(" 👉 abi.json     (Zero-Knowledge Router ABI)");
+  console.log(" 👉 SubScriptPaywall.tsx (Base Component Scaffold)\n");
+  console.log("💡 Hand this folder directly to your AI agent to complete the integration!");
 }
 
 main().catch((error) => {

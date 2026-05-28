@@ -2,8 +2,33 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, ArrowRight, Wallet, QrCode } from "lucide-react";
+import { X, Copy, Check, ArrowRight, Wallet, QrCode, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { createPublicClient, http, parseUnits, bytesToHex, keccak256 } from "viem";
+import { arcTestnet } from "@/lib/wagmi";
+import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "../../subscript/constants";
+import routerAbi from "../../subscript/abi.json";
+
+const ERC20_ABI = [
+    {
+        type: "function",
+        name: "approve",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "spender", type: "address" },
+            { name: "amount", type: "uint256" }
+        ],
+        outputs: [{ name: "", type: "bool" }]
+    }
+] as const;
+
+const ROUTER_ABI = routerAbi;
+
+const publicClient = createPublicClient({
+    chain: arcTestnet,
+    transport: http(),
+});
 
 interface DepositModalProps {
     isOpen: boolean;
@@ -20,6 +45,14 @@ export default function DepositModal({
 }: DepositModalProps) {
     const [copied, setCopied] = useState(false);
     const [depositStep, setDepositStep] = useState<"approve" | "transfer">("approve");
+    const [secret, setSecret] = useState<string | null>(null);
+    const [commitmentHash, setCommitmentHash] = useState<string | null>(null);
+    const [txLoading, setTxLoading] = useState(false);
+    const [txStatus, setTxStatus] = useState<string | null>(null);
+
+    const { chainId, isConnected } = useAccount();
+    const { switchChain } = useSwitchChain();
+    const { writeContractAsync, isPending, isError, error } = useWriteContract();
 
     const handleCopy = async () => {
         await navigator.clipboard.writeText(depositAddress);
@@ -27,22 +60,158 @@ export default function DepositModal({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const handleApprove = () => {
-        // Mock approval - in production, this would call the USDC contract
-        console.log("Approving USDC spend...");
-        setDepositStep("transfer");
+    const handleApprove = async () => {
+        if (!isConnected) {
+            console.error("Wallet not connected.");
+            return;
+        }
+
+        // 1. Implement Network Enforcement
+        if (chainId !== 5042002) {
+            console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
+            switchChain?.({ chainId: 5042002 });
+            return;
+        }
+
+        setTxLoading(true);
+        setTxStatus("Preparing approval...");
+
+        try {
+            // Generate commitment if not already generated
+            let currentSecret = secret;
+            let currentCommitmentHash = commitmentHash;
+
+            if (!currentCommitmentHash) {
+                const secBytes = new Uint8Array(32);
+                crypto.getRandomValues(secBytes);
+                const secHex = bytesToHex(secBytes);
+                const comHash = keccak256(secHex);
+
+                setSecret(secHex);
+                setCommitmentHash(comHash);
+                currentSecret = secHex;
+                currentCommitmentHash = comHash;
+            }
+
+            // 3. Format the 6-Decimal Payload
+            const amount = parseUnits("1", 6);
+            const merchantAddress = (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS")
+                ? "0xa84d917c48f05bffbe353d29e316b9fa096314f7"
+                : depositAddress;
+
+            // 5. Console Logging
+            console.log("Before writeContract (approve):", {
+                amount: amount.toString(),
+                merchantAddress,
+                commitmentHash: currentCommitmentHash,
+            });
+
+            if (amount === undefined || merchantAddress === undefined || currentCommitmentHash === undefined) {
+                console.error("Error: One or more arguments for approve are undefined:", {
+                    amount,
+                    merchantAddress,
+                    commitmentHash: currentCommitmentHash,
+                });
+                throw new Error("Parameters cannot be undefined");
+            }
+
+            setTxStatus("Waiting for signature...");
+            const hash = await writeContractAsync({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "approve",
+                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+            });
+
+            setTxStatus("Confirming approval...");
+            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            console.log("Approval transaction confirmed:", receipt);
+
+            setDepositStep("transfer");
+        } catch (err) {
+            console.error("Approval failed:", err);
+        } finally {
+            setTxLoading(false);
+            setTxStatus(null);
+        }
     };
 
-    const handleTransfer = () => {
-        // Mock transfer - in production, this would call the deposit contract
-        console.log("Transferring USDC...");
-        onClose();
+    const handleTransfer = async () => {
+        if (!isConnected) {
+            console.error("Wallet not connected.");
+            return;
+        }
+
+        // 1. Implement Network Enforcement
+        if (chainId !== 5042002) {
+            console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
+            switchChain?.({ chainId: 5042002 });
+            return;
+        }
+
+        if (!commitmentHash) {
+            console.error("Commitment hash is missing.");
+            return;
+        }
+
+        setTxLoading(true);
+        setTxStatus("Preparing transfer...");
+
+        try {
+            // 3. Format the 6-Decimal Payload
+            const amount = parseUnits("1", 6);
+            const merchantAddress = (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS")
+                ? "0xa84d917c48f05bffbe353d29e316b9fa096314f7"
+                : depositAddress;
+
+            // 5. Console Logging
+            console.log("Before writeContract (depositAndCommit):", {
+                amount: amount.toString(),
+                merchantAddress,
+                commitmentHash,
+            });
+
+            if (amount === undefined || merchantAddress === undefined || commitmentHash === undefined) {
+                console.error("Error: One or more arguments for depositAndCommit are undefined:", {
+                    amount,
+                    merchantAddress,
+                    commitmentHash,
+                });
+                throw new Error("Parameters cannot be undefined");
+            }
+
+            setTxStatus("Waiting for signature...");
+            const hash = await writeContractAsync({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "depositAndCommit",
+                args: [commitmentHash as `0x${string}`, amount],
+            });
+
+            setTxStatus("Confirming transfer...");
+            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            console.log("Transfer transaction confirmed:", receipt);
+
+            resetAndClose();
+        } catch (err) {
+            console.error("Transfer failed:", err);
+        } finally {
+            setTxLoading(false);
+            setTxStatus(null);
+        }
     };
 
     const resetAndClose = () => {
         setDepositStep("approve");
+        setSecret(null);
+        setCommitmentHash(null);
+        setTxLoading(false);
+        setTxStatus(null);
         onClose();
     };
+
+    const isLoading = isPending || txLoading;
+    const isWrongNetwork = chainId !== 5042002;
 
     return (
         <AnimatePresence>
@@ -181,7 +350,7 @@ export default function DepositModal({
                                                     a one-time approval.
                                                 </p>
 
-                                                {/* Amount Input (Mock) */}
+                                                {/* Amount Input */}
                                                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
                                                     <label className="text-xs text-white/50 uppercase tracking-wide">
                                                         Amount to Deposit
@@ -189,8 +358,9 @@ export default function DepositModal({
                                                     <div className="flex items-center gap-2 mt-2">
                                                         <input
                                                             type="text"
-                                                            placeholder="0.00"
-                                                            className="flex-1 bg-transparent text-2xl font-bold text-white outline-none"
+                                                            value="1.00"
+                                                            readOnly
+                                                            className="flex-1 bg-transparent text-2xl font-bold text-white outline-none cursor-not-allowed"
                                                         />
                                                         <span className="text-white/60 font-medium">
                                                             USDC
@@ -200,10 +370,17 @@ export default function DepositModal({
 
                                                 <button
                                                     onClick={handleApprove}
+                                                    disabled={isLoading}
                                                     className="w-full py-3 bg-leetcode-teal text-white font-semibold rounded-xl
-                                                             hover:brightness-110 transition-all duration-200"
+                                                             hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
+                                                             transition-all duration-200 flex items-center justify-center gap-2"
                                                 >
-                                                    Approve USDC
+                                                    {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+                                                    {isWrongNetwork 
+                                                        ? "Switch to Arc Testnet" 
+                                                        : isLoading 
+                                                            ? (txStatus || "Processing...") 
+                                                            : "Approve $1 USDC"}
                                                 </button>
                                             </div>
                                         ) : (
@@ -219,18 +396,37 @@ export default function DepositModal({
                                                             You&apos;re depositing
                                                         </span>
                                                         <span className="text-xl font-bold text-white">
-                                                            100.00 USDC
+                                                            1.00 USDC
                                                         </span>
                                                     </div>
                                                 </div>
 
                                                 <button
                                                     onClick={handleTransfer}
+                                                    disabled={isLoading}
                                                     className="w-full py-3 bg-leetcode-teal text-white font-semibold rounded-xl
-                                                             hover:brightness-110 transition-all duration-200"
+                                                             hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
+                                                             transition-all duration-200 flex items-center justify-center gap-2"
                                                 >
-                                                    Confirm Transfer
+                                                    {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+                                                    {isWrongNetwork 
+                                                        ? "Switch to Arc Testnet" 
+                                                        : isLoading 
+                                                            ? (txStatus || "Processing...") 
+                                                            : "Deposit $1 USDC"}
                                                 </button>
+                                            </div>
+                                        )}
+
+                                        {/* Highly Visible Error Boundary */}
+                                        {isError && error && (
+                                            <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-col gap-1.5 text-left">
+                                                <span className="text-red-400 text-xs font-semibold uppercase tracking-wide">
+                                                    Transaction Failed
+                                                </span>
+                                                <p className="text-red-200 text-xs font-mono break-all leading-relaxed whitespace-pre-wrap">
+                                                    {error.message}
+                                                </p>
                                             </div>
                                         )}
                                     </div>
