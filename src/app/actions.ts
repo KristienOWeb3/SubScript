@@ -30,7 +30,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
     try {
         // Check if email already exists
         const { data: existingEmail } = await supabase
-            .from("waitlist")
+            .from("waitlist_leads")
             .select("email")
             .eq("email", email.toLowerCase())
             .maybeSingle();
@@ -45,7 +45,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
 
         if (walletAddress) {
             const { data: existingWallet } = await supabase
-                .from("waitlist")
+                .from("waitlist_leads")
                 .select("wallet_address")
                 .eq("wallet_address", walletAddress.toLowerCase())
                 .maybeSingle();
@@ -79,7 +79,7 @@ export async function submitWaitlist(formData: FormData): Promise<WaitlistResult
         }
 
         // Insert new waitlist entry
-        const { error } = await supabase.from("waitlist").insert(insertPayload);
+        const { error } = await supabase.from("waitlist_leads").insert(insertPayload);
 
         if (error) {
             console.error("Supabase insert error:", error);

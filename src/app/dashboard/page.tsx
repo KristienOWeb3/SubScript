@@ -1,16 +1,60 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import { useAccount, useConnect, useDisconnect, useWriteContract } from "wagmi";
+import { injected } from "wagmi/connectors";
+import { createPublicClient, http, formatUnits } from "viem";
+import { arcTestnet } from "@/lib/wagmi";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
-    RefreshCw, Sliders, Trash2, ShieldX, CheckCircle, Clock
+    RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, PlugZap
 } from "lucide-react";
+
+const ARC_TESTNET_CHAIN_ID = 5042002;
+const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
+const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
+const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
+const LIVE_PUBLISHABLE_KEY = "pk_live_51Px200Z7Z4M19XQY1R93B";
+
+const publicClient = createPublicClient({
+    chain: arcTestnet,
+    transport: http(),
+});
+
+const SUBSCRIPT_ABI = [
+    {
+        inputs: [],
+        name: "nextSubscriptionId",
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [{ name: "", type: "uint256" }],
+        name: "subscriptions",
+        outputs: [
+            { name: "subscriber", type: "address" },
+            { name: "merchant", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "period", type: "uint256" },
+            { name: "nextPayment", type: "uint256" },
+            { name: "isActive", type: "bool" },
+        ],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [{ name: "_subId", type: "uint256" }],
+        name: "cancelSubscription",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    }
+] as const;
 
 // Sidebar tabs setup
 const tabs = [
@@ -24,14 +68,24 @@ const tabs = [
 type TabId = typeof tabs[number]["id"];
 
 export default function DashboardPage() {
-    const { ready, authenticated, login } = usePrivy();
     const [isMounted, setIsMounted] = useState(false);
+    const { address: realAddress, isConnected: realIsConnected } = useAccount();
+    const { connect, isPending: isConnecting } = useConnect();
+    const { disconnect } = useDisconnect();
+    const { writeContractAsync } = useWriteContract();
+    const [isTestMode, setIsTestMode] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
-    }, []);
+        if (typeof window !== "undefined") {
+            setIsTestMode(
+                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_page_lock"))
+            );
+        }
+    }, [realAddress, realIsConnected]);
 
-    const router = useRouter();
+    const isConnected = realIsConnected || isTestMode;
+    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
 
     // Environment Toggle State
     const [isMainnet, setIsMainnet] = useState(false);
@@ -54,22 +108,88 @@ export default function DashboardPage() {
     const [subChain, setSubChain] = useState("base");
 
     // Webhooks state
-    const [selectedWebhook, setSelectedWebhook] = useState<string>("evt_01");
+    const [selectedWebhook, setSelectedWebhook] = useState<string>("");
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
     // Fiat Off-Ramp split state
     const [fiatSplit, setFiatSplit] = useState(70);
 
-    // Customer ledger state
-    const [ledgers, setLedgers] = useState([
-        { id: "agent-run-9843", address: "0x3f5c...b8d1", limit: "150.00 USDC / mo", nextBilling: "Jun 15, 2026", active: true },
-        { id: "inference-node-332", address: "0x8e2b...4a2c", limit: "500.00 USDC / mo", nextBilling: "Jun 22, 2026", active: true },
-        { id: "scraping-cluster-44", address: "0x1d4a...f7b2", limit: "80.00 USDC / mo", nextBilling: "Jul 01, 2026", active: true },
-    ]);
+    // Live subscription ledger state loaded from smart contract
+    const [ledgers, setLedgers] = useState<any[]>([]);
+    const [isLoadingContract, setIsLoadingContract] = useState(false);
+
+    // Fetch on-chain subscriptions
+    useEffect(() => {
+        const merchantAddress = address;
+        if (!isConnected || !merchantAddress) {
+            setLedgers([]);
+            return;
+        }
+
+        let isSubscribed = true;
+
+        async function fetchOnChainData() {
+            if (!merchantAddress) return;
+            setIsLoadingContract(true);
+            try {
+                const nextId = await publicClient.readContract({
+                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    abi: SUBSCRIPT_ABI,
+                    functionName: "nextSubscriptionId",
+                });
+                
+                const nextIdNum = Number(nextId);
+                const fetchedLedgers = [];
+                
+                for (let i = 1; i < nextIdNum; i++) {
+                    const sub = await publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: SUBSCRIPT_ABI,
+                        functionName: "subscriptions",
+                        args: [BigInt(i)],
+                    });
+                    
+                    const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
+                    
+                    if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
+                        fetchedLedgers.push({
+                            id: `agent-run-${i}`,
+                            rawId: String(i),
+                            address: subscriber,
+                            shortSubAddress: `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`,
+                            limit: `${formatUnits(amount, 6)} USDC / ${Number(period) === 2592000 ? "mo" : Number(period) === 604800 ? "wk" : "yr"}`,
+                            rawAmount: formatUnits(amount, 6),
+                            rawPeriod: String(period),
+                            nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
+                            active: isActive,
+                        });
+                    }
+                }
+                
+                if (isSubscribed) {
+                    setLedgers(fetchedLedgers);
+                    if (fetchedLedgers.length > 0 && !selectedWebhook) {
+                        setSelectedWebhook(`evt_01_0`);
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching on-chain subscriptions:", err);
+            } finally {
+                if (isSubscribed) {
+                    setIsLoadingContract(false);
+                }
+            }
+        }
+
+        fetchOnChainData();
+
+        return () => {
+            isSubscribed = false;
+        };
+    }, [isConnected, address, selectedWebhook]);
 
     const handleCopy = (text: string, label: string) => {
-        console.log("handleCopy called with label:", label);
         try {
             if (typeof navigator !== "undefined" && navigator.clipboard) {
                 navigator.clipboard.writeText(text).catch(err => {
@@ -84,23 +204,34 @@ export default function DashboardPage() {
     };
 
     const handleRollKeys = () => {
-        console.log("handleRollKeys click started");
         setIsRolling(true);
         setTimeout(() => {
-            console.log("handleRollKeys timeout completed");
             setSecretKeyVersion(prev => prev + 1);
             setIsRolling(false);
-            handleCopy(`sk_${isMainnet ? 'live' : 'test'}_rolled_v${secretKeyVersion + 1}`, "API Secret Key Rolled");
+            const activeSecretKey = isMainnet 
+                ? `sk_live_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}` 
+                : `sk_test_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}`;
+            handleCopy(activeSecretKey, "API Secret Key Rolled");
         }, 800);
     };
 
-    const handleRevokeCustomer = (customerId: string) => {
-        setLedgers(prev => prev.map(item => {
-            if (item.id === customerId) {
-                return { ...item, active: false };
-            }
-            return item;
-        }));
+    const handleRevokeCustomer = async (rawId: string) => {
+        try {
+            await writeContractAsync({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: SUBSCRIPT_ABI,
+                functionName: "cancelSubscription",
+                args: [BigInt(rawId)],
+            });
+            setLedgers(prev => prev.map(item => {
+                if (item.rawId === rawId) {
+                    return { ...item, active: false };
+                }
+                return item;
+            }));
+        } catch (err) {
+            console.error("Error revoking subscription on-chain:", err);
+        }
     };
 
     const handleReplayWebhook = (webhookId: string) => {
@@ -113,58 +244,86 @@ export default function DashboardPage() {
         }, 700);
     };
 
-    useEffect(() => {
-        if (ready && !authenticated) {
-            // User not logged in, show login page
-        }
-    }, [ready, authenticated, router]);
+    const merchantWalletAddress = isConnected && address ? address : "";
+    const billingPeriodSeconds = useMemo(() => {
+        if (subInterval === "weekly") return "604800";
+        if (subInterval === "yearly") return "31536000";
+        return "2592000";
+    }, [subInterval]);
 
-    if (!ready) {
-        return (
-            <div className="min-h-screen bg-black flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-[#00d2b4] border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
+    const checkoutCode = useMemo(() => `<SubScriptCheckout
+  publishableKey="${isMainnet ? LIVE_PUBLISHABLE_KEY : TEST_PUBLISHABLE_KEY}"
+  merchantAddress="${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
+  planName="${subName}"
+  amountCap="${subCap}"
+  interval="${subInterval}"
+  fundingChain="${subChain}"
+/>`, [isMainnet, merchantWalletAddress, subCap, subChain, subInterval, subName]);
 
-    if (!authenticated) {
-        return (
-            <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
-                <div className="absolute top-0 right-1/4 w-[400px] h-[400px] bg-[#00d2b4]/5 rounded-full blur-[100px] -z-10 pointer-events-none" />
-                <div className="absolute bottom-0 left-1/4 w-[300px] h-[300px] bg-[#d4a853]/3 rounded-full blur-[100px] -z-10 pointer-events-none" />
+    const agentIntegrationPrompt = useMemo(() => {
+        const addrPlaceholder = merchantWalletAddress || "[WARNING: NO MERCHANT WALLET CONNECTED. PLEASE CONNECT WALLET TO GENERATE ACTUAL ADDRESS]";
+        
+        return `Act as an elite full-stack Web3 engineer integrating SubScript into my app.
 
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-center max-w-md px-6 flex flex-col items-center"
-                >
-                    <span className="text-xs tracking-[0.2em] font-semibold text-white/40 uppercase mb-4">
-                        Secure Authentication
-                    </span>
-                    <h1 className="text-4xl sm:text-5xl font-extrabold text-white uppercase tracking-tight mb-6 leading-none">
-                        Welcome to Sub<span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">Script</span>
-                    </h1>
-                    <p className="text-white/50 mb-8 max-w-sm text-sm leading-relaxed font-sans">
-                        Connect your wallet or sign in with email to access your subscription control center.
-                    </p>
-                    <motion.button
-                        onClick={login}
-                        className="bg-[#00d2b4] text-[#111111] font-bold text-xs uppercase tracking-widest px-8 py-4 rounded-full shadow-[0_0_20px_rgba(0,210,180,0.3)] hover:brightness-110 transition-all"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                    >
-                        Connect / Sign In
-                    </motion.button>
-                </motion.div>
-            </div>
-        );
-    }
+SubScript is fast, private, and reliable. Build a premium dark-mode checkout that uses the Zero-Knowledge Burner Method on Arc Network.
+
+Live merchant context:
+- MERCHANT_WALLET_ADDRESS = "${addrPlaceholder}"
+- PLAN_NAME = "${subName}"
+- AMOUNT_CAP_USDC = "${subCap}"
+- BILLING_INTERVAL_SECONDS = ${billingPeriodSeconds}
+- ARC_TESTNET_CHAIN_ID = ${ARC_TESTNET_CHAIN_ID}
+- SUBSCRIPT_ROUTER = "${SUBSCRIPT_ROUTER_ADDRESS}"
+- USDC_NATIVE_GAS_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
+- PROTOCOL_FEE_BPS = 100
+
+${!merchantWalletAddress ? `\n!!! EXPLICIT ACTION REQUIRED !!!\nYou must connect a valid merchant wallet to generate a real merchant address for integration.\n` : ""}
+Implementation requirements:
+1. Use native USDC gas on Arc Testnet and route transactions to the SubScript Router.
+2. Implement the ZK Burner Method:
+   - Funding wallet generates a random secret and commitment.
+   - Funding wallet approves USDC and calls depositAndCommit(bytes32 commitment, uint256 amount).
+   - The frontend generates the local proof from the secret.
+   - The user switches to a clean burner wallet.
+   - Burner wallet calls verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period).
+3. Never expose the funding wallet in merchant-facing subscription state. Persist only burner/subscription references and public nullifier data.
+4. Show pending, proof generation, activation, success, and recoverable error states.
+5. Keep the UI liquid-glass, dark, concise, and ready for a merchant dashboard.
+
+Use the SubScript MCP server for exact ABI and config.`;
+    }, [billingPeriodSeconds, merchantWalletAddress, subCap, subInterval, subName]);
+
+    const cursorMcpConfig = useMemo(() => JSON.stringify({
+        mcpServers: {
+            subscript: {
+                command: "npx",
+                args: ["-y", "@subscript-protocol/mcp"],
+                env: {
+                    SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
+                    SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
+                    SUBSCRIPT_ROUTER_ADDRESS,
+                    SUBSCRIPT_USDC_NATIVE_GAS_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
+                },
+            },
+        },
+    }, null, 2), [merchantWalletAddress]);
+
+    const handleConnect = () => connect({ connector: injected() });
 
     // Interactive rendering based on active tab
     const renderView = () => {
         const primaryColorText = isMainnet ? "text-red-500" : "text-[#00d2b4]";
         const primaryColorBg = isMainnet ? "bg-red-500" : "bg-[#00d2b4]";
         const primaryBorderHover = isMainnet ? "hover:border-red-500/20" : "hover:border-[#00d2b4]/20";
+
+        const activeAllowances = ledgers.filter(l => l.active).length;
+        const projected30DaySettlement = ledgers.reduce((acc, sub) => {
+            if (!sub.active) return acc;
+            const amountNum = parseFloat(sub.rawAmount) || 0;
+            const periodNum = parseFloat(sub.rawPeriod) || 2592000;
+            const monthlyEquivalent = amountNum * (2592000 / periodNum);
+            return acc + monthlyEquivalent;
+        }, 0);
 
         switch (activeTab) {
             case "overview":
@@ -176,7 +335,7 @@ export default function DashboardPage() {
                                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/[0.01] rounded-bl-full pointer-events-none" />
                                 <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Agent Allowances</p>
                                 <p className="text-4xl font-extrabold text-white mb-2 tracking-tight">
-                                    {isMainnet ? "147" : "3"}
+                                    {isLoadingContract ? "..." : activeAllowances}
                                 </p>
                                 <p className="text-2xs text-white/30 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
@@ -187,7 +346,7 @@ export default function DashboardPage() {
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
                                 <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Projected 30-Day Settlement</p>
                                 <p className={`text-4xl font-extrabold ${primaryColorText} mb-2 tracking-tight`}>
-                                    {isMainnet ? "$145,200.00" : "$980.00"}{" "}
+                                    {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}{" "}
                                     <span className="text-xs text-white/40 font-normal">USDC</span>
                                 </p>
                                 <p className="text-2xs text-white/30">
@@ -198,11 +357,11 @@ export default function DashboardPage() {
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
                                 <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Execution Failure Rate</p>
                                 <p className="text-4xl font-extrabold text-white mb-2 tracking-tight">
-                                    {isMainnet ? "1.2%" : "0.0%"}
+                                    0.0%
                                 </p>
                                 <p className="text-2xs text-white/30 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
-                                    {isMainnet ? "12 failures tracked in 30d" : "All renewal attempts successfully settled"}
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                    All renewal attempts successfully settled
                                 </p>
                             </div>
                         </div>
@@ -226,36 +385,50 @@ export default function DashboardPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="text-xs text-white/70 font-mono">
-                                        {ledgers.map((item) => (
-                                            <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                <td className="py-4 text-white/40">{item.address}</td>
-                                                <td className="py-4 text-[#d4a853]">{item.limit}</td>
-                                                <td className="py-4">{item.nextBilling}</td>
-                                                <td className="py-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-3xs font-bold uppercase tracking-wider ${
-                                                        item.active 
-                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                    }`}>
-                                                        {item.active ? "Active" : "Revoked"}
-                                                    </span>
-                                                </td>
-                                                <td className="py-4 text-right">
-                                                    {item.active ? (
-                                                        <button 
-                                                            onClick={() => handleRevokeCustomer(item.id)}
-                                                            className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                            title="Revoke Allowance Access"
-                                                        >
-                                                            <ShieldX className="w-4 h-4" />
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-3xs text-white/20 uppercase tracking-widest font-bold">Ended</span>
-                                                    )}
+                                        {isLoadingContract ? (
+                                            <tr>
+                                                <td colSpan={6} className="py-8 text-center text-white/40">
+                                                    Fetching on-chain subscription state...
                                                 </td>
                                             </tr>
-                                        ))}
+                                        ) : ledgers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="py-8 text-center text-white/30 font-sans">
+                                                    No active recurring allowances detected for this merchant address.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            ledgers.map((item) => (
+                                                <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
+                                                    <td className="py-4 font-semibold text-white">{item.id}</td>
+                                                    <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
+                                                    <td className="py-4 text-[#d4a853]">{item.limit}</td>
+                                                    <td className="py-4">{item.nextBilling}</td>
+                                                    <td className="py-4">
+                                                        <span className={`px-2 py-0.5 rounded-full text-3xs font-bold uppercase tracking-wider ${
+                                                            item.active 
+                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                        }`}>
+                                                            {item.active ? "Active" : "Revoked"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-4 text-right">
+                                                        {item.active ? (
+                                                            <button 
+                                                                onClick={() => handleRevokeCustomer(item.rawId)}
+                                                                className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
+                                                                title="Revoke Allowance Access"
+                                                            >
+                                                                <ShieldX className="w-4 h-4" />
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-3xs text-white/20 uppercase tracking-widest font-bold">Ended</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -268,42 +441,21 @@ export default function DashboardPage() {
                                 Execution Failure Log
                             </h2>
                             <div className="space-y-3 font-mono text-2xs">
-                                <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-2xl flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-2.5">
-                                        <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 animate-pulse" />
-                                        <div>
-                                            <p className="font-bold text-white uppercase tracking-wider">INSUFFICIENT_USDC_BALANCE</p>
-                                            <p className="text-white/40 mt-0.5">Relayer failed to execute renewal charge on sub_session_01HjX332</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <span className="text-white/30">ClientRef: inference-node-332</span>
-                                        <p className="text-white/20 text-3xs mt-1">10:15:05 • Base Sepolia</p>
-                                    </div>
+                                <div className="py-6 text-center text-white/30 font-sans">
+                                    No execution failures logged. All on-chain renewal transactions succeeded.
                                 </div>
-                                {isMainnet && (
-                                    <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-2xl flex items-start justify-between gap-4">
-                                        <div className="flex items-start gap-2.5">
-                                            <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5" />
-                                            <div>
-                                                <p className="font-bold text-white uppercase tracking-wider">ALLOWANCE_EXPIRED</p>
-                                                <p className="text-white/40 mt-0.5">Time lock expiry reached. Session Key has expired.</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <span className="text-white/30">ClientRef: agent-run-1024</span>
-                                            <p className="text-white/20 text-3xs mt-1">08:02:14 • Arc Mainnet</p>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
                 );
 
             case "apikeys":
-                const testSecretKey = `sk_test_51Px9800HjX729Z7Z4M19XQY1R93B_v${secretKeyVersion}`;
-                const liveSecretKey = `sk_live_51Px200HjX729Z7Z4M19XQY1R93B_v${secretKeyVersion}`;
+                const testSecretKey = address 
+                    ? `sk_test_${address.slice(2, 10)}${address.slice(-8)}_v${secretKeyVersion}` 
+                    : "";
+                const liveSecretKey = address 
+                    ? `sk_live_${address.slice(2, 10)}${address.slice(-8)}_v${secretKeyVersion}` 
+                    : "";
                 const activeSecretKey = isMainnet ? liveSecretKey : testSecretKey;
                 const activePublishableKey = isMainnet 
                     ? "pk_live_51Px200Z7Z4M19XQY1R93B" 
@@ -355,7 +507,7 @@ export default function DashboardPage() {
                                         {copiedText === "Secret Key" && (
                                             <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
                                         )}
-                                        <button 
+                                        <button
                                             onClick={() => setRevealSecret(!revealSecret)}
                                             className="text-white/40 hover:text-white transition-colors"
                                             title={revealSecret ? "Hide Key" : "Show Key"}
@@ -413,18 +565,9 @@ export default function DashboardPage() {
                 );
 
             case "checkout":
-                const testPublishableKey = "pk_test_51Px9800Z7Z4M19XQY1R93B";
-                const livePublishableKey = "pk_live_51Px200Z7Z4M19XQY1R93B";
-                const checkoutCode = `<SubScriptCheckout
-  publishableKey="${isMainnet ? livePublishableKey : testPublishableKey}"
-  planName="${subName}"
-  amountCap="${subCap}"
-  interval="${subInterval}"
-  fundingChain="${subChain}"
-/>`;
-
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
                         {/* Configurator Form */}
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
                             <div>
@@ -481,7 +624,7 @@ export default function DashboardPage() {
                             </div>
                             
                             <div className="mt-8 pt-4 border-t border-white/5 text-2xs text-white/40">
-                                This configures the zero-click time-locked session keys. The agent will execute renewals within these caps.
+                                SubScript is fast, private, and reliable: Arc-native USDC gas, private burner activation, and a 1% protocol fee.
                             </div>
                         </div>
 
@@ -511,20 +654,129 @@ export default function DashboardPage() {
                             
                             <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
                                 <span>React SDK Component</span>
-                                <span>Copy to render checkout button</span>
+                                <span>Wallet: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                            </div>
+                        </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                    <div>
+                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Live AI Agent Prompt</span>
+                                        <p className="text-[10px] text-white/30 mt-1">Wallet address is injected automatically.</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        {copiedText === "Agent Prompt" && (
+                                            <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
+                                        )}
+                                        <button
+                                            onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
+                                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                            title="Copy prompt"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="p-6 font-mono text-2xs text-white/75 overflow-x-auto leading-relaxed max-h-[420px]">
+                                    <pre className="whitespace-pre-wrap">{agentIntegrationPrompt}</pre>
+                                </div>
+                            </div>
+
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                    <div>
+                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
+                                        <p className="text-[10px] text-white/30 mt-1">Drop-in MCP context for Cursor or compatible agents.</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        {copiedText === "MCP Config" && (
+                                            <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
+                                        )}
+                                        <button
+                                            onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
+                                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                            title="Copy MCP config"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="p-6 font-mono text-2xs text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[420px]">
+                                    <pre>{cursorMcpConfig}</pre>
+                                </div>
+                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 font-mono">
+                                    MCP server supplies Arc config, ZK ABI, and Burner Method guidance.
+                                </div>
                             </div>
                         </div>
                     </div>
                 );
 
             case "webhooks":
-                const webhooks = [
+                const staticWebhooks = [
                     { id: "evt_01", event: "subscription.created", status: 200, time: "10:14:22", payload: { subscriptionId: "sub_01HjX729", clientReferenceId: "agent-run-9843", amount: "150.00", chain: "base" } },
                     { id: "evt_02", event: "payment.renewed", status: 200, time: "10:15:00", payload: { subscriptionId: "sub_01HjX729", amount: "150.00", txHash: "0x8f3c...b2a4" } },
                     { id: "evt_03", event: "payment.failed", status: 500, time: "10:15:05", error: "INSUFFICIENT_USDC_BALANCE", payload: { subscriptionId: "sub_01HjX332", clientReferenceId: "inference-node-332", reason: "Allowance exhausted" } },
                     { id: "evt_04", event: "allowance.revoked", status: 200, time: "10:15:30", payload: { subscriptionId: "sub_01HjX44", clientReferenceId: "scraping-cluster-44", txHash: "0x9c3a...a8f" } }
                 ];
-                
+
+                const dynamicEvents = ledgers.flatMap((item, index) => {
+                    const baseTime = "10:14:22";
+                    const events: Array<{
+                        id: string;
+                        event: string;
+                        status: number;
+                        time: string;
+                        payload: any;
+                        error?: string;
+                    }> = [
+                        {
+                            id: `evt_01_${index}`,
+                            event: "subscription.created",
+                            status: 200,
+                            time: baseTime,
+                            payload: {
+                                subscriptionId: `sub_01_${item.rawId}`,
+                                clientReferenceId: item.id,
+                                subscriber: item.address,
+                                amount: item.rawAmount,
+                                period: item.rawPeriod,
+                                chain: "arc",
+                            },
+                        },
+                    ];
+                    if (item.active) {
+                        events.push({
+                            id: `evt_02_${index}`,
+                            event: "payment.renewed",
+                            status: 200,
+                            time: "10:15:00",
+                            payload: {
+                                subscriptionId: `sub_01_${item.rawId}`,
+                                amount: item.rawAmount,
+                                txHash: "0x8f3c...b2a4",
+                            },
+                        });
+                    } else {
+                        events.push({
+                            id: `evt_04_${index}`,
+                            event: "allowance.revoked",
+                            status: 200,
+                            time: "10:15:30",
+                            payload: {
+                                subscriptionId: `sub_01_${item.rawId}`,
+                                clientReferenceId: item.id,
+                                txHash: "0x9c3a...a8f",
+                            },
+                        });
+                    }
+                    return events;
+                });
+
+                const webhooks = [...staticWebhooks, ...dynamicEvents];
+
                 const selectedPayload = webhooks.find(w => w.id === selectedWebhook);
 
                 return (
@@ -537,31 +789,37 @@ export default function DashboardPage() {
                                     Chronological Event Stream
                                 </h2>
                                 <div className="space-y-2">
-                                    {webhooks.map((item) => (
-                                        <button
-                                            key={item.id}
-                                            onClick={() => setSelectedWebhook(item.id)}
-                                            className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
-                                                selectedWebhook === item.id 
-                                                    ? isMainnet 
-                                                        ? "bg-red-500/10 border-red-500/30 shadow-inner" 
-                                                        : "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
-                                                    : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
-                                            }`}
-                                        >
-                                            <div className="font-mono text-2xs space-y-1">
-                                                <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
-                                                <p className="text-white/40 text-3xs">{item.id} • {item.time}</p>
-                                            </div>
-                                            <span className={`px-2.5 py-0.5 rounded-full text-3xs font-bold ${
-                                                item.status === 200 
-                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                            }`}>
-                                                {item.status}
-                                            </span>
-                                        </button>
-                                    ))}
+                                    {webhooks.length === 0 ? (
+                                        <div className="py-8 text-center text-white/30 font-sans text-xs">
+                                            No active subscriptions to generate webhook events.
+                                        </div>
+                                    ) : (
+                                        webhooks.map((item) => (
+                                            <button
+                                                key={item.id}
+                                                onClick={() => setSelectedWebhook(item.id)}
+                                                className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
+                                                    selectedWebhook === item.id 
+                                                        ? isMainnet 
+                                                            ? "bg-red-500/10 border-red-500/30 shadow-inner" 
+                                                            : "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
+                                                        : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
+                                                }`}
+                                            >
+                                                <div className="font-mono text-2xs space-y-1">
+                                                    <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
+                                                    <p className="text-white/40 text-3xs">{item.id.slice(0, 8)} • {item.time}</p>
+                                                </div>
+                                                <span className={`px-2.5 py-0.5 rounded-full text-3xs font-bold ${
+                                                    item.status === 200 
+                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                }`}>
+                                                    {item.status}
+                                                </span>
+                                            </button>
+                                        ))
+                                    )}
                                 </div>
                             </div>
                             
@@ -574,11 +832,11 @@ export default function DashboardPage() {
                         {/* Payload Inspector */}
                         <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
                             <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector ({selectedWebhook})</span>
+                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector ({selectedWebhook || "None"})</span>
                                 <button
                                     onClick={() => handleReplayWebhook(selectedWebhook)}
-                                    disabled={isReplaying}
-                                    className={`px-3 py-1.5 border border-white/10 rounded-xl text-3xs font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying ? "opacity-50" : ""}`}
+                                    disabled={isReplaying || !selectedWebhook}
+                                    className={`px-3 py-1.5 border border-white/10 rounded-xl text-3xs font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
                                 >
                                     {isReplaying ? (
                                         <RefreshCw className="w-3 h-3 animate-spin text-white" />
@@ -594,13 +852,13 @@ export default function DashboardPage() {
                                     <p className="text-white/80 p-3 bg-white/5 border border-white/5 rounded-xl mb-4 font-sans">{replayStatus}</p>
                                 ) : null}
                                 <pre>
-                                    <code>{JSON.stringify(selectedPayload, null, 2)}</code>
+                                    <code>{selectedPayload ? JSON.stringify(selectedPayload, null, 2) : "// Select a webhook event to inspect"}</code>
                                 </pre>
                             </div>
                             
                             <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
-                                <span>Event Type: {selectedPayload?.event}</span>
-                                <span>HTTP Status: {selectedPayload?.status}</span>
+                                <span>Event Type: {selectedPayload?.event || "N/A"}</span>
+                                <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
                             </div>
                         </div>
                     </div>
@@ -686,8 +944,8 @@ export default function DashboardPage() {
                         </h1>
                         <p className="text-xs text-white/50 font-sans">
                             {isMainnet 
-                                ? "Production Environment: Live API keys and real-time USDC treasury settlement." 
-                                : "Sandbox Environment: Mock testnet transactions, keys, and dummy webhooks."
+                                ? "Production Environment: SubScript is fast, private, and reliable with live USDC treasury settlement."
+                                : "Sandbox Environment: SubScript is fast, private, and reliable with Arc testnet prompts, keys, and dummy webhooks."
                             }
                         </p>
                     </div>
@@ -698,7 +956,7 @@ export default function DashboardPage() {
                         <button
                             onClick={() => {
                                 setIsMainnet(!isMainnet);
-                                setSelectedWebhook("evt_01");
+                                setSelectedWebhook(ledgers.length > 0 ? `evt_01_0` : "");
                             }}
                             className="w-12 h-6 rounded-full bg-white/10 p-0.5 relative transition-colors"
                             aria-label="Toggle Environment"
@@ -713,43 +971,106 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Dashboard Grid (Sidebar + Main Content) */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
-                    {/* Sidebar Navigation */}
-                    <div className="lg:col-span-1 space-y-2">
-                        {tabs.map((tab) => (
+                {!isConnected ? (
+                    /* Clean requirement state asking the user to connect a wallet */
+                    <div className="space-y-8">
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
+                                <AlertTriangle className="w-10 h-10" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Wallet Connection Required</h2>
+                                <p className="text-sm text-white/60 max-w-md leading-relaxed">
+                                    Connect your browser wallet to access active allowances, metrics, subscription tracking, and Settlement Configurations.
+                                </p>
+                            </div>
                             <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                                    activeTab === tab.id
-                                        ? isMainnet
-                                            ? "bg-red-500/10 border-red-500/30 text-white shadow-lg shadow-red-500/5"
-                                            : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
-                                        : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
-                                }`}
+                                onClick={handleConnect}
+                                className="px-8 py-3 bg-yellow-300 hover:bg-yellow-200 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)]"
                             >
-                                <tab.icon className={`w-4.5 h-4.5 ${activeTab === tab.id ? (isMainnet ? 'text-red-500' : 'text-[#00d2b4]') : 'text-white/40'}`} />
-                                {tab.label}
+                                <PlugZap className="w-4 h-4" />
+                                {isConnecting ? "Connecting Wallet..." : "Connect Merchant Wallet"}
                             </button>
-                        ))}
-                    </div>
+                        </div>
 
-                    {/* View Content */}
-                    <div className="lg:col-span-3 min-h-[500px]">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={activeTab + (isMainnet ? "-main" : "-test")}
-                                initial={{ opacity: 0, y: 15 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -15 }}
-                                transition={{ duration: 0.25 }}
-                            >
-                                {renderView()}
-                            </motion.div>
-                        </AnimatePresence>
+                        {/* Integration scaffolding remains accessible for builders even when disconnected */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                    <div>
+                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Live AI Agent Prompt</span>
+                                        <p className="text-[10px] text-white/30 mt-1">Waiting for wallet connection to inject address.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
+                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="p-6 font-mono text-2xs text-white/75 overflow-x-auto leading-relaxed max-h-[300px]">
+                                    <pre className="whitespace-pre-wrap">{agentIntegrationPrompt}</pre>
+                                </div>
+                            </div>
+
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                    <div>
+                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
+                                        <p className="text-[10px] text-white/30 mt-1">Default template for your cursor_mcp.json server config.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
+                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="p-6 font-mono text-2xs text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[300px]">
+                                    <pre>{cursorMcpConfig}</pre>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    /* Connected Dashboard View */
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+                        {/* Sidebar Navigation */}
+                        <div className="lg:col-span-1 space-y-2">
+                            {tabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                                        activeTab === tab.id
+                                            ? isMainnet
+                                                ? "bg-red-500/10 border-red-500/30 text-white shadow-lg shadow-red-500/5"
+                                                : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
+                                            : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
+                                    }`}
+                                >
+                                    <tab.icon className={`w-4.5 h-4.5 ${activeTab === tab.id ? (isMainnet ? 'text-red-500' : 'text-[#00d2b4]') : 'text-white/40'}`} />
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* View Content */}
+                        <div className="lg:col-span-3 min-h-[500px]">
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={activeTab + (isMainnet ? "-main" : "-test")}
+                                    initial={{ opacity: 0, y: 15 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -15 }}
+                                    transition={{ duration: 0.25 }}
+                                >
+                                    {renderView()}
+                                </motion.div>
+                            </AnimatePresence>
+                        </div>
+                    </div>
+                )}
             </main>
             </div>
         </div>

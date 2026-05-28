@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3 } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -188,11 +188,20 @@ function WaitlistForm() {
     const [monthlyVolume, setMonthlyVolume] = useState("");
     const [honeypot, setHoneypot] = useState("");
     const [message, setMessage] = useState("");
-    const [isPending, startTransition] = useTransition();
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const showTransientError = (nextMessage: string, fallbackStep: typeof step) => {
+        setMessage(nextMessage);
+        setStep("error");
+        window.setTimeout(() => setStep(fallbackStep), 2800);
+    };
 
     const handleEmailSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!email.includes("@")) return;
+        if (!email.trim() || !email.includes("@")) {
+            showTransientError("Enter a valid email address to join the priority list.", "email");
+            return;
+        }
 
         if (userType === "user") {
             // User path: submit directly after email
@@ -218,55 +227,53 @@ function WaitlistForm() {
     };
 
     const submitToApi = () => {
-        startTransition(async () => {
+        if (isSubmitting) return;
+
+        setIsSubmitting(true);
+        (async () => {
+            const fallbackStep = userType === "user" ? "email" : "monthlyVolume";
+
+            const payload: Record<string, string> = {
+                email: email.trim(),
+                userType: userType as string,
+                honeypot,
+            };
+
+            if (userType === "enterprise") {
+                payload.companyName = companyName.trim();
+                payload.useCase = useCase;
+                payload.monthlyVolume = monthlyVolume;
+            }
+
             try {
-                const payload: Record<string, string> = {
-                    email,
-                    userType: userType as string,
-                    honeypot,
-                };
-
-                // Enterprise fields
-                if (userType === "enterprise") {
-                    payload.companyName = companyName;
-                    payload.useCase = useCase;
-                    payload.monthlyVolume = monthlyVolume;
-                }
-
                 const response = await fetch("/api/waitlist", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 });
 
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
 
-                if (response.ok) {
-                    setMessage(data.message || "Spot secured on priority list.");
-                    setStep("success");
-                } else {
-                    setMessage(data.error || "Something went wrong.");
-                    setStep("error");
-                    setTimeout(() => {
-                        setStep(userType === "user" ? "email" : "monthlyVolume");
-                    }, 3000);
+                if (!response.ok || data?.success === false) {
+                    showTransientError(data?.error || "We could not save that submission. Please try again.", fallbackStep);
+                    return;
                 }
+
+                setMessage(data?.message || "Spot secured. SubScript is fast, private, and reliable.");
+                setStep("success");
             } catch (err) {
                 console.error("Submission error:", err);
-                setMessage("Network error. Please try again.");
-                setStep("error");
-                setTimeout(() => {
-                    setStep(userType === "user" ? "email" : "monthlyVolume");
-                }, 3000);
+                showTransientError("Network error. Please try again.", fallbackStep);
+            } finally {
+                setIsSubmitting(false);
             }
-        });
+        })();
     };
 
     const handleEnterpriseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!email || !companyName || !useCase || !monthlyVolume) {
-            setMessage("Please complete all sections.");
-            setStep("error");
+            showTransientError("Please complete all sections.", "monthlyVolume");
             return;
         }
         submitToApi();
@@ -363,13 +370,13 @@ function WaitlistForm() {
                         </div>
                         <motion.button
                             type="submit"
-                            disabled={isPending}
+                            disabled={isSubmitting}
                             className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             aria-label={userType === "user" ? "Submit" : "Next step"}
                         >
-                            {isPending ? (
+                            {isSubmitting ? (
                                 <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
                             ) : userType === "user" ? (
                                 <Check className="w-3 h-3 stroke-[2.5]" />
@@ -493,7 +500,7 @@ function WaitlistForm() {
                             <button
                                 type="button"
                                 onClick={() => setStep("useCase")}
-                                disabled={isPending}
+                                disabled={isSubmitting}
                                 className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1 disabled:opacity-50"
                                 aria-label="Go back"
                             >
@@ -504,7 +511,7 @@ function WaitlistForm() {
                                 value={monthlyVolume}
                                 onChange={(e) => setMonthlyVolume(e.target.value)}
                                 required
-                                disabled={isPending}
+                                disabled={isSubmitting}
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8 disabled:opacity-50"
                                 style={{ colorScheme: "dark" }}
                             >
@@ -517,13 +524,13 @@ function WaitlistForm() {
                         </div>
                         <motion.button
                             type="submit"
-                            disabled={isPending || !monthlyVolume}
+                            disabled={isSubmitting || !monthlyVolume}
                             className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             aria-label="Submit"
                         >
-                            {isPending ? (
+                            {isSubmitting ? (
                                 <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
                             ) : (
                                 <Check className="w-3 h-3 stroke-[2.5]" />
@@ -628,12 +635,12 @@ export default function Home() {
                         <div className="order-1 lg:order-2 text-center lg:text-left flex flex-col items-center lg:items-start">
                             {/* Eyebrow Label: Fades up, small tracking-widest uppercase */}
                             <motion.span
-                                className="text-xs sm:text-sm tracking-[0.2em] font-semibold text-white/40 uppercase mb-4"
+                                className="text-xs sm:text-sm tracking-[0.2em] font-semibold text-[#00d2b4] uppercase mb-4"
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6 }}
                             >
-                                Agentic Billing Infrastructure
+                                SubScript is fast, private, and reliable.
                             </motion.span>
 
                             {/* Heading: Massive, mixing standard sans with italic Instrument Serif */}
@@ -654,7 +661,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.3 }}
                             >
-                                The programmatic recurring payment infrastructure for AI toolchains, autonomous agents, and developer APIs. By combining zero-click smart allowances with invisible cross-chain routing, we enable software to pay software reliably, globally, and autonomously.
+                                Private recurring payments for AI toolchains, autonomous agents, and developer APIs on Arc Network. ZK commitments, USDC-native gas, and a simple 1% protocol fee make software-to-software billing predictable.
                             </motion.p>
 
                             <WaitlistForm />

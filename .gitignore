@@ -49,3 +49,10 @@ Thumbs.db
 # Hardhat
 artifacts/
 cache/
+
+# Local development and agent temp files
+.agents/
+.omx/
+scratch/
+test-results/
+subscript/

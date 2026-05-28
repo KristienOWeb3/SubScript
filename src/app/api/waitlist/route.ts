@@ -44,7 +44,8 @@ const ALLOWED_USER_TYPES = ["user", "enterprise"];
 export async function POST(request: Request) {
   try {
     // 1. Get client IP and check rate limiting
-    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown-ip";
+    const ipHeader = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown-ip";
+    const ip = ipHeader.split(",")[0]?.trim() || "unknown-ip";
     if (ip !== "unknown-ip" && isRateLimited(ip)) {
       return NextResponse.json(
         { error: "Too many requests. Please try again later." },
@@ -53,8 +54,13 @@ export async function POST(request: Request) {
     }
 
     // 2. Parse request body
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid submission payload." }, { status: 400 });
+    }
+
     const { email, userType, companyName, useCase, monthlyVolume, honeypot } = body;
+    const normalizedUserType = typeof userType === "string" ? userType.trim().toLowerCase() : "";
 
     // 3. Honeypot check (Spam Protection)
     if (honeypot) {
@@ -63,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     // 4. Validate userType
-    if (!userType || !ALLOWED_USER_TYPES.includes(userType)) {
+    if (!normalizedUserType || !ALLOWED_USER_TYPES.includes(normalizedUserType)) {
       return NextResponse.json({ error: "Invalid user type." }, { status: 400 });
     }
 
@@ -88,13 +94,17 @@ export async function POST(request: Request) {
 
     if (existing) {
       return NextResponse.json(
-        { error: "You are already on the priority list." },
-        { status: 409 }
+        {
+          success: true,
+          isAlreadyRegistered: true,
+          message: "You're already on the priority list. We'll keep you posted.",
+        },
+        { status: 200 }
       );
     }
 
     // 7. Branch logic based on userType
-    if (userType === "user") {
+    if (normalizedUserType === "user") {
       // ── User path: only email required ──
       await prisma.waitlistLead.create({
         data: {
@@ -154,8 +164,12 @@ export async function POST(request: Request) {
     // Handle unique constraint code from database just in case
     if (error?.code === "P2002") {
       return NextResponse.json(
-        { error: "You are already on the priority list." },
-        { status: 409 }
+        {
+          success: true,
+          isAlreadyRegistered: true,
+          message: "You're already on the priority list. We'll keep you posted.",
+        },
+        { status: 200 }
       );
     }
     return NextResponse.json(

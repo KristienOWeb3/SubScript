@@ -303,7 +303,7 @@ console.log(result);`
                             key={tab}
                             onClick={() => {
                                 setSelectedTab(tab);
-                                setTerminalOutput("Click 'Execute' to fetch response...");
+                                setTerminalOutput("Click 'Generate Test Session' to fetch response...");
                             }}
                             className={`px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
                                 selectedTab === tab
@@ -334,7 +334,7 @@ console.log(result);`
                         ) : (
                             <>
                                 <TerminalIcon className="w-3 h-3" />
-                                Execute
+                                Generate Test Session
                             </>
                         )}
                     </button>
@@ -742,9 +742,9 @@ export default function DeveloperPage() {
                             </div>
 
                             <div className="mb-4">
-                                <h3 className="text-xl font-bold uppercase tracking-tight text-white mb-2">
+                                <h2 className="text-xl font-bold uppercase tracking-tight text-white mb-2">
                                     Interactive API Sandbox
-                                </h3>
+                                </h2>
                                 <p className="text-[11px] text-white/40 leading-relaxed font-sans">
                                     Simulate SDK methods in real time. Choose an endpoint, configure parameters, and generate mock payloads with Malachite consensus finality.
                                 </p>
