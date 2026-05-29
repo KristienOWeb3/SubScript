@@ -36,7 +36,7 @@ export default function DashboardHeader() {
     useEffect(() => {
         if (typeof window !== "undefined") {
             setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_page_lock"))
+                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
             );
         }
     }, [realAddress, realIsConnected]);
