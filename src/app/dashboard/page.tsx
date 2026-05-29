@@ -1,30 +1,41 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
-    RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, PlugZap, Loader2
+    RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
+    PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
+    Wallet, Shield
 } from "lucide-react";
 
 const ARC_TESTNET_CHAIN_ID = 5042002;
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
-const LIVE_PUBLISHABLE_KEY = "pk_live_51Px200Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
     transport: http(),
 });
+
+const ERC20_ABI = [
+    {
+        type: "function" as const,
+        name: "balanceOf" as const,
+        stateMutability: "view" as const,
+        inputs: [{ name: "account", type: "address" }] as const,
+        outputs: [{ name: "", type: "uint256" }] as const,
+    }
+];
 
 const SUBSCRIPT_ABI = [
     {
@@ -54,16 +65,51 @@ const SUBSCRIPT_ABI = [
         outputs: [],
         stateMutability: "nonpayable",
         type: "function",
-    }
+    },
+    {
+        inputs: [{ name: "", type: "address" }],
+        name: "merchantTiers",
+        outputs: [{ name: "", type: "uint8" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [{ name: "", type: "address" }],
+        name: "merchantBalances",
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [{ name: "", type: "address" }],
+        name: "merchantPayoutDestination",
+        outputs: [{ name: "", type: "address" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [],
+        name: "withdraw",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    },
+    {
+        inputs: [{ name: "_newDestination", type: "address" }],
+        name: "configurePayoutDestination",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    },
 ] as const;
 
-// Sidebar tabs setup
+// Sidebar tabs
 const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
+    { id: "premium", label: "Premium", icon: Crown },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "offramp", label: "Fiat Off-Ramp", icon: ArrowRightLeft },
 ] as const;
 
 type TabId = typeof tabs[number]["id"];
@@ -82,167 +128,13 @@ export default function DashboardPage() {
     const { switchChain } = useSwitchChain();
     const { chainId } = useAccount();
 
-    const isPremiumSubscribed = false;
-    const setIsPremiumSubscribed = (_val: boolean) => {};
-    const [customAddress, setCustomAddress] = useState("");
+    // Premium state
     const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
     const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
     const [premiumError, setPremiumError] = useState<string | null>(null);
-    const [saveSuccess, setSaveSuccess] = useState(false);
-
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            // Reset premium mode and make everyone on basic plan once
-            if (!localStorage.getItem("subscript_premium_reset_done_v2")) {
-                localStorage.removeItem("subscript_premium_subscribed");
-                for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key && key.startsWith("subscript_premium_subscribed_")) {
-                        localStorage.removeItem(key);
-                    }
-                }
-                localStorage.setItem("subscript_premium_reset_done_v2", "true");
-            }
-            setCustomAddress(localStorage.getItem("subscript_custom_merchant_address") || "");
-        }
-    }, []);
-
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            if (address) {
-                const key = `subscript_premium_subscribed_${address.toLowerCase()}`;
-                setIsPremiumSubscribed(localStorage.getItem(key) === "true");
-            } else {
-                setIsPremiumSubscribed(false);
-            }
-        }
-    }, [address]);
-
-    const handleSaveCustomAddress = () => {
-        if (!customAddress) {
-            setPremiumError("Please enter a valid wallet address.");
-            return;
-        }
-        localStorage.setItem("subscript_custom_merchant_address", customAddress);
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
-    };
-
-    const handleSubscribePremium = async () => {
-        if (!isConnected || !address) {
-            setPremiumError("Please connect your merchant wallet first.");
-            return;
-        }
-
-        if (chainId !== 5042002) {
-            setPremiumError("Not on Arc Testnet. Triggering switch to Chain 5042002...");
-            switchChain?.({ chainId: 5042002 });
-            return;
-        }
-
-        setIsSubscribingPremium(true);
-        setPremiumStatus("Preparing 10 USDC payment...");
-        setPremiumError(null);
-
-        try {
-            const PAYMENT_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
-            const amount = parseUnits("10", 6); // $10 USDC (6 decimals)
-
-            const clearPremiumState = () => {
-                if (address) {
-                    localStorage.removeItem(`subscript_premium_subscribed_${address.toLowerCase()}`);
-                }
-                setIsPremiumSubscribed(false);
-            };
-
-            // Direct USDC transfer — single transaction, no router contract required
-            setPremiumStatus("Waiting for transfer signature...");
-            const transferHash = await writeContractAsync({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: [
-                    {
-                        type: "function",
-                        name: "transfer",
-                        stateMutability: "nonpayable",
-                        inputs: [
-                            { name: "to", type: "address" },
-                            { name: "amount", type: "uint256" }
-                        ],
-                        outputs: [{ name: "", type: "bool" }]
-                    }
-                ] as const,
-                functionName: "transfer",
-                args: [PAYMENT_RECIPIENT, amount],
-            });
-
-            console.log("Premium payment tx submitted:", transferHash);
-
-            // Wait for on-chain confirmation
-            setPremiumStatus("Confirming payment on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash });
-
-            if (receipt.status !== "success") {
-                clearPremiumState();
-                throw new Error("Payment transaction reverted on-chain. No funds were transferred.");
-            }
-
-            // Parse Transfer event logs to verify the exact payment
-            const transferLogs = parseEventLogs({
-                abi: [
-                    {
-                        type: "event",
-                        name: "Transfer",
-                        inputs: [
-                            { name: "from", type: "address", indexed: true },
-                            { name: "to", type: "address", indexed: true },
-                            { name: "value", type: "uint256", indexed: false }
-                        ],
-                        anonymous: false
-                    }
-                ] as const,
-                logs: receipt.logs,
-            });
-
-            // Find the Transfer event matching our payment
-            const paymentLog = transferLogs.find(
-                (log) =>
-                    log.eventName === "Transfer" &&
-                    log.args.from?.toLowerCase() === address.toLowerCase() &&
-                    log.args.to?.toLowerCase() === PAYMENT_RECIPIENT.toLowerCase()
-            );
-
-            if (!paymentLog) {
-                clearPremiumState();
-                throw new Error("Transfer event not found in receipt. Payment could not be verified.");
-            }
-
-            if (paymentLog.args.value !== amount) {
-                clearPremiumState();
-                throw new Error(
-                    `Payment amount mismatch. Expected ${formatUnits(amount, 6)} USDC, got ${formatUnits(paymentLog.args.value ?? BigInt(0), 6)} USDC.`
-                );
-            }
-
-            console.log("Premium payment verified:", {
-                from: paymentLog.args.from,
-                to: paymentLog.args.to,
-                amount: formatUnits(paymentLog.args.value ?? BigInt(0), 6),
-                txHash: transferHash,
-            });
-
-            // All verification checks passed — activate premium for this wallet
-            if (address) {
-                localStorage.setItem(`subscript_premium_subscribed_${address.toLowerCase()}`, "true");
-            }
-            setIsPremiumSubscribed(true);
-            setPremiumStatus(null);
-        } catch (err: any) {
-            console.error("Premium subscription failed:", err);
-            setPremiumError(err.shortMessage || err.message || "Transaction failed");
-        } finally {
-            setIsSubscribingPremium(false);
-        }
-    };
+    const [rerouteAddress, setRerouteAddress] = useState("");
+    const [isRerouting, setIsRerouting] = useState(false);
+    const [rerouteSuccess, setRerouteSuccess] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
@@ -253,12 +145,49 @@ export default function DashboardPage() {
         }
     }, [realAddress, realIsConnected]);
 
-    // isConnected and address defined above to prevent TDZ reference error
+    // ──── On-chain reads ────
+    // Merchant tier
+    const { data: merchantTierRaw, refetch: refetchTier } = useReadContract({
+        address: SUBSCRIPT_ROUTER_ADDRESS,
+        abi: SUBSCRIPT_ABI,
+        functionName: "merchantTiers",
+        args: address ? [address] : undefined,
+        query: { enabled: Boolean(address) },
+    });
+    const merchantTier = merchantTierRaw !== undefined ? Number(merchantTierRaw) : 0;
+    const isPremium = merchantTier >= 1;
 
-    // Environment Toggle State
-    const [isMainnet, setIsMainnet] = useState(false);
+    // Merchant vault balance
+    const { data: vaultBalanceRaw, refetch: refetchVaultBalance } = useReadContract({
+        address: SUBSCRIPT_ROUTER_ADDRESS,
+        abi: SUBSCRIPT_ABI,
+        functionName: "merchantBalances",
+        args: address ? [address] : undefined,
+        query: { enabled: Boolean(address) },
+    });
+    const vaultBalance = vaultBalanceRaw !== undefined ? parseFloat(formatUnits(vaultBalanceRaw, 6)) : 0;
 
-    // Sidebar navigation active state
+    // Merchant payout destination
+    const { data: payoutDestRaw, refetch: refetchPayoutDest } = useReadContract({
+        address: SUBSCRIPT_ROUTER_ADDRESS,
+        abi: SUBSCRIPT_ABI,
+        functionName: "merchantPayoutDestination",
+        args: address ? [address] : undefined,
+        query: { enabled: Boolean(address) },
+    });
+    const payoutDestination = payoutDestRaw && payoutDestRaw !== "0x0000000000000000000000000000000000000000" ? payoutDestRaw : null;
+
+    // USDC wallet balance  
+    const { data: walletBalanceRaw, refetch: refetchWalletBalance } = useReadContract({
+        address: USDC_NATIVE_GAS_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: address ? [address] : undefined,
+        query: { enabled: Boolean(address) },
+    });
+    const walletBalance = walletBalanceRaw !== undefined ? parseFloat(formatUnits(walletBalanceRaw as bigint, 6)) : 0;
+
+    // Sidebar tab state
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
     // Copying state
@@ -280,8 +209,9 @@ export default function DashboardPage() {
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
-    // Fiat Off-Ramp split state
-    const [fiatSplit, setFiatSplit] = useState(70);
+    // Withdraw state
+    const [isWithdrawing, setIsWithdrawing] = useState(false);
+    const [withdrawSuccess, setWithdrawSuccess] = useState(false);
 
     // Live subscription ledger state loaded from smart contract
     const [ledgers, setLedgers] = useState<any[]>([]);
@@ -355,7 +285,7 @@ export default function DashboardPage() {
         return () => {
             isSubscribed = false;
         };
-    }, [isConnected, address, selectedWebhook]);
+    }, [isConnected, address]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -376,9 +306,7 @@ export default function DashboardPage() {
         setTimeout(() => {
             setSecretKeyVersion(prev => prev + 1);
             setIsRolling(false);
-            const activeSecretKey = isMainnet 
-                ? `sk_live_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}` 
-                : `sk_test_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}`;
+            const activeSecretKey = `sk_test_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}`;
             handleCopy(activeSecretKey, "API Secret Key Rolled");
         }, 800);
     };
@@ -412,8 +340,139 @@ export default function DashboardPage() {
         }, 700);
     };
 
-    const activeMerchantAddress = (isPremiumSubscribed && customAddress) ? customAddress : (address || "");
-    const merchantWalletAddress = activeMerchantAddress;
+    // Withdraw vault funds
+    const handleWithdraw = async () => {
+        if (vaultBalance <= 0) return;
+        setIsWithdrawing(true);
+        try {
+            await writeContractAsync({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: SUBSCRIPT_ABI,
+                functionName: "withdraw",
+            });
+            setWithdrawSuccess(true);
+            setTimeout(() => setWithdrawSuccess(false), 4000);
+            refetchVaultBalance();
+            refetchWalletBalance();
+        } catch (err) {
+            console.error("Withdraw failed:", err);
+        } finally {
+            setIsWithdrawing(false);
+        }
+    };
+
+    // Premium subscribe ($10 USDC)
+    const handleSubscribePremium = async () => {
+        if (!isConnected || !address) {
+            setPremiumError("Please connect your merchant wallet first.");
+            return;
+        }
+        if (chainId !== 5042002) {
+            setPremiumError("Not on Arc Testnet. Switching chain...");
+            switchChain?.({ chainId: 5042002 });
+            return;
+        }
+
+        setIsSubscribingPremium(true);
+        setPremiumStatus("Preparing 10 USDC payment...");
+        setPremiumError(null);
+
+        try {
+            const PAYMENT_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
+            const amount = parseUnits("10", 6);
+
+            setPremiumStatus("Waiting for transfer signature...");
+            const transferHash = await writeContractAsync({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: [
+                    {
+                        type: "function",
+                        name: "transfer",
+                        stateMutability: "nonpayable",
+                        inputs: [
+                            { name: "to", type: "address" },
+                            { name: "amount", type: "uint256" }
+                        ],
+                        outputs: [{ name: "", type: "bool" }]
+                    }
+                ] as const,
+                functionName: "transfer",
+                args: [PAYMENT_RECIPIENT, amount],
+            });
+
+            setPremiumStatus("Confirming payment on-chain...");
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash });
+
+            if (receipt.status !== "success") {
+                throw new Error("Payment transaction reverted on-chain.");
+            }
+
+            const transferLogs = parseEventLogs({
+                abi: [
+                    {
+                        type: "event",
+                        name: "Transfer",
+                        inputs: [
+                            { name: "from", type: "address", indexed: true },
+                            { name: "to", type: "address", indexed: true },
+                            { name: "value", type: "uint256", indexed: false }
+                        ],
+                        anonymous: false
+                    }
+                ] as const,
+                logs: receipt.logs,
+            });
+
+            const paymentLog = transferLogs.find(
+                (log) =>
+                    log.eventName === "Transfer" &&
+                    log.args.from?.toLowerCase() === address.toLowerCase() &&
+                    log.args.to?.toLowerCase() === PAYMENT_RECIPIENT.toLowerCase()
+            );
+
+            if (!paymentLog) throw new Error("Transfer event not found in receipt.");
+            if (paymentLog.args.value !== amount) {
+                throw new Error(`Amount mismatch. Expected ${formatUnits(amount, 6)} USDC.`);
+            }
+
+            setPremiumStatus("✓ Payment verified! Premium tier activated.");
+            refetchTier();
+            setTimeout(() => setPremiumStatus(null), 4000);
+        } catch (err: any) {
+            console.error("Premium subscription failed:", err);
+            setPremiumError(err.shortMessage || err.message || "Transaction failed");
+        } finally {
+            setIsSubscribingPremium(false);
+        }
+    };
+
+    // Reroute payout destination on-chain
+    const handleReroute = async () => {
+        if (!rerouteAddress || !rerouteAddress.startsWith("0x") || rerouteAddress.length !== 42) {
+            setPremiumError("Please enter a valid Ethereum address (0x...).");
+            return;
+        }
+        setIsRerouting(true);
+        setPremiumError(null);
+        try {
+            await writeContractAsync({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: SUBSCRIPT_ABI,
+                functionName: "configurePayoutDestination",
+                args: [rerouteAddress as `0x${string}`],
+            });
+            setRerouteSuccess(true);
+            setTimeout(() => setRerouteSuccess(false), 4000);
+            refetchPayoutDest();
+        } catch (err: any) {
+            console.error("Reroute failed:", err);
+            setPremiumError(err.shortMessage || err.message || "Reroute transaction failed");
+        } finally {
+            setIsRerouting(false);
+        }
+    };
+
+    const merchantWalletAddress = address || "";
     const billingPeriodSeconds = useMemo(() => {
         if (subInterval === "weekly") return "604800";
         if (subInterval === "yearly") return "31536000";
@@ -421,41 +480,41 @@ export default function DashboardPage() {
     }, [subInterval]);
 
     const checkoutCode = useMemo(() => `<SubScriptCheckout
-  publishableKey="${isMainnet ? LIVE_PUBLISHABLE_KEY : TEST_PUBLISHABLE_KEY}"
+  publishableKey="${TEST_PUBLISHABLE_KEY}"
   merchantAddress="${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
   planName="${subName}"
   amountCap="${subCap}"
   interval="${subInterval}"
   fundingChain="${subChain}"
-/>`, [isMainnet, merchantWalletAddress, subCap, subChain, subInterval, subName]);
+/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName]);
 
     const agentIntegrationPrompt = useMemo(() => {
         return `Act as an elite full-stack Web3 engineer integrating SubScript into my app.
 
-SubScript is fast, private, and reliable. Build a premium dark-mode checkout that uses the Zero-Knowledge Burner Method on Arc Network.
+SubScript is a decentralized recurring subscription protocol on Arc Network using the Zero-Knowledge Burner Method for privacy-preserving payments.
 
 Live merchant context:
-- MERCHANT_WALLET_ADDRESS = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295"
-- PLAN_NAME = "What do you want from this?"
-- AMOUNT_CAP_USDC = "15"
-- BILLING_INTERVAL_SECONDS = 31536000
-- ARC_TESTNET_CHAIN_ID = 5042002
-- SUBSCRIPT_ROUTER = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29"
-- USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc"
+- MERCHANT_WALLET_ADDRESS = "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
+- PLAN_NAME = "${subName}"
+- AMOUNT_CAP_USDC = "${subCap}"
+- BILLING_INTERVAL_SECONDS = ${billingPeriodSeconds}
+- ARC_TESTNET_CHAIN_ID = ${ARC_TESTNET_CHAIN_ID}
+- SUBSCRIPT_ROUTER = "${SUBSCRIPT_ROUTER_ADDRESS}"
+- USDC_NATIVE_GAS_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
 - PROTOCOL_FEE_BPS = 100
 
 Implementation requirements:
-1. First, run \`npx @subscript-protocol/cli\` in the terminal to generate the \`abi.json\` and \`constants.ts\` files locally. Strictly use these injected files for your configuration.
-2. Use native USDC gas on Arc Testnet and route transactions to the SubScript Router. Ensure the \`AMOUNT_CAP_USDC\` is properly formatted to 6 decimals using \`parseUnits('15', 6)\`.
+1. Run \`npx @subscript-protocol/cli\` to generate \`abi.json\` and \`constants.ts\`. Use these injected files for configuration.
+2. Use native USDC gas on Arc Testnet. Format amounts to 6 decimals: \`parseUnits('${subCap}', 6)\`.
 3. Implement the ZK Burner Method:
-   - Funding wallet generates a random secret and commitment.
-   - Funding wallet approves USDC and calls depositAndCommit(bytes32 commitment, uint256 amount).
-   - The frontend generates the local proof from the secret.
-   - The user switches to a clean burner wallet.
-   - Burner wallet calls verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period).
-4. Never expose the funding wallet in merchant-facing subscription state. Persist only burner/subscription references and public nullifier data.
-5. Show pending, proof generation, activation, success, and recoverable error states.`;
-    }, []);
+   - Funding wallet generates a random secret and commitment hash.
+   - Funding wallet approves USDC and calls \`depositAndCommit(bytes32 commitment, uint256 amount)\`.
+   - Frontend generates the local ZK proof from the secret.
+   - User switches to a clean burner wallet.
+   - Burner wallet calls \`verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period)\`.
+4. Never expose the funding wallet in merchant-facing subscription state.
+5. Handle states: pending, proof generation, activation, success, and recoverable errors.`;
+    }, [merchantWalletAddress, subName, subCap, billingPeriodSeconds]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
         mcpServers: {
@@ -481,76 +540,127 @@ Implementation requirements:
         }
     };
 
-    // Interactive rendering based on active tab
+    // Computed stats
+    const activeAllowances = ledgers.filter(l => l.active).length;
+    const revokedCount = ledgers.filter(l => !l.active).length;
+    const totalSubs = ledgers.length;
+    const failureRate = totalSubs > 0 ? ((revokedCount / totalSubs) * 100).toFixed(1) : "0.0";
+    const projected30DaySettlement = ledgers.reduce((acc, sub) => {
+        if (!sub.active) return acc;
+        const amountNum = parseFloat(sub.rawAmount) || 0;
+        const periodNum = parseFloat(sub.rawPeriod) || 2592000;
+        const monthlyEquivalent = amountNum * (2592000 / periodNum);
+        return acc + monthlyEquivalent;
+    }, 0);
+
+    const primaryColorText = "text-[#00d2b4]";
+    const primaryColorBg = "bg-[#00d2b4]";
+
     const renderView = () => {
-        const primaryColorText = isMainnet ? "text-red-500" : "text-[#00d2b4]";
-        const primaryColorBg = isMainnet ? "bg-red-500" : "bg-[#00d2b4]";
-        const primaryBorderHover = isMainnet ? "hover:border-red-500/20" : "hover:border-[#00d2b4]/20";
-
-        const activeAllowances = ledgers.filter(l => l.active).length;
-        const projected30DaySettlement = ledgers.reduce((acc, sub) => {
-            if (!sub.active) return acc;
-            const amountNum = parseFloat(sub.rawAmount) || 0;
-            const periodNum = parseFloat(sub.rawPeriod) || 2592000;
-            const monthlyEquivalent = amountNum * (2592000 / periodNum);
-            return acc + monthlyEquivalent;
-        }, 0);
-
         switch (activeTab) {
             case "overview":
                 return (
                     <div className="space-y-8">
                         {/* Stats Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-                                <div className="absolute top-0 right-0 w-24 h-24 bg-white/[0.01] rounded-bl-full pointer-events-none" />
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Agent Allowances</p>
-                                <p className="text-4xl font-extrabold text-white mb-2 tracking-tight">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                            {/* Wallet Balance */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Wallet Balance</p>
+                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                    ${walletBalance.toFixed(2)}
+                                </p>
+                                <p className="text-[10px] text-white/30 flex items-center gap-1">
+                                    <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
+                                </p>
+                            </div>
+
+                            {/* Vault Balance */}
+                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Vault Balance</p>
+                                <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
+                                    ${vaultBalance.toFixed(2)}
+                                </p>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] text-white/30">Claimable USDC in router</p>
+                                    <button
+                                        onClick={handleWithdraw}
+                                        disabled={vaultBalance <= 0 || isWithdrawing}
+                                        className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                                            vaultBalance > 0 
+                                                ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10" 
+                                                : "border-white/5 text-white/20 cursor-not-allowed"
+                                        }`}
+                                    >
+                                        {isWithdrawing ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ArrowDownToLine className="w-2.5 h-2.5" />}
+                                        Withdraw
+                                    </button>
+                                </div>
+                                {withdrawSuccess && (
+                                    <p className="text-[10px] text-emerald-400 mt-2 font-semibold">✓ Withdrawal successful</p>
+                                )}
+                            </div>
+
+                            {/* Active Allowances */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Allowances</p>
+                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
                                     {isLoadingContract ? "..." : activeAllowances}
                                 </p>
-                                <p className="text-2xs text-white/30 flex items-center gap-1">
+                                <p className="text-[10px] text-white/30 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                    Active M2M contracts listening
+                                    Active M2M contracts
                                 </p>
                             </div>
 
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Projected 30-Day Settlement</p>
-                                <p className={`text-4xl font-extrabold ${primaryColorText} mb-2 tracking-tight`}>
-                                    {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}{" "}
-                                    <span className="text-xs text-white/40 font-normal">USDC</span>
+                            {/* 30 Day Settlement */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
+                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                    {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}
                                 </p>
-                                <p className="text-2xs text-white/30">
-                                    Estimated volume based on active session keys
-                                </p>
+                                <p className="text-[10px] text-white/30">Estimated monthly volume</p>
                             </div>
+                        </div>
 
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Execution Failure Rate</p>
-                                <p className="text-4xl font-extrabold text-white mb-2 tracking-tight">
-                                    0.0%
-                                </p>
-                                <p className="text-2xs text-white/30 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                    All renewal attempts successfully settled
-                                </p>
+                        {/* Tier Badge */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
+                                    {isPremium ? <Crown className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                        {isPremium ? "Premium Tier" : "Standard Tier"}
+                                    </p>
+                                    <p className="text-[10px] text-white/40">
+                                        {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access — upgrade for premium features"}
+                                    </p>
+                                </div>
                             </div>
+                            {!isPremium && (
+                                <button
+                                    onClick={() => setActiveTab("premium")}
+                                    className="px-4 py-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] text-[10px] font-bold uppercase tracking-wider rounded-full hover:bg-[#d4a853]/20 transition-all"
+                                >
+                                    Upgrade
+                                </button>
+                            )}
                         </div>
 
                         {/* Customer / Agent Ledger */}
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
                             <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                <Activity className={`w-4.5 h-4.5 ${primaryColorText}`} />
+                                <Activity className={`w-4 h-4 ${primaryColorText}`} />
                                 Customer / Agent Ledger
                             </h2>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                            <th className="pb-3">ClientReferenceId</th>
-                                            <th className="pb-3">Smart Wallet Address</th>
-                                            <th className="pb-3">Allowance Limit</th>
-                                            <th className="pb-3">Next Billing Date</th>
+                                            <th className="pb-3">ID</th>
+                                            <th className="pb-3">Subscriber</th>
+                                            <th className="pb-3">Allowance</th>
+                                            <th className="pb-3">Next Billing</th>
                                             <th className="pb-3">Status</th>
                                             <th className="pb-3 text-right">Actions</th>
                                         </tr>
@@ -558,8 +668,8 @@ Implementation requirements:
                                     <tbody className="text-xs text-white/70 font-mono">
                                         {isLoadingContract ? (
                                             <tr>
-                                                <td colSpan={6} className="py-8 text-center text-white/40">
-                                                    Fetching on-chain subscription state...
+                                                <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                                                    <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
                                                 </td>
                                             </tr>
                                         ) : ledgers.length === 0 ? (
@@ -576,7 +686,7 @@ Implementation requirements:
                                                     <td className="py-4 text-[#d4a853]">{item.limit}</td>
                                                     <td className="py-4">{item.nextBilling}</td>
                                                     <td className="py-4">
-                                                        <span className={`px-2 py-0.5 rounded-full text-3xs font-bold uppercase tracking-wider ${
+                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                                                             item.active 
                                                                 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
                                                                 : "bg-red-500/10 text-red-400 border border-red-500/20"
@@ -589,12 +699,12 @@ Implementation requirements:
                                                             <button 
                                                                 onClick={() => handleRevokeCustomer(item.rawId)}
                                                                 className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                                title="Revoke Allowance Access"
+                                                                title="Revoke Allowance"
                                                             >
                                                                 <ShieldX className="w-4 h-4" />
                                                             </button>
                                                         ) : (
-                                                            <span className="text-3xs text-white/20 uppercase tracking-widest font-bold">Ended</span>
+                                                            <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -604,19 +714,175 @@ Implementation requirements:
                                 </table>
                             </div>
                         </div>
+                    </div>
+                );
 
-                        {/* Execution Failure Log */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <ShieldAlert className="w-4.5 h-4.5 text-red-400" />
-                                Execution Failure Log
-                            </h2>
-                            <div className="space-y-3 font-mono text-2xs">
-                                <div className="py-6 text-center text-white/30 font-sans">
-                                    No execution failures logged. All on-chain renewal transactions succeeded.
+            case "premium":
+                return (
+                    <div className="space-y-8">
+                        {/* Tier Status Card */}
+                        <div className={`liquid-glass border rounded-3xl p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
+                            <div className="flex items-start gap-4">
+                                <div className={`p-3 rounded-2xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
+                                    <Crown className="w-8 h-8" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-1">
+                                        <h2 className="text-xl font-extrabold text-white uppercase tracking-tight">
+                                            {isPremium ? "Premium Active" : "Standard Tier"}
+                                        </h2>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                            isPremium 
+                                                ? "bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20" 
+                                                : "bg-white/5 text-white/40 border border-white/10"
+                                        }`}>
+                                            Tier {merchantTier}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-white/50 leading-relaxed">
+                                        {isPremium 
+                                            ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
+                                            : "Upgrade to Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
+                                        }
+                                    </p>
                                 </div>
                             </div>
                         </div>
+
+                        {isPremium ? (
+                            <>
+                                {/* Payout Rerouting Controls */}
+                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <ArrowRightLeft className="w-4 h-4 text-[#d4a853]" />
+                                        Fund Rerouting
+                                    </h3>
+
+                                    {/* Current Destination */}
+                                    <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
+                                        {payoutDestination ? (
+                                            <div className="flex items-center gap-3">
+                                                <code className="text-sm font-mono text-[#d4a853] break-all">{payoutDestination}</code>
+                                                <button
+                                                    onClick={() => handleCopy(payoutDestination, "Payout Destination")}
+                                                    className="p-1.5 text-white/30 hover:text-white rounded-lg hover:bg-white/5 transition-all flex-shrink-0"
+                                                >
+                                                    {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#00d2b4]" /> : <Copy className="w-3.5 h-3.5" />}
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-white/50">Default — funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
+                                        )}
+                                    </div>
+
+                                    {/* Set New Destination */}
+                                    <div>
+                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
+                                            New Destination Address
+                                        </label>
+                                        <div className="flex gap-3">
+                                            <input 
+                                                type="text" 
+                                                value={rerouteAddress} 
+                                                onChange={(e) => setRerouteAddress(e.target.value)}
+                                                placeholder="0x... cold storage, multisig, or ledger address"
+                                                className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
+                                            />
+                                            <button
+                                                onClick={handleReroute}
+                                                disabled={isRerouting || !rerouteAddress}
+                                                className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                            >
+                                                {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+                                                Reroute
+                                            </button>
+                                        </div>
+                                        {rerouteSuccess && (
+                                            <p className="text-emerald-400 text-xs mt-3 font-semibold">✓ Payout destination updated on-chain successfully!</p>
+                                        )}
+                                        {premiumError && (
+                                            <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Premium Features Summary */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    {[
+                                        { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
+                                        { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
+                                        { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
+                                        { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
+                                    ].map((feature, idx) => (
+                                        <div key={idx} className="liquid-glass border border-white/5 rounded-2xl p-5 flex items-start gap-3">
+                                            <div className="p-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] rounded-xl flex-shrink-0">
+                                                <feature.icon className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-white uppercase tracking-wider mb-0.5">{feature.title}</p>
+                                                <p className="text-[10px] text-white/40 leading-relaxed">{feature.desc}</p>
+                                            </div>
+                                            <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">Active</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            /* Upgrade CTA for Standard tier */
+                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                                <div className="max-w-lg mx-auto text-center space-y-6">
+                                    <div className="space-y-2">
+                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Premium</h3>
+                                        <p className="text-xs text-white/50 leading-relaxed">
+                                            Unlock fund rerouting to cold storage and multisigs, priority keeper execution, advanced analytics, and full API access.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex items-center justify-center gap-2">
+                                        <span className="text-3xl font-extrabold text-[#d4a853]">$10.00</span>
+                                        <span className="text-xs text-white/40">USDC / month</span>
+                                    </div>
+
+                                    <button
+                                        onClick={handleSubscribePremium}
+                                        disabled={isSubscribingPremium}
+                                        className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2 mx-auto"
+                                    >
+                                        {isSubscribingPremium ? (
+                                            <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
+                                        ) : (
+                                            <><Crown className="w-4 h-4" /> Upgrade Now</>
+                                        )}
+                                    </button>
+
+                                    {premiumStatus && (
+                                        <p className="text-xs text-[#d4a853] font-semibold animate-pulse">{premiumStatus}</p>
+                                    )}
+                                    {premiumError && (
+                                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-xs font-mono break-all">
+                                            {premiumError}
+                                        </div>
+                                    )}
+
+                                    {/* Features list */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-white/5">
+                                        {[
+                                            "Fund rerouting to multisig",
+                                            "Priority keeper execution",
+                                            "Advanced analytics",
+                                            "Full API & webhook access",
+                                            "Multi-wallet support",
+                                            "Premium merchant badge"
+                                        ].map((f, i) => (
+                                            <div key={i} className="flex items-center gap-2 text-xs text-white/60">
+                                                <Check className="w-3.5 h-3.5 text-[#d4a853] flex-shrink-0" /> {f}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
 
@@ -624,13 +890,8 @@ Implementation requirements:
                 const testSecretKey = address 
                     ? `sk_test_${address.slice(2, 10)}${address.slice(-8)}_v${secretKeyVersion}` 
                     : "";
-                const liveSecretKey = address 
-                    ? `sk_live_${address.slice(2, 10)}${address.slice(-8)}_v${secretKeyVersion}` 
-                    : "";
-                const activeSecretKey = isMainnet ? liveSecretKey : testSecretKey;
-                const activePublishableKey = isMainnet 
-                    ? "pk_live_51Px200Z7Z4M19XQY1R93B" 
-                    : "pk_test_51Px9800Z7Z4M19XQY1R93B";
+                const activeSecretKey = testSecretKey;
+                const activePublishableKey = TEST_PUBLISHABLE_KEY;
 
                 return (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
@@ -640,27 +901,25 @@ Implementation requirements:
                                 API Credentials
                             </h2>
                             <p className="text-xs text-white/50 font-sans leading-relaxed">
-                                Use these keys to authenticate your backend interactions with the SubScript SDK.
-                                Keep your Secret Key highly protected.
+                                Use these keys to authenticate your backend with the SubScript SDK.
+                                Your Secret Key is derived from your wallet address.
                             </p>
                         </div>
 
-                        {/* Keys Container */}
                         <div className="space-y-6">
                             {/* Publishable Key */}
                             <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Publishable Key</span>
                                     {copiedText === "Publishable Key" && (
-                                        <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
+                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
                                     )}
                                 </div>
                                 <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
                                     <code className="text-xs font-mono text-white/80 break-all select-all">{activePublishableKey}</code>
                                     <button 
                                         onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
-                                        className={`p-2 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-all`}
-                                        title="Copy key"
+                                        className="p-2 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-all"
                                     >
                                         <Copy className="w-4 h-4" />
                                     </button>
@@ -676,12 +935,11 @@ Implementation requirements:
                                     </div>
                                     <div className="flex items-center gap-4">
                                         {copiedText === "Secret Key" && (
-                                            <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
                                         )}
                                         <button
                                             onClick={() => setRevealSecret(!revealSecret)}
                                             className="text-white/40 hover:text-white transition-colors"
-                                            title={revealSecret ? "Hide Key" : "Show Key"}
                                         >
                                             {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                         </button>
@@ -698,7 +956,6 @@ Implementation requirements:
                                         onClick={() => handleCopy(activeSecretKey, "Secret Key")}
                                         disabled={!revealSecret}
                                         className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
-                                        title="Copy key"
                                     >
                                         <Copy className="w-4 h-4" />
                                     </button>
@@ -710,25 +967,21 @@ Implementation requirements:
                         <div className="pt-4 border-t border-white/5 flex items-center justify-between">
                             <div>
                                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
-                                <p className="text-2xs text-white/40 font-sans max-w-md">
-                                    In case of leakage, roll your credentials instantly. Old keys will remain valid for 24 hours to prevent immediate system downtime.
+                                <p className="text-[10px] text-white/40 font-sans max-w-md">
+                                    Roll your credentials instantly. Old keys remain valid for 24 hours.
                                 </p>
                             </div>
                             <div className="flex items-center gap-4">
                                 {copiedText === "API Secret Key Rolled" && (
-                                    <span className="text-2xs text-[#00d2b4] font-bold animate-pulse">✓ API Secret Key Rolled & Copied</span>
+                                    <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">✓ Rolled & Copied</span>
                                 )}
                                 <button
                                     onClick={handleRollKeys}
                                     disabled={isRolling}
-                                    className={`px-5 py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200 flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
+                                    className={`px-5 py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
                                 >
-                                    {isRolling ? (
-                                        <RefreshCw className="w-4.5 h-4.5 animate-spin text-white" />
-                                    ) : (
-                                        <RotateCw className="w-4.5 h-4.5 text-white" />
-                                    )}
-                                    Roll Credentials
+                                    {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-white" />}
+                                    Roll
                                 </button>
                             </div>
                         </div>
@@ -739,192 +992,203 @@ Implementation requirements:
                 return (
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
-                        {/* Configurator Form */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
-                            <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-6 flex items-center gap-2">
-                                    <Sliders className={`w-4.5 h-4.5 ${primaryColorText}`} />
-                                    Checkout Configurator
-                                </h2>
-                                <div className="space-y-4 font-sans text-xs">
-                                    <div>
-                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
-                                        <input 
-                                            type="text" 
-                                            value={subName} 
-                                            onChange={(e) => setSubName(e.target.value)}
-                                            className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                            {/* Configurator Form */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+                                <div>
+                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-6 flex items-center gap-2">
+                                        <Sliders className={`w-4 h-4 ${primaryColorText}`} />
+                                        Checkout Configurator
+                                    </h2>
+                                    <div className="space-y-4 font-sans text-xs">
                                         <div>
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Monthly cap (USDC)</label>
+                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
-                                                value={subCap} 
-                                                onChange={(e) => setSubCap(e.target.value)}
+                                                value={subName} 
+                                                onChange={(e) => setSubName(e.target.value)}
                                                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
                                             />
                                         </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Monthly cap (USDC)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={subCap} 
+                                                    onChange={(e) => setSubCap(e.target.value)}
+                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Billing Interval</label>
+                                                <select 
+                                                    value={subInterval}
+                                                    onChange={(e) => setSubInterval(e.target.value)}
+                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors appearance-none"
+                                                >
+                                                    <option value="weekly">Weekly</option>
+                                                    <option value="monthly">Monthly</option>
+                                                    <option value="yearly">Yearly</option>
+                                                </select>
+                                            </div>
+                                        </div>
                                         <div>
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Billing Interval</label>
+                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
                                             <select 
-                                                value={subInterval}
-                                                onChange={(e) => setSubInterval(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors appearance-none"
+                                                value={subChain}
+                                                onChange={(e) => setSubChain(e.target.value)}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
                                             >
-                                                <option value="weekly">Weekly</option>
-                                                <option value="monthly">Monthly</option>
-                                                <option value="yearly">Yearly</option>
+                                                <option value="base">Base (CCTP Auto-Routing)</option>
+                                                <option value="solana">Solana (CCTP Auto-Routing)</option>
+                                                <option value="arc">Arc Network (Native)</option>
                                             </select>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
-                                        <select 
-                                            value={subChain}
-                                            onChange={(e) => setSubChain(e.target.value)}
-                                            className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
-                                        >
-                                            <option value="base">Base (CCTP Auto-Routing)</option>
-                                            <option value="solana">Solana (CCTP Auto-Routing)</option>
-                                            <option value="arc">Arc Network (Native)</option>
-                                        </select>
-                                    </div>
+                                </div>
+                                <div className="mt-8 pt-4 border-t border-white/5 text-[10px] text-white/40">
+                                    SubScript is fast, private, and reliable: Arc-native USDC gas, private burner activation, and a 1% protocol fee.
                                 </div>
                             </div>
-                            
-                            <div className="mt-8 pt-4 border-t border-white/5 text-2xs text-white/40">
-                                SubScript is fast, private, and reliable: Arc-native USDC gas, private burner activation, and a 1% protocol fee.
-                            </div>
-                        </div>
 
-                        {/* Code output Block */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                            <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">SDK Code Snippet</span>
-                                <div className="flex items-center gap-3">
-                                    {copiedText === "Checkout Snippet" && (
-                                        <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
-                                    )}
-                                    <button 
-                                        onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
-                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                        title="Copy code"
-                                    >
-                                        <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div className="flex-1 p-6 font-mono text-2xs text-white/80 overflow-x-auto leading-relaxed">
-                                <pre>
-                                    <code>{checkoutCode}</code>
-                                </pre>
-                            </div>
-                            
-                            <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
-                                <span>React SDK Component</span>
-                                <span>Wallet: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
-                            </div>
-                        </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-8">
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                            {/* Code output Block */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
                                 <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <div>
-                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
-                                        <p className="text-[10px] text-white/30 mt-1">Drop-in MCP context for Cursor or compatible agents.</p>
-                                    </div>
+                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">SDK Code Snippet</span>
                                     <div className="flex items-center gap-3">
-                                        {copiedText === "MCP Config" && (
-                                            <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
+                                        {copiedText === "Checkout Snippet" && (
+                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
                                         )}
-                                        <button
-                                            onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
+                                        <button 
+                                            onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
                                             className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                            title="Copy MCP config"
                                         >
                                             <Copy className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 </div>
-                                <div className="p-6 font-mono text-2xs text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[420px]">
-                                    <pre>{cursorMcpConfig}</pre>
+                                <div className="flex-1 p-6 font-mono text-[11px] text-white/80 overflow-x-auto leading-relaxed">
+                                    <pre><code>{checkoutCode}</code></pre>
                                 </div>
-                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 font-mono">
-                                    MCP server supplies Arc config, ZK ABI, and Burner Method guidance.
+                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
+                                    <span>React SDK Component</span>
+                                    <span>Wallet: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Agent Prompt Block */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                            <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                <div>
+                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Agent Integration Prompt</span>
+                                    <p className="text-[10px] text-white/30 mt-0.5">Copy this into your AI agent (Cursor, Claude, etc.) to integrate SubScript.</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {copiedText === "Agent Prompt" && (
+                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                    )}
+                                    <button
+                                        onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
+                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="p-6 font-mono text-[11px] text-emerald-300/80 overflow-x-auto leading-relaxed max-h-[400px] overflow-y-auto">
+                                <pre className="whitespace-pre-wrap">{agentIntegrationPrompt}</pre>
+                            </div>
+                        </div>
+
+                        {/* MCP Config */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
+                            <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                <div>
+                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
+                                    <p className="text-[10px] text-white/30 mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {copiedText === "MCP Config" && (
+                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                    )}
+                                    <button
+                                        onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
+                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="p-6 font-mono text-[11px] text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[420px]">
+                                <pre>{cursorMcpConfig}</pre>
                             </div>
                         </div>
                     </div>
                 );
 
             case "webhooks":
-                const staticWebhooks = [
-                    { id: "evt_01", event: "subscription.created", status: 200, time: "10:14:22", payload: { subscriptionId: "sub_01HjX729", clientReferenceId: "agent-run-9843", amount: "150.00", chain: "base" } },
-                    { id: "evt_02", event: "payment.renewed", status: 200, time: "10:15:00", payload: { subscriptionId: "sub_01HjX729", amount: "150.00", txHash: "0x8f3c...b2a4" } },
-                    { id: "evt_03", event: "payment.failed", status: 500, time: "10:15:05", error: "INSUFFICIENT_USDC_BALANCE", payload: { subscriptionId: "sub_01HjX332", clientReferenceId: "inference-node-332", reason: "Allowance exhausted" } },
-                    { id: "evt_04", event: "allowance.revoked", status: 200, time: "10:15:30", payload: { subscriptionId: "sub_01HjX44", clientReferenceId: "scraping-cluster-44", txHash: "0x9c3a...a8f" } }
-                ];
-
+                // Only dynamic events from on-chain data
                 const dynamicEvents = ledgers.flatMap((item, index) => {
-                    const baseTime = "10:14:22";
                     const events: Array<{
                         id: string;
                         event: string;
                         status: number;
                         time: string;
                         payload: any;
-                        error?: string;
                     }> = [
                         {
-                            id: `evt_01_${index}`,
+                            id: `evt_created_${index}`,
                             event: "subscription.created",
                             status: 200,
-                            time: baseTime,
+                            time: item.nextBilling,
                             payload: {
-                                subscriptionId: `sub_01_${item.rawId}`,
+                                subscriptionId: `sub_${item.rawId}`,
                                 clientReferenceId: item.id,
                                 subscriber: item.address,
-                                amount: item.rawAmount,
-                                period: item.rawPeriod,
-                                chain: "arc",
+                                merchant: address,
+                                amount: `${item.rawAmount} USDC`,
+                                period: `${item.rawPeriod}s`,
+                                chain: "arc-testnet",
+                                chainId: ARC_TESTNET_CHAIN_ID,
                             },
                         },
                     ];
+
                     if (item.active) {
                         events.push({
-                            id: `evt_02_${index}`,
+                            id: `evt_renewed_${index}`,
                             event: "payment.renewed",
                             status: 200,
-                            time: "10:15:00",
+                            time: item.nextBilling,
                             payload: {
-                                subscriptionId: `sub_01_${item.rawId}`,
-                                amount: item.rawAmount,
-                                txHash: "0x8f3c...b2a4",
+                                subscriptionId: `sub_${item.rawId}`,
+                                subscriber: item.address,
+                                merchant: address,
+                                amount: `${item.rawAmount} USDC`,
+                                nextBilling: item.nextBilling,
+                                status: "active",
                             },
                         });
                     } else {
                         events.push({
-                            id: `evt_04_${index}`,
+                            id: `evt_revoked_${index}`,
                             event: "allowance.revoked",
                             status: 200,
-                            time: "10:15:30",
+                            time: item.nextBilling,
                             payload: {
-                                subscriptionId: `sub_01_${item.rawId}`,
+                                subscriptionId: `sub_${item.rawId}`,
                                 clientReferenceId: item.id,
-                                txHash: "0x9c3a...a8f",
+                                subscriber: item.address,
+                                merchant: address,
+                                status: "revoked",
                             },
                         });
                     }
                     return events;
                 });
 
-                const webhooks = [...staticWebhooks, ...dynamicEvents];
-
-                const selectedPayload = webhooks.find(w => w.id === selectedWebhook);
+                const selectedPayload = dynamicEvents.find(w => w.id === selectedWebhook);
 
                 return (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
@@ -932,32 +1196,32 @@ Implementation requirements:
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
                             <div>
                                 <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                    <Webhook className={`w-4.5 h-4.5 ${primaryColorText}`} />
-                                    Chronological Event Stream
+                                    <Webhook className={`w-4 h-4 ${primaryColorText}`} />
+                                    Live Event Stream
                                 </h2>
-                                <div className="space-y-2">
-                                    {webhooks.length === 0 ? (
-                                        <div className="py-8 text-center text-white/30 font-sans text-xs">
-                                            No active subscriptions to generate webhook events.
+                                <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                                    {dynamicEvents.length === 0 ? (
+                                        <div className="py-12 text-center text-white/30 font-sans text-xs space-y-3">
+                                            <Webhook className="w-8 h-8 mx-auto text-white/10" />
+                                            <p>No webhook events yet.</p>
+                                            <p className="text-[10px] text-white/20">Events will appear here when subscribers create allowances for your merchant address.</p>
                                         </div>
                                     ) : (
-                                        webhooks.map((item) => (
+                                        dynamicEvents.map((item) => (
                                             <button
                                                 key={item.id}
                                                 onClick={() => setSelectedWebhook(item.id)}
                                                 className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
                                                     selectedWebhook === item.id 
-                                                        ? isMainnet 
-                                                            ? "bg-red-500/10 border-red-500/30 shadow-inner" 
-                                                            : "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
+                                                        ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
                                                         : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
                                                 }`}
                                             >
-                                                <div className="font-mono text-2xs space-y-1">
+                                                <div className="font-mono text-[11px] space-y-1">
                                                     <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
-                                                    <p className="text-white/40 text-3xs">{item.id.slice(0, 8)} • {item.time}</p>
+                                                    <p className="text-white/40 text-[10px]">{item.id.slice(0, 12)} • {item.time}</p>
                                                 </div>
-                                                <span className={`px-2.5 py-0.5 rounded-full text-3xs font-bold ${
+                                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
                                                     item.status === 200 
                                                         ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
                                                         : "bg-red-500/10 text-red-400 border border-red-500/20"
@@ -970,33 +1234,29 @@ Implementation requirements:
                                 </div>
                             </div>
                             
-                            <div className="mt-6 pt-4 border-t border-white/5 text-2xs text-white/40 flex items-center gap-2">
+                            <div className="mt-6 pt-4 border-t border-white/5 text-[10px] text-white/40 flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 bg-[#00d2b4] rounded-full animate-ping" />
-                                Listening live on endpoint: https://api.merchant.com/webhooks
+                                {dynamicEvents.length} events from {ledgers.length} on-chain subscriptions
                             </div>
                         </div>
 
                         {/* Payload Inspector */}
                         <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
                             <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector ({selectedWebhook || "None"})</span>
+                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector</span>
                                 <button
                                     onClick={() => handleReplayWebhook(selectedWebhook)}
                                     disabled={isReplaying || !selectedWebhook}
-                                    className={`px-3 py-1.5 border border-white/10 rounded-xl text-3xs font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
+                                    className={`px-3 py-1.5 border border-white/10 rounded-xl text-[9px] font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
                                 >
-                                    {isReplaying ? (
-                                        <RefreshCw className="w-3 h-3 animate-spin text-white" />
-                                    ) : (
-                                        <RotateCw className="w-3 h-3 text-white" />
-                                    )}
-                                    Replay Event
+                                    {isReplaying ? <RefreshCw className="w-3 h-3 animate-spin text-white" /> : <RotateCw className="w-3 h-3 text-white" />}
+                                    Replay
                                 </button>
                             </div>
                             
-                            <div className="flex-1 p-6 font-mono text-2xs text-emerald-400/90 overflow-y-auto min-h-[250px] leading-relaxed select-all">
+                            <div className="flex-1 p-6 font-mono text-[11px] text-emerald-400/90 overflow-y-auto min-h-[250px] leading-relaxed select-all">
                                 {replayStatus ? (
-                                    <p className="text-white/80 p-3 bg-white/5 border border-white/5 rounded-xl mb-4 font-sans">{replayStatus}</p>
+                                    <p className="text-white/80 p-3 bg-white/5 border border-white/5 rounded-xl mb-4 font-sans text-xs">{replayStatus}</p>
                                 ) : null}
                                 <pre>
                                     <code>{selectedPayload ? JSON.stringify(selectedPayload, null, 2) : "// Select a webhook event to inspect"}</code>
@@ -1004,144 +1264,8 @@ Implementation requirements:
                             </div>
                             
                             <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
-                                <span>Event Type: {selectedPayload?.event || "N/A"}</span>
-                                <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
-                            </div>
-                        </div>
-                    </div>
-                );
-
-            case "offramp":
-                return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
-                        <div>
-                            <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <ArrowRightLeft className={`w-5 h-5 ${primaryColorText}`} />
-                                Fiat Escape Hatch (Off-Ramp)
-                            </h2>
-                            <p className="text-xs text-white/50 font-sans leading-relaxed">
-                                Avoid liquidity crunches. Route a percentage of incoming USDC subscription revenue directly to your corporate USD bank account.
-                            </p>
-                        </div>
-
-                        {/* Settlement Slider */}
-                        <div className="space-y-6 bg-black/40 border border-white/5 rounded-2xl p-6">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Bank Allocation</span>
-                                    <p className="text-lg font-bold text-white font-mono mt-1">{fiatSplit}% <span className="text-xs text-white/40 font-normal">to Chase (...4829)</span></p>
-                                </div>
-                                <div className="text-right">
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Treasury Wallet</span>
-                                    <p className="text-lg font-bold text-white font-mono mt-1">{100 - fiatSplit}% <span className="text-xs text-white/40 font-normal">to Arc wallet</span></p>
-                                </div>
-                            </div>
-                            
-                            {/* Interactive Slider Input */}
-                            <div className="relative pt-4">
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="100" 
-                                    value={fiatSplit}
-                                    onChange={(e) => setFiatSplit(Number(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#00d2b4]"
-                                    style={{
-                                        accentColor: isMainnet ? '#ef4444' : '#00d2b4'
-                                    }}
-                                />
-                                <div className="flex justify-between text-3xs text-white/30 font-mono mt-2 uppercase">
-                                    <span>0% (All Crypto)</span>
-                                    <span>50% Split</span>
-                                    <span>100% (All Fiat)</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Custom Settlement Address settings */}
-                        <div className="bg-black/40 border border-white/5 rounded-2xl p-6 space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Settlement Destination Settings</span>
-                                    <p className="text-xs text-white/50 font-sans mt-1">Configure where subscription funds are routed. By default, they go to your connected wallet.</p>
-                                </div>
-                                <span className={`px-2.5 py-0.5 rounded-full text-3xs font-bold uppercase tracking-wider ${
-                                    isPremiumSubscribed
-                                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                        : "bg-white/5 text-white/40 border border-white/10"
-                                }`}>
-                                    {isPremiumSubscribed ? "Premium Mode" : "Standard Mode"}
-                                </span>
-                            </div>
-
-                            {isPremiumSubscribed ? (
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2 font-mono">Custom Settlement Destination</label>
-                                        <div className="flex gap-3">
-                                            <input 
-                                                type="text" 
-                                                value={customAddress || ""} 
-                                                onChange={(e) => setCustomAddress(e.target.value)}
-                                                placeholder="0x..."
-                                                className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
-                                            />
-                                            <button
-                                                onClick={handleSaveCustomAddress}
-                                                className={`px-5 py-3 ${primaryColorBg} text-black font-semibold rounded-xl text-xs font-bold uppercase tracking-wider hover:brightness-110 transition-all`}
-                                            >
-                                                Save Address
-                                            </button>
-                                        </div>
-                                    </div>
-                                    {saveSuccess && (
-                                        <p className="text-emerald-400 text-xs">✓ Settlement address successfully configured!</p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="bg-black/30 border border-white/5 rounded-2xl p-5 space-y-4 relative overflow-hidden">
-                                    <div className="flex items-start gap-3.5">
-                                        <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
-                                            <Sliders className="w-5 h-5" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Custom Cold Wallet / Multisig Routing</h4>
-                                            <p className="text-2xs text-white/50 leading-relaxed max-w-xl">
-                                                Unlock the ability to override your active session wallet and route recurring subscriptions directly to cold storage, ledger addresses, or corporate multisigs.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-white/5">
-                                        <div className="text-left">
-                                            <p className="text-3xs text-white/40 uppercase font-bold tracking-widest font-mono">Subscription Price</p>
-                                            <p className="text-sm font-bold text-white font-mono">$10.00 USDC / month</p>
-                                        </div>
-                                        <button
-                                            disabled={true}
-                                            className="w-full sm:w-auto px-6 py-3 bg-white/5 border border-white/10 text-white/40 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-not-allowed"
-                                        >
-                                            Premium Mode Unavailable
-                                        </button>
-                                    </div>
-                                    {premiumError && (
-                                        <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-200 text-xs font-mono break-all leading-relaxed">
-                                            {premiumError}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Guarantee Block */}
-                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl flex items-start gap-4">
-                            <div className={`p-2 rounded-xl flex-shrink-0 border ${isMainnet ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-[#00d2b4]/10 border-[#00d2b4]/20 text-[#00d2b4]'}`}>
-                                <CheckCircle className="w-5 h-5" />
-                            </div>
-                            <div className="space-y-1 font-sans text-xs">
-                                <h4 className="font-bold text-white uppercase tracking-wider">Settlement Timeline Guarantee</h4>
-                                <p className="text-white/50 leading-relaxed">
-                                    All conversion trades are executed atomically on-chain. US dollar settlements are dispatched instantly and guaranteed to clear in your corporate checking account within 24 hours of deposit. Off-ramp processing incurs a flat 0.5% conversion fee.
-                                </p>
+                                <span>Event: {selectedPayload?.event || "N/A"}</span>
+                                <span>HTTP {selectedPayload?.status || "N/A"}</span>
                             </div>
                         </div>
                     </div>
@@ -1150,32 +1274,26 @@ Implementation requirements:
     };
 
     return (
-        <div data-mounted={isMounted} className={`min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white transition-all duration-500 ${isMainnet ? 'border-t-4 border-red-500' : 'border-t-4 border-[#00d2b4]'}`}>
+        <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
             <AnimatedGradientBg />
             <div className="relative z-10">
             <DashboardHeader />
 
             {/* Dashboard Content */}
-            <main className="max-w-7xl mx-auto px-6 pt-32 pb-12">
+            <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
                 {/* Header Row */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div>
                         <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                            Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4] transition-colors duration-500" style={{ color: isMainnet ? '#ef4444' : '#00d2b4' }}>center</span>
+                            Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
                         </h1>
                         <p className="text-xs text-white/50 font-sans">
-                            {isMainnet 
-                                ? "Production Environment: SubScript is fast, private, and reliable with live USDC treasury settlement."
-                                : "Sandbox Environment: SubScript is fast, private, and reliable with Arc testnet prompts, keys, and dummy webhooks."
-                            }
+                            Sandbox Environment: SubScript is fast, private, and reliable with Arc testnet.
                         </p>
                     </div>
-
-                    {/* Environment Toggle Switch hidden */}
                 </div>
 
                 {!isConnected ? (
-                    /* Clean requirement state asking the user to connect a wallet */
                     <div className="space-y-8">
                         <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
@@ -1184,7 +1302,7 @@ Implementation requirements:
                             <div className="space-y-2">
                                 <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Wallet Connection Required</h2>
                                 <p className="text-sm text-white/60 max-w-md leading-relaxed">
-                                    Connect your browser wallet to access active allowances, metrics, subscription tracking, and Settlement Configurations.
+                                    Connect your browser wallet to access allowances, metrics, premium features, and settlement configurations.
                                 </p>
                             </div>
                             <button
@@ -1207,7 +1325,6 @@ Implementation requirements:
                         </div>
                     </div>
                 ) : (
-                    /* Connected Dashboard View */
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
                         <div className="lg:col-span-1 space-y-2">
@@ -1217,14 +1334,21 @@ Implementation requirements:
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                                         activeTab === tab.id
-                                            ? isMainnet
-                                                ? "bg-red-500/10 border-red-500/30 text-white shadow-lg shadow-red-500/5"
+                                            ? tab.id === "premium"
+                                                ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
                                                 : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
                                             : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
                                     }`}
                                 >
-                                    <tab.icon className={`w-4.5 h-4.5 ${activeTab === tab.id ? (isMainnet ? 'text-red-500' : 'text-[#00d2b4]') : 'text-white/40'}`} />
+                                    <tab.icon className={`w-4 h-4 ${
+                                        activeTab === tab.id 
+                                            ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
+                                            : "text-white/40"
+                                    }`} />
                                     {tab.label}
+                                    {tab.id === "premium" && isPremium && (
+                                        <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -1233,7 +1357,7 @@ Implementation requirements:
                         <div className="lg:col-span-3 min-h-[500px]">
                             <AnimatePresence mode="wait">
                                 <motion.div
-                                    key={activeTab + (isMainnet ? "-main" : "-test")}
+                                    key={activeTab}
                                     initial={{ opacity: 0, y: 15 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -15 }}
