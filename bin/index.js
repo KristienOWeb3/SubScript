@@ -50,6 +50,47 @@ const abi = [
     ],
   },
   {
+    type: "function",
+    name: "setMerchantTier",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_merchant", type: "address", internalType: "address" },
+      { name: "_tier", type: "uint8", internalType: "uint8" }
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "configurePayoutDestination",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_newDestination", type: "address", internalType: "address" }
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "merchantTiers",
+    stateMutability: "view",
+    inputs: [
+      { name: "", type: "address", internalType: "address" }
+    ],
+    outputs: [
+      { name: "", type: "uint8", internalType: "uint8" }
+    ],
+  },
+  {
+    type: "function",
+    name: "merchantPayoutDestination",
+    stateMutability: "view",
+    inputs: [
+      { name: "", type: "address", internalType: "address" }
+    ],
+    outputs: [
+      { name: "", type: "address", internalType: "address" }
+    ],
+  },
+  {
     type: "event",
     name: "SubscriptionActivated",
     inputs: [
@@ -57,6 +98,16 @@ const abi = [
       { name: "merchant", type: "address", indexed: true, internalType: "address" },
       { name: "amount", type: "uint256", indexed: false, internalType: "uint256" },
       { name: "period", type: "uint256", indexed: false, internalType: "uint256" }
+    ],
+    anonymous: false
+  },
+  {
+    type: "event",
+    name: "MerchantPayoutRerouted",
+    inputs: [
+      { name: "merchant", type: "address", indexed: true, internalType: "address" },
+      { name: "oldDestination", type: "address", indexed: true, internalType: "address" },
+      { name: "newDestination", type: "address", indexed: true, internalType: "address" }
     ],
     anonymous: false
   }
