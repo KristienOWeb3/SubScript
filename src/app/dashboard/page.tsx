@@ -82,7 +82,8 @@ export default function DashboardPage() {
     const { switchChain } = useSwitchChain();
     const { chainId } = useAccount();
 
-    const [isPremiumSubscribed, setIsPremiumSubscribed] = useState(false);
+    const isPremiumSubscribed = false;
+    const setIsPremiumSubscribed = (_val: boolean) => {};
     const [customAddress, setCustomAddress] = useState("");
     const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
     const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
@@ -247,7 +248,7 @@ export default function DashboardPage() {
         setIsMounted(true);
         if (typeof window !== "undefined") {
             setIsTestMode(
-                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_page_lock"))
+                Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
             );
         }
     }, [realAddress, realIsConnected]);
@@ -829,47 +830,7 @@ Implementation requirements:
                         </div>
                         </div>
 
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <div>
-                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Live AI Agent Prompt</span>
-                                        <p className="text-[10px] text-white/30 mt-1">Wallet address is injected automatically.</p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        {copiedText === "Agent Prompt" && (
-                                            <span className="text-2xs text-[#00d2b4] font-bold">✓ Copied</span>
-                                        )}
-                                        <button
-                                            onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                            title="Copy prompt"
-                                        >
-                                            <Copy className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="p-6">
-                                    <div className="flex flex-col items-center justify-center p-8 bg-black/40 border border-white/5 rounded-2xl text-center gap-4 min-h-[300px]">
-                                        <div className="w-12 h-12 bg-[#00d2b4]/10 rounded-full flex items-center justify-center text-[#00d2b4]">
-                                            <Sliders className="w-6 h-6" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <p className="text-xs font-bold text-white uppercase tracking-wider">Agent Prompt Encrypted</p>
-                                            <p className="text-3xs text-white/40 max-w-xs leading-relaxed">
-                                                This integration prompt contains your live configuration. For visual security, the raw text is hidden.
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                            className="px-5 py-2.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 text-2xs font-bold uppercase tracking-wider rounded-xl transition-all"
-                                        >
-                                            Copy Full Prompt
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
+                        <div className="grid grid-cols-1 gap-8">
                             <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
                                 <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
                                     <div>
@@ -1156,18 +1117,10 @@ Implementation requirements:
                                             <p className="text-sm font-bold text-white font-mono">$10.00 USDC / month</p>
                                         </div>
                                         <button
-                                            onClick={handleSubscribePremium}
-                                            disabled={isSubscribingPremium}
-                                            className="w-full sm:w-auto px-6 py-3 bg-amber-400 hover:bg-amber-300 text-black rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)] disabled:opacity-50"
+                                            disabled={true}
+                                            className="w-full sm:w-auto px-6 py-3 bg-white/5 border border-white/10 text-white/40 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-not-allowed"
                                         >
-                                            {isSubscribingPremium ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                                                    {premiumStatus || "Processing..."}
-                                                </>
-                                            ) : (
-                                                "Unlock Custom Routing ($10/mo)"
-                                            )}
+                                            Premium Mode Unavailable
                                         </button>
                                     </div>
                                     {premiumError && (
@@ -1218,25 +1171,7 @@ Implementation requirements:
                         </p>
                     </div>
 
-                    {/* Environment Toggle Switch */}
-                    <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 rounded-full px-4 py-2 select-none shadow-xl">
-                        <span className={`text-[10px] uppercase tracking-widest font-bold font-mono transition-colors duration-300 ${!isMainnet ? 'text-[#00d2b4]' : 'text-white/40'}`}>Testnet</span>
-                        <button
-                            onClick={() => {
-                                setIsMainnet(!isMainnet);
-                                setSelectedWebhook(ledgers.length > 0 ? `evt_01_0` : "");
-                            }}
-                            className="w-12 h-6 rounded-full bg-white/10 p-0.5 relative transition-colors"
-                            aria-label="Toggle Environment"
-                        >
-                            <motion.div
-                                layout
-                                className={`w-5 h-5 rounded-full shadow-md ${isMainnet ? 'bg-red-500 ml-6' : 'bg-[#00d2b4] ml-0'}`}
-                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                            />
-                        </button>
-                        <span className={`text-[10px] uppercase tracking-widest font-bold font-mono transition-colors duration-300 ${isMainnet ? 'text-red-500' : 'text-white/40'}`}>Mainnet</span>
-                    </div>
+                    {/* Environment Toggle Switch hidden */}
                 </div>
 
                 {!isConnected ? (
@@ -1269,61 +1204,6 @@ Implementation requirements:
                                     </p>
                                 </div>
                             )}
-                        </div>
-
-                        {/* Integration scaffolding remains accessible for builders even when disconnected */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <div>
-                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Live AI Agent Prompt</span>
-                                        <p className="text-[10px] text-white/30 mt-1">Waiting for wallet connection to inject address.</p>
-                                    </div>
-                                    <button
-                                        onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                    >
-                                        <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="p-6">
-                                    <div className="flex flex-col items-center justify-center p-8 bg-black/40 border border-white/5 rounded-2xl text-center gap-4 min-h-[220px]">
-                                        <div className="w-12 h-12 bg-[#00d2b4]/10 rounded-full flex items-center justify-center text-[#00d2b4]">
-                                            <Sliders className="w-6 h-6" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <p className="text-xs font-bold text-white uppercase tracking-wider">Agent Prompt Encrypted</p>
-                                            <p className="text-3xs text-white/40 max-w-xs leading-relaxed">
-                                                This integration prompt contains your live configuration. For visual security, the raw text is hidden.
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
-                                            className="px-5 py-2.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 text-2xs font-bold uppercase tracking-wider rounded-xl transition-all"
-                                        >
-                                            Copy Full Prompt
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                    <div>
-                                        <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
-                                        <p className="text-[10px] text-white/30 mt-1">Default template for your cursor_mcp.json server config.</p>
-                                    </div>
-                                    <button
-                                        onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
-                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                    >
-                                        <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="p-6 font-mono text-2xs text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[300px]">
-                                    <pre>{cursorMcpConfig}</pre>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 ) : (
