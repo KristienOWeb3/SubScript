@@ -6,8 +6,8 @@
         "subscript": "bin/index.js"
     },
     "scripts": {
-        "dev": "next dev",
-        "build": "prisma generate && next build",
+        "dev": "node bin/index.js && next dev",
+        "build": "node bin/index.js && prisma generate && next build",
         "start": "next start",
         "lint": "next lint"
     },
