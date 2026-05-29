@@ -34,6 +34,12 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /// @notice Record of deposited commitment hashes.
     mapping(bytes32 => bool) public commitments;
 
+    /// @notice Subscription tier for merchants (0 = Standard, 1 = Premium).
+    mapping(address => uint8) public merchantTiers;
+
+    /// @notice Redirected fund payout address for premium merchants.
+    mapping(address => address) public merchantPayoutDestination;
+
     // ──────────────────────────── Events ───────────────────────────
 
     event Deposit(bytes32 indexed commitment, uint256 amount);
@@ -46,6 +52,12 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     );
 
     event Withdraw(address indexed merchant, uint256 amount);
+
+    event MerchantPayoutRerouted(
+        address indexed merchant,
+        address indexed oldDestination,
+        address indexed newDestination
+    );
 
     // ─────────────────────────── Constructor / Initializer ───────────
 
@@ -89,6 +101,14 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
+     * @notice Provision merchant tiers (0 = Standard, 1 = Premium).
+     */
+    function setMerchantTier(address _merchant, uint8 _tier) external onlyOwner {
+        require(_merchant != address(0), "Invalid merchant address");
+        merchantTiers[_merchant] = _tier;
+    }
+
+    /**
      * @notice Toggle emergency pause
      */
     function pause() external onlyOwner {
@@ -103,6 +123,19 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     // ─────────────────────────── Core Functions ─────────────────────
+
+    /**
+     * @notice Configure a new payout destination address for premium merchants.
+     */
+    function configurePayoutDestination(address _newDestination) external whenNotPaused {
+        require(merchantTiers[msg.sender] >= 1, "Only Premium tier can reroute");
+        require(_newDestination != address(0), "Invalid destination address");
+
+        address oldDestination = merchantPayoutDestination[msg.sender];
+        merchantPayoutDestination[msg.sender] = _newDestination;
+
+        emit MerchantPayoutRerouted(msg.sender, oldDestination, _newDestination);
+    }
 
     /**
      * @notice Deposit commitment on-chain using funding wallet.
@@ -146,8 +179,14 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         // Route the protocol fee to the treasury address
         paymentToken.safeTransfer(treasury, fee);
 
-        // Credit the net amount to the merchant's balance inside the ledger
-        merchantBalances[merchant] += netAmount;
+        // Resolve target payout destination (reroute if Premium tier has a custom payout destination configured)
+        address targetPayout = merchant;
+        if (merchantTiers[merchant] >= 1 && merchantPayoutDestination[merchant] != address(0)) {
+            targetPayout = merchantPayoutDestination[merchant];
+        }
+
+        // Credit the net amount to the target merchant's balance inside the ledger
+        merchantBalances[targetPayout] += netAmount;
 
         // Mark the nullifier hash as spent
         nullifierHashes[nullifierHash] = true;
