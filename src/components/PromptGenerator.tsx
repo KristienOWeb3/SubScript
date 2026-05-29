@@ -14,16 +14,23 @@ export default function PromptGenerator() {
 
 Here is my specific deployment data:
 - MERCHANT_ADDRESS = "${merchantAddress || "[INSERT YOUR WALLET ADDRESS]"}"
-- PRICE_PER_PERIOD = ${price} USDC
+- PRICE_PER_PERIOD = ${price} USDC (6 decimals)
 - PAYMENT_PERIOD_SECONDS = ${period} // ${parseInt(period) === 2592000 ? "30 days" : period === "86400" ? "1 day" : period === "604800" ? "7 days" : "custom"}
 - SUBSCRIPT_ROUTER = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29"
 - USDC_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc"
 
-Write the Wagmi/Viem frontend React hooks and component to execute a two-step transaction:
-1. Approve the USDC allowance for 6 months (USDC_ADDRESS.approve(SUBSCRIPT_ROUTER, totalAmount)).
-2. Call 'createSubscription(address _merchant, uint256 _amount, uint256 _period)' on the SubScript router.
+Please write the Wagmi/Viem React hooks and components to implement the ZK Burner subscription flow:
+1. Approve USDC allowance for the router: USDC_ADDRESS.approve(SUBSCRIPT_ROUTER, totalPeriodAmount).
+2. Generate a random 32-byte secret locally in browser. Compute commitment = keccak256(secret).
+3. Call depositAndCommit(commitment, periodAmount) from the funding wallet.
+4. Generate the parameter proof array [secret, expectedPublicInputHash] where expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period)).
+5. Switch to a burner wallet and call verifyAndActivate(proof, nullifierHash, merchant, amount, period) on the SubScript router.
 
-Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle pending, success, and error states gracefully. Include clear explanations of the code.`.trim();
+Also include:
+- A backend route to query/verify subscription status from the SubScript REST API: GET /api/v1/subscriptions?id=sub_... (passing 'Authorization: Bearer sk_test_...' in the headers).
+- A webhook handler verifying signature header 'x-subscript-signature' computed as HMAC-SHA256(webhook_secret, payload).
+
+Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all states (pending, success, error) gracefully.`.trim();
   };
 
   const handleCopy = () => {

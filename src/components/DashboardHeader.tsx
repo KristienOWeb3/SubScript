@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Wallet, Copy, Check, PlugZap } from "lucide-react";
 import DepositModal from "./DepositModal";
-import { useAccount, useConnect, useDisconnect, useReadContract } from "wagmi";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { formatUnits } from "viem";
+import { createPublicClient, http, formatUnits } from "viem";
+import { arcTestnet } from "@/lib/wagmi";
 
 const WALLET_PLACEHOLDER = "0xYOUR_CONNECTED_WALLET_ADDRESS";
 
@@ -20,6 +21,11 @@ const ERC20_ABI = [
     }
 ] as const;
 
+const publicClient = createPublicClient({
+    chain: arcTestnet,
+    transport: http(),
+});
+
 export default function DashboardHeader() {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [copiedAddress, setCopiedAddress] = useState(false);
@@ -28,6 +34,7 @@ export default function DashboardHeader() {
     const { disconnect } = useDisconnect();
     const [isTestMode, setIsTestMode] = useState(false);
     const [scrolled, setScrolled] = useState(false);
+    const [usdcBalance, setUsdcBalance] = useState("0.00");
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -46,18 +53,29 @@ export default function DashboardHeader() {
     const isConnected = realIsConnected || isTestMode;
     const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
 
-    const { data: balanceRaw } = useReadContract({
-        address: "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc",
-        abi: ERC20_ABI,
-        functionName: "balanceOf",
-        args: address ? [address] : undefined,
-        query: {
-            enabled: Boolean(address),
-        }
-    });
+    useEffect(() => {
+        if (!address) return;
+        
+        const fetchBalance = async () => {
+            try {
+                const balanceRaw = await publicClient.readContract({
+                    address: "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc",
+                    abi: ERC20_ABI,
+                    functionName: "balanceOf",
+                    args: [address as `0x${string}`],
+                });
+                setUsdcBalance(parseFloat(formatUnits(balanceRaw as bigint, 6)).toFixed(2));
+            } catch (err) {
+                console.error("Failed to read balance in header:", err);
+            }
+        };
+
+        fetchBalance();
+        const interval = setInterval(fetchBalance, 10000);
+        return () => clearInterval(interval);
+    }, [address]);
 
     const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
-    const usdcBalance = balanceRaw !== undefined ? parseFloat(formatUnits(balanceRaw, 6)).toFixed(2) : "0.00";
     const depositAddress = address || WALLET_PLACEHOLDER;
 
     const handleConnect = () => {
@@ -89,9 +107,6 @@ export default function DashboardHeader() {
                             alt="SubScript Logo" 
                             className="w-7 h-7 sm:w-8 sm:h-8 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)] group-hover:scale-105 transition-transform" 
                         />
-                        <span className="hidden sm:inline text-base font-bold text-white tracking-tight group-hover:text-[#00d2b4] transition-colors">
-                            SubScript
-                        </span>
                     </Link>
 
                     {/* Right Side: Wallet Info + Actions */}
@@ -101,7 +116,7 @@ export default function DashboardHeader() {
                                 {/* Wallet Address (copyable) */}
                                 <button
                                     onClick={handleCopyAddress}
-                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
                                     title="Click to copy full address"
                                 >
                                     <div className="w-5 h-5 bg-[#00d2b4]/10 rounded-full flex items-center justify-center">
