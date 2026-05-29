@@ -11,7 +11,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     // Fill in incorrect password first
     await page.fill('input[type="password"]', "WrongPassword");
     await page.click('button[aria-label="Unlock"]');
-    await expect(page.locator("text=Invalid access code")).toBeVisible();
+    await expect(page.getByText("Invalid access code")).toBeVisible({ timeout: 15000 });
     
     // Fill in correct password
     await page.fill('input[type="password"]', "SexyKristien");

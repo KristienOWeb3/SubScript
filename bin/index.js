@@ -31,6 +31,35 @@ const abi = [
     ],
     outputs: [],
   },
+  {
+    type: "function",
+    name: "withdraw",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "merchantBalances",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address", internalType: "address" }
+    ],
+    outputs: [
+      { name: "", type: "uint256", internalType: "uint256" }
+    ],
+  },
+  {
+    type: "event",
+    name: "SubscriptionActivated",
+    inputs: [
+      { name: "nullifierHash", type: "bytes32", indexed: true, internalType: "bytes32" },
+      { name: "merchant", type: "address", indexed: true, internalType: "address" },
+      { name: "amount", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "period", type: "uint256", indexed: false, internalType: "uint256" }
+    ],
+    anonymous: false
+  }
 ];
 
 const constantsTs = `export const ARC_TESTNET_CHAIN_ID = ${ARC_TESTNET_CHAIN_ID} as const;

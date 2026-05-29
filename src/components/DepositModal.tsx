@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, ArrowRight, Wallet, QrCode, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import Link from "next/link";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { createPublicClient, http, parseUnits, bytesToHex, keccak256 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
@@ -431,6 +432,14 @@ export default function DepositModal({
                                         )}
                                     </div>
                                 )}
+
+                                {/* Legal disclaimers */}
+                                <p className="text-[10px] text-white/30 text-center mt-6">
+                                    By depositing, you agree to our{" "}
+                                    <Link href="/terms" target="_blank" className="underline hover:text-white/60 transition">Terms of Service</Link>{" "}
+                                    and{" "}
+                                    <Link href="/privacy" target="_blank" className="underline hover:text-white/60 transition">Privacy Policy</Link>.
+                                </p>
                             </div>
                         </div>
                     </motion.div>

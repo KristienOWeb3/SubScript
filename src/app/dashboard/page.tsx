@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { createPublicClient, http, formatUnits, parseUnits, bytesToHex, keccak256 } from "viem";
+import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
@@ -75,6 +76,9 @@ export default function DashboardPage() {
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
 
+    const isConnected = realIsConnected || isTestMode;
+    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
+
     const { switchChain } = useSwitchChain();
     const { chainId } = useAccount();
 
@@ -87,10 +91,31 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (typeof window !== "undefined") {
-            setIsPremiumSubscribed(localStorage.getItem("subscript_premium_subscribed") === "true");
+            // Reset premium mode and make everyone on basic plan once
+            if (!localStorage.getItem("subscript_premium_reset_done_v2")) {
+                localStorage.removeItem("subscript_premium_subscribed");
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith("subscript_premium_subscribed_")) {
+                        localStorage.removeItem(key);
+                    }
+                }
+                localStorage.setItem("subscript_premium_reset_done_v2", "true");
+            }
             setCustomAddress(localStorage.getItem("subscript_custom_merchant_address") || "");
         }
     }, []);
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            if (address) {
+                const key = `subscript_premium_subscribed_${address.toLowerCase()}`;
+                setIsPremiumSubscribed(localStorage.getItem(key) === "true");
+            } else {
+                setIsPremiumSubscribed(false);
+            }
+        }
+    }, [address]);
 
     const handleSaveCustomAddress = () => {
         if (!customAddress) {
@@ -115,71 +140,99 @@ export default function DashboardPage() {
         }
 
         setIsSubscribingPremium(true);
-        setPremiumStatus("Preparing 10 USDC subscription approval...");
+        setPremiumStatus("Preparing 10 USDC payment...");
         setPremiumError(null);
 
         try {
-            // Generate commitment
-            const secBytes = new Uint8Array(32);
-            crypto.getRandomValues(secBytes);
-            const secHex = bytesToHex(secBytes);
-            const comHash = keccak256(secHex);
+            const PAYMENT_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
+            const amount = parseUnits("10", 6); // $10 USDC (6 decimals)
 
-            const amount = parseUnits("10", 6); // $10 USDC
+            const clearPremiumState = () => {
+                if (address) {
+                    localStorage.removeItem(`subscript_premium_subscribed_${address.toLowerCase()}`);
+                }
+                setIsPremiumSubscribed(false);
+            };
 
-            console.log("Subscribing to premium. Generation logs:", {
-                secret: secHex,
-                commitmentHash: comHash
-            });
-
-            // 1. Approve USDC spend
-            setPremiumStatus("Waiting for approval signature...");
-            const approveHash = await writeContractAsync({
+            // Direct USDC transfer — single transaction, no router contract required
+            setPremiumStatus("Waiting for transfer signature...");
+            const transferHash = await writeContractAsync({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: [
                     {
                         type: "function",
-                        name: "approve",
+                        name: "transfer",
                         stateMutability: "nonpayable",
                         inputs: [
-                            { name: "spender", type: "address" },
+                            { name: "to", type: "address" },
                             { name: "amount", type: "uint256" }
                         ],
                         outputs: [{ name: "", type: "bool" }]
                     }
                 ] as const,
-                functionName: "approve",
-                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+                functionName: "transfer",
+                args: [PAYMENT_RECIPIENT, amount],
             });
 
-            setPremiumStatus("Confirming approval transaction...");
-            await publicClient.waitForTransactionReceipt({ hash: approveHash });
+            console.log("Premium payment tx submitted:", transferHash);
 
-            // 2. depositAndCommit
-            setPremiumStatus("Waiting for deposit signature...");
-            const depositHash = await writeContractAsync({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
+            // Wait for on-chain confirmation
+            setPremiumStatus("Confirming payment on-chain...");
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash });
+
+            if (receipt.status !== "success") {
+                clearPremiumState();
+                throw new Error("Payment transaction reverted on-chain. No funds were transferred.");
+            }
+
+            // Parse Transfer event logs to verify the exact payment
+            const transferLogs = parseEventLogs({
                 abi: [
                     {
-                        type: "function",
-                        name: "depositAndCommit",
-                        stateMutability: "nonpayable",
+                        type: "event",
+                        name: "Transfer",
                         inputs: [
-                            { name: "commitment", type: "bytes32" },
-                            { name: "amount", type: "uint256" }
+                            { name: "from", type: "address", indexed: true },
+                            { name: "to", type: "address", indexed: true },
+                            { name: "value", type: "uint256", indexed: false }
                         ],
-                        outputs: []
+                        anonymous: false
                     }
                 ] as const,
-                functionName: "depositAndCommit",
-                args: [comHash, amount],
+                logs: receipt.logs,
             });
 
-            setPremiumStatus("Confirming premium activation on-chain...");
-            await publicClient.waitForTransactionReceipt({ hash: depositHash });
+            // Find the Transfer event matching our payment
+            const paymentLog = transferLogs.find(
+                (log) =>
+                    log.eventName === "Transfer" &&
+                    log.args.from?.toLowerCase() === address.toLowerCase() &&
+                    log.args.to?.toLowerCase() === PAYMENT_RECIPIENT.toLowerCase()
+            );
 
-            // Subscription active!
-            localStorage.setItem("subscript_premium_subscribed", "true");
+            if (!paymentLog) {
+                clearPremiumState();
+                throw new Error("Transfer event not found in receipt. Payment could not be verified.");
+            }
+
+            if (paymentLog.args.value !== amount) {
+                clearPremiumState();
+                throw new Error(
+                    `Payment amount mismatch. Expected ${formatUnits(amount, 6)} USDC, got ${formatUnits(paymentLog.args.value ?? BigInt(0), 6)} USDC.`
+                );
+            }
+
+            console.log("Premium payment verified:", {
+                from: paymentLog.args.from,
+                to: paymentLog.args.to,
+                amount: formatUnits(paymentLog.args.value ?? BigInt(0), 6),
+                txHash: transferHash,
+            });
+
+            // All verification checks passed — activate premium for this wallet
+            if (address) {
+                localStorage.setItem(`subscript_premium_subscribed_${address.toLowerCase()}`, "true");
+            }
             setIsPremiumSubscribed(true);
             setPremiumStatus(null);
         } catch (err: any) {
@@ -199,8 +252,7 @@ export default function DashboardPage() {
         }
     }, [realAddress, realIsConnected]);
 
-    const isConnected = realIsConnected || isTestMode;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
+    // isConnected and address defined above to prevent TDZ reference error
 
     // Environment Toggle State
     const [isMainnet, setIsMainnet] = useState(false);
@@ -1313,6 +1365,16 @@ Implementation requirements:
                         </div>
                     </div>
                 )}
+                
+                {/* Footer */}
+                <footer className="mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4">
+                    <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                    <div className="flex gap-4">
+                        <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                        <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                    </div>
+                    <span>Built on Arc Network</span>
+                </footer>
             </main>
             </div>
         </div>

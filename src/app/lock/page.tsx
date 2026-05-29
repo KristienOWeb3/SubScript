@@ -1,42 +1,44 @@
 "use client";
 
-import { useState, useTransition, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 
 function LockForm() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
-    const [isPending, startTransition] = useTransition();
+    const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
     const redirectTo = searchParams.get("to") || "/dashboard";
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
+        setIsLoading(true);
 
-        startTransition(async () => {
-            try {
-                const res = await fetch("/api/lock", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ password }),
-                });
+        try {
+            const res = await fetch("/api/lock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password }),
+            });
 
-                const data = await res.json();
+            const data = await res.json();
 
-                if (res.ok && data.success) {
-                    router.push(redirectTo);
-                    router.refresh();
-                } else {
-                    setError(data.message || "Invalid access code");
-                }
-            } catch (err) {
-                setError("Something went wrong. Please try again.");
+            if (res.ok && data.success) {
+                router.push(redirectTo);
+                router.refresh();
+            } else {
+                setError(data.message || "Invalid access code");
             }
-        });
+        } catch (err) {
+            setError("Something went wrong. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -51,20 +53,19 @@ function LockForm() {
                     autoFocus
                     className="w-full bg-transparent px-4 py-2 text-white placeholder-white/40 focus:outline-none text-sm text-center"
                 />
-                <motion.button
+                <button
                     type="submit"
-                    disabled={isPending}
+                    disabled={isLoading}
                     className="bg-white text-black p-2 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
                     aria-label="Unlock"
                 >
-                    {isPending ? (
+                    {isLoading ? (
                         <Loader2 className="w-4 h-4 animate-spin stroke-[2.5]" />
                     ) : (
                         <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                     )}
-                </motion.button>
+                </button>
+
             </div>
 
             {/* Error message */}
@@ -158,6 +159,16 @@ export default function LockScreen() {
                     <LockForm />
                 </Suspense>
             </motion.div>
+
+            {/* Footer */}
+            <div className="absolute bottom-6 left-0 right-0 z-20 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/30 max-w-md mx-auto px-6 gap-2">
+                <span>© 2026 SubScript Protocol.</span>
+                <div className="flex gap-4">
+                    <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                    <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                </div>
+            </div>
         </main>
     );
 }
+

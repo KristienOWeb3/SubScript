@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3 } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -280,8 +281,9 @@ function WaitlistForm() {
     };
 
     return (
-        <div className="min-h-[50px] w-full flex justify-center lg:justify-start">
-            <AnimatePresence mode="wait">
+        <div className="w-full flex flex-col items-center lg:items-start gap-3">
+            <div className="min-h-[36px] w-full flex justify-center lg:justify-start">
+                <AnimatePresence mode="wait">
                 {step === "button" && (
                     <motion.div
                         key="button"
@@ -579,6 +581,15 @@ function WaitlistForm() {
                     </motion.div>
                 )}
             </AnimatePresence>
+            </div>
+            {step !== "success" && step !== "button" && (
+                <p className="text-[10px] text-white/30 font-sans tracking-wide">
+                    By joining, you agree to our{" "}
+                    <Link href="/terms" className="underline hover:text-white transition">Terms of Service</Link>{" "}
+                    and{" "}
+                    <Link href="/privacy" className="underline hover:text-white transition">Privacy Policy</Link>.
+                </p>
+            )}
         </div>
     );
 }
@@ -669,6 +680,16 @@ export default function Home() {
                     </div>
                 </div>
             </section>
+
+            {/* Footer */}
+            <footer className="max-w-7xl mx-auto px-6 sm:px-12 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4 py-8 relative z-10">
+                <span>© 2026 SubScript Protocol. All rights reserved.</span>
+                <div className="flex gap-4">
+                    <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+                    <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+                </div>
+                <span>Built on Arc Network</span>
+            </footer>
         </main>
     );
 }
