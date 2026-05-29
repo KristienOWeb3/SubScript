@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
@@ -193,10 +193,31 @@ export default function DashboardPage() {
     // Copying state
     const [copiedText, setCopiedText] = useState<string | null>(null);
 
-    // API Keys state
+    // Backend Session & Authentication
+    const [sessionWallet, setSessionWallet] = useState<string | null>(null);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const { signMessageAsync } = useSignMessage();
+
+    // API Keys state (from database)
+    const [apiKeys, setApiKeys] = useState<any[]>([]);
+    const [isKeysLoading, setIsKeysLoading] = useState(false);
     const [revealSecret, setRevealSecret] = useState(false);
-    const [secretKeyVersion, setSecretKeyVersion] = useState(1);
     const [isRolling, setIsRolling] = useState(false);
+
+    // Webhooks endpoints & events state (from database)
+    const [webhookEndpoints, setWebhookEndpoints] = useState<any[]>([]);
+    const [isWebhooksLoading, setIsWebhooksLoading] = useState(false);
+    const [webhookEvents, setWebhookEvents] = useState<any[]>([]);
+    const [isEventsLoading, setIsEventsLoading] = useState(false);
+    const [webhookUrlInput, setWebhookUrlInput] = useState("");
+    const [isAddingWebhook, setIsAddingWebhook] = useState(false);
+    const [revealWebhookSecret, setRevealWebhookSecret] = useState<string | null>(null);
+
+    // Webhooks selection & replay state
+    const [selectedWebhook, setSelectedWebhook] = useState<string>("");
+    const [isReplaying, setIsReplaying] = useState(false);
+    const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
     // Checkout configurator state
     const [subName, setSubName] = useState("AI Agent Compute Limit");
@@ -204,10 +225,178 @@ export default function DashboardPage() {
     const [subInterval, setSubInterval] = useState("monthly");
     const [subChain, setSubChain] = useState("base");
 
-    // Webhooks state
-    const [selectedWebhook, setSelectedWebhook] = useState<string>("");
-    const [isReplaying, setIsReplaying] = useState(false);
-    const [replayStatus, setReplayStatus] = useState<string | null>(null);
+    const fetchApiKeys = async () => {
+        setIsKeysLoading(true);
+        try {
+            const res = await fetch("/api/keys");
+            const data = await res.json();
+            if (data.keys) {
+                setApiKeys(data.keys);
+            }
+        } catch (err) {
+            console.error("Error fetching keys:", err);
+        } finally {
+            setIsKeysLoading(false);
+        }
+    };
+
+    const fetchWebhookEndpoints = async () => {
+        setIsWebhooksLoading(true);
+        try {
+            const res = await fetch("/api/webhooks/endpoints");
+            const data = await res.json();
+            if (data.endpoints) {
+                setWebhookEndpoints(data.endpoints);
+            }
+        } catch (err) {
+            console.error("Error fetching endpoints:", err);
+        } finally {
+            setIsWebhooksLoading(false);
+        }
+    };
+
+    const fetchWebhookEvents = async () => {
+        setIsEventsLoading(true);
+        try {
+            const res = await fetch("/api/webhooks/events");
+            const data = await res.json();
+            if (data.events) {
+                setWebhookEvents(data.events);
+                if (data.events.length > 0 && !selectedWebhook) {
+                    setSelectedWebhook(data.events[0].id);
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching events:", err);
+        } finally {
+            setIsEventsLoading(false);
+        }
+    };
+
+    // Check session on mount and wallet change
+    useEffect(() => {
+        const checkSession = async () => {
+            if (!address) {
+                setSessionWallet(null);
+                setApiKeys([]);
+                setWebhookEndpoints([]);
+                setWebhookEvents([]);
+                setIsAuthLoading(false);
+                return;
+            }
+            
+            try {
+                const res = await fetch("/api/auth/session");
+                const data = await res.json();
+                if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
+                    setSessionWallet(data.wallet.toLowerCase());
+                } else {
+                    setSessionWallet(null);
+                }
+            } catch (err) {
+                console.error("Error checking session:", err);
+            } finally {
+                setIsAuthLoading(false);
+            }
+        };
+
+        checkSession();
+    }, [address]);
+
+    // Load backend data once session is authenticated
+    const loadBackendData = useCallback(async () => {
+        if (!sessionWallet) return;
+        
+        await Promise.all([
+            fetchApiKeys(),
+            fetchWebhookEndpoints(),
+            fetchWebhookEvents(),
+        ]);
+    }, [sessionWallet]);
+
+    useEffect(() => {
+        if (sessionWallet) {
+            loadBackendData();
+        }
+    }, [sessionWallet, loadBackendData]);
+
+    const handleBackendLogin = async () => {
+        if (!address) return;
+        setIsLoggingIn(true);
+        try {
+            const timestamp = Date.now();
+            const message = `Access SubScript Developer Portal: ${timestamp}`;
+            const signature = await signMessageAsync({ message });
+            
+            const res = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ address, message, signature }),
+            });
+            
+            const data = await res.json();
+            if (data.success) {
+                setSessionWallet(address.toLowerCase());
+            } else {
+                console.error("Login failed:", data.error);
+            }
+        } catch (err) {
+            console.error("Error signing message:", err);
+        } finally {
+            setIsLoggingIn(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+            setSessionWallet(null);
+            setApiKeys([]);
+            setWebhookEndpoints([]);
+            setWebhookEvents([]);
+        } catch (err) {
+            console.error("Error logging out:", err);
+        }
+    };
+
+    const handleAddWebhook = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!webhookUrlInput) return;
+        setIsAddingWebhook(true);
+        try {
+            const res = await fetch("/api/webhooks/endpoints", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: webhookUrlInput }),
+            });
+            const data = await res.json();
+            if (data.endpoint) {
+                setWebhookEndpoints(prev => [data.endpoint, ...prev]);
+                setWebhookUrlInput("");
+            } else {
+                alert(data.error || "Failed to add endpoint");
+            }
+        } catch (err) {
+            console.error("Error adding endpoint:", err);
+        } finally {
+            setIsAddingWebhook(false);
+        }
+    };
+
+    const handleDeleteWebhook = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this webhook endpoint?")) return;
+        try {
+            const res = await fetch(`/api/webhooks/endpoints?id=${id}`, {
+                method: "DELETE",
+            });
+            const data = await res.json();
+            if (data.success) {
+                setWebhookEndpoints(prev => prev.filter(e => e.id !== id));
+            }
+        } catch (err) {
+            console.error("Error deleting endpoint:", err);
+        }
+    };
 
     // Withdraw state
     const [isWithdrawing, setIsWithdrawing] = useState(false);
@@ -301,14 +490,20 @@ export default function DashboardPage() {
         setTimeout(() => setCopiedText(null), 2000);
     };
 
-    const handleRollKeys = () => {
+    const handleRollKeys = async () => {
         setIsRolling(true);
-        setTimeout(() => {
-            setSecretKeyVersion(prev => prev + 1);
+        try {
+            const res = await fetch("/api/keys", { method: "POST" });
+            const data = await res.json();
+            if (data.key) {
+                setApiKeys([data.key]);
+                handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
+            }
+        } catch (err) {
+            console.error("Error rolling keys:", err);
+        } finally {
             setIsRolling(false);
-            const activeSecretKey = `sk_test_${address?.slice(2, 10)}${address?.slice(-8)}_rolled_v${secretKeyVersion + 1}`;
-            handleCopy(activeSecretKey, "API Secret Key Rolled");
-        }, 800);
+        }
     };
 
     const handleRevokeCustomer = async (rawId: string) => {
@@ -330,14 +525,30 @@ export default function DashboardPage() {
         }
     };
 
-    const handleReplayWebhook = (webhookId: string) => {
+    const handleReplayWebhook = async (eventId: string) => {
         setIsReplaying(true);
         setReplayStatus("Replaying event...");
-        setTimeout(() => {
-            setIsReplaying(false);
-            setReplayStatus(`✓ Webhook event ${webhookId} successfully re-delivered. HTTP 200 OK.`);
+        try {
+            const res = await fetch("/api/webhooks/events/replay", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ eventId }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setReplayStatus(`✓ Webhook event successfully re-delivered. HTTP ${data.status} OK.`);
+                await fetchWebhookEvents();
+            } else {
+                setReplayStatus(`❌ Webhook re-delivery failed. HTTP ${data.status}.`);
+            }
             setTimeout(() => setReplayStatus(null), 4000);
-        }, 700);
+        } catch (err) {
+            console.error("Error replaying webhook:", err);
+            setReplayStatus("❌ Network error replaying webhook.");
+            setTimeout(() => setReplayStatus(null), 4000);
+        } finally {
+            setIsReplaying(false);
+        }
     };
 
     // Withdraw vault funds
@@ -479,14 +690,17 @@ export default function DashboardPage() {
         return "2592000";
     }, [subInterval]);
 
+    const activeKeyForSnippet = apiKeys.find(k => !k.revoked);
+    const publishableKeyForSnippet = activeKeyForSnippet ? activeKeyForSnippet.publishableKey : "pk_test_YOUR_PUBLISHABLE_KEY";
+
     const checkoutCode = useMemo(() => `<SubScriptCheckout
-  publishableKey="${TEST_PUBLISHABLE_KEY}"
+  publishableKey="${publishableKeyForSnippet}"
   merchantAddress="${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
   planName="${subName}"
   amountCap="${subCap}"
   interval="${subInterval}"
   fundingChain="${subChain}"
-/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName]);
+/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet]);
 
     const agentIntegrationPrompt = useMemo(() => {
         return `Act as an elite full-stack Web3 engineer integrating SubScript into my app.
@@ -887,104 +1101,155 @@ Implementation requirements:
                 );
 
             case "apikeys":
-                const testSecretKey = address 
-                    ? `sk_test_${address.slice(2, 10)}${address.slice(-8)}_v${secretKeyVersion}` 
-                    : "";
-                const activeSecretKey = testSecretKey;
-                const activePublishableKey = TEST_PUBLISHABLE_KEY;
+                if (isConnected && address && !sessionWallet) {
+                    return (
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                                To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
+                            </p>
+                            <button
+                                onClick={handleBackendLogin}
+                                disabled={isLoggingIn}
+                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            >
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                Authenticate Developer Portal
+                            </button>
+                        </div>
+                    );
+                }
+
+                const activeKey = apiKeys.find(k => !k.revoked) || null;
+                const activePublishableKey = activeKey ? activeKey.publishableKey : "";
+                const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
 
                 return (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
-                        <div>
-                            <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <Key className={`w-5 h-5 ${primaryColorText}`} />
-                                API Credentials
-                            </h2>
-                            <p className="text-xs text-white/50 font-sans leading-relaxed">
-                                Use these keys to authenticate your backend with the SubScript SDK.
-                                Your Secret Key is derived from your wallet address.
-                            </p>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* Publishable Key */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Publishable Key</span>
-                                    {copiedText === "Publishable Key" && (
-                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
-                                    )}
-                                </div>
-                                <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
-                                    <code className="text-xs font-mono text-white/80 break-all select-all">{activePublishableKey}</code>
-                                    <button 
-                                        onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
-                                        className="p-2 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-all"
-                                    >
-                                        <Copy className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Secret Key */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Secret Key</span>
-                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Secret</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        {copiedText === "Secret Key" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
-                                        )}
-                                        <button
-                                            onClick={() => setRevealSecret(!revealSecret)}
-                                            className="text-white/40 hover:text-white transition-colors"
-                                        >
-                                            {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
-                                    <code className="text-xs font-mono text-white/80 break-all">
-                                        {revealSecret 
-                                            ? activeSecretKey 
-                                            : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-                                        }
-                                    </code>
-                                    <button 
-                                        onClick={() => handleCopy(activeSecretKey, "Secret Key")}
-                                        disabled={!revealSecret}
-                                        className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
-                                    >
-                                        <Copy className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Roll Keys */}
-                        <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+                        <div className="flex justify-between items-start">
                             <div>
-                                <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
-                                <p className="text-[10px] text-white/40 font-sans max-w-md">
-                                    Roll your credentials instantly. Old keys remain valid for 24 hours.
+                                <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <Key className={`w-5 h-5 ${primaryColorText}`} />
+                                    API Credentials
+                                </h2>
+                                <p className="text-xs text-white/50 font-sans leading-relaxed">
+                                    Use these keys to authenticate your backend with the SubScript SDK.
+                                    API credentials are secure and persisted in the database.
                                 </p>
                             </div>
-                            <div className="flex items-center gap-4">
-                                {copiedText === "API Secret Key Rolled" && (
-                                    <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">✓ Rolled & Copied</span>
-                                )}
+                            {sessionWallet && (
+                                <button
+                                    onClick={handleLogout}
+                                    className="px-3 py-1.5 border border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 rounded-xl text-[10px] font-sans transition-all"
+                                >
+                                    Log Out Developer Portal
+                                </button>
+                            )}
+                        </div>
+
+                        {isKeysLoading ? (
+                            <div className="py-12 text-center flex flex-col items-center gap-2">
+                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                                <span className="text-xs text-white/40">Loading keys...</span>
+                            </div>
+                        ) : !activeKey ? (
+                            <div className="border border-white/5 rounded-2xl p-8 text-center bg-black/20 space-y-4 font-sans">
+                                <Key className="w-8 h-8 mx-auto text-white/20" />
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-white uppercase tracking-wider">No Active API Credentials</p>
+                                    <p className="text-[10px] text-white/40 leading-relaxed">Generate credentials to start integrating the SubScript SDK.</p>
+                                </div>
                                 <button
                                     onClick={handleRollKeys}
                                     disabled={isRolling}
-                                    className={`px-5 py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
+                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 text-black rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 mx-auto transition-all"
                                 >
-                                    {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-white" />}
-                                    Roll
+                                    {isRolling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                                    Generate API Keys
                                 </button>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {/* Publishable Key */}
+                                <div className="bg-black/40 border border-white/5 rounded-2xl p-5 font-sans">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Publishable Key</span>
+                                        {copiedText === "Publishable Key" && (
+                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
+                                        <code className="text-xs font-mono text-white/80 break-all select-all">{activePublishableKey}</code>
+                                        <button 
+                                            onClick={() => handleCopy(activePublishableKey, "Publishable Key")}
+                                            className="p-2 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-all"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Secret Key */}
+                                <div className="bg-black/40 border border-white/5 rounded-2xl p-5 font-sans">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Secret Key</span>
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Secret</span>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            {copiedText === "Secret Key" && (
+                                                <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                            )}
+                                            <button
+                                                onClick={() => setRevealSecret(!revealSecret)}
+                                                className="text-white/40 hover:text-white transition-colors"
+                                            >
+                                                {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
+                                        <code className="text-xs text-white/80 break-all">
+                                            {revealSecret 
+                                                ? activeSecretKey 
+                                                : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                                            }
+                                        </code>
+                                        <button 
+                                            onClick={() => handleCopy(activeSecretKey, "Secret Key")}
+                                            disabled={!revealSecret}
+                                            className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Roll Keys */}
+                                <div className="pt-4 border-t border-white/5 flex items-center justify-between font-sans">
+                                    <div>
+                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
+                                        <p className="text-[10px] text-white/40 max-w-md">
+                                            Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        {copiedText === "API Secret Key Rolled" && (
+                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">✓ Rolled & Copied</span>
+                                        )}
+                                        <button
+                                            onClick={handleRollKeys}
+                                            disabled={isRolling}
+                                            className={`px-5 py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all flex items-center gap-2 ${isRolling ? "opacity-50" : ""}`}
+                                        >
+                                            {isRolling ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-white" />}
+                                            Roll
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
 
@@ -1128,144 +1393,224 @@ Implementation requirements:
                 );
 
             case "webhooks":
-                // Only dynamic events from on-chain data
-                const dynamicEvents = ledgers.flatMap((item, index) => {
-                    const events: Array<{
-                        id: string;
-                        event: string;
-                        status: number;
-                        time: string;
-                        payload: any;
-                    }> = [
-                        {
-                            id: `evt_created_${index}`,
-                            event: "subscription.created",
-                            status: 200,
-                            time: item.nextBilling,
-                            payload: {
-                                subscriptionId: `sub_${item.rawId}`,
-                                clientReferenceId: item.id,
-                                subscriber: item.address,
-                                merchant: address,
-                                amount: `${item.rawAmount} USDC`,
-                                period: `${item.rawPeriod}s`,
-                                chain: "arc-testnet",
-                                chainId: ARC_TESTNET_CHAIN_ID,
-                            },
-                        },
-                    ];
+                if (isConnected && address && !sessionWallet) {
+                    return (
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                                To protect your API credentials and webhook endpoints, please sign a secure message using your connected wallet.
+                            </p>
+                            <button
+                                onClick={handleBackendLogin}
+                                disabled={isLoggingIn}
+                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            >
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                Authenticate Developer Portal
+                            </button>
+                        </div>
+                    );
+                }
 
-                    if (item.active) {
-                        events.push({
-                            id: `evt_renewed_${index}`,
-                            event: "payment.renewed",
-                            status: 200,
-                            time: item.nextBilling,
-                            payload: {
-                                subscriptionId: `sub_${item.rawId}`,
-                                subscriber: item.address,
-                                merchant: address,
-                                amount: `${item.rawAmount} USDC`,
-                                nextBilling: item.nextBilling,
-                                status: "active",
-                            },
-                        });
-                    } else {
-                        events.push({
-                            id: `evt_revoked_${index}`,
-                            event: "allowance.revoked",
-                            status: 200,
-                            time: item.nextBilling,
-                            payload: {
-                                subscriptionId: `sub_${item.rawId}`,
-                                clientReferenceId: item.id,
-                                subscriber: item.address,
-                                merchant: address,
-                                status: "revoked",
-                            },
-                        });
-                    }
-                    return events;
-                });
-
-                const selectedPayload = dynamicEvents.find(w => w.id === selectedWebhook);
+                const selectedPayload = webhookEvents.find(w => w.id === selectedWebhook);
 
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                        {/* Event Feed */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+                    <div className="space-y-8">
+                        {/* Webhook Endpoints Config */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                             <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                    <Webhook className={`w-4 h-4 ${primaryColorText}`} />
-                                    Live Event Stream
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <Sliders className={`w-4 h-4 ${primaryColorText}`} />
+                                    Webhook Endpoints
                                 </h2>
-                                <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                                    {dynamicEvents.length === 0 ? (
-                                        <div className="py-12 text-center text-white/30 font-sans text-xs space-y-3">
-                                            <Webhook className="w-8 h-8 mx-auto text-white/10" />
-                                            <p>No webhook events yet.</p>
-                                            <p className="text-[10px] text-white/20">Events will appear here when subscribers create allowances for your merchant address.</p>
-                                        </div>
-                                    ) : (
-                                        dynamicEvents.map((item) => (
-                                            <button
-                                                key={item.id}
-                                                onClick={() => setSelectedWebhook(item.id)}
-                                                className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
-                                                    selectedWebhook === item.id 
-                                                        ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
-                                                        : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
-                                                }`}
-                                            >
-                                                <div className="font-mono text-[11px] space-y-1">
-                                                    <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
-                                                    <p className="text-white/40 text-[10px]">{item.id.slice(0, 12)} • {item.time}</p>
-                                                </div>
-                                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                                    item.status === 200 
-                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                        : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                }`}>
-                                                    {item.status}
-                                                </span>
-                                            </button>
-                                        ))
-                                    )}
+                                <p className="text-[11px] text-white/40 font-sans">
+                                    Configure endpoints to receive subscription.created, payment.succeeded, and other lifecycle events.
+                                </p>
+                            </div>
+
+                            {/* Add endpoint form */}
+                            <form onSubmit={handleAddWebhook} className="flex gap-4 items-center">
+                                <input
+                                    type="url"
+                                    placeholder="https://yourserver.com/api/webhooks"
+                                    value={webhookUrlInput}
+                                    onChange={(e) => setWebhookUrlInput(e.target.value)}
+                                    required
+                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isAddingWebhook || !webhookUrlInput}
+                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2"
+                                >
+                                    {isAddingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
+                                    Add Endpoint
+                                </button>
+                            </form>
+
+                            {/* List endpoints */}
+                            {isWebhooksLoading ? (
+                                <div className="py-4 text-center">
+                                    <Loader2 className="w-5 h-5 animate-spin text-[#00d2b4] mx-auto" />
                                 </div>
-                            </div>
-                            
-                            <div className="mt-6 pt-4 border-t border-white/5 text-[10px] text-white/40 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-[#00d2b4] rounded-full animate-ping" />
-                                {dynamicEvents.length} events from {ledgers.length} on-chain subscriptions
-                            </div>
+                            ) : webhookEndpoints.length === 0 ? (
+                                <p className="text-[11px] text-white/30 font-sans text-center py-4 bg-black/20 rounded-xl border border-white/5">
+                                    No webhook endpoints configured.
+                                </p>
+                            ) : (
+                                <div className="space-y-3 font-sans text-xs">
+                                    {webhookEndpoints.map((ep) => (
+                                        <div key={ep.id} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                            <div className="space-y-1">
+                                                <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
+                                                <div className="flex items-center gap-3 text-[10px] text-white/40">
+                                                    <span>Secret: </span>
+                                                    <code className="font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
+                                                        {revealWebhookSecret === ep.id ? ep.secret : "whsec_••••••••••••••••••••••••••••••••"}
+                                                    </code>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
+                                                        className="text-[#00d2b4] hover:underline"
+                                                    >
+                                                        {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
+                                                    </button>
+                                                    {revealWebhookSecret === ep.id && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCopy(ep.secret, "Webhook Secret")}
+                                                            className="text-white/40 hover:text-white"
+                                                        >
+                                                            <Copy className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteWebhook(ep.id)}
+                                                className="px-3 py-1.5 border border-red-500/10 hover:bg-red-500/10 text-red-400 hover:border-red-500/20 rounded-xl text-[10px] font-bold uppercase transition-all"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
-                        {/* Payload Inspector */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                            <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector</span>
-                                <button
-                                    onClick={() => handleReplayWebhook(selectedWebhook)}
-                                    disabled={isReplaying || !selectedWebhook}
-                                    className={`px-3 py-1.5 border border-white/10 rounded-xl text-[9px] font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
-                                >
-                                    {isReplaying ? <RefreshCw className="w-3 h-3 animate-spin text-white" /> : <RotateCw className="w-3 h-3 text-white" />}
-                                    Replay
-                                </button>
+                        {/* Event Feed and Inspector */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                            {/* Event Feed */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+                                <div>
+                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
+                                        <Webhook className={`w-4 h-4 ${primaryColorText}`} />
+                                        Live Webhook Deliveries
+                                    </h2>
+                                    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                                        {isEventsLoading ? (
+                                            <div className="py-12 text-center">
+                                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4] mx-auto" />
+                                            </div>
+                                        ) : webhookEvents.length === 0 ? (
+                                            <div className="py-12 text-center text-white/30 font-sans text-xs space-y-3">
+                                                <Webhook className="w-8 h-8 mx-auto text-white/10" />
+                                                <p>No webhook deliveries logged yet.</p>
+                                                <p className="text-[10px] text-white/20">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
+                                            </div>
+                                        ) : (
+                                            webhookEvents.map((item) => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => setSelectedWebhook(item.id)}
+                                                    className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
+                                                        selectedWebhook === item.id 
+                                                            ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
+                                                            : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
+                                                    }`}
+                                                >
+                                                    <div className="font-mono text-[11px] space-y-1 max-w-[70%]">
+                                                        <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
+                                                        <p className="text-white/40 text-[9px] truncate">{item.endpointUrl}</p>
+                                                        <p className="text-white/30 text-[9px]">{item.time}</p>
+                                                    </div>
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                                        item.status >= 200 && item.status < 300
+                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                    }`}>
+                                                        HTTP {item.status}
+                                                    </span>
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-6 pt-4 border-t border-white/5 text-[10px] text-white/40 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 bg-[#00d2b4] rounded-full animate-ping" />
+                                        <span>Logged: {webhookEvents.length} events</span>
+                                    </div>
+                                    <button
+                                        onClick={fetchWebhookEvents}
+                                        className="text-[#00d2b4] hover:underline flex items-center gap-1"
+                                    >
+                                        <RefreshCw className="w-3 h-3" /> Refresh logs
+                                    </button>
+                                </div>
                             </div>
-                            
-                            <div className="flex-1 p-6 font-mono text-[11px] text-emerald-400/90 overflow-y-auto min-h-[250px] leading-relaxed select-all">
-                                {replayStatus ? (
-                                    <p className="text-white/80 p-3 bg-white/5 border border-white/5 rounded-xl mb-4 font-sans text-xs">{replayStatus}</p>
-                                ) : null}
-                                <pre>
-                                    <code>{selectedPayload ? JSON.stringify(selectedPayload, null, 2) : "// Select a webhook event to inspect"}</code>
-                                </pre>
-                            </div>
-                            
-                            <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
-                                <span>Event: {selectedPayload?.event || "N/A"}</span>
-                                <span>HTTP {selectedPayload?.status || "N/A"}</span>
+
+                            {/* Payload Inspector */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
+                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest font-mono">Payload Inspector</span>
+                                    <button
+                                        onClick={() => handleReplayWebhook(selectedWebhook)}
+                                        disabled={isReplaying || !selectedWebhook}
+                                        className={`px-3 py-1.5 border border-white/10 rounded-xl text-[9px] font-bold uppercase tracking-wider hover:bg-white/5 flex items-center gap-1.5 ${isReplaying || !selectedWebhook ? "opacity-50" : ""}`}
+                                    >
+                                        {isReplaying ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : <RotateCw className="w-3 h-3 text-white" />}
+                                        Replay
+                                    </button>
+                                </div>
+                                
+                                <div className="flex-1 p-6 font-mono text-[11px] text-emerald-400/90 overflow-y-auto min-h-[300px] leading-relaxed select-all">
+                                    {replayStatus && (
+                                        <p className={`p-3 border rounded-xl mb-4 font-sans text-xs ${
+                                            replayStatus.startsWith("✓") 
+                                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" 
+                                                : "bg-red-500/10 text-red-300 border-red-500/20"
+                                        }`}>{replayStatus}</p>
+                                    )}
+                                    {selectedPayload ? (
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-white/30 text-[9px] uppercase tracking-wider mb-1 font-bold">JSON Payload</p>
+                                                <pre className="bg-black/40 p-3 rounded-xl border border-white/5 overflow-x-auto text-[#00d2b4]">
+                                                    <code>{JSON.stringify(selectedPayload.payload, null, 2)}</code>
+                                                </pre>
+                                            </div>
+                                            {selectedPayload.responseBody && (
+                                                <div>
+                                                    <p className="text-white/30 text-[9px] uppercase tracking-wider mb-1 font-bold">Response Body</p>
+                                                    <pre className="bg-black/50 p-3 rounded-xl border border-white/5 overflow-x-auto text-white/70 max-h-[150px]">
+                                                        <code>{selectedPayload.responseBody}</code>
+                                                    </pre>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-white/30">// Select a webhook event to inspect</span>
+                                    )}
+                                </div>
+                                
+                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
+                                    <span>Event ID: {selectedPayload?.id || "N/A"}</span>
+                                    <span>HTTP Status: {selectedPayload?.status || "N/A"}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
