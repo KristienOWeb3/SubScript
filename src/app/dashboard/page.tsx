@@ -135,6 +135,9 @@ export default function DashboardPage() {
     const [rerouteAddress, setRerouteAddress] = useState("");
     const [isRerouting, setIsRerouting] = useState(false);
     const [rerouteSuccess, setRerouteSuccess] = useState(false);
+    const [isTriggeringKeeper, setIsTriggeringKeeper] = useState(false);
+    const [keeperStatus, setKeeperStatus] = useState<string | null>(null);
+    const [keeperError, setKeeperError] = useState<string | null>(null);
 
     useEffect(() => {
         setIsMounted(true);
@@ -145,47 +148,64 @@ export default function DashboardPage() {
         }
     }, [realAddress, realIsConnected]);
 
-    // ──── On-chain reads ────
-    // Merchant tier
-    const { data: merchantTierRaw, refetch: refetchTier } = useReadContract({
-        address: SUBSCRIPT_ROUTER_ADDRESS,
-        abi: SUBSCRIPT_ABI,
-        functionName: "merchantTiers",
-        args: address ? [address] : undefined,
-        query: { enabled: Boolean(address) },
-    });
-    const merchantTier = merchantTierRaw !== undefined ? Number(merchantTierRaw) : 0;
+    // ──── On-chain reads via publicClient (independent of connected wallet chain) ────
+    const [merchantTier, setMerchantTier] = useState(0);
+    const [vaultBalance, setVaultBalance] = useState(0);
+    const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
+    const [walletBalance, setWalletBalance] = useState(0);
+
+    const refetchBalancesAndTier = useCallback(async () => {
+        if (!address) return;
+        try {
+            const [tierRaw, vaultRaw, payoutRaw, walletRaw] = await Promise.all([
+                publicClient.readContract({
+                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    abi: SUBSCRIPT_ABI,
+                    functionName: "merchantTiers",
+                    args: [address as `0x${string}`],
+                }),
+                publicClient.readContract({
+                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    abi: SUBSCRIPT_ABI,
+                    functionName: "merchantBalances",
+                    args: [address as `0x${string}`],
+                }),
+                publicClient.readContract({
+                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    abi: SUBSCRIPT_ABI,
+                    functionName: "merchantPayoutDestination",
+                    args: [address as `0x${string}`],
+                }),
+                publicClient.readContract({
+                    address: USDC_NATIVE_GAS_ADDRESS,
+                    abi: ERC20_ABI,
+                    functionName: "balanceOf",
+                    args: [address as `0x${string}`],
+                }),
+            ]);
+
+            setMerchantTier(Number(tierRaw));
+            setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
+            setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
+            setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
+        } catch (error) {
+            console.error("Error reading contract data in background:", error);
+        }
+    }, [address]);
+
+    useEffect(() => {
+        if (!address) return;
+        refetchBalancesAndTier();
+        const interval = setInterval(refetchBalancesAndTier, 8000);
+        return () => clearInterval(interval);
+    }, [address, refetchBalancesAndTier]);
+
     const isPremium = merchantTier >= 1;
 
-    // Merchant vault balance
-    const { data: vaultBalanceRaw, refetch: refetchVaultBalance } = useReadContract({
-        address: SUBSCRIPT_ROUTER_ADDRESS,
-        abi: SUBSCRIPT_ABI,
-        functionName: "merchantBalances",
-        args: address ? [address] : undefined,
-        query: { enabled: Boolean(address) },
-    });
-    const vaultBalance = vaultBalanceRaw !== undefined ? parseFloat(formatUnits(vaultBalanceRaw, 6)) : 0;
-
-    // Merchant payout destination
-    const { data: payoutDestRaw, refetch: refetchPayoutDest } = useReadContract({
-        address: SUBSCRIPT_ROUTER_ADDRESS,
-        abi: SUBSCRIPT_ABI,
-        functionName: "merchantPayoutDestination",
-        args: address ? [address] : undefined,
-        query: { enabled: Boolean(address) },
-    });
-    const payoutDestination = payoutDestRaw && payoutDestRaw !== "0x0000000000000000000000000000000000000000" ? payoutDestRaw : null;
-
-    // USDC wallet balance  
-    const { data: walletBalanceRaw, refetch: refetchWalletBalance } = useReadContract({
-        address: USDC_NATIVE_GAS_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: "balanceOf",
-        args: address ? [address] : undefined,
-        query: { enabled: Boolean(address) },
-    });
-    const walletBalance = walletBalanceRaw !== undefined ? parseFloat(formatUnits(walletBalanceRaw as bigint, 6)) : 0;
+    const refetchTier = refetchBalancesAndTier;
+    const refetchVaultBalance = refetchBalancesAndTier;
+    const refetchPayoutDest = refetchBalancesAndTier;
+    const refetchWalletBalance = refetchBalancesAndTier;
 
     // Sidebar tab state
     const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -470,9 +490,11 @@ export default function DashboardPage() {
         }
 
         fetchOnChainData();
+        const interval = setInterval(fetchOnChainData, 10000);
 
         return () => {
             isSubscribed = false;
+            clearInterval(interval);
         };
     }, [isConnected, address]);
 
@@ -646,6 +668,17 @@ export default function DashboardPage() {
                 throw new Error(`Amount mismatch. Expected ${formatUnits(amount, 6)} USDC.`);
             }
 
+            setPremiumStatus("Syncing premium state with server...");
+            const upgradeRes = await fetch("/api/premium/upgrade", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ txHash: transferHash }),
+            });
+            const upgradeData = await upgradeRes.json();
+            if (!upgradeRes.ok) {
+                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
+            }
+
             setPremiumStatus("✓ Payment verified! Premium tier activated.");
             refetchTier();
             setTimeout(() => setPremiumStatus(null), 4000);
@@ -683,6 +716,36 @@ export default function DashboardPage() {
         }
     };
 
+    // Trigger keeper subscription renewals manually (Premium Feature)
+    const handleTriggerKeeper = async () => {
+        setIsTriggeringKeeper(true);
+        setKeeperStatus(null);
+        setKeeperError(null);
+        try {
+            const response = await fetch("/api/keeper/trigger", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to trigger keepers");
+            }
+            if (data.executedCount > 0) {
+                setKeeperStatus(`✓ Checked successfully. Executed ${data.executedCount} recurring subscription payment(s) on-chain!`);
+            } else {
+                setKeeperStatus("✓ Checked successfully. No recurring subscriptions are currently due for renewal.");
+            }
+            setTimeout(() => setKeeperStatus(null), 5000);
+            refetchBalancesAndTier();
+        } catch (err: any) {
+            console.error("Manual keeper trigger failed:", err);
+            setKeeperError(err.message || "Execution failed");
+            setTimeout(() => setKeeperError(null), 5000);
+        } finally {
+            setIsTriggeringKeeper(false);
+        }
+    };
+
     const merchantWalletAddress = address || "";
     const billingPeriodSeconds = useMemo(() => {
         if (subInterval === "weekly") return "604800";
@@ -703,31 +766,51 @@ export default function DashboardPage() {
 />`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet]);
 
     const agentIntegrationPrompt = useMemo(() => {
-        return `Act as an elite full-stack Web3 engineer integrating SubScript into my app.
+        return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
 
-SubScript is a decentralized recurring subscription protocol on Arc Network using the Zero-Knowledge Burner Method for privacy-preserving payments.
+SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
 
-Live merchant context:
-- MERCHANT_WALLET_ADDRESS = "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
-- PLAN_NAME = "${subName}"
-- AMOUNT_CAP_USDC = "${subCap}"
-- BILLING_INTERVAL_SECONDS = ${billingPeriodSeconds}
-- ARC_TESTNET_CHAIN_ID = ${ARC_TESTNET_CHAIN_ID}
-- SUBSCRIPT_ROUTER = "${SUBSCRIPT_ROUTER_ADDRESS}"
-- USDC_NATIVE_GAS_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
-- PROTOCOL_FEE_BPS = 100
+LIVE MERCHANT DEPLOYMENT DETAILS:
+- Merchant Payout Wallet: "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
+- Plan Name: "${subName}"
+- Price per Period: "${subCap}" USDC (6 decimals, formatted as parseUnits('${subCap}', 6))
+- Billing Interval: ${billingPeriodSeconds} seconds
+- SubScript Router Contract: "${SUBSCRIPT_ROUTER_ADDRESS}"
+- USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
+- Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Merchant Secret API Key (for server integration): [GENERATE IN API KEYS TAB]
+- Webhook Secret Key (for validation): [RETRIEVE IN WEBHOOKS TAB]
 
-Implementation requirements:
-1. Run \`npx @subscript-protocol/cli\` to generate \`abi.json\` and \`constants.ts\`. Use these injected files for configuration.
-2. Use native USDC gas on Arc Testnet. Format amounts to 6 decimals: \`parseUnits('${subCap}', 6)\`.
-3. Implement the ZK Burner Method:
-   - Funding wallet generates a random secret and commitment hash.
-   - Funding wallet approves USDC and calls \`depositAndCommit(bytes32 commitment, uint256 amount)\`.
-   - Frontend generates the local ZK proof from the secret.
-   - User switches to a clean burner wallet.
-   - Burner wallet calls \`verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period)\`.
-4. Never expose the funding wallet in merchant-facing subscription state.
-5. Handle states: pending, proof generation, activation, success, and recoverable errors.`;
+INTEGRATION WORKFLOW REQUIREMENTS:
+
+1. FRONTEND USER FLOW (ZK Burner Method)
+   - Step 1: User connects Funding Wallet and approves USDC token allowance for the router contract:
+     USDC_NATIVE_GAS_ADDRESS.approve(SUBSCRIPT_ROUTER_ADDRESS, parseUnits('${subCap}', 6) * 12)
+   - Step 2: Generate a local cryptographically secure random 32-byte secret. Create commitment = keccak256(secret). Store the secret in the user's browser localStorage.
+   - Step 3: Call depositAndCommit(commitment, parseUnits('${subCap}', 6)) on the SubScript Router contract from the Funding Wallet.
+   - Step 4: Construct the ZK-friendly parameter proof array: [secret, expectedPublicInputHash] where expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period)).
+   - Step 5: Ask user to switch context to a burner wallet (or auto-generate a secure burner wallet key pair in memory).
+   - Step 6: Burner wallet calls verifyAndActivate(proof, nullifierHash, merchant, amount, period) on the SubScript Router.
+
+2. SERVER-TO-SERVER VERIFICATION
+   - To verify a subscription status from your backend, make a GET request to the SubScript API:
+     GET /api/v1/subscriptions?id=sub_[SUBSCRIPTION_ID]
+     or
+     GET /api/v1/subscriptions?subscriber=[SUBSCRIBER_WALLET_ADDRESS]
+   - Include the secret API key in the headers:
+     Authorization: Bearer sk_test_...
+   - Check the JSON response fields: { id, subscriber, amount, periodSeconds, isActive, nextPaymentDate }
+
+3. WEBHOOK LOGIC & SIGNATURE VERIFICATION
+   - Create a webhook receiver endpoint (e.g. POST /api/webhooks).
+   - Verify the webhook signature received in the 'x-subscript-signature' header. The signature is computed as:
+     HMAC-SHA256(webhook_secret_key, json_payload)
+   - Handle events:
+     - 'subscription.activated': Triggered when a subscription is initialized.
+     - 'subscription.payment.succeeded': Triggered when a keeper runs a recurring billing cycle successfully.
+     - 'subscription.cancelled': Triggered when a subscription is cancelled.
+
+Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
     }, [merchantWalletAddress, subName, subCap, billingPeriodSeconds]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
@@ -1019,6 +1102,37 @@ Implementation requirements:
                                             <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* Manual Keeper Execution Control */}
+                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <PlugZap className="w-4 h-4 text-[#d4a853]" />
+                                        Keeper Force Execution
+                                    </h3>
+                                    <p className="text-xs text-white/50 leading-relaxed">
+                                        Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <div>
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
+                                            <p className="text-xs font-semibold text-white/80">Schedule: Idle (60s cycles)</p>
+                                        </div>
+                                        <button
+                                            onClick={handleTriggerKeeper}
+                                            disabled={isTriggeringKeeper}
+                                            className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                            Run Keepers
+                                        </button>
+                                    </div>
+                                    {keeperStatus && (
+                                        <p className="text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
+                                    )}
+                                    {keeperError && (
+                                        <p className="text-red-400 text-xs font-mono break-all">{keeperError}</p>
+                                    )}
                                 </div>
 
                                 {/* Premium Features Summary */}

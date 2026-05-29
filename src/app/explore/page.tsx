@@ -211,7 +211,7 @@ export default function ExplorePage() {
                         <ul className="space-y-3 text-xs text-white/50">
                             <li><Link href="/explore" className="hover:text-white transition">Explore</Link></li>
                             <li><Link href="/product" className="hover:text-white transition">Product</Link></li>
-                            <li><Link href="/premium" className="hover:text-[#d4a853] transition">Premium</Link></li>
+                            <li><Link href="/dashboard" className="hover:text-[#d4a853] transition">Premium</Link></li>
                             <li><a href="#" className="hover:text-white transition">Governance</a></li>
                         </ul>
                     </div>
