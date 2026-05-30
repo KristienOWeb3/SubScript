@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
-import { prisma } from "@/lib/prisma";
-import crypto from "crypto";
+import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 
 export async function POST(request: Request) {
@@ -64,17 +63,16 @@ export async function POST(request: Request) {
                 }, { onConflict: "wallet_address" });
         }
 
-        const sessionToken = crypto.randomBytes(32).toString("hex");
+        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secret = new TextEncoder().encode(secretStr);
         const sessionDuration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
         const expiresAt = new Date(Date.now() + sessionDuration);
+        const sessionDurationStr = rememberMe ? "30d" : "1d";
 
-        await prisma.session.create({
-            data: {
-                wallet: walletAddress.toLowerCase(),
-                token: sessionToken,
-                expiresAt,
-            },
-        });
+        const jwt = await new SignJWT({ address: walletAddress.toLowerCase(), authenticatedAt: Date.now() })
+            .setProtectedHeader({ alg: "HS256" })
+            .setExpirationTime(sessionDurationStr)
+            .sign(secret);
 
         const response = NextResponse.json({ 
             success: true, 
@@ -83,7 +81,7 @@ export async function POST(request: Request) {
             provider
         });
         
-        response.cookies.set("subscript_session_token", sessionToken, {
+        response.cookies.set("subscript_session_token", jwt, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "strict",

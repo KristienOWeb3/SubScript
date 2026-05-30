@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 
@@ -34,35 +34,41 @@ const publicClient = createPublicClient({
     transport: http(),
 });
 
-// GET /api/v1/subscriptions - Public endpoint for merchant servers to query subscriptions
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function GET(request: Request) {
     try {
-        // 1. Authenticate secret API key from the Authorization header
         const authHeader = request.headers.get("Authorization");
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return NextResponse.json({ error: "Unauthorized: Missing or invalid Authorization header" }, { status: 401 });
         }
 
-        const secretKey = authHeader.substring(7).trim(); // Remove "Bearer "
+        const secretKey = authHeader.substring(7).trim();
         if (!secretKey.startsWith("sk_test_")) {
             return NextResponse.json({ error: "Unauthorized: Invalid secret API key format" }, { status: 401 });
         }
 
-        // Validate secret key in the database
-        const keyRecord = await prisma.apiKey.findFirst({
-            where: {
-                secretKeyPlain: secretKey,
-                revoked: false,
-            },
-        });
+        const supabase = getSupabase();
+        const { data: keyRecord, error: keyError } = await supabase
+            .from("api_keys")
+            .select("wallet_address")
+            .eq("secret_key_plain", secretKey)
+            .eq("revoked", false)
+            .maybeSingle();
 
-        if (!keyRecord) {
+        if (keyError || !keyRecord) {
             return NextResponse.json({ error: "Unauthorized: Active secret key not found" }, { status: 401 });
         }
 
-        const merchantWallet = keyRecord.walletAddress.toLowerCase();
+        const merchantWallet = keyRecord.wallet_address.toLowerCase();
 
-        // 2. Parse query parameters
         const { searchParams } = new URL(request.url);
         const subIdParam = searchParams.get("id");
         const subscriberParam = searchParams.get("subscriber");
@@ -71,9 +77,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Bad Request: Provide either 'id' or 'subscriber' parameter" }, { status: 400 });
         }
 
-        // Case A: Query by Subscription ID
         if (subIdParam) {
-            // Support formats like "sub_1" or "1"
             const cleanedIdStr = subIdParam.replace(/^sub_/, "");
             const subId = parseInt(cleanedIdStr, 10);
 
@@ -82,7 +86,6 @@ export async function GET(request: Request) {
             }
 
             try {
-                // Read from smart contract
                 const subscription = await publicClient.readContract({
                     address: SUBSCRIPT_ROUTER_ADDRESS,
                     abi: SUBSCRIPT_ABI,
@@ -92,12 +95,10 @@ export async function GET(request: Request) {
 
                 const [subscriber, merchant, amount, period, nextPayment, isActive] = subscription;
 
-                // Security check: Verify that this subscription belongs to the querying merchant
                 if (merchant.toLowerCase() !== merchantWallet) {
                     return NextResponse.json({ error: "Forbidden: This subscription does not belong to your merchant wallet" }, { status: 403 });
                 }
 
-                // Return details
                 return NextResponse.json({
                     id: `sub_${subId}`,
                     subscriber,
@@ -115,14 +116,12 @@ export async function GET(request: Request) {
             }
         }
 
-        // Case B: Query by Subscriber Address
         if (subscriberParam) {
             const subscriberWallet = subscriberParam.toLowerCase();
             if (!subscriberWallet.startsWith("0x") || subscriberWallet.length !== 42) {
                 return NextResponse.json({ error: "Bad Request: Invalid subscriber address" }, { status: 400 });
             }
 
-            // Scan on-chain subscriptions to find active ones for this merchant + subscriber
             try {
                 const nextIdBig = await publicClient.readContract({
                     address: SUBSCRIPT_ROUTER_ADDRESS,
@@ -132,11 +131,8 @@ export async function GET(request: Request) {
                 const nextId = Number(nextIdBig);
 
                 const activeSubscriptions = [];
-
-                // Read subscriptions in chunks to prevent RPC payload overload
                 const idList = Array.from({ length: nextId - 1 }, (_, i) => i + 1);
                 
-                // For efficiency, run queries in parallel batches
                 const batchSize = 20;
                 for (let i = 0; i < idList.length; i += batchSize) {
                     const chunk = idList.slice(i, i + batchSize);

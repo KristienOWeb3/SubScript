@@ -9,37 +9,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { address, message, signature } = body;
-
-        if (!address || !message || !signature) {
-            return NextResponse.json(
-                { error: "Address, message, and signature are required" },
-                { status: 400 }
-            );
+        const { address, signature, nonce } = body;
+        if (!address || !signature || !nonce) {
+            return NextResponse.json({ error: "Address, signature, and nonce are required" }, { status: 400 });
         }
 
-        if (!message.startsWith("Access SubScript Developer Portal: ")) {
-            return NextResponse.json(
-                { error: "Invalid authentication message text" },
-                { status: 400 }
-            );
+        const cookieStore = request.headers.get("cookie") || "";
+        const nonceMatch = cookieStore.match(/subscript_siwe_nonce=([^;]+)/);
+        const storedNonce = nonceMatch ? nonceMatch[1] : null;
+
+        if (!storedNonce || storedNonce !== nonce) {
+            return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
         }
 
-        const timestampStr = message.replace("Access SubScript Developer Portal: ", "");
-        const timestamp = parseInt(timestampStr, 10);
-        const now = Date.now();
-
-        if (isNaN(timestamp)) {
-            return NextResponse.json({ error: "Invalid timestamp in message" }, { status: 400 });
-        }
-
-        const fiveMinutes = 5 * 60 * 1000;
-        if (Math.abs(now - timestamp) > fiveMinutes) {
-            return NextResponse.json(
-                { error: "Authentication request expired (clock drift or replay attack)" },
-                { status: 400 }
-            );
-        }
+        const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${nonce}`;
 
         const isValid = await verifyMessage({
             address: address as `0x${string}`,
@@ -53,6 +36,8 @@ export async function POST(request: Request) {
 
         const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
         const secret = new TextEncoder().encode(secretStr);
+        
+        const now = Date.now();
         const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
         const jwt = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
             .setProtectedHeader({ alg: "HS256" })
@@ -69,9 +54,17 @@ export async function POST(request: Request) {
             expires: expiresAt,
         });
 
+        response.cookies.set("subscript_siwe_nonce", "", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            path: "/",
+            maxAge: 0,
+        });
+
         return response;
     } catch (error: any) {
-        console.error("Login API error:", error);
+        console.error("Signature verification error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

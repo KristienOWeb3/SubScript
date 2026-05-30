@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
 
-// Simple in-memory rate limiting map (IP -> timestamp array)
 const ipRequestHistory = new Map<string, number[]>();
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 5; // Max 5 submissions per minute per IP
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const RATE_LIMIT_MAX = 5;
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
   const history = ipRequestHistory.get(ip) || [];
   
-  // Filter out requests older than the window
   const recentHistory = history.filter(time => now - time < RATE_LIMIT_WINDOW);
   
   if (recentHistory.length >= RATE_LIMIT_MAX) {
@@ -22,10 +20,8 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-// Regex for strict email validation
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
-// Allowed values for validation
 const ALLOWED_USE_CASES = [
   "AI Agents/Tooling",
   "Global SaaS",
@@ -41,9 +37,17 @@ const ALLOWED_MONTHLY_VOLUMES = [
 
 const ALLOWED_USER_TYPES = ["user", "enterprise"];
 
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function POST(request: Request) {
   try {
-    // 1. Get client IP and check rate limiting
     const ipHeader = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown-ip";
     const ip = ipHeader.split(",")[0]?.trim() || "unknown-ip";
     if (ip !== "unknown-ip" && isRateLimited(ip)) {
@@ -53,7 +57,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Parse request body
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid submission payload." }, { status: 400 });
@@ -62,18 +65,15 @@ export async function POST(request: Request) {
     const { email, userType, companyName, useCase, monthlyVolume, honeypot } = body;
     const normalizedUserType = typeof userType === "string" ? userType.trim().toLowerCase() : "";
 
-    // 3. Honeypot check (Spam Protection)
     if (honeypot) {
       console.warn("Honeypot triggered, ignoring spam submission.");
       return NextResponse.json({ success: true, message: "Spot secured on priority list." });
     }
 
-    // 4. Validate userType
     if (!normalizedUserType || !ALLOWED_USER_TYPES.includes(normalizedUserType)) {
       return NextResponse.json({ error: "Invalid user type." }, { status: 400 });
     }
 
-    // 5. Email validation (required for both paths)
     if (!email || typeof email !== "string" || email.trim() === "") {
       return NextResponse.json({ error: "Email is required." }, { status: 400 });
     }
@@ -87,10 +87,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email is too long." }, { status: 400 });
     }
 
-    // 6. Check for duplicate email
-    const existing = await prisma.waitlistLead.findUnique({
-      where: { email: trimmedEmail }
-    });
+    const supabase = getSupabase();
+
+    const { data: existing, error: checkError } = await supabase
+      .from("waitlist_leads")
+      .select("email")
+      .eq("email", trimmedEmail)
+      .maybeSingle();
 
     if (existing) {
       return NextResponse.json(
@@ -103,15 +106,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Branch logic based on userType
     if (normalizedUserType === "user") {
-      // ── User path: only email required ──
-      await prisma.waitlistLead.create({
-        data: {
+      const { error: insertError } = await supabase
+        .from("waitlist_leads")
+        .insert({
           email: trimmedEmail,
-          userType: "user",
+          user_type: "user",
+        });
+
+      if (insertError) {
+        if (insertError.code === "23505") {
+          return NextResponse.json(
+            {
+              success: true,
+              isAlreadyRegistered: true,
+              message: "You're already on the priority list. We'll keep you posted.",
+            },
+            { status: 200 }
+          );
         }
-      });
+        throw insertError;
+      }
 
       return NextResponse.json(
         { success: true, message: "You're on the list. We'll notify you when SubScript launches." },
@@ -119,7 +134,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Enterprise path: all fields required ──
     if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
       return NextResponse.json({ error: "Company name is required." }, { status: 400 });
     }
@@ -144,15 +158,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid monthly volume selected." }, { status: 400 });
     }
 
-    await prisma.waitlistLead.create({
-      data: {
+    const { error: insertError } = await supabase
+      .from("waitlist_leads")
+      .insert({
         email: trimmedEmail,
-        userType: "enterprise",
-        companyName: trimmedCompany,
-        useCase: trimmedUseCase,
-        monthlyVolume: trimmedVolume,
+        user_type: "enterprise",
+        company_name: trimmedCompany,
+        use_case: trimmedUseCase,
+        monthly_volume: trimmedVolume,
+      });
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return NextResponse.json(
+          {
+            success: true,
+            isAlreadyRegistered: true,
+            message: "You're already on the priority list. We'll keep you posted.",
+          },
+          { status: 200 }
+        );
       }
-    });
+      throw insertError;
+    }
 
     return NextResponse.json(
       { success: true, message: "Spot secured on priority list." },
@@ -161,17 +189,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("Waitlist API Error:", error);
-    // Handle unique constraint code from database just in case
-    if (error?.code === "P2002") {
-      return NextResponse.json(
-        {
-          success: true,
-          isAlreadyRegistered: true,
-          message: "You're already on the priority list. We'll keep you posted.",
-        },
-        { status: 200 }
-      );
-    }
     return NextResponse.json(
       { error: "An unexpected error occurred. Please try again." },
       { status: 500 }

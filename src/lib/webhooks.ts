@@ -12,7 +12,6 @@ export async function sendWebhookRequest(
     const timestamp = Math.floor(Date.now() / 1000);
     const serializedPayload = JSON.stringify(payload);
     
-    // Cryptographically sign: timestamp + '.' + json_body
     const signaturePayload = `${timestamp}.${serializedPayload}`;
     const hmac = crypto.createHmac("sha256", secret);
     hmac.update(signaturePayload);
@@ -29,19 +28,18 @@ export async function sendWebhookRequest(
                 "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
             },
             body: serializedPayload,
-            // Timeout after 10 seconds
             signal: AbortSignal.timeout(10000),
         });
         
         const responseText = await response.text().catch(() => "");
         return {
             status: response.status,
-            responseText: responseText.slice(0, 1000), // Keep first 1000 chars of response body
+            responseText: responseText.slice(0, 1000),
         };
     } catch (err: any) {
         console.warn(`Webhook delivery failure to ${url}:`, err);
         return {
-            status: 504, // Gateway Timeout / Failed Connection
+            status: 504,
             responseText: `Delivery failed: ${err.message || String(err)}`,
         };
     }

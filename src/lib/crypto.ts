@@ -1,7 +1,6 @@
 import crypto from "crypto";
 
 const ALGORITHM = "aes-256-cbc";
-// Derive a 32-byte key from our WALLET_ENCRYPTION_KEY environment variable or a secure fallback
 const ENCRYPTION_KEY = crypto.scryptSync(
     process.env.WALLET_ENCRYPTION_KEY || "subscript_secure_wallet_encryption_secret_key_2026",
     "salt",

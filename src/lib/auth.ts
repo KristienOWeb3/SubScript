@@ -1,8 +1,8 @@
-import { prisma } from "@/lib/prisma";
+import { jwtVerify } from "jose";
 
 /**
  * Helper to authenticate requests inside Next.js API routes by reading
- * the subscript_session_token cookie and checking it against the database.
+ * the subscript_session_token cookie and verifying it as a signed JWT.
  * Returns the authenticated wallet address (lowercase), or null if unauthorized.
  */
 export async function getSessionWallet(headers: Headers): Promise<string | null> {
@@ -12,18 +12,17 @@ export async function getSessionWallet(headers: Headers): Promise<string | null>
 
     if (!token) return null;
 
-    const session = await prisma.session.findUnique({
-        where: { token },
-    });
-
-    if (!session) return null;
-
-    // Check if session has expired
-    if (new Date() > session.expiresAt) {
-        // Delete expired session in background
-        prisma.session.delete({ where: { token } }).catch(() => null);
+    try {
+        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secret = new TextEncoder().encode(secretStr);
+        const { payload } = await jwtVerify(token, secret);
+        
+        if (payload && typeof payload.address === "string") {
+            return payload.address.toLowerCase();
+        }
+        return null;
+    } catch (err) {
+        console.error("JWT verification failed:", err);
         return null;
     }
-
-    return session.wallet;
 }

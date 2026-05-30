@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
+import { createClient } from "@supabase/supabase-js";
 import { sendWebhookRequest } from "@/lib/webhooks";
 import crypto from "crypto";
 
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function POST(request: Request) {
     try {
-        // 1. Authenticate user
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,50 +26,56 @@ export async function POST(request: Request) {
         }
 
         const { eventId } = body;
+        const supabase = getSupabase();
 
-        // 2. Fetch the past event and verify ownership
-        const pastEvent = await prisma.webhookEvent.findFirst({
-            where: {
-                id: eventId,
-                endpoint: {
-                    walletAddress: wallet.toLowerCase(),
-                },
-            },
-            include: {
-                endpoint: true,
-            },
-        });
+        const { data: pastEvent, error: pastEventError } = await supabase
+            .from("webhook_events")
+            .select("*")
+            .eq("id", eventId)
+            .maybeSingle();
 
-        if (!pastEvent) {
+        if (pastEventError || !pastEvent) {
             return NextResponse.json({ error: "Webhook event not found" }, { status: 404 });
         }
 
-        // 3. Increment/repackage the payload with updated metadata if desired,
-        // but typically replay keeps the original event payload.
-        const originalPayload = pastEvent.payload as any;
+        const { data: endpoint, error: endpointError } = await supabase
+            .from("webhook_endpoints")
+            .select("*")
+            .eq("id", pastEvent.webhook_endpoint_id)
+            .maybeSingle();
+
+        if (endpointError || !endpoint) {
+            return NextResponse.json({ error: "Webhook endpoint not found" }, { status: 404 });
+        }
+
+        if (endpoint.wallet_address !== wallet.toLowerCase()) {
+            return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+
+        const originalPayload = pastEvent.payload;
         
-        // 4. Perform the HTTP delivery
         const { status, responseText } = await sendWebhookRequest(
-            pastEvent.endpoint.url,
+            endpoint.url,
             originalPayload,
-            pastEvent.endpoint.secret
+            endpoint.secret
         );
 
-        // 5. Save the replay attempt as a NEW event log with same event ID
-        // (using a new unique record ID, but we can reuse the same event ID for reference if needed,
-        // or generate a new event ID. Typically replays are logged under a new record).
         const newRecordId = `evt_${crypto.randomBytes(12).toString("hex")}`;
         
-        await prisma.webhookEvent.create({
-            data: {
+        const { error: insertError } = await supabase
+            .from("webhook_events")
+            .insert({
                 id: newRecordId,
-                webhookEndpointId: pastEvent.endpoint.id,
+                webhook_endpoint_id: endpoint.id,
                 event: pastEvent.event,
                 status,
                 payload: originalPayload,
-                responseBody: `[REPLAY OF ${eventId}] ${responseText}`,
-            },
-        });
+                response_body: `[REPLAY OF ${eventId}] ${responseText}`,
+            });
+
+        if (insertError) {
+            console.error("Failed to log replay event:", insertError);
+        }
 
         if (status >= 200 && status < 300) {
             return NextResponse.json({

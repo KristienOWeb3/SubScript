@@ -10,11 +10,9 @@ export async function POST(request: Request) {
 
         const email = body.email.toLowerCase();
 
-        // 1. Generate 6-digit code
         const code = String(Math.floor(100000 + Math.random() * 900000));
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        // 2. Initialize Supabase client
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
@@ -22,7 +20,6 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        // 3. Save to otp_codes table
         const { error } = await supabase
             .from("otp_codes")
             .upsert({
@@ -36,7 +33,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
         }
 
-        console.log(`\n🔑 [OTP Verification Code] Email: ${email} | Code: ${code} (Expires in 10m)\n`);
+        console.log(`\n [OTP Verification Code] Email: ${email} | Code: ${code} (Expires in 10m)\n`);
 
         return NextResponse.json({ 
             success: true, 
