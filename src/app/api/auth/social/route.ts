@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
-import { encryptPrivateKey, decryptPrivateKey } from "@/lib/crypto";
+import { encryptPrivateKey } from "@/lib/crypto";
 
 export async function POST(request: Request) {
     try {
@@ -30,22 +30,19 @@ export async function POST(request: Request) {
 
         // 2. Resolve or Generate Embedded Wallet
         let walletAddress = "";
-        let decryptedPrivateKey = "";
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
-            .select("wallet_address, encrypted_private_key")
+            .select("wallet_address")
             .eq("email", email)
             .maybeSingle();
 
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
-            decryptedPrivateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
         } else {
             // Generate a fresh random wallet
             const newWallet = ethers.Wallet.createRandom();
             walletAddress = newWallet.address;
-            decryptedPrivateKey = newWallet.privateKey;
             
             const encryptedKey = encryptPrivateKey(newWallet.privateKey);
 
@@ -88,7 +85,6 @@ export async function POST(request: Request) {
         const response = NextResponse.json({ 
             success: true, 
             wallet: walletAddress,
-            privateKey: decryptedPrivateKey,
             email,
             provider
         });
