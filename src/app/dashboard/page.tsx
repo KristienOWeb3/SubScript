@@ -134,8 +134,13 @@ export default function DashboardPage() {
     const [otpError, setOtpError] = useState<string | null>(null);
     const [rememberMe, setRememberMe] = useState(true);
 
+    const activeMerchantAddress = useMemo(() => {
+        if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
+        return embeddedWallet?.wallet || realAddress || "";
+    }, [embeddedWallet, realAddress, isTestMode]);
+
     const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
+    const address = activeMerchantAddress;
 
     const executeContractWrite = async ({
         address: contractAddress,
@@ -216,6 +221,7 @@ export default function DashboardPage() {
     const [vaultBalance, setVaultBalance] = useState(0);
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
+    const [isPremium, setIsPremium] = useState(false);
 
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
@@ -248,9 +254,17 @@ export default function DashboardPage() {
             ]);
 
             setMerchantTier(Number(tierRaw));
+            setIsPremium(Number(tierRaw) >= 1);
             setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
             setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
             setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
+
+            const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
+            if (tierRes.ok) {
+                const tierData = await tierRes.json();
+                setIsPremium(Number(tierData.tier) >= 1);
+                setMerchantTier(Number(tierData.tier));
+            }
         } catch (error) {
             console.error("Error reading contract data in background:", error);
         }
@@ -263,7 +277,7 @@ export default function DashboardPage() {
         return () => clearInterval(interval);
     }, [address, refetchBalancesAndTier]);
 
-    const isPremium = merchantTier >= 1;
+
 
     const refetchTier = refetchBalancesAndTier;
     const refetchVaultBalance = refetchBalancesAndTier;
@@ -537,22 +551,28 @@ export default function DashboardPage() {
     }, [sessionWallet, loadBackendData]);
 
     const handleBackendLogin = async () => {
-        if (!address) return;
+        if (embeddedWallet) return;
+        if (!activeMerchantAddress) return;
         setIsLoggingIn(true);
         try {
-            const timestamp = Date.now();
-            const message = `Access SubScript Developer Portal: ${timestamp}`;
+            const nonceRes = await fetch("/api/auth/nonce");
+            const nonceData = await nonceRes.json();
+            if (!nonceRes.ok || !nonceData.nonce) {
+                throw new Error(nonceData.error || "Failed to fetch nonce");
+            }
+            const fetchedNonce = nonceData.nonce;
+            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
             const signature = await signMessageAsync({ message });
             
-            const res = await fetch("/api/auth/login", {
+            const res = await fetch("/api/auth/verify-signature", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ address, message, signature }),
+                body: JSON.stringify({ address: activeMerchantAddress, signature, nonce: fetchedNonce }),
             });
             
             const data = await res.json();
             if (data.success) {
-                setSessionWallet(address.toLowerCase());
+                setSessionWallet(activeMerchantAddress.toLowerCase());
             } else {
                 console.error("Login failed:", data.error);
             }
@@ -694,7 +714,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address]);
+    }, [isConnected, address, isPremium]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -793,12 +813,12 @@ export default function DashboardPage() {
     };
 
 
-    const handleSubscribePremium = async () => {
-        if (!isConnected || !address) {
+    const handleUpgrade = async () => {
+        if (!isConnected || !activeMerchantAddress) {
             setPremiumError("Please connect your merchant wallet first.");
             return;
         }
-        if (chainId !== 5042002) {
+        if (!embeddedWallet && chainId !== 5042002) {
             setPremiumError("Not on Arc Testnet. Switching chain...");
             switchChain?.({ chainId: 5042002 });
             return;
@@ -857,11 +877,13 @@ export default function DashboardPage() {
             const paymentLog = transferLogs.find(
                 (log) =>
                     log.eventName === "Transfer" &&
-                    log.args.from?.toLowerCase() === address.toLowerCase() &&
+                    log.args.from?.toLowerCase() === activeMerchantAddress.toLowerCase() &&
                     log.args.to?.toLowerCase() === PAYMENT_RECIPIENT.toLowerCase()
             );
 
-            if (!paymentLog) throw new Error("Transfer event not found in receipt.");
+            if (!paymentLog) {
+                throw new Error("Transfer event not found in receipt.");
+            }
             if (paymentLog.args.value !== amount) {
                 throw new Error(`Amount mismatch. Expected ${formatUnits(amount, 6)} USDC.`);
             }
@@ -944,7 +966,7 @@ export default function DashboardPage() {
         }
     };
 
-    const merchantWalletAddress = address || "";
+    const merchantWalletAddress = activeMerchantAddress || "";
     const billingPeriodSeconds = useMemo(() => {
         if (subInterval === "weekly") return "604800";
         if (subInterval === "yearly") return "31536000";
@@ -1054,7 +1076,7 @@ INTEGRATION WORKFLOW REQUIREMENTS:
      - 'subscription.cancelled': Triggered when a subscription is cancelled.
 
 Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
-    }, [merchantWalletAddress, subName, subCap, billingPeriodSeconds, isPremium]);
+    }, [activeMerchantAddress, merchantWalletAddress, subName, subCap, billingPeriodSeconds, isPremium]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
         mcpServers: {
@@ -1258,7 +1280,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 );
 
             case "premium":
-                if (isConnected && address && !sessionWallet) {
+                if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
@@ -1436,7 +1458,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     </div>
 
                                     <button
-                                        onClick={handleSubscribePremium}
+                                        onClick={handleUpgrade}
                                         disabled={isSubscribingPremium}
                                         className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2 mx-auto"
                                     >
@@ -1478,7 +1500,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 );
 
             case "apikeys":
-                if (isConnected && address && !sessionWallet) {
+                if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
@@ -1770,7 +1792,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 );
 
             case "webhooks":
-                if (isConnected && address && !sessionWallet) {
+                if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
