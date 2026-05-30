@@ -71,3 +71,19 @@ CREATE OR REPLACE TRIGGER trigger_update_subscriptions_updated_at
     BEFORE UPDATE ON subscriptions
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- 8. Create waitlist_leads table
+CREATE TABLE IF NOT EXISTS waitlist_leads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    user_type TEXT,
+    wallet_address TEXT UNIQUE,
+    company_name TEXT,
+    use_case TEXT,
+    monthly_volume TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Enable RLS on waitlist_leads
+ALTER TABLE waitlist_leads ENABLE ROW LEVEL SECURITY;
+
