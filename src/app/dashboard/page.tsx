@@ -105,7 +105,7 @@ const SUBSCRIPT_ABI = [
     },
 ] as const;
 
-// Sidebar tabs
+
 const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
@@ -124,7 +124,7 @@ export default function DashboardPage() {
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
 
-    // Embedded Wallet & OTP authentication states
+
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [otpEmail, setOtpEmail] = useState("");
     const [otpCode, setOtpCode] = useState("");
@@ -191,7 +191,7 @@ export default function DashboardPage() {
     const { switchChain } = useSwitchChain();
     const { chainId } = useAccount();
 
-    // Premium state
+
     const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
     const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
     const [premiumError, setPremiumError] = useState<string | null>(null);
@@ -211,7 +211,7 @@ export default function DashboardPage() {
         }
     }, [realAddress, realIsConnected]);
 
-    // ──── On-chain reads via publicClient (independent of connected wallet chain) ────
+
     const [merchantTier, setMerchantTier] = useState(0);
     const [vaultBalance, setVaultBalance] = useState(0);
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
@@ -270,25 +270,25 @@ export default function DashboardPage() {
     const refetchPayoutDest = refetchBalancesAndTier;
     const refetchWalletBalance = refetchBalancesAndTier;
 
-    // Sidebar tab state
+
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
-    // Copying state
+
     const [copiedText, setCopiedText] = useState<string | null>(null);
 
-    // Backend Session & Authentication
+
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { signMessageAsync } = useSignMessage();
 
-    // API Keys state (from database)
+
     const [apiKeys, setApiKeys] = useState<any[]>([]);
     const [isKeysLoading, setIsKeysLoading] = useState(false);
     const [revealSecret, setRevealSecret] = useState(false);
     const [isRolling, setIsRolling] = useState(false);
 
-    // Webhooks endpoints & events state (from database)
+
     const [webhookEndpoints, setWebhookEndpoints] = useState<any[]>([]);
     const [isWebhooksLoading, setIsWebhooksLoading] = useState(false);
     const [webhookEvents, setWebhookEvents] = useState<any[]>([]);
@@ -297,12 +297,12 @@ export default function DashboardPage() {
     const [isAddingWebhook, setIsAddingWebhook] = useState(false);
     const [revealWebhookSecret, setRevealWebhookSecret] = useState<string | null>(null);
 
-    // Webhooks selection & replay state
+
     const [selectedWebhook, setSelectedWebhook] = useState<string>("");
     const [isReplaying, setIsReplaying] = useState(false);
     const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
-    // Checkout configurator state
+
     const [subName, setSubName] = useState("AI Agent Compute Limit");
     const [subCap, setSubCap] = useState("150.00");
     const [subInterval, setSubInterval] = useState("monthly");
@@ -356,7 +356,7 @@ export default function DashboardPage() {
         }
     };
 
-    // Restore session on mount (useful for email/social embedded wallets)
+
     useEffect(() => {
         const restoreSession = async () => {
             try {
@@ -380,7 +380,7 @@ export default function DashboardPage() {
         restoreSession();
     }, []);
 
-    // Check/sync session state when address or connection status changes
+
     useEffect(() => {
         if (!address) {
             setSessionWallet(null);
@@ -404,7 +404,7 @@ export default function DashboardPage() {
             }
         };
 
-        // For browser extension wallets, check if active session matches
+
         if (isConnected && !embeddedWallet) {
             verifySession();
         }
@@ -519,7 +519,7 @@ export default function DashboardPage() {
         window.addEventListener("message", handleMessage);
     };
 
-    // Load backend data once session is authenticated
+
     const loadBackendData = useCallback(async () => {
         if (!sessionWallet) return;
         
@@ -615,15 +615,15 @@ export default function DashboardPage() {
         }
     };
 
-    // Withdraw state
+
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [withdrawSuccess, setWithdrawSuccess] = useState(false);
 
-    // Live subscription ledger state loaded from smart contract
+
     const [ledgers, setLedgers] = useState<any[]>([]);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
 
-    // Fetch on-chain subscriptions
+
     useEffect(() => {
         const merchantAddress = address;
         if (!isConnected || !merchantAddress) {
@@ -756,22 +756,22 @@ export default function DashboardPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setReplayStatus(`✓ Webhook event successfully re-delivered. HTTP ${data.status} OK.`);
+                setReplayStatus(`Webhook event successfully re-delivered. HTTP ${data.status} OK.`);
                 await fetchWebhookEvents();
             } else {
-                setReplayStatus(`❌ Webhook re-delivery failed. HTTP ${data.status}.`);
+                setReplayStatus(`Webhook re-delivery failed. HTTP ${data.status}.`);
             }
             setTimeout(() => setReplayStatus(null), 4000);
         } catch (err) {
             console.error("Error replaying webhook:", err);
-            setReplayStatus("❌ Network error replaying webhook.");
+            setReplayStatus("Network error replaying webhook.");
             setTimeout(() => setReplayStatus(null), 4000);
         } finally {
             setIsReplaying(false);
         }
     };
 
-    // Withdraw vault funds
+
     const handleWithdraw = async () => {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
@@ -792,7 +792,7 @@ export default function DashboardPage() {
         }
     };
 
-    // Premium subscribe ($10 USDC)
+
     const handleSubscribePremium = async () => {
         if (!isConnected || !address) {
             setPremiumError("Please connect your merchant wallet first.");
@@ -877,7 +877,7 @@ export default function DashboardPage() {
                 throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
             }
 
-            setPremiumStatus("✓ Payment verified! Premium tier activated.");
+            setPremiumStatus("Payment verified! Premium tier activated.");
             refetchTier();
             setTimeout(() => setPremiumStatus(null), 4000);
         } catch (err: any) {
@@ -888,7 +888,7 @@ export default function DashboardPage() {
         }
     };
 
-    // Reroute payout destination on-chain
+
     const handleReroute = async () => {
         if (!rerouteAddress || !rerouteAddress.startsWith("0x") || rerouteAddress.length !== 42) {
             setPremiumError("Please enter a valid Ethereum address (0x...).");
@@ -914,7 +914,7 @@ export default function DashboardPage() {
         }
     };
 
-    // Trigger keeper subscription renewals manually (Premium Feature)
+
     const handleTriggerKeeper = async () => {
         setIsTriggeringKeeper(true);
         setKeeperStatus(null);
@@ -929,9 +929,9 @@ export default function DashboardPage() {
                 throw new Error(data.error || "Failed to trigger keepers");
             }
             if (data.executedCount > 0) {
-                setKeeperStatus(`✓ Checked successfully. Executed ${data.executedCount} recurring subscription payment(s) on-chain!`);
+                setKeeperStatus(`Checked successfully. Executed ${data.executedCount} recurring subscription payment(s) on-chain!`);
             } else {
-                setKeeperStatus("✓ Checked successfully. No recurring subscriptions are currently due for renewal.");
+                setKeeperStatus("Checked successfully. No recurring subscriptions are currently due for renewal.");
             }
             setTimeout(() => setKeeperStatus(null), 5000);
             refetchBalancesAndTier();
@@ -1080,7 +1080,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
         }
     };
 
-    // Computed stats
+
     const activeAllowances = ledgers.filter(l => l.active).length;
     const revokedCount = ledgers.filter(l => !l.active).length;
     const totalSubs = ledgers.length;
@@ -1136,7 +1136,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     </button>
                                 </div>
                                 {withdrawSuccess && (
-                                    <p className="text-[10px] text-emerald-400 mt-2 font-semibold">✓ Withdrawal successful</p>
+                                    <p className="text-[10px] text-emerald-400 mt-2 font-semibold">Withdrawal successful</p>
                                 )}
                             </div>
 
@@ -1359,7 +1359,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                             </button>
                                         </div>
                                         {rerouteSuccess && (
-                                            <p className="text-emerald-400 text-xs mt-3 font-semibold">✓ Payout destination updated on-chain successfully!</p>
+                                            <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain successfully!</p>
                                         )}
                                         {premiumError && (
                                             <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
@@ -1553,7 +1553,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Publishable Key</span>
                                         {copiedText === "Publishable Key" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                         )}
                                     </div>
                                     <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5">
@@ -1576,7 +1576,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                         </div>
                                         <div className="flex items-center gap-4">
                                             {copiedText === "Secret Key" && (
-                                                <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                                <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                             )}
                                             <button
                                                 onClick={() => setRevealSecret(!revealSecret)}
@@ -1613,7 +1613,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     </div>
                                     <div className="flex items-center gap-4">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">✓ Rolled & Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">Rolled & Copied</span>
                                         )}
                                         <button
                                             onClick={handleRollKeys}
@@ -1699,7 +1699,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     <span className="text-xs font-bold text-white/40 uppercase tracking-widest">SDK Code Snippet</span>
                                     <div className="flex items-center gap-3">
                                         {copiedText === "Checkout Snippet" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                         )}
                                         <button 
                                             onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
@@ -1728,7 +1728,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {copiedText === "Agent Prompt" && (
-                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                        <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                     )}
                                     <button
                                         onClick={() => handleCopy(agentIntegrationPrompt, "Agent Prompt")}
@@ -1752,7 +1752,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {copiedText === "MCP Config" && (
-                                        <span className="text-[10px] text-[#00d2b4] font-bold">✓ Copied</span>
+                                        <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                     )}
                                     <button
                                         onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
@@ -1957,7 +1957,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 <div className="flex-1 p-6 font-mono text-[11px] text-emerald-400/90 overflow-y-auto min-h-[300px] leading-relaxed select-all">
                                     {replayStatus && (
                                         <p className={`p-3 border rounded-xl mb-4 font-sans text-xs ${
-                                            replayStatus.startsWith("✓") 
+                                            replayStatus.includes("successfully") 
                                                 ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" 
                                                 : "bg-red-500/10 text-red-300 border-red-500/20"
                                         }`}>{replayStatus}</p>
@@ -1980,7 +1980,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                             )}
                                         </div>
                                     ) : (
-                                        <span className="text-white/30">// Select a webhook event to inspect</span>
+                                        <span className="text-white/30">Select a webhook event to inspect</span>
                                     )}
                                 </div>
                                 

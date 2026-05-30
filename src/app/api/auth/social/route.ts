@@ -20,7 +20,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid social provider" }, { status: 400 });
         }
 
-        // 1. Initialize Supabase client
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
@@ -28,7 +27,6 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        // 2. Resolve or Generate Embedded Wallet
         let walletAddress = "";
 
         const { data: walletRecord, error: walletError } = await supabase
@@ -40,7 +38,6 @@ export async function POST(request: Request) {
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
         } else {
-            // Generate a fresh random wallet
             const newWallet = ethers.Wallet.createRandom();
             walletAddress = newWallet.address;
             
@@ -59,7 +56,6 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
             }
 
-            // Sync with merchants table to avoid foreign key errors on subsequent logs
             await supabase
                 .from("merchants")
                 .upsert({
@@ -68,7 +64,6 @@ export async function POST(request: Request) {
                 }, { onConflict: "wallet_address" });
         }
 
-        // 3. Create active database session
         const sessionToken = crypto.randomBytes(32).toString("hex");
         const sessionDuration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
         const expiresAt = new Date(Date.now() + sessionDuration);
@@ -81,7 +76,6 @@ export async function POST(request: Request) {
             },
         });
 
-        // 4. Create Response and set secure HTTP-only cookie
         const response = NextResponse.json({ 
             success: true, 
             wallet: walletAddress,
