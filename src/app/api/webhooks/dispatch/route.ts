@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
 import { sendWebhookRequest } from "@/lib/webhooks";
 import crypto from "crypto";
 
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function POST(request: Request) {
     try {
-        // 1. Authenticate the caller (the keeper bot)
         const authHeader = request.headers.get("Authorization");
         const expectedSecret = process.env.KEEPER_SECRET || "default_keeper_secret_temp_123";
         
@@ -28,16 +36,15 @@ export async function POST(request: Request) {
         }
 
         const normalizedWallet = walletAddress.toLowerCase();
+        const supabase = getSupabase();
 
-        // 2. Fetch active webhook endpoints for this merchant
-        const endpoints = await prisma.webhookEndpoint.findMany({
-            where: {
-                walletAddress: normalizedWallet,
-                active: true,
-            },
-        });
+        const { data: endpoints, error: fetchError } = await supabase
+            .from("webhook_endpoints")
+            .select("*")
+            .eq("wallet_address", normalizedWallet)
+            .eq("active", true);
 
-        if (endpoints.length === 0) {
+        if (fetchError || !endpoints || endpoints.length === 0) {
             return NextResponse.json({
                 success: true,
                 message: "No active webhook endpoints registered for this wallet.",
@@ -45,7 +52,6 @@ export async function POST(request: Request) {
             });
         }
 
-        // 3. Compile webhook payload (Standard format)
         const eventId = `evt_${crypto.randomBytes(12).toString("hex")}`;
         const webhookPayload = {
             id: eventId,
@@ -54,25 +60,27 @@ export async function POST(request: Request) {
             data,
         };
 
-        // 4. Dispatch to all active endpoints
-        const deliveryPromises = endpoints.map(async (endpoint) => {
+        const deliveryPromises = endpoints.map(async (endpoint: any) => {
             const { status, responseText } = await sendWebhookRequest(
                 endpoint.url,
                 webhookPayload,
                 endpoint.secret
             );
 
-            // Log attempt in the database
-            return prisma.webhookEvent.create({
-                data: {
+            const { error: insertError } = await supabase
+                .from("webhook_events")
+                .insert({
                     id: eventId,
-                    webhookEndpointId: endpoint.id,
+                    webhook_endpoint_id: endpoint.id,
                     event,
                     status,
-                    payload: webhookPayload as any,
-                    responseBody: responseText,
-                },
-            });
+                    payload: webhookPayload,
+                    response_body: responseText,
+                });
+
+            if (insertError) {
+                console.error("Failed to log webhook event:", insertError);
+            }
         });
 
         await Promise.all(deliveryPromises);

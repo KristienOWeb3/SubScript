@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
+import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-// GET /api/webhooks/endpoints - List registered webhook endpoints
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -11,23 +19,34 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const endpoints = await prisma.webhookEndpoint.findMany({
-            where: {
-                walletAddress: wallet.toLowerCase(),
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
-        });
+        const supabase = getSupabase();
+        const { data: endpoints, error } = await supabase
+            .from("webhook_endpoints")
+            .select("*")
+            .eq("wallet_address", wallet.toLowerCase())
+            .order("created_at", { ascending: false });
 
-        return NextResponse.json({ endpoints }, { status: 200 });
-    } catch (error) {
+        if (error) {
+            console.error("GET webhook endpoints error:", error);
+            return NextResponse.json({ error: "Failed to retrieve webhook endpoints" }, { status: 500 });
+        }
+
+        const camelCaseEndpoints = (endpoints || []).map((e: any) => ({
+            id: e.id,
+            walletAddress: e.wallet_address,
+            url: e.url,
+            secret: e.secret,
+            active: e.active,
+            createdAt: e.created_at,
+        }));
+
+        return NextResponse.json({ endpoints: camelCaseEndpoints }, { status: 200 });
+    } catch (error: any) {
         console.error("GET webhook endpoints error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
 
-// POST /api/webhooks/endpoints - Register a new webhook endpoint
 export async function POST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -42,32 +61,47 @@ export async function POST(request: Request) {
 
         const { url } = body;
 
-        // Simple validation for URL format
         try {
             new URL(url);
         } catch (_) {
             return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
         }
 
-        // Generate webhook signing secret
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
+        const supabase = getSupabase();
 
-        const endpoint = await prisma.webhookEndpoint.create({
-            data: {
-                walletAddress: wallet.toLowerCase(),
+        const { data: endpoint, error: insertError } = await supabase
+            .from("webhook_endpoints")
+            .insert({
+                wallet_address: wallet.toLowerCase(),
                 url,
                 secret,
-            },
-        });
+                active: true,
+            })
+            .select()
+            .single();
 
-        return NextResponse.json({ endpoint }, { status: 201 });
-    } catch (error) {
+        if (insertError) {
+            console.error("POST webhook endpoint error:", insertError);
+            return NextResponse.json({ error: "Failed to register webhook endpoint" }, { status: 500 });
+        }
+
+        const camelCaseEndpoint = {
+            id: endpoint.id,
+            walletAddress: endpoint.wallet_address,
+            url: endpoint.url,
+            secret: endpoint.secret,
+            active: endpoint.active,
+            createdAt: endpoint.created_at,
+        };
+
+        return NextResponse.json({ endpoint: camelCaseEndpoint }, { status: 201 });
+    } catch (error: any) {
         console.error("POST webhook endpoint error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
 
-// DELETE /api/webhooks/endpoints - Delete a registered webhook endpoint
 export async function DELETE(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -82,26 +116,35 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Missing endpoint ID" }, { status: 400 });
         }
 
-        // Ensure endpoint belongs to the authenticated wallet
-        const endpoint = await prisma.webhookEndpoint.findFirst({
-            where: {
-                id,
-                walletAddress: wallet.toLowerCase(),
-            },
-        });
+        const supabase = getSupabase();
+        
+        const { data: endpointCheck, error: checkError } = await supabase
+            .from("webhook_endpoints")
+            .select("wallet_address")
+            .eq("id", id)
+            .maybeSingle();
 
-        if (!endpoint) {
-            return NextResponse.json({ error: "Endpoint not found or access denied" }, { status: 404 });
+        if (checkError || !endpointCheck) {
+            return NextResponse.json({ error: "Endpoint not found" }, { status: 404 });
         }
 
-        // Delete endpoint (and cascade events via onDelete constraint)
-        await prisma.webhookEndpoint.delete({
-            where: { id },
-        });
+        if (endpointCheck.wallet_address !== wallet.toLowerCase()) {
+            return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+
+        const { error: deleteError } = await supabase
+            .from("webhook_endpoints")
+            .delete()
+            .eq("id", id);
+
+        if (deleteError) {
+            console.error("DELETE webhook endpoint error:", deleteError);
+            return NextResponse.json({ error: "Failed to delete webhook endpoint" }, { status: 500 });
+        }
 
         return NextResponse.json({ success: true }, { status: 200 });
-    } catch (error) {
+    } catch (error: any) {
         console.error("DELETE webhook endpoint error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

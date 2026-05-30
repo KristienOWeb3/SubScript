@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
+import { createClient } from "@supabase/supabase-js";
 
-// GET /api/webhooks/events - Retrieve last 50 webhook events for current wallet
+function getSupabase() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase is not configured on the server.");
+    }
+    return createClient(supabaseUrl, supabaseServiceKey);
+}
+
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -10,39 +18,50 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const events = await prisma.webhookEvent.findMany({
-            where: {
-                endpoint: {
-                    walletAddress: wallet.toLowerCase(),
-                },
-            },
-            include: {
-                endpoint: {
-                    select: {
-                        url: true,
-                    },
-                },
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
-            take: 50,
-        });
+        const supabase = getSupabase();
+        
+        const { data: endpoints, error: endpointError } = await supabase
+            .from("webhook_endpoints")
+            .select("id, url")
+            .eq("wallet_address", wallet.toLowerCase());
 
-        // Map database events to frontend structure
-        const mappedEvents = events.map(e => ({
+        if (endpointError || !endpoints) {
+            console.error("GET webhook endpoints error:", endpointError);
+            return NextResponse.json({ error: "Failed to retrieve webhook endpoints" }, { status: 500 });
+        }
+
+        if (endpoints.length === 0) {
+            return NextResponse.json({ events: [] }, { status: 200 });
+        }
+
+        const endpointIds = endpoints.map((e) => e.id);
+        const urlMap = new Map(endpoints.map((e) => [e.id, e.url]));
+
+        const { data: events, error: eventError } = await supabase
+            .from("webhook_events")
+            .select("*")
+            .in("webhook_endpoint_id", endpointIds)
+            .order("created_at", { ascending: false })
+            .limit(50);
+
+        if (eventError || !events) {
+            console.error("GET webhook events error:", eventError);
+            return NextResponse.json({ error: "Failed to retrieve webhook events" }, { status: 500 });
+        }
+
+        const mappedEvents = events.map((e: any) => ({
             id: e.id,
             event: e.event,
             status: e.status,
-            time: e.createdAt.toLocaleString(),
-            endpointUrl: e.endpoint.url,
+            time: e.created_at ? new Date(e.created_at).toLocaleString() : "",
+            endpointUrl: urlMap.get(e.webhook_endpoint_id) || "",
             payload: e.payload,
-            responseBody: e.responseBody,
+            responseBody: e.response_body,
         }));
 
         return NextResponse.json({ events: mappedEvents }, { status: 200 });
-    } catch (error) {
+    } catch (error: any) {
         console.error("GET webhook events error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

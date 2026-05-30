@@ -55,26 +55,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const walletLower = wallet.toLowerCase();
-        const supabase = getSupabase();
-
-        const { error: revokeError } = await supabase
-            .from("api_keys")
-            .update({ revoked: true })
-            .eq("wallet_address", walletLower)
-            .eq("revoked", false);
-
-        if (revokeError) {
-            console.error("Failed to revoke older keys:", revokeError);
-        }
-
         const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
         const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
 
-        const { data: newKey, error: insertError } = await supabase
+        const supabase = getSupabase();
+        const { data: newKey, error } = await supabase
             .from("api_keys")
             .insert({
-                wallet_address: walletLower,
+                wallet_address: wallet.toLowerCase(),
                 publishable_key: publishableKey,
                 secret_key_plain: secretKeyPlain,
                 revoked: false,
@@ -82,8 +70,8 @@ export async function POST(request: Request) {
             .select()
             .single();
 
-        if (insertError) {
-            console.error("POST API key error:", insertError);
+        if (error) {
+            console.error("POST API key error:", error);
             return NextResponse.json({ error: "Failed to create API key" }, { status: 500 });
         }
 

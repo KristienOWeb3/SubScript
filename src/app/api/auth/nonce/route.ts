@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 
-export async function POST(request: Request) {
+export async function GET() {
     try {
-        const response = NextResponse.json({ success: true });
-        
-        response.cookies.set("subscript_session_token", "", {
+        const nonce = crypto.randomBytes(16).toString("hex");
+        const response = NextResponse.json({ nonce });
+
+        response.cookies.set("subscript_siwe_nonce", nonce, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "strict",
             path: "/",
-            maxAge: 0,
+            maxAge: 300,
         });
 
         return response;
     } catch (error) {
-        console.error("Logout API error:", error);
+        console.error("Nonce generation error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }
