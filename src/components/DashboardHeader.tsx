@@ -27,7 +27,7 @@ const publicClient = createPublicClient({
 });
 
 interface DashboardHeaderProps {
-    embeddedWallet?: { wallet: string; privateKey: string; email: string } | null;
+    embeddedWallet?: { wallet: string; email: string } | null;
     onDisconnect?: () => void;
 }
 

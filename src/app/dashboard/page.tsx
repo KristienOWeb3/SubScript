@@ -125,7 +125,7 @@ export default function DashboardPage() {
     const [isTestMode, setIsTestMode] = useState(false);
 
     // Embedded Wallet & OTP authentication states
-    const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; privateKey: string; email: string } | null>(null);
+    const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
     const [otpEmail, setOtpEmail] = useState("");
     const [otpCode, setOtpCode] = useState("");
     const [otpSent, setOtpSent] = useState(false);
@@ -149,15 +149,35 @@ export default function DashboardPage() {
         args?: any[];
     }) => {
         if (embeddedWallet) {
-            const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-            const walletSigner = new ethers.Wallet(embeddedWallet.privateKey, provider);
-            const contract = new ethers.Contract(contractAddress, contractAbi as any, walletSigner);
-            const method = contract[functionName] as any;
-            if (typeof method !== "function") {
-                throw new Error(`Method ${functionName} does not exist on contract`);
+            let action = "";
+            let serializedArgs: any = {};
+
+            if (functionName === "cancelSubscription") {
+                action = "cancelSubscription";
+                serializedArgs = { subscriptionId: args[0].toString() };
+            } else if (functionName === "withdraw") {
+                action = "withdraw";
+                serializedArgs = {};
+            } else if (functionName === "transfer") {
+                action = "transferUsdc";
+                serializedArgs = { to: args[0], amount: args[1].toString() };
+            } else if (functionName === "configurePayoutDestination") {
+                action = "configurePayoutDestination";
+                serializedArgs = { payoutAddress: args[0] };
+            } else {
+                throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
-            const tx = await method(...args);
-            return tx.hash;
+
+            const res = await fetch("/api/execute-tx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, args: serializedArgs }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Server transaction execution failed");
+            }
+            return data.txHash as string;
         } else {
             return await writeContractAsync({
                 address: contractAddress as `0x${string}`,
@@ -344,10 +364,9 @@ export default function DashboardPage() {
                 const data = await res.json();
                 if (data.loggedIn && data.wallet) {
                     setSessionWallet(data.wallet.toLowerCase());
-                    if (data.privateKey && data.email) {
+                    if (data.email) {
                         setEmbeddedWallet({
                             wallet: data.wallet,
-                            privateKey: data.privateKey,
                             email: data.email
                         });
                     }
@@ -438,7 +457,6 @@ export default function DashboardPage() {
             if (data.success) {
                 setEmbeddedWallet({
                     wallet: data.wallet,
-                    privateKey: data.privateKey,
                     email: data.email
                 });
                 setSessionWallet(data.wallet.toLowerCase());
@@ -482,7 +500,6 @@ export default function DashboardPage() {
                     if (data.success) {
                         setEmbeddedWallet({
                             wallet: data.wallet,
-                            privateKey: data.privateKey,
                             email: data.email
                         });
                         setSessionWallet(data.wallet.toLowerCase());
@@ -815,7 +832,7 @@ export default function DashboardPage() {
             });
 
             setPremiumStatus("Confirming payment on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash });
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash as `0x${string}` });
 
             if (receipt.status !== "success") {
                 throw new Error("Payment transaction reverted on-chain.");
