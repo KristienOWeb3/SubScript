@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import { ethers } from "ethers";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
@@ -19,6 +20,7 @@ import {
 
 const ARC_TESTNET_CHAIN_ID = 5042002;
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
+const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
 const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
@@ -122,8 +124,49 @@ export default function DashboardPage() {
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
 
-    const isConnected = realIsConnected || isTestMode;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
+    // Embedded Wallet & OTP authentication states
+    const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; privateKey: string; email: string } | null>(null);
+    const [otpEmail, setOtpEmail] = useState("");
+    const [otpCode, setOtpCode] = useState("");
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpLoading, setOtpLoading] = useState(false);
+    const [otpSuccess, setOtpSuccess] = useState(false);
+    const [otpError, setOtpError] = useState<string | null>(null);
+    const [rememberMe, setRememberMe] = useState(true);
+
+    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
+    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
+
+    const executeContractWrite = async ({
+        address: contractAddress,
+        abi: contractAbi,
+        functionName,
+        args = [],
+    }: {
+        address: string;
+        abi: any;
+        functionName: string;
+        args?: any[];
+    }) => {
+        if (embeddedWallet) {
+            const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+            const walletSigner = new ethers.Wallet(embeddedWallet.privateKey, provider);
+            const contract = new ethers.Contract(contractAddress, contractAbi as any, walletSigner);
+            const method = contract[functionName] as any;
+            if (typeof method !== "function") {
+                throw new Error(`Method ${functionName} does not exist on contract`);
+            }
+            const tx = await method(...args);
+            return tx.hash;
+        } else {
+            return await writeContractAsync({
+                address: contractAddress as `0x${string}`,
+                abi: contractAbi,
+                functionName,
+                args,
+            });
+        }
+    };
 
     const { switchChain } = useSwitchChain();
     const { chainId } = useAccount();
@@ -293,18 +336,42 @@ export default function DashboardPage() {
         }
     };
 
-    // Check session on mount and wallet change
+    // Restore session on mount (useful for email/social embedded wallets)
     useEffect(() => {
-        const checkSession = async () => {
-            if (!address) {
-                setSessionWallet(null);
-                setApiKeys([]);
-                setWebhookEndpoints([]);
-                setWebhookEvents([]);
+        const restoreSession = async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                const data = await res.json();
+                if (data.loggedIn && data.wallet) {
+                    setSessionWallet(data.wallet.toLowerCase());
+                    if (data.privateKey && data.email) {
+                        setEmbeddedWallet({
+                            wallet: data.wallet,
+                            privateKey: data.privateKey,
+                            email: data.email
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Error restoring session:", err);
+            } finally {
                 setIsAuthLoading(false);
-                return;
             }
-            
+        };
+        restoreSession();
+    }, []);
+
+    // Check/sync session state when address or connection status changes
+    useEffect(() => {
+        if (!address) {
+            setSessionWallet(null);
+            setApiKeys([]);
+            setWebhookEndpoints([]);
+            setWebhookEvents([]);
+            return;
+        }
+
+        const verifySession = async () => {
             try {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
@@ -314,14 +381,126 @@ export default function DashboardPage() {
                     setSessionWallet(null);
                 }
             } catch (err) {
-                console.error("Error checking session:", err);
-            } finally {
-                setIsAuthLoading(false);
+                console.error("Error verifying session:", err);
             }
         };
 
-        checkSession();
-    }, [address]);
+        // For browser extension wallets, check if active session matches
+        if (isConnected && !embeddedWallet) {
+            verifySession();
+        }
+    }, [address, isConnected, embeddedWallet]);
+
+    const handleSendOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!otpEmail || !otpEmail.includes("@")) {
+            setOtpError("Please enter a valid email address.");
+            return;
+        }
+        setOtpLoading(true);
+        setOtpError(null);
+        try {
+            const res = await fetch("/api/auth/otp/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: otpEmail }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setOtpSent(true);
+                console.log("Sandbox OTP Code:", data.sandboxCode);
+            } else {
+                setOtpError(data.error || "Failed to send verification code.");
+            }
+        } catch (err) {
+            console.error("Error sending OTP:", err);
+            setOtpError("Network error sending OTP code.");
+        } finally {
+            setOtpLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!otpCode) {
+            setOtpError("Please enter the verification code.");
+            return;
+        }
+        setOtpLoading(true);
+        setOtpError(null);
+        try {
+            const res = await fetch("/api/auth/otp/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: otpEmail, code: otpCode, rememberMe }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setEmbeddedWallet({
+                    wallet: data.wallet,
+                    privateKey: data.privateKey,
+                    email: data.email
+                });
+                setSessionWallet(data.wallet.toLowerCase());
+                setOtpSuccess(true);
+            } else {
+                setOtpError(data.error || "Invalid verification code.");
+            }
+        } catch (err) {
+            console.error("Error verifying OTP:", err);
+            setOtpError("Network error verifying OTP code.");
+        } finally {
+            setOtpLoading(false);
+        }
+    };
+
+    const handleSocialLogin = (provider: "google" | "apple") => {
+        const width = 500;
+        const height = 650;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        
+        const popup = window.open(
+            `/auth/popup?provider=${provider}`,
+            `SubScript - Continue with ${provider}`,
+            `width=${width},height=${height},left=${left},top=${top}`
+        );
+
+        const handleMessage = async (event: MessageEvent) => {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type === "social-login-success") {
+                const { email } = event.data;
+                setOtpLoading(true);
+                setOtpError(null);
+                try {
+                    const res = await fetch("/api/auth/social", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email, provider, rememberMe }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setEmbeddedWallet({
+                            wallet: data.wallet,
+                            privateKey: data.privateKey,
+                            email: data.email
+                        });
+                        setSessionWallet(data.wallet.toLowerCase());
+                    } else {
+                        setOtpError(data.error || `Failed to log in with ${provider}`);
+                    }
+                } catch (err) {
+                    console.error("Social login verify error:", err);
+                    setOtpError(`Network error logging in with ${provider}`);
+                } finally {
+                    setOtpLoading(false);
+                }
+                window.removeEventListener("message", handleMessage);
+            }
+        };
+
+        window.addEventListener("message", handleMessage);
+    };
 
     // Load backend data once session is authenticated
     const loadBackendData = useCallback(async () => {
@@ -371,6 +550,7 @@ export default function DashboardPage() {
         try {
             await fetch("/api/auth/logout", { method: "POST" });
             setSessionWallet(null);
+            setEmbeddedWallet(null);
             setApiKeys([]);
             setWebhookEndpoints([]);
             setWebhookEvents([]);
@@ -440,8 +620,9 @@ export default function DashboardPage() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
             try {
+                const targetContract = isPremium ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
                 const nextId = await publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    address: targetContract,
                     abi: SUBSCRIPT_ABI,
                     functionName: "nextSubscriptionId",
                 });
@@ -451,7 +632,7 @@ export default function DashboardPage() {
                 
                 for (let i = 1; i < nextIdNum; i++) {
                     const sub = await publicClient.readContract({
-                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        address: targetContract,
                         abi: SUBSCRIPT_ABI,
                         functionName: "subscriptions",
                         args: [BigInt(i)],
@@ -530,7 +711,7 @@ export default function DashboardPage() {
 
     const handleRevokeCustomer = async (rawId: string) => {
         try {
-            await writeContractAsync({
+            await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: SUBSCRIPT_ABI,
                 functionName: "cancelSubscription",
@@ -578,7 +759,7 @@ export default function DashboardPage() {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
-            await writeContractAsync({
+            await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: SUBSCRIPT_ABI,
                 functionName: "withdraw",
@@ -615,7 +796,7 @@ export default function DashboardPage() {
             const amount = parseUnits("10", 6);
 
             setPremiumStatus("Waiting for transfer signature...");
-            const transferHash = await writeContractAsync({
+            const transferHash = await executeContractWrite({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: [
                     {
@@ -699,7 +880,7 @@ export default function DashboardPage() {
         setIsRerouting(true);
         setPremiumError(null);
         try {
-            await writeContractAsync({
+            await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: SUBSCRIPT_ABI,
                 functionName: "configurePayoutDestination",
@@ -763,9 +944,54 @@ export default function DashboardPage() {
   amountCap="${subCap}"
   interval="${subInterval}"
   fundingChain="${subChain}"
-/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet]);
+  mode="${isPremium ? "zk" : "standard"}"
+/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet, isPremium]);
 
     const agentIntegrationPrompt = useMemo(() => {
+        if (!isPremium) {
+            return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
+
+SubScript uses standard transparent on-chain subscriptions on Arc Testnet for standard tier merchants.
+
+LIVE MERCHANT DEPLOYMENT DETAILS:
+- Merchant Payout Wallet: "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
+- Plan Name: "${subName}"
+- Price per Period: "${subCap}" USDC (6 decimals, formatted as parseUnits('${subCap}', 6))
+- Billing Interval: ${billingPeriodSeconds} seconds
+- SubScript Contract: "${STANDARD_CONTRACT_ADDRESS}"
+- USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
+- Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Merchant Secret API Key (for server integration): [GENERATE IN API KEYS TAB]
+- Webhook Secret Key (for validation): [RETRIEVE IN WEBHOOKS TAB]
+
+INTEGRATION WORKFLOW REQUIREMENTS:
+
+1. FRONTEND USER FLOW (Standard Transparent Method)
+   - Step 1: User connects wallet and approves USDC token allowance for the SubScript contract:
+     USDC_NATIVE_GAS_ADDRESS.approve(STANDARD_CONTRACT_ADDRESS, parseUnits('${subCap}', 6) * 12)
+   - Step 2: Call createSubscription(merchant, parseUnits('${subCap}', 6), periodSeconds) on the SubScript contract from the user's wallet.
+
+2. SERVER-TO-SERVER VERIFICATION
+   - To verify a subscription status from your backend, make a GET request to the SubScript API:
+     GET /api/v1/subscriptions?id=sub_[SUBSCRIPTION_ID]
+     or
+     GET /api/v1/subscriptions?subscriber=[SUBSCRIBER_WALLET_ADDRESS]
+   - Include the secret API key in the headers:
+     Authorization: Bearer sk_test_...
+   - Check the JSON response fields: { id, subscriber, amount, periodSeconds, isActive, nextPaymentDate }
+
+3. WEBHOOK LOGIC & SIGNATURE VERIFICATION
+   - Create a webhook receiver endpoint (e.g. POST /api/webhooks).
+   - Verify the webhook signature received in the 'x-subscript-signature' header. The signature is computed as:
+     HMAC-SHA256(webhook_secret_key, json_payload)
+   - Handle events:
+     - 'subscription.activated': Triggered when a subscription is initialized.
+     - 'subscription.payment.succeeded': Triggered when a keeper runs a recurring billing cycle successfully.
+     - 'subscription.cancelled': Triggered when a subscription is cancelled.
+
+Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
+        }
+
         return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
 
 SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
@@ -811,7 +1037,7 @@ INTEGRATION WORKFLOW REQUIREMENTS:
      - 'subscription.cancelled': Triggered when a subscription is cancelled.
 
 Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
-    }, [merchantWalletAddress, subName, subCap, billingPeriodSeconds]);
+    }, [merchantWalletAddress, subName, subCap, billingPeriodSeconds, isPremium]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
         mcpServers: {
@@ -1015,6 +1241,26 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 );
 
             case "premium":
+                if (isConnected && address && !sessionWallet) {
+                    return (
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                            <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                            <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                                To manage premium subscriptions and security configurations, please sign a secure message using your connected wallet.
+                            </p>
+                            <button
+                                onClick={handleBackendLogin}
+                                disabled={isLoggingIn}
+                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            >
+                                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                                Authenticate Developer Portal
+                            </button>
+                        </div>
+                    );
+                }
+
                 return (
                     <div className="space-y-8">
                         {/* Tier Status Card */}

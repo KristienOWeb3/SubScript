@@ -26,7 +26,12 @@ const publicClient = createPublicClient({
     transport: http(),
 });
 
-export default function DashboardHeader() {
+interface DashboardHeaderProps {
+    embeddedWallet?: { wallet: string; privateKey: string; email: string } | null;
+    onDisconnect?: () => void;
+}
+
+export default function DashboardHeader({ embeddedWallet, onDisconnect }: DashboardHeaderProps) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [copiedAddress, setCopiedAddress] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
@@ -50,8 +55,8 @@ export default function DashboardHeader() {
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const isConnected = realIsConnected || isTestMode;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : undefined);
+    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
+    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
 
     useEffect(() => {
         if (!address) return;
@@ -92,6 +97,16 @@ export default function DashboardHeader() {
             navigator.clipboard.writeText(address).catch(() => {});
             setCopiedAddress(true);
             setTimeout(() => setCopiedAddress(false), 2000);
+        }
+    };
+
+    const handleDisconnect = async () => {
+        if (embeddedWallet) {
+            onDisconnect?.();
+        } else {
+            disconnect();
+            await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+            onDisconnect?.();
         }
     };
 
@@ -151,7 +166,7 @@ export default function DashboardHeader() {
 
                                 {/* Disconnect */}
                                 <button
-                                    onClick={() => disconnect()}
+                                    onClick={handleDisconnect}
                                     className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
                                     title="Disconnect wallet"
                                 >
@@ -176,7 +191,7 @@ export default function DashboardHeader() {
             <DepositModal
                 isOpen={isDepositOpen}
                 onClose={() => setIsDepositOpen(false)}
-                isEmbeddedWallet={false}
+                isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={depositAddress}
             />
         </>

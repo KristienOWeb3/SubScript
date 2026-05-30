@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
+import { createClient } from "@supabase/supabase-js";
 
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
@@ -102,6 +103,29 @@ export async function POST(request: Request) {
         }
 
         console.log(`[Premium Upgrade] Merchant ${walletAddress} successfully upgraded on-chain!`);
+
+        // 7. Sync with Supabase database to set tier to Premium (1)
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        if (supabaseUrl && supabaseServiceKey) {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { error: dbError } = await supabase
+                    .from("merchants")
+                    .upsert({
+                        wallet_address: walletAddress.toLowerCase(),
+                        tier: 1
+                    }, { onConflict: "wallet_address" });
+
+                if (dbError) {
+                    console.error("[Premium Upgrade] Database sync error:", dbError);
+                } else {
+                    console.log(`[Premium Upgrade] Merchant ${walletAddress} tier updated to 1 (Premium) in database.`);
+                }
+            } catch (dbErr) {
+                console.error("[Premium Upgrade] Database client error:", dbErr);
+            }
+        }
 
         return NextResponse.json({ success: true, tier: 1 }, { status: 200 });
     } catch (error: any) {

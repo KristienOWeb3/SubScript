@@ -50,6 +50,7 @@ export default function DepositModal({
     const [commitmentHash, setCommitmentHash] = useState<string | null>(null);
     const [txLoading, setTxLoading] = useState(false);
     const [txStatus, setTxStatus] = useState<string | null>(null);
+    const [agreed, setAgreed] = useState(false);
 
     const { chainId, isConnected } = useAccount();
     const { switchChain } = useSwitchChain();
@@ -62,6 +63,10 @@ export default function DepositModal({
     };
 
     const handleApprove = async () => {
+        if (!agreed) {
+            console.error("Terms not agreed.");
+            return;
+        }
         if (!isConnected) {
             console.error("Wallet not connected.");
             return;
@@ -138,6 +143,10 @@ export default function DepositModal({
     };
 
     const handleTransfer = async () => {
+        if (!agreed) {
+            console.error("Terms not agreed.");
+            return;
+        }
         if (!isConnected) {
             console.error("Wallet not connected.");
             return;
@@ -208,6 +217,7 @@ export default function DepositModal({
         setCommitmentHash(null);
         setTxLoading(false);
         setTxStatus(null);
+        setAgreed(false);
         onClose();
     };
 
@@ -253,6 +263,28 @@ export default function DepositModal({
 
                             {/* Content */}
                             <div className="p-6">
+                                {/* Deposit Explanation & Agreement Block */}
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-[11px] text-white/70 leading-relaxed font-sans space-y-2">
+                                    <p className="font-bold text-white uppercase tracking-wider text-[10px] text-leetcode-teal">
+                                        About this deposit
+                                    </p>
+                                    <p>
+                                        This deposit is a sandbox protocol commitment of $1.00 USDC to secure recurring subscription transactions. By depositing, you lock these funds under the SubScript Smart Contract.
+                                    </p>
+                                    <div className="flex items-start gap-2 pt-2 border-t border-white/5 mt-2">
+                                        <input
+                                            type="checkbox"
+                                            id="agree-checkbox"
+                                            checked={agreed}
+                                            onChange={(e) => setAgreed(e.target.checked)}
+                                            className="mt-0.5 rounded border-white/10 bg-black text-[#00d2b4] focus:ring-0 cursor-pointer"
+                                        />
+                                        <label htmlFor="agree-checkbox" className="text-[10px] text-white/50 cursor-pointer select-none leading-snug">
+                                            I agree to the <Link href="/terms" target="_blank" className="text-leetcode-teal underline hover:text-white transition">Terms of Service</Link> and <Link href="/privacy" target="_blank" className="text-leetcode-teal underline hover:text-white transition">Privacy Policy</Link>, and authorize this transaction.
+                                        </label>
+                                    </div>
+                                </div>
+
                                 {isEmbeddedWallet ? (
                                     /* Embedded Wallet: QR Code + Address */
                                     <div className="text-center">
@@ -267,13 +299,18 @@ export default function DepositModal({
                                         </p>
 
                                         {/* QR Code */}
-                                        <div className="bg-white p-4 rounded-xl inline-block mb-6">
+                                        <div className={`p-4 rounded-xl inline-block mb-6 transition-all duration-300 relative ${agreed ? "bg-white" : "bg-white/5 filter blur-[6px] pointer-events-none"}`}>
                                             <QRCodeSVG
                                                 value={depositAddress}
                                                 size={180}
                                                 level="H"
                                                 includeMargin={false}
                                             />
+                                            {!agreed && (
+                                                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white/70 bg-black/40 rounded-xl">
+                                                    Agree to terms to view QR
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Address */}
@@ -287,7 +324,8 @@ export default function DepositModal({
                                                 </code>
                                                 <button
                                                     onClick={handleCopy}
-                                                    className="p-2 text-leetcode-teal hover:bg-leetcode-teal/10 rounded-lg transition-colors shrink-0"
+                                                    disabled={!agreed}
+                                                    className="p-2 text-leetcode-teal hover:bg-leetcode-teal/10 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:pointer-events-none"
                                                     title="Copy address"
                                                 >
                                                     {copied ? (
@@ -371,7 +409,7 @@ export default function DepositModal({
 
                                                 <button
                                                     onClick={handleApprove}
-                                                    disabled={isLoading}
+                                                    disabled={isLoading || !agreed}
                                                     className="w-full py-3 bg-leetcode-teal text-white font-semibold rounded-xl
                                                              hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
                                                              transition-all duration-200 flex items-center justify-center gap-2"
