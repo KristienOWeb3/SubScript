@@ -8,7 +8,6 @@ const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
 const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 
-// Standard ERC20 Approve ABI fragment
 const ERC20_ABI = [
     {
         type: "function",
@@ -32,7 +31,6 @@ const ERC20_ABI = [
     }
 ];
 
-// SubScript protocol ABI
 const SUBSCRIPT_ABI = [
     {
         type: "function",
@@ -81,7 +79,6 @@ export async function POST(request: Request) {
 
         const { action, args } = body;
 
-        // 1. Initialize Supabase
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
@@ -89,7 +86,6 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        // 2. Fetch encrypted key
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
             .select("encrypted_private_key")
@@ -100,7 +96,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Embedded wallet not found for authenticated user" }, { status: 404 });
         }
 
-        // 3. Decrypt on-server
         const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
         const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
         const walletSigner = new ethers.Wallet(privateKey, provider);
@@ -110,7 +105,6 @@ export async function POST(request: Request) {
         let functionName = "";
         let finalArgs: any[] = [];
 
-        // 4. Handle intents securely
         switch (action) {
             case "approveUsdc": {
                 const { spender, amount } = args;
@@ -170,7 +164,6 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "subscriptionId is required" }, { status: 400 });
                 }
 
-                // Query database to resolve standard vs premium target contract dynamically
                 const { data: merchant } = await supabase
                     .from("merchants")
                     .select("tier")
@@ -201,7 +194,6 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: `Unsupported execution action: ${action}` }, { status: 400 });
         }
 
-        // 5. Sign and Broadcast Transaction with detailed EVM revert error parsing
         try {
             const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
             const method = contract[functionName] as any;
@@ -214,7 +206,6 @@ export async function POST(request: Request) {
         } catch (err: any) {
             console.error("EVM execution error:", err);
             
-            // Extract custom EVM revert error message cleanly
             const revertReason = err?.reason || err?.info?.error?.message || err?.message || "Transaction execution failed";
             return NextResponse.json({ error: `Execution reverted: ${revertReason}` }, { status: 400 });
         }

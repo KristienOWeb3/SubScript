@@ -72,7 +72,6 @@ export default function DepositModal({
             return;
         }
 
-        // 1. Implement Network Enforcement
         if (chainId !== 5042002) {
             console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
             switchChain?.({ chainId: 5042002 });
@@ -83,7 +82,6 @@ export default function DepositModal({
         setTxStatus("Preparing approval...");
 
         try {
-            // Generate commitment if not already generated
             let currentSecret = secret;
             let currentCommitmentHash = commitmentHash;
 
@@ -99,13 +97,11 @@ export default function DepositModal({
                 currentCommitmentHash = comHash;
             }
 
-            // 3. Format the 6-Decimal Payload
             const amount = parseUnits("1", 6);
             const merchantAddress = (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS")
                 ? "0xa84d917c48f05bffbe353d29e316b9fa096314f7"
                 : depositAddress;
 
-            // 5. Console Logging
             console.log("Before writeContract (approve):", {
                 amount: amount.toString(),
                 merchantAddress,
@@ -152,7 +148,6 @@ export default function DepositModal({
             return;
         }
 
-        // 1. Implement Network Enforcement
         if (chainId !== 5042002) {
             console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
             switchChain?.({ chainId: 5042002 });
@@ -168,13 +163,11 @@ export default function DepositModal({
         setTxStatus("Preparing transfer...");
 
         try {
-            // 3. Format the 6-Decimal Payload
             const amount = parseUnits("1", 6);
             const merchantAddress = (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS")
                 ? "0xa84d917c48f05bffbe353d29e316b9fa096314f7"
                 : depositAddress;
 
-            // 5. Console Logging
             console.log("Before writeContract (depositAndCommit):", {
                 amount: amount.toString(),
                 merchantAddress,
@@ -228,7 +221,6 @@ export default function DepositModal({
         <AnimatePresence>
             {isOpen && (
                 <>
-                    {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -237,7 +229,6 @@ export default function DepositModal({
                         className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
                     />
 
-                    {/* Modal */}
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -249,7 +240,6 @@ export default function DepositModal({
                             className="bg-dark-charcoal border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            {/* Header */}
                             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
                                 <h2 className="text-xl font-bold text-white">Deposit USDC</h2>
                                 <button
@@ -261,9 +251,7 @@ export default function DepositModal({
                                 </button>
                             </div>
 
-                            {/* Content */}
                             <div className="p-6">
-                                {/* Deposit Explanation & Agreement Block */}
                                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-[11px] text-white/70 leading-relaxed font-sans space-y-2">
                                     <p className="font-bold text-white uppercase tracking-wider text-[10px] text-leetcode-teal">
                                         About this deposit
@@ -286,7 +274,6 @@ export default function DepositModal({
                                 </div>
 
                                 {isEmbeddedWallet ? (
-                                    /* Embedded Wallet: QR Code + Address */
                                     <div className="text-center">
                                         <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-leetcode-teal/10 text-leetcode-teal rounded-full text-sm font-medium mb-6">
                                             <QrCode className="w-4 h-4" />
@@ -298,7 +285,6 @@ export default function DepositModal({
                                             address on <span className="text-white font-medium">Base</span>.
                                         </p>
 
-                                        {/* QR Code */}
                                         <div className={`p-4 rounded-xl inline-block mb-6 transition-all duration-300 relative ${agreed ? "bg-white" : "bg-white/5 filter blur-[6px] pointer-events-none"}`}>
                                             <QRCodeSVG
                                                 value={depositAddress}
@@ -313,7 +299,6 @@ export default function DepositModal({
                                             )}
                                         </div>
 
-                                        {/* Address */}
                                         <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                                             <p className="text-xs text-white/50 uppercase tracking-wide mb-2">
                                                 Your Deposit Address
@@ -343,19 +328,17 @@ export default function DepositModal({
                                                 animate={{ opacity: 1, y: 0 }}
                                                 className="text-leetcode-teal text-sm mt-4"
                                             >
-                                                ✓ Address copied to clipboard
+                                                Address copied to clipboard
                                             </motion.p>
                                         )}
                                     </div>
                                 ) : (
-                                    /* External Wallet: Approve + Transfer Flow */
                                     <div>
                                         <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-400 rounded-full text-sm font-medium mb-6">
                                             <Wallet className="w-4 h-4" />
                                             External Wallet
                                         </div>
 
-                                        {/* Step Indicator */}
                                         <div className="flex items-center gap-3 mb-8">
                                             <div
                                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${depositStep === "approve"
@@ -389,7 +372,6 @@ export default function DepositModal({
                                                     a one-time approval.
                                                 </p>
 
-                                                {/* Amount Input */}
                                                 <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
                                                     <label className="text-xs text-white/50 uppercase tracking-wide">
                                                         Amount to Deposit
@@ -457,7 +439,6 @@ export default function DepositModal({
                                             </div>
                                         )}
 
-                                        {/* Highly Visible Error Boundary */}
                                         {isError && error && (
                                             <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-col gap-1.5 text-left">
                                                 <span className="text-red-400 text-xs font-semibold uppercase tracking-wide">
@@ -471,7 +452,6 @@ export default function DepositModal({
                                     </div>
                                 )}
 
-                                {/* Legal disclaimers */}
                                 <p className="text-[10px] text-white/30 text-center mt-6">
                                     By depositing, you agree to our{" "}
                                     <Link href="/terms" target="_blank" className="underline hover:text-white/60 transition">Terms of Service</Link>{" "}
