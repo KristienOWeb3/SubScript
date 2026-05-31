@@ -1,6 +1,6 @@
 {
     "name": "@subscript-protocol/cli",
-    "version": "0.1.2",
+    "version": "1.1.0",
     "private": false,
     "bin": {
         "subscript": "bin/index.js"
@@ -12,7 +12,9 @@
         "lint": "next lint"
     },
     "dependencies": {
-        "@openzeppelin/contracts-upgradeable": "^5.6.1"
+        "@openzeppelin/contracts-upgradeable": "^5.6.1",
+        "circomlibjs": "^0.1.7",
+        "snarkjs": "^0.7.6"
     },
     "devDependencies": {
         "@nomicfoundation/hardhat-chai-matchers": "^3.0.0",
@@ -58,7 +60,7 @@
         "ts-node": "^10.9.2",
         "typechain": "^8.3.2",
         "typescript": "^5",
-        "viem": "^2.44.4",
+        "viem": "^2.51.3",
         "wagmi": "^2.19.5"
     }
 }
