@@ -1,41 +1,94 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Copy, Check, Terminal, Sparkles } from "lucide-react";
+import { useAccount } from "wagmi";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 export default function PromptGenerator() {
-  const [merchantAddress, setMerchantAddress] = useState("");
+  const { address: web3Address } = useAccount();
+  const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [price, setPrice] = useState("10");
-  const [period, setPeriod] = useState("2592000"); // 30 days in seconds
+  const [period, setPeriod] = useState("2592000"); /* 30 days in seconds */
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    const fetchSessionAndTier = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        const data = await res.json();
+        if (data.loggedIn && data.wallet) {
+          setActiveMerchantAddress(data.wallet);
+          const tierRes = await fetch(`/api/merchant/tier?address=${data.wallet}`);
+          const tierData = await tierRes.json();
+          setIsPremium(tierData.tier >= 1);
+        } else if (web3Address) {
+          setActiveMerchantAddress(web3Address);
+          const tierRes = await fetch(`/api/merchant/tier?address=${web3Address}`);
+          const tierData = await tierRes.json();
+          setIsPremium(tierData.tier >= 1);
+        } else {
+          setActiveMerchantAddress(null);
+          setIsPremium(false);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchSessionAndTier();
+  }, [web3Address]);
+
   const generatePrompt = () => {
-    return `Act as an expert Web3 Next.js developer. I want to integrate SubScript, a decentralized recurring payment protocol on the Arc Network, into my app.
+    const displayAddress = activeMerchantAddress || "CONNECTING_WALLET...";
+    
+    if (!isPremium) {
+      return `Act as an expert Web3 Next.js developer. I want to integrate SubScript, a decentralized recurring payment protocol on the Arc Network, into my app.
 
 Here is my specific deployment data:
-- MERCHANT_ADDRESS = "${merchantAddress || "[INSERT YOUR WALLET ADDRESS]"}"
+- MERCHANT_ADDRESS = "${displayAddress}"
 - PRICE_PER_PERIOD = ${price} USDC (6 decimals)
-- PAYMENT_PERIOD_SECONDS = ${period} // ${parseInt(period) === 2592000 ? "30 days" : period === "86400" ? "1 day" : period === "604800" ? "7 days" : "custom"}
-- SUBSCRIPT_ROUTER = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29"
-- USDC_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc"
+- PAYMENT_PERIOD_SECONDS = ${period}
+- SUBSCRIPT_CONTRACT = "0x3c7f095575C66eF21D501D63E265A51240849924" (STANDARD_CONTRACT_ADDRESS)
+- USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
 
-Please write the Wagmi/Viem React hooks and components to implement the ZK Burner subscription flow:
-1. Approve USDC allowance for the router: USDC_ADDRESS.approve(SUBSCRIPT_ROUTER, totalPeriodAmount).
-2. Generate a random 32-byte secret locally in browser. Compute commitment = keccak256(secret).
-3. Call depositAndCommit(commitment, periodAmount) from the funding wallet.
-4. Generate the parameter proof array [secret, expectedPublicInputHash] where expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period)).
-5. Switch to a burner wallet and call verifyAndActivate(proof, nullifierHash, merchant, amount, period) on the SubScript router.
+Please write the Wagmi/Viem React hooks and components to implement the standard transparent subscription flow:
+1. Approve USDC allowance for the contract: USDC_ADDRESS.approve(SUBSCRIPT_CONTRACT, totalPeriodAmount).
+2. Call createSubscription(MERCHANT_ADDRESS, amount, PAYMENT_PERIOD_SECONDS) from the user's wallet.
 
 Also include:
 - A backend route to query/verify subscription status from the SubScript REST API: GET /api/v1/subscriptions?id=sub_... (passing 'Authorization: Bearer sk_test_...' in the headers).
 - A webhook handler verifying signature header 'x-subscript-signature' computed as HMAC-SHA256(webhook_secret, payload).
 
 Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all states (pending, success, error) gracefully.`.trim();
+    } else {
+      return `Act as an expert Web3 Next.js developer. I want to integrate SubScript, a decentralized recurring payment protocol on the Arc Network, into my app.
+
+Here is my specific deployment data:
+- MERCHANT_ADDRESS = "${displayAddress}"
+- PRICE_PER_PERIOD = ${price} USDC (6 decimals)
+- PAYMENT_PERIOD_SECONDS = ${period}
+- SUBSCRIPT_ROUTER = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29"
+- USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
+
+Since I am a Premium Merchant, we will use the ZK Burner subscription flow. Run the following CLI command to automatically scaffold the Zero-Knowledge components and cryptographical dependencies:
+npx @subscript-protocol/cli@latest init --merchant ${displayAddress}
+
+Please write the integration wrappers and pages for the generated paywall:
+1. Integrate the scaffolded SubScriptPaywall component into the checkout page.
+2. Route users to the checkout wrapper with plan parameters.
+
+Also include:
+- A backend route to query/verify subscription status from the SubScript REST API: GET /api/v1/subscriptions?id=sub_... (passing 'Authorization: Bearer sk_test_...' in the headers).
+- A webhook handler verifying signature header 'x-subscript-signature' computed as HMAC-SHA256(webhook_secret, payload).
+
+Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all states (pending, success, error) gracefully.`.trim();
+    }
   };
 
   const handleCopy = () => {
-    if (!merchantAddress) {
-      alert("Please enter your Merchant Wallet Address first!");
+    if (!activeMerchantAddress) {
+      alert("Please enter or connect your Merchant Wallet Address first!");
       return;
     }
     navigator.clipboard.writeText(generatePrompt());
@@ -71,8 +124,8 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
             <input
               type="text"
               placeholder="0x..."
-              value={merchantAddress}
-              onChange={(e) => setMerchantAddress(e.target.value)}
+              value={activeMerchantAddress || ""}
+              onChange={(e) => setActiveMerchantAddress(e.target.value)}
               className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
             />
           </div>

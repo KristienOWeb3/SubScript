@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
 import { SignJWT } from "jose";
+import { sanitizeInput } from "@/utils/security";
 
 export async function POST(request: Request) {
     try {
@@ -9,9 +10,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { address, signature, nonce } = body;
-        if (!address || !signature || !nonce) {
-            return NextResponse.json({ error: "Address, signature, and nonce are required" }, { status: 400 });
+        const sanitizedBody = sanitizeInput(body);
+        const { address, signature, nonce } = sanitizedBody;
+        if (
+            typeof address !== "string" ||
+            !/^0x[a-fA-F0-9]{40}$/.test(address) ||
+            typeof signature !== "string" ||
+            !signature.startsWith("0x") ||
+            typeof nonce !== "string"
+        ) {
+            return NextResponse.json({ error: "Malformed payload parameters" }, { status: 400 });
         }
 
         const cookieStore = request.headers.get("cookie") || "";
@@ -34,7 +42,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
         }
 
-        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secretStr = process.env.JWT_SECRET;
+        if (!secretStr) {
+            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
+        }
         const secret = new TextEncoder().encode(secretStr);
         
         const now = Date.now();

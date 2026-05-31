@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/SubScriptRouter.sol";
-import "../contracts/mocks/MockUSDC.sol";
+import "./mocks/MockUSDC.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract SubScriptHandler is Test {

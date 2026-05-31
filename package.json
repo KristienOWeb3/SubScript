@@ -13,7 +13,12 @@
     },
     "dependencies": {
         "@openzeppelin/contracts-upgradeable": "^5.6.1",
+        "@sentry/nextjs": "^10.55.0",
+        "@upstash/ratelimit": "^2.0.8",
+        "@upstash/redis": "^1.38.0",
         "circomlibjs": "^0.1.7",
+        "posthog-js": "^1.376.5",
+        "resend": "^6.12.4",
         "snarkjs": "^0.7.6"
     },
     "devDependencies": {

@@ -1,14 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
+import { sanitizeInput } from "@/utils/security";
+
+const resend = new Resend(process.env.RESEND_API_KEY || "re_build_placeholder");
 
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
-        if (!body || !body.email) {
-            return NextResponse.json({ error: "Email is required" }, { status: 400 });
+        if (!body || typeof body !== "object") {
+            return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const email = body.email.toLowerCase();
+        const sanitizedBody = sanitizeInput(body);
+        const { email } = sanitizedBody;
+
+        if (!email || typeof email !== "string" || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+            return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
+        }
+
+        const emailLower = email.toLowerCase();
 
         const code = String(Math.floor(100000 + Math.random() * 900000));
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -23,7 +34,7 @@ export async function POST(request: Request) {
         const { error } = await supabase
             .from("otp_codes")
             .upsert({
-                email,
+                email: emailLower,
                 code,
                 expires_at: expiresAt.toISOString()
             }, { onConflict: "email" });
@@ -33,12 +44,22 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
         }
 
-        console.log(`\n [OTP Verification Code] Email: ${email} | Code: ${code} (Expires in 10m)\n`);
+        try {
+            await resend.emails.send({
+                from: "SubScript Auth <onboarding@resend.dev>",
+                to: emailLower,
+                subject: "Your SubScript Verification Code",
+                html: `<html><body><p>Your SubScript verification code is <strong>${code}</strong>. It will expire in 10 minutes.</p></body></html>`
+            });
+        } catch (mailErr) {
+            console.error("Resend email send error:", mailErr);
+        }
 
         return NextResponse.json({ 
             success: true, 
             message: "OTP code successfully generated.",
-            sandboxCode: code
+            sandboxCode: code,
+            email: emailLower
         });
     } catch (err: any) {
         console.error("OTP send error:", err);

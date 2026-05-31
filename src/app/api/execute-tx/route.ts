@@ -3,13 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { decryptPrivateKey } from "@/lib/crypto";
 import { getSessionWallet } from "@/lib/auth";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
 const isProdEnv = process.env.NODE_ENV === "production";
-const USDC_NATIVE_GAS_ADDRESS = isProdEnv
-    ? "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-    : "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 
 const ERC20_ABI = [
     {
