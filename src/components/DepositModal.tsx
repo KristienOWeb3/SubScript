@@ -8,8 +8,8 @@ import Link from "next/link";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { createPublicClient, http, parseUnits, bytesToHex, keccak256 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
-import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "../../subscript/constants";
-import routerAbi from "../../subscript/abi.json";
+import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import routerAbi from "@/lib/contracts/abi.json";
 
 const ERC20_ABI = [
     {
