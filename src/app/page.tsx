@@ -189,32 +189,38 @@ function WaitlistForm() {
     const [monthlyVolume, setMonthlyVolume] = useState("");
     const [honeypot, setHoneypot] = useState("");
     const [message, setMessage] = useState("");
+    const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const showTransientError = (nextMessage: string, fallbackStep: typeof step) => {
         setMessage(nextMessage);
         setStep("error");
-        window.setTimeout(() => setStep(fallbackStep), 2800);
+        window.setTimeout(() => {
+            setStep(fallbackStep);
+            setError(null);
+        }, 2800);
     };
 
     const handleEmailSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (!email.trim() || !email.includes("@")) {
             showTransientError("Enter a valid email address to join the priority list.", "email");
             return;
         }
 
         if (userType === "user") {
-            // User path: submit directly after email
+            /* User path: submit directly after email */
             submitToApi();
         } else {
-            // Enterprise path: continue multi-step
+            /* Enterprise path: continue multi-step */
             setStep("company");
         }
     };
 
     const handleCompanySubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (companyName.trim()) {
             setStep("useCase");
         }
@@ -222,6 +228,7 @@ function WaitlistForm() {
 
     const handleUseCaseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (useCase) {
             setStep("monthlyVolume");
         }
@@ -231,6 +238,7 @@ function WaitlistForm() {
         if (isSubmitting) return;
 
         setIsSubmitting(true);
+        setError(null);
         (async () => {
             const fallbackStep = userType === "user" ? "email" : "monthlyVolume";
 
@@ -256,7 +264,9 @@ function WaitlistForm() {
                 const data = await response.json().catch(() => ({}));
 
                 if (!response.ok || data?.success === false) {
-                    showTransientError(data?.error || "We could not save that submission. Please try again.", fallbackStep);
+                    const errorMsg = data?.error || "We could not save that submission. Please try again.";
+                    setError(errorMsg);
+                    showTransientError(errorMsg, fallbackStep);
                     return;
                 }
 
@@ -264,7 +274,9 @@ function WaitlistForm() {
                 setStep("success");
             } catch (err) {
                 console.error("Submission error:", err);
-                showTransientError("Network error. Please try again.", fallbackStep);
+                const errorMsg = "Network error. Please try again.";
+                setError(errorMsg);
+                showTransientError(errorMsg, fallbackStep);
             } finally {
                 setIsSubmitting(false);
             }
@@ -273,6 +285,7 @@ function WaitlistForm() {
 
     const handleEnterpriseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (!email || !companyName || !useCase || !monthlyVolume) {
             showTransientError("Please complete all sections.", "monthlyVolume");
             return;
@@ -364,7 +377,7 @@ function WaitlistForm() {
                             <input
                                 type="email"
                                 value={email}
-                                onChange={(e) => setEmail(e.target.value)}
+                                onChange={(e) => { setEmail(e.target.value); setError(null); }}
                                 placeholder={userType === "user" ? "Enter your email..." : "Enter your business email..."}
                                 required
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
@@ -412,7 +425,7 @@ function WaitlistForm() {
                             <input
                                 type="text"
                                 value={companyName}
-                                onChange={(e) => setCompanyName(e.target.value)}
+                                onChange={(e) => { setCompanyName(e.target.value); setError(null); }}
                                 placeholder="Company name..."
                                 required
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
@@ -453,7 +466,7 @@ function WaitlistForm() {
                             <HelpCircle className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <select
                                 value={useCase}
-                                onChange={(e) => setUseCase(e.target.value)}
+                                onChange={(e) => { setUseCase(e.target.value); setError(null); }}
                                 required
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8"
                                 style={{ colorScheme: "dark" }}
@@ -511,7 +524,7 @@ function WaitlistForm() {
                             <BarChart3 className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                             <select
                                 value={monthlyVolume}
-                                onChange={(e) => setMonthlyVolume(e.target.value)}
+                                onChange={(e) => { setMonthlyVolume(e.target.value); setError(null); }}
                                 required
                                 disabled={isSubmitting}
                                 className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8 disabled:opacity-50"
@@ -582,6 +595,11 @@ function WaitlistForm() {
                 )}
             </AnimatePresence>
             </div>
+            {error && (
+                <div className="text-red-400 text-[11px] mt-1 font-sans font-medium text-center lg:text-left">
+                    {error}
+                </div>
+            )}
             {step !== "success" && step !== "button" && (
                 <p className="text-[10px] text-white/30 font-sans tracking-wide">
                     By joining, you agree to our{" "}
