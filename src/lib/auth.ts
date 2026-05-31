@@ -1,14 +1,28 @@
 import { jwtVerify } from "jose";
 
 /**
+ * Parse the raw cookie header, find the target cookie by name,
+ * and return the cleaned value (trimmed and stripped of surrounding quotes).
+ */
+export function getCookieValue(cookieHeader: string, name: string): string | null {
+    const pattern = new RegExp(`(?:^|;\\s*)${name}\\s*=\\s*([^;]*)`);
+    const match = cookieHeader.match(pattern);
+    if (!match) return null;
+    let value = match[1].trim();
+    if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+    }
+    return value;
+}
+
+/**
  * Helper to authenticate requests inside Next.js API routes by reading
  * the subscript_session_token cookie and verifying it as a signed JWT.
  * Returns the authenticated wallet address (lowercase), or null if unauthorized.
  */
 export async function getSessionWallet(headers: Headers): Promise<string | null> {
     const cookieStore = headers.get("cookie") || "";
-    const tokenMatch = cookieStore.match(/subscript_session_token=([^;]+)/);
-    const token = tokenMatch ? tokenMatch[1] : null;
+    const token = getCookieValue(cookieStore, "subscript_session_token");
 
     if (!token) return null;
 

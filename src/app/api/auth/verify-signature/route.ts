@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
 import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
+import { getCookieValue } from "@/lib/auth";
 
 export async function POST(request: Request) {
     try {
@@ -23,8 +24,7 @@ export async function POST(request: Request) {
         }
 
         const cookieStore = request.headers.get("cookie") || "";
-        const nonceMatch = cookieStore.match(/subscript_siwe_nonce=([^;]+)/);
-        const storedNonce = nonceMatch ? nonceMatch[1] : null;
+        const storedNonce = getCookieValue(cookieStore, "subscript_siwe_nonce");
 
         if (!storedNonce || storedNonce !== nonce) {
             return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
