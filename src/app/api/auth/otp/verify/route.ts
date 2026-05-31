@@ -3,17 +3,34 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
+import { sanitizeInput } from "@/utils/security";
 
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
-        if (!body || !body.email || !body.code) {
-            return NextResponse.json({ error: "Email and verification code are required" }, { status: 400 });
+        if (!body || typeof body !== "object") {
+            return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const email = body.email.toLowerCase();
-        const code = String(body.code).trim();
-        const rememberMe = Boolean(body.rememberMe);
+        const sanitizedBody = sanitizeInput(body);
+        const { email, code, rememberMe } = sanitizedBody;
+
+        if (
+            typeof email !== "string" ||
+            !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email) ||
+            typeof code !== "string" ||
+            !/^\d{6}$/.test(code)
+        ) {
+            return NextResponse.json({ error: "Malformed payload parameters" }, { status: 400 });
+        }
+
+        const emailLower = email.toLowerCase();
+        const codeTrimmed = code.trim();
+        const rememberMeBool = Boolean(rememberMe);
+
+        const emailVal = emailLower;
+        const codeVal = codeTrimmed;
+        const rememberMeVal = rememberMeBool;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -25,7 +42,7 @@ export async function POST(request: Request) {
         const { data: record, error: fetchError } = await supabase
             .from("otp_codes")
             .select("code, expires_at")
-            .eq("email", email)
+            .eq("email", emailVal)
             .maybeSingle();
 
         if (fetchError || !record) {
@@ -37,18 +54,18 @@ export async function POST(request: Request) {
         }
 
         if (new Date() > new Date(record.expires_at)) {
-            await supabase.from("otp_codes").delete().eq("email", email);
+            await supabase.from("otp_codes").delete().eq("email", emailVal);
             return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
         }
 
-        await supabase.from("otp_codes").delete().eq("email", email);
+        await supabase.from("otp_codes").delete().eq("email", emailVal);
 
         let walletAddress = "";
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
             .select("wallet_address")
-            .eq("email", email)
+            .eq("email", emailVal)
             .maybeSingle();
 
         if (walletRecord) {
@@ -62,7 +79,7 @@ export async function POST(request: Request) {
             const { error: insertError } = await supabase
                 .from("user_embedded_wallets")
                 .insert({
-                    email,
+                    email: emailVal,
                     wallet_address: walletAddress.toLowerCase(),
                     encrypted_private_key: encryptedKey
                 });
@@ -80,11 +97,14 @@ export async function POST(request: Request) {
                 }, { onConflict: "wallet_address" });
         }
 
-        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secretStr = process.env.JWT_SECRET;
+        if (!secretStr) {
+            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
+        }
         const secret = new TextEncoder().encode(secretStr);
-        const sessionDuration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+        const sessionDuration = rememberMeVal ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
         const expiresAt = new Date(Date.now() + sessionDuration);
-        const sessionDurationStr = rememberMe ? "30d" : "1d";
+        const sessionDurationStr = rememberMeVal ? "30d" : "1d";
 
         const jwt = await new SignJWT({ address: walletAddress.toLowerCase(), authenticatedAt: Date.now() })
             .setProtectedHeader({ alg: "HS256" })
@@ -94,7 +114,7 @@ export async function POST(request: Request) {
         const response = NextResponse.json({ 
             success: true, 
             wallet: walletAddress,
-            email
+            email: emailVal
         });
         
         response.cookies.set("subscript_session_token", jwt, {

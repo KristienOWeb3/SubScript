@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import posthog from "posthog-js";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useSignMessage } from "wagmi";
 import { 
@@ -21,6 +22,7 @@ export default function SignupPage() {
   const { signMessageAsync } = useSignMessage();
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
+  const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -79,6 +81,7 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
+        setActiveMerchantAddress(data.wallet);
         router.push("/dashboard");
       } else {
         setOtpError(data.error || "Invalid verification code.");
@@ -116,6 +119,7 @@ export default function SignupPage() {
           });
           const data = await res.json();
           if (data.success) {
+            setActiveMerchantAddress(data.wallet);
             router.push("/dashboard");
           } else {
             setOtpError(data.error || "Google login failed.");
@@ -165,6 +169,7 @@ export default function SignupPage() {
       });
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
+        setActiveMerchantAddress(address);
         router.push("/dashboard");
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
@@ -208,7 +213,10 @@ export default function SignupPage() {
         {authMethod === "select" ? (
           <div className="space-y-3">
             <button
-              onClick={() => setAuthMethod("email")}
+              onClick={() => {
+                posthog.capture("signup_method_selected", { method: "email" });
+                setAuthMethod("email");
+              }}
               className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
             >
               <Mail className="w-4 h-4 text-[#ccff00]" />
@@ -216,7 +224,10 @@ export default function SignupPage() {
             </button>
 
             <button
-              onClick={handleSocialLogin}
+              onClick={() => {
+                posthog.capture("signup_method_selected", { method: "google" });
+                handleSocialLogin();
+              }}
               disabled={otpLoading}
               className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
             >
@@ -238,7 +249,10 @@ export default function SignupPage() {
             </div>
 
             <button
-              onClick={handleConnectWallet}
+              onClick={() => {
+                posthog.capture("signup_method_selected", { method: "wallet" });
+                handleConnectWallet();
+              }}
               disabled={isConnecting || siweLoading}
               className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black"
             >

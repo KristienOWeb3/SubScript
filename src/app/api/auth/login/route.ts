@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
 import { SignJWT } from "jose";
+import { sanitizeInput } from "@/utils/security";
 
 export async function POST(request: Request) {
     try {
@@ -9,11 +10,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { address, message, signature } = body;
+        const sanitizedBody = sanitizeInput(body);
+        const { address, message, signature } = sanitizedBody;
 
-        if (!address || !message || !signature) {
+        /* Strict validation of payload format and types */
+        if (
+            typeof address !== "string" ||
+            !/^0x[a-fA-F0-9]{40}$/.test(address) ||
+            typeof message !== "string" ||
+            typeof signature !== "string" ||
+            !signature.startsWith("0x")
+        ) {
             return NextResponse.json(
-                { error: "Address, message, and signature are required" },
+                { error: "Malformed payload structure" },
                 { status: 400 }
             );
         }
@@ -51,7 +60,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
         }
 
-        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secretStr = process.env.JWT_SECRET;
+        if (!secretStr) {
+            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
+        }
         const secret = new TextEncoder().encode(secretStr);
         const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
         const jwt = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })

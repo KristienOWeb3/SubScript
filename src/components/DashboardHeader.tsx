@@ -8,6 +8,7 @@ import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const WALLET_PLACEHOLDER = "0xYOUR_CONNECTED_WALLET_ADDRESS";
 
@@ -64,7 +65,7 @@ export default function DashboardHeader({ embeddedWallet, onDisconnect }: Dashbo
         const fetchBalance = async () => {
             try {
                 const balanceRaw = await publicClient.readContract({
-                    address: "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc",
+                    address: USDC_NATIVE_GAS_ADDRESS,
                     abi: ERC20_ABI,
                     functionName: "balanceOf",
                     args: [address as `0x${string}`],

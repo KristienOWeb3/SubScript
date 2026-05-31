@@ -6,7 +6,11 @@ const RPC_URL = process.env.RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
-const KEEPER_SECRET = process.env.KEEPER_SECRET || "default_keeper_secret_temp_123";
+const KEEPER_SECRET = process.env.KEEPER_SECRET;
+if (!KEEPER_SECRET) {
+  console.error("Keeper secret is not defined in environment variables");
+  process.exit(1);
+}
 
 // 2. The ABI (Only the functions and events we need)
 const CONTRACT_ABI = [

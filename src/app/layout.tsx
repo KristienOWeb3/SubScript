@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
+import PostHogProvider from "@/components/providers/PostHogProvider";
 
 const inter = Inter({
     subsets: ["latin"],
@@ -65,9 +66,11 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
-                <PrivyProviderWrapper>
-                    {children}
-                </PrivyProviderWrapper>
+                <PostHogProvider>
+                    <PrivyProviderWrapper>
+                        {children}
+                    </PrivyProviderWrapper>
+                </PostHogProvider>
             </body>
         </html>
     );

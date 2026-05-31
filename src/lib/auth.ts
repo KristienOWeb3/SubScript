@@ -13,7 +13,10 @@ export async function getSessionWallet(headers: Headers): Promise<string | null>
     if (!token) return null;
 
     try {
-        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secretStr = process.env.JWT_SECRET;
+        if (!secretStr) {
+            throw new Error("JWT_SECRET environment variable is not defined");
+        }
         const secret = new TextEncoder().encode(secretStr);
         const { payload } = await jwtVerify(token, secret);
         

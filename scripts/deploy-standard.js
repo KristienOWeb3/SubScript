@@ -7,7 +7,7 @@ async function main() {
   const balance = await hre.ethers.provider.getBalance(deployer.address);
   console.log("Account balance:", hre.ethers.formatEther(balance), "ETH");
 
-  const usdcAddress = process.env.USDC_ADDRESS || "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
+  const usdcAddress = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
   console.log(`Linking SubScript to USDC address: ${usdcAddress}`);
 
   console.log("\n--- Deploying Standard SubScript Contract ---");

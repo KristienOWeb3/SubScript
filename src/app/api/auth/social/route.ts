@@ -3,21 +3,30 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
+import { sanitizeInput } from "@/utils/security";
 
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
-        if (!body || !body.email || !body.provider) {
-            return NextResponse.json({ error: "Email and social provider are required" }, { status: 400 });
+        if (!body || typeof body !== "object") {
+            return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const email = body.email.toLowerCase();
-        const provider = body.provider.toLowerCase();
-        const rememberMe = Boolean(body.rememberMe);
+        const sanitizedBody = sanitizeInput(body);
+        const { email, provider, rememberMe } = sanitizedBody;
 
-        if (provider !== "google" && provider !== "apple") {
-            return NextResponse.json({ error: "Invalid social provider" }, { status: 400 });
+        if (
+            typeof email !== "string" ||
+            !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email) ||
+            typeof provider !== "string" ||
+            (provider !== "google" && provider !== "apple")
+        ) {
+            return NextResponse.json({ error: "Malformed payload parameters" }, { status: 400 });
         }
+
+        const emailVal = email.toLowerCase();
+        const providerVal = provider.toLowerCase();
+        const rememberMeVal = Boolean(rememberMe);
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -31,7 +40,7 @@ export async function POST(request: Request) {
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
             .select("wallet_address")
-            .eq("email", email)
+            .eq("email", emailVal)
             .maybeSingle();
 
         if (walletRecord) {
@@ -45,7 +54,7 @@ export async function POST(request: Request) {
             const { error: insertError } = await supabase
                 .from("user_embedded_wallets")
                 .insert({
-                    email,
+                    email: emailVal,
                     wallet_address: walletAddress.toLowerCase(),
                     encrypted_private_key: encryptedKey
                 });
@@ -63,11 +72,14 @@ export async function POST(request: Request) {
                 }, { onConflict: "wallet_address" });
         }
 
-        const secretStr = process.env.JWT_SECRET || "default_jwt_secret_fallback_32_characters_long_minimum";
+        const secretStr = process.env.JWT_SECRET;
+        if (!secretStr) {
+            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
+        }
         const secret = new TextEncoder().encode(secretStr);
-        const sessionDuration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+        const sessionDuration = rememberMeVal ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
         const expiresAt = new Date(Date.now() + sessionDuration);
-        const sessionDurationStr = rememberMe ? "30d" : "1d";
+        const sessionDurationStr = rememberMeVal ? "30d" : "1d";
 
         const jwt = await new SignJWT({ address: walletAddress.toLowerCase(), authenticatedAt: Date.now() })
             .setProtectedHeader({ alg: "HS256" })
@@ -77,8 +89,8 @@ export async function POST(request: Request) {
         const response = NextResponse.json({ 
             success: true, 
             wallet: walletAddress,
-            email,
-            provider
+            email: emailVal,
+            provider: providerVal
         });
         
         response.cookies.set("subscript_session_token", jwt, {

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
 import { createClient } from "@supabase/supabase-js";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 const PAYMENT_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
 
 export async function POST(request: Request) {

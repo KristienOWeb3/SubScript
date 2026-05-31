@@ -9,9 +9,7 @@ const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_
 export const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" as const;
 export const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924" as const;
 
-export const USDC_NATIVE_GAS_ADDRESS = isProd
-  ? ("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const)
-  : ("0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc" as const);
+export const USDC_NATIVE_GAS_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
 
 export const ARC_TESTNET = {
   id: ARC_TESTNET_CHAIN_ID,

@@ -4,7 +4,7 @@ SubScript is a fully anonymous, ZK-based recurring payment protocol natively bui
 
 ## Quick Facts for AI Agents
 - **Network:** Arc Network Testnet (Chain ID: 5042002)
-- **Native Gas Token:** USDC (Targeting contract `0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc`)
+- **Native Gas Token:** USDC (Targeting contract `0x3600000000000000000000000000000000000000`)
 - **Protocol Fee:** 1% (100 basis points) automatically deducted at the contract level (merchant receives 99%, protocol treasury receives 1%).
 - **Primary Mechanism:** Cryptographic commitments + local Groth16 zk-SNARK proof verification.
 

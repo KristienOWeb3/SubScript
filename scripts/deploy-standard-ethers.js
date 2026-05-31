@@ -6,7 +6,7 @@ const path = require("path");
 async function main() {
   const privateKey = process.env.PRIVATE_KEY;
   const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
-  const usdcAddress = process.env.USDC_ADDRESS || "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
+  const usdcAddress = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
 
   if (!privateKey) {
     console.error("Error: PRIVATE_KEY must be defined in the .env file");

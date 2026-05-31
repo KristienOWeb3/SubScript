@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import posthog from "posthog-js";
 import { ethers } from "ethers";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,10 +19,13 @@ import {
     Wallet, Shield
 } from "lucide-react";
 
-const ARC_TESTNET_CHAIN_ID = 5042002;
-const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
-const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
+import { 
+    ARC_TESTNET_CHAIN_ID, 
+    SUBSCRIPT_ROUTER_ADDRESS, 
+    STANDARD_CONTRACT_ADDRESS, 
+    USDC_NATIVE_GAS_ADDRESS 
+} from "@/lib/contracts/constants";
+
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
@@ -851,6 +855,8 @@ export default function DashboardPage() {
                 args: [PAYMENT_RECIPIENT, amount],
             });
 
+            posthog.capture("premium_upgrade_initiated");
+
             setPremiumStatus("Confirming payment on-chain...");
             const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash as `0x${string}` });
 
@@ -898,6 +904,8 @@ export default function DashboardPage() {
             if (!upgradeRes.ok) {
                 throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
             }
+
+            posthog.capture("premium_upgrade_success");
 
             setPremiumStatus("Payment verified! Premium tier activated.");
             refetchTier();

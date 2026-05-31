@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendWebhookRequest } from "@/lib/webhooks";
 import crypto from "crypto";
+import { sanitizeInput } from "@/utils/security";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -15,7 +16,10 @@ function getSupabase() {
 export async function POST(request: Request) {
     try {
         const authHeader = request.headers.get("Authorization");
-        const expectedSecret = process.env.KEEPER_SECRET || "default_keeper_secret_temp_123";
+        const expectedSecret = process.env.KEEPER_SECRET;
+        if (!expectedSecret) {
+            return NextResponse.json({ error: "Internal Server Error: Keeper secret key configuration missing" }, { status: 500 });
+        }
         
         if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,11 +30,18 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
         }
 
-        const { walletAddress, event, data } = body;
+        const sanitizedBody = sanitizeInput(body);
+        const { walletAddress, event, data } = sanitizedBody;
 
-        if (!walletAddress || !event || !data) {
+        if (
+            typeof walletAddress !== "string" ||
+            !/^0x[a-fA-F0-9]{40}$/.test(walletAddress) ||
+            typeof event !== "string" ||
+            !data ||
+            typeof data !== "object"
+        ) {
             return NextResponse.json(
-                { error: "walletAddress, event, and data are required" },
+                { error: "Malformed payload parameters" },
                 { status: 400 }
             );
         }
