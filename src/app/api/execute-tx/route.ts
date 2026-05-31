@@ -6,7 +6,10 @@ import { getSessionWallet } from "@/lib/auth";
 
 const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
-const USDC_NATIVE_GAS_ADDRESS = "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
+const isProdEnv = process.env.NODE_ENV === "production";
+const USDC_NATIVE_GAS_ADDRESS = isProdEnv
+    ? "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    : "0xF7C6416aecC5bECbbB003548f3e4bEA96Eb916fc";
 
 const ERC20_ABI = [
     {
@@ -97,7 +100,10 @@ export async function POST(request: Request) {
         }
 
         const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
-        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+        const rpcUrl = isProdEnv
+            ? "https://rpc.mainnet.arc.network"
+            : "https://rpc.testnet.arc.network";
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
         const walletSigner = new ethers.Wallet(privateKey, provider);
 
         let contractAddress = "";
