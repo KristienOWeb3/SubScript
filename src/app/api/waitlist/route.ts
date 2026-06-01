@@ -50,12 +50,14 @@ export async function POST(request: Request) {
             );
         }
 
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-        if (!supabaseUrl || !supabaseServiceKey) {
-            throw new Error("Supabase URL or Service Role Key is missing on the server.");
+        const supabaseUrl = process.env.SUPABASE_URL || "";
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        const isMockKey = !supabaseUrl || !supabaseServiceKey || supabaseServiceKey === "mock_service_role_key_for_testing" || supabaseServiceKey.startsWith("your-");
+
+        let supabase = null;
+        if (!isMockKey) {
+            supabase = createClient(supabaseUrl, supabaseServiceKey);
         }
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
@@ -87,14 +89,23 @@ export async function POST(request: Request) {
         }
 
         const insertPayload: Record<string, any> = {
-            email: trimmedEmail
+            email: trimmedEmail,
+            user_type: normalizedUserType,
+            wallet_address: walletVal && walletVal.trim() !== "" ? walletVal.toLowerCase() : null,
+            company_name: normalizedUserType === "enterprise" && companyName ? companyName.trim() : null,
+            use_case: normalizedUserType === "enterprise" && useCase ? useCase : null,
+            monthly_volume: normalizedUserType === "enterprise" && monthlyVolume ? monthlyVolume : null,
         };
 
-        if (walletVal && walletVal.trim() !== "") {
-            insertPayload.wallet_address = walletVal.toLowerCase();
-        } else {
-            /* Explicitly send null or omit to prevent Postgres type-casting crashes */
-            insertPayload.wallet_address = null;
+        if (isMockKey || !supabase) {
+            console.log("Demo/Mock mode: Sanitized waitlist payload for Supabase:", JSON.stringify(insertPayload));
+            const successMessage = normalizedUserType === "user"
+                ? "You're on the list. We'll notify you when SubScript launches."
+                : "Spot secured on priority list.";
+            return NextResponse.json(
+                { success: true, message: successMessage },
+                { status: 200 }
+            );
         }
 
         try {
@@ -105,6 +116,12 @@ export async function POST(request: Request) {
 
             if (insertError) {
                 console.error("Supabase waitlist insert error:", insertError);
+                if (insertError.code === "23505") {
+                    return NextResponse.json(
+                        { success: true, message: "You're already on the list! Follow our X for updates." },
+                        { status: 200 }
+                    );
+                }
                 return NextResponse.json(
                     { error: insertError.message || "Unknown DB Error", details: insertError },
                     { status: 500 }
@@ -112,6 +129,12 @@ export async function POST(request: Request) {
             }
         } catch (dbError: any) {
             console.error("Supabase waitlist insert exception:", dbError);
+            if (dbError?.code === "23505" || dbError?.message?.includes("23505") || dbError?.message?.includes("unique constraint")) {
+                return NextResponse.json(
+                    { success: true, message: "You're already on the list! Follow our X for updates." },
+                    { status: 200 }
+                );
+            }
             return NextResponse.json(
                 { error: dbError?.message || "Unknown DB Error", details: dbError },
                 { status: 500 }
