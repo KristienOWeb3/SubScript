@@ -270,7 +270,7 @@ function WaitlistForm() {
                 const data = await response.json().catch(() => ({}));
 
                 if (!response.ok || data?.success === false) {
-                    const errorMsg = data?.error || "We could not save that submission. Please try again.";
+                    const errorMsg = data?.error || data?.details?.message || "Failed to save submission";
                     setError(errorMsg);
                     setDebugError(errorMsg);
                     showTransientError(errorMsg, fallbackStep);
@@ -281,7 +281,7 @@ function WaitlistForm() {
                 setStep("success");
             } catch (err: any) {
                 console.error("Submission error:", err);
-                const errorMsg = err?.message || "Network error. Please try again.";
+                const errorMsg = err?.message || "Connection failed";
                 setError(errorMsg);
                 setDebugError(errorMsg);
                 showTransientError(errorMsg, fallbackStep);
@@ -706,7 +706,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.3 }}
                             >
-                                Private recurring payments for AI toolchains, autonomous agents, and developer APIs on Arc Network. ZK commitments, USDC-native gas, and a simple 1% protocol fee make software-to-software billing predictable.
+                                Recurring USDC infrastructure for AI toolchains, autonomous agents, and developer APIs. Built on the Arc Network for sub-second settlement, predictable pricing, and zero smart-contract headaches.
                             </motion.p>
 
                             <WaitlistForm />
