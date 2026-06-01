@@ -122,3 +122,41 @@ body {
 .pulse-glow-teal {
   animation: pulse-glow 3s infinite;
 }
+
+/* Liquid Glass Skeleton Shimmer */
+@keyframes liquid-glass-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes liquid-pulse {
+  0%, 100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.liquid-glass-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(255, 255, 255, 0.01);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.01) 0%,
+    rgba(255, 255, 255, 0.06) 25%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.06) 75%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  background-size: 200% 100%;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: liquid-glass-shimmer 2.5s infinite linear, liquid-pulse 3s infinite ease-in-out;
+}
