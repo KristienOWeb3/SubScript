@@ -87,71 +87,33 @@ export async function POST(request: Request) {
         }
 
         const insertPayload: Record<string, any> = {
-            email: trimmedEmail,
-            user_type: normalizedUserType,
-            created_at: new Date().toISOString(),
+            email: trimmedEmail
         };
 
-        if (walletVal) {
+        if (walletVal && walletVal.trim() !== "") {
             insertPayload.wallet_address = walletVal.toLowerCase();
-        }
-
-        if (normalizedUserType === "enterprise") {
-            if (!companyName || typeof companyName !== "string" || companyName.trim() === "") {
-                return NextResponse.json({ error: "Company name is required." }, { status: 400 });
-            }
-            if (!useCase || typeof useCase !== "string" || useCase.trim() === "") {
-                return NextResponse.json({ error: "Use case is required." }, { status: 400 });
-            }
-            if (!monthlyVolume || typeof monthlyVolume !== "string" || monthlyVolume.trim() === "") {
-                return NextResponse.json({ error: "Monthly volume is required." }, { status: 400 });
-            }
-
-            const trimmedCompany = companyName.trim();
-            const trimmedUseCase = useCase.trim();
-            const trimmedVolume = monthlyVolume.trim();
-
-            if (trimmedCompany.length > 255) {
-                return NextResponse.json({ error: "Company name is too long." }, { status: 400 });
-            }
-            if (!ALLOWED_USE_CASES.includes(trimmedUseCase)) {
-                return NextResponse.json({ error: "Invalid use case selected." }, { status: 400 });
-            }
-            if (!ALLOWED_MONTHLY_VOLUMES.includes(trimmedVolume)) {
-                return NextResponse.json({ error: "Invalid monthly volume selected." }, { status: 400 });
-            }
-
-            insertPayload.company_name = trimmedCompany;
-            insertPayload.use_case = trimmedUseCase;
-            insertPayload.monthly_volume = trimmedVolume;
+        } else {
+            /* Explicitly send null or omit to prevent Postgres type-casting crashes */
+            insertPayload.wallet_address = null;
         }
 
         try {
+            console.log("Sanitized waitlist payload for Supabase:", JSON.stringify(insertPayload));
             const { error: insertError } = await supabase
                 .from("waitlist_leads")
                 .insert(insertPayload);
 
             if (insertError) {
-                if (insertError.code === "23505") {
-                    return NextResponse.json(
-                        { error: "This email or wallet is already on the waitlist." },
-                        { status: 400 }
-                    );
-                }
+                console.error("Supabase waitlist insert error:", insertError);
                 return NextResponse.json(
-                    { error: insertError.message },
+                    { error: insertError.message || "Unknown DB Error", details: insertError },
                     { status: 500 }
                 );
             }
         } catch (dbError: any) {
-            if (dbError && dbError.code === "23505") {
-                return NextResponse.json(
-                    { error: "This email or wallet is already on the waitlist." },
-                    { status: 400 }
-                );
-            }
+            console.error("Supabase waitlist insert exception:", dbError);
             return NextResponse.json(
-                { error: dbError?.message || "Database insert failed" },
+                { error: dbError?.message || "Unknown DB Error", details: dbError },
                 { status: 500 }
             );
         }
@@ -168,7 +130,7 @@ export async function POST(request: Request) {
     } catch (error: any) {
         console.error("Waitlist API Error:", error);
         return NextResponse.json(
-            { error: error?.message || "An unexpected error occurred. Please try again." },
+            { error: error?.message || "Unknown DB Error", details: error },
             { status: 500 }
         );
     }
