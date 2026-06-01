@@ -7,6 +7,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
@@ -297,6 +298,14 @@ export default function DashboardPage() {
 
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
+    
+    /* Loading states for initial fetches to support skeleton loading */
+    const [initialKeysFetched, setInitialKeysFetched] = useState(false);
+    const [initialWebhooksFetched, setInitialWebhooksFetched] = useState(false);
+    const [initialEventsFetched, setInitialEventsFetched] = useState(false);
+    const [initialContractFetched, setInitialContractFetched] = useState(false);
+
+    const isLoading = isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched));
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { signMessageAsync } = useSignMessage();
 
@@ -338,6 +347,7 @@ export default function DashboardPage() {
             console.error("Error fetching keys:", err);
         } finally {
             setIsKeysLoading(false);
+            setInitialKeysFetched(true);
         }
     };
 
@@ -353,6 +363,7 @@ export default function DashboardPage() {
             console.error("Error fetching endpoints:", err);
         } finally {
             setIsWebhooksLoading(false);
+            setInitialWebhooksFetched(true);
         }
     };
 
@@ -371,6 +382,7 @@ export default function DashboardPage() {
             console.error("Error fetching events:", err);
         } finally {
             setIsEventsLoading(false);
+            setInitialEventsFetched(true);
         }
     };
 
@@ -405,6 +417,10 @@ export default function DashboardPage() {
             setApiKeys([]);
             setWebhookEndpoints([]);
             setWebhookEvents([]);
+            setInitialKeysFetched(false);
+            setInitialWebhooksFetched(false);
+            setInitialEventsFetched(false);
+            setInitialContractFetched(false);
             return;
         }
 
@@ -595,6 +611,10 @@ export default function DashboardPage() {
             setApiKeys([]);
             setWebhookEndpoints([]);
             setWebhookEvents([]);
+            setInitialKeysFetched(false);
+            setInitialWebhooksFetched(false);
+            setInitialEventsFetched(false);
+            setInitialContractFetched(false);
         } catch (err) {
             console.error("Error logging out:", err);
         }
@@ -707,6 +727,7 @@ export default function DashboardPage() {
             } finally {
                 if (isSubscribed) {
                     setIsLoadingContract(false);
+                    setInitialContractFetched(true);
                 }
             }
         }
@@ -2076,6 +2097,8 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                             )}
                         </div>
                     </div>
+                ) : isLoading ? (
+                    <DashboardSkeleton activeTab={activeTab} />
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
