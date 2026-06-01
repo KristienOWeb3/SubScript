@@ -190,6 +190,7 @@ function WaitlistForm() {
     const [honeypot, setHoneypot] = useState("");
     const [message, setMessage] = useState("");
     const [error, setError] = useState<string | null>(null);
+    const [debugError, setDebugError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const showTransientError = (nextMessage: string, fallbackStep: typeof step) => {
@@ -198,12 +199,14 @@ function WaitlistForm() {
         window.setTimeout(() => {
             setStep(fallbackStep);
             setError(null);
+            setDebugError(null);
         }, 2800);
     };
 
     const handleEmailSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setDebugError(null);
         if (!email.trim() || !email.includes("@")) {
             showTransientError("Enter a valid email address to join the priority list.", "email");
             return;
@@ -221,6 +224,7 @@ function WaitlistForm() {
     const handleCompanySubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setDebugError(null);
         if (companyName.trim()) {
             setStep("useCase");
         }
@@ -229,6 +233,7 @@ function WaitlistForm() {
     const handleUseCaseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setDebugError(null);
         if (useCase) {
             setStep("monthlyVolume");
         }
@@ -239,6 +244,7 @@ function WaitlistForm() {
 
         setIsSubmitting(true);
         setError(null);
+        setDebugError(null);
         (async () => {
             const fallbackStep = userType === "user" ? "email" : "monthlyVolume";
 
@@ -266,16 +272,18 @@ function WaitlistForm() {
                 if (!response.ok || data?.success === false) {
                     const errorMsg = data?.error || "We could not save that submission. Please try again.";
                     setError(errorMsg);
+                    setDebugError(errorMsg);
                     showTransientError(errorMsg, fallbackStep);
                     return;
                 }
 
                 setMessage(data?.message || "Spot secured. SubScript is fast, private, and reliable.");
                 setStep("success");
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Submission error:", err);
-                const errorMsg = "Network error. Please try again.";
+                const errorMsg = err?.message || "Network error. Please try again.";
                 setError(errorMsg);
+                setDebugError(errorMsg);
                 showTransientError(errorMsg, fallbackStep);
             } finally {
                 setIsSubmitting(false);
@@ -286,6 +294,7 @@ function WaitlistForm() {
     const handleEnterpriseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+        setDebugError(null);
         if (!email || !companyName || !useCase || !monthlyVolume) {
             showTransientError("Please complete all sections.", "monthlyVolume");
             return;
@@ -306,7 +315,7 @@ function WaitlistForm() {
                         transition={{ duration: 0.2 }}
                     >
                         <motion.button
-                            onClick={() => setStep("selectType")}
+                            onClick={() => { setStep("selectType"); setError(null); setDebugError(null); }}
                             className="liquid-glass rounded-full px-6 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200 h-9 flex items-center"
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
@@ -327,14 +336,14 @@ function WaitlistForm() {
                     >
                         <button
                             type="button"
-                            onClick={() => setStep("button")}
+                            onClick={() => { setStep("button"); setError(null); setDebugError(null); }}
                             className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0"
                             aria-label="Go back"
                         >
                             <ArrowLeft className="w-3.5 h-3.5" />
                         </button>
                         <motion.button
-                            onClick={() => { setUserType("user"); setStep("email"); }}
+                            onClick={() => { setUserType("user"); setStep("email"); setError(null); setDebugError(null); }}
                             className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#00d2b4]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
@@ -343,7 +352,7 @@ function WaitlistForm() {
                             For Users
                         </motion.button>
                         <motion.button
-                            onClick={() => { setUserType("enterprise"); setStep("email"); }}
+                            onClick={() => { setUserType("enterprise"); setStep("email"); setError(null); setDebugError(null); }}
                             className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#d4a853]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
@@ -355,51 +364,58 @@ function WaitlistForm() {
                 )}
 
                 {step === "email" && (
-                    <motion.form
-                        key="email"
-                        onSubmit={handleEmailSubmit}
-                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div className="flex items-center flex-1 min-w-0 h-full">
-                            <button
-                                type="button"
-                                onClick={() => setStep("selectType")}
-                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
-                                aria-label="Go back"
-                            >
-                                <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <Mail className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => { setEmail(e.target.value); setError(null); }}
-                                placeholder={userType === "user" ? "Enter your email..." : "Enter your business email..."}
-                                required
-                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
-                            />
-                        </div>
-                        <motion.button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            aria-label={userType === "user" ? "Submit" : "Next step"}
+                    <div className="flex flex-col w-full max-w-sm gap-2">
+                        <motion.form
+                            key="email"
+                            onSubmit={handleEmailSubmit}
+                            className="liquid-glass rounded-full px-2 flex items-center justify-between w-full shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -15 }}
+                            transition={{ duration: 0.3 }}
                         >
-                            {isSubmitting ? (
-                                <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
-                            ) : userType === "user" ? (
-                                <Check className="w-3 h-3 stroke-[2.5]" />
-                            ) : (
-                                <ArrowRight className="w-3 h-3 stroke-[2.5]" />
-                            )}
-                        </motion.button>
-                    </motion.form>
+                            <div className="flex items-center flex-1 min-w-0 h-full">
+                                <button
+                                    type="button"
+                                    onClick={() => { setStep("selectType"); setError(null); setDebugError(null); }}
+                                    className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
+                                    aria-label="Go back"
+                                >
+                                    <ArrowLeft className="w-3 h-3" />
+                                </button>
+                                <Mail className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => { setEmail(e.target.value); setError(null); setDebugError(null); }}
+                                    placeholder={userType === "user" ? "Enter your email..." : "Enter your business email..."}
+                                    required
+                                    className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
+                                />
+                            </div>
+                            <motion.button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                aria-label={userType === "user" ? "Submit" : "Next step"}
+                            >
+                                {isSubmitting ? (
+                                    <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
+                                ) : userType === "user" ? (
+                                    <Check className="w-3 h-3 stroke-[2.5]" />
+                                ) : (
+                                    <ArrowRight className="w-3 h-3 stroke-[2.5]" />
+                                )}
+                            </motion.button>
+                        </motion.form>
+                        {debugError && (
+                            <div className="text-red-500 text-xs px-2 font-medium">
+                                {debugError}
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {step === "company" && (
