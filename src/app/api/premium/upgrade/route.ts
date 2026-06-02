@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
-import { processPremiumUpgrade } from "@/lib/premium";
+import { processPremiumUpgrade } from "@/lib/payments/processPremiumUpgrade";
 
 type PremiumUpgradeBody = {
     txHash?: string;
+    sessionId?: string;
 };
 
 const isTxHash = (value: unknown): value is string =>
     typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+
+const isUUID = (value: unknown): value is string =>
+    typeof value === "string" && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value);
 
 const parseBody = async (request: Request): Promise<PremiumUpgradeBody | null> => {
     try {
@@ -30,9 +34,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash } = body;
+        const { txHash, sessionId } = body;
         if (!txHash || !isTxHash(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid premium transaction hash" }, { status: 400 });
+        }
+
+        if (!sessionId || !isUUID(sessionId)) {
+            return NextResponse.json({ error: "Bad Request: Missing or invalid sessionId" }, { status: 400 });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -42,7 +50,12 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        const result = await processPremiumUpgrade(supabase, walletAddress, txHash);
+        const result = await processPremiumUpgrade({
+            supabase,
+            txHash,
+            sessionId,
+            walletAddress
+        });
 
         if (!result.success) {
             return NextResponse.json({ error: result.error }, { status: result.status });
@@ -52,7 +65,8 @@ export async function POST(request: Request) {
             success: true,
             tier: result.tier,
             txHash,
-            upgradeTxHash: result.upgradeTxHash
+            upgradeTxHash: result.upgradeTxHash,
+            message: result.message
         }, { status: 200 });
 
     } catch (error: any) {

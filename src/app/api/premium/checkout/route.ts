@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
+import { ARC_TESTNET_CHAIN_ID, PREMIUM_PRICE } from "@/lib/payments/constants";
 
 const parseBody = async (request: Request) => {
     try {
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        /* 1. Check if merchant is already premium in database */
+        /* Check if merchant is already premium in database */
         const { data: merchantData } = await supabase
             .from("merchants")
             .select("tier")
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
             }, { status: 200 });
         }
 
-        /* Ensure merchant record exists before creating subscription */
+        /* Ensure merchant record exists before creating payment session */
         const { error: merchantUpsertError } = await supabase
             .from("merchants")
             .upsert({
@@ -63,35 +64,33 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Database Sync Error: Failed to synchronize merchant record" }, { status: 500 });
         }
 
-        /* 2. Upsert a PENDING checkout intent in subscriptions table */
-        const premiumSubId = Number(BigInt(userWallet) & BigInt("9007199254740991"));
-        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); /* Expires in 30 minutes */
-
-        const { error: subError } = await supabase
-            .from("subscriptions")
-            .upsert({
-                subscription_id: premiumSubId,
+        /* Create a PENDING session in payment_sessions */
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        const { data: session, error: sessionError } = await supabase
+            .from("payment_sessions")
+            .insert({
                 merchant_address: userWallet,
-                current_nonce: 0,
-                last_settlement_timestamp: new Date().toISOString(),
-                billing_interval_seconds: 2592000,
-                amount_cap_usdc: 10,
-                payment_tx_hash: null,
+                amount_expected: PREMIUM_PRICE,
+                chain_id: ARC_TESTNET_CHAIN_ID,
                 status: "PENDING",
                 expires_at: expiresAt,
                 updated_at: new Date().toISOString()
-            }, { onConflict: "subscription_id" });
+            })
+            .select("session_id, expires_at")
+            .single();
 
-        if (subError) {
-            console.error("[Premium Checkout] Subscription intent upsert failed:", subError);
-            return NextResponse.json({ error: "Database Sync Error: Failed to register purchase intent" }, { status: 500 });
+        if (sessionError) {
+            console.error("[Premium Checkout] Payment session creation failed:", sessionError);
+            return NextResponse.json({ error: "Database Sync Error: Failed to register payment session" }, { status: 500 });
         }
+
+        console.log(`[intent_created] Payment session created successfully for merchant ${userWallet}, sessionId: ${session.session_id}`);
 
         return NextResponse.json({
             success: true,
-            subscriptionId: premiumSubId,
+            sessionId: session.session_id,
             status: "PENDING",
-            expiresAt
+            expiresAt: session.expires_at
         }, { status: 200 });
 
     } catch (error: any) {
