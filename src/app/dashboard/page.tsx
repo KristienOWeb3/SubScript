@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
+import SubScriptCheckout from "@/components/SubScriptCheckout";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
@@ -1837,6 +1838,31 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     <span>React SDK Component</span>
                                     <span>Wallet: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Live Checkout Preview */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                            <div className="space-y-4">
+                                <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest">
+                                    Interactive Preview
+                                </h3>
+                                <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                    Test the generated checkout flow directly on the Arc Testnet.
+                                    Ensure your wallet is connected, has sufficient USDC, and click the Subscribe button to trigger the approval and subscription flow.
+                                </p>
+                            </div>
+                            <div className="max-w-md w-full mx-auto lg:mx-0">
+                                <SubScriptCheckout
+                                    merchantAddress={activeMerchantAddress}
+                                    planName={subName}
+                                    amountCap={subCap}
+                                    interval={subInterval}
+                                    mode={isPremium ? "zk" : "standard"}
+                                    onSuccess={(txHash) => {
+                                        console.log("Subscription created:", txHash);
+                                    }}
+                                />
                             </div>
                         </div>
 
