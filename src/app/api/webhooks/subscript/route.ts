@@ -136,7 +136,7 @@ export async function POST(request: Request) {
                     last_settlement_timestamp: nextPaymentDate,
                     billing_interval_seconds: period,
                     amount_cap_usdc: amount,
-                    next_valid_commitment: data.nextCommitment || data.nullifierHash || null,
+                    payment_tx_hash: data.nextCommitment || data.nullifierHash || null,
                     status: status,
                     updated_at: new Date().toISOString()
                 }, { onConflict: "subscription_id" });

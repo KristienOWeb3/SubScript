@@ -813,19 +813,6 @@ export default function DashboardPage() {
     };
 
 
-    type PremiumProofPayload = {
-        userAddress: `0x${string}`;
-        planId: typeof PREMIUM_PLAN_ID;
-        proof: readonly [`0x${string}`, `0x${string}`];
-        commitment: `0x${string}`;
-        nullifierHash: `0x${string}`;
-        paymentRecipient: `0x${string}`;
-        amount: bigint;
-        periodSeconds: bigint;
-    };
-
-    const isBytes32Hex = (value: string): value is `0x${string}` => /^0x[0-9a-fA-F]{64}$/.test(value);
-
     const getCheckoutErrorMessage = (error: any) => {
         /* Walk the error to find the root cause if it is a viem/wagmi error */
         let message = error?.shortMessage || error?.reason || error?.message || "";
@@ -855,98 +842,6 @@ export default function DashboardPage() {
             return `Contract reverted: ${message}`;
         }
         return message || "Premium checkout failed. Please try again.";
-    };
-
-    const buildPremiumProofPayload = ({
-        userAddress,
-        paymentRecipient,
-        amount,
-        periodSeconds,
-    }: {
-        userAddress: `0x${string}`;
-        paymentRecipient: `0x${string}`;
-        amount: bigint;
-        periodSeconds: bigint;
-    }): PremiumProofPayload => {
-        if (typeof crypto === "undefined" || !crypto.getRandomValues) {
-            throw new Error("Secure browser randomness is unavailable.");
-        }
-
-        const secretBytes = new Uint8Array(32);
-        crypto.getRandomValues(secretBytes);
-
-        const secret = bytesToHex(secretBytes);
-        const commitment = keccak256(secret);
-        const nullifierHash = keccak256(
-            encodePacked(["bytes32", "address", "string"], [secret, userAddress, PREMIUM_PLAN_ID])
-        );
-        const publicInputHash = keccak256(
-            encodePacked(["address", "uint256", "uint256"], [paymentRecipient, amount, periodSeconds])
-        );
-
-        return {
-            userAddress,
-            planId: PREMIUM_PLAN_ID,
-            proof: [secret, publicInputHash],
-            commitment,
-            nullifierHash,
-            paymentRecipient,
-            amount,
-            periodSeconds,
-        };
-    };
-
-    const validatePremiumProofPayload = (payload: PremiumProofPayload, expectedAmount: bigint) => {
-        const failures: string[] = [];
-
-        if (!payload) {
-            failures.push("Payload is null or undefined");
-            return failures;
-        }
-        if (!payload.userAddress || !isAddress(payload.userAddress)) {
-            failures.push("Invalid userAddress");
-        }
-        if (payload.planId !== PREMIUM_PLAN_ID) {
-            failures.push("Invalid planId");
-        }
-        if (!payload.paymentRecipient || !isAddress(payload.paymentRecipient)) {
-            failures.push("Invalid paymentRecipient");
-        }
-        if (getAddress(payload.paymentRecipient) !== getAddress(PREMIUM_PAYMENT_RECIPIENT_ADDRESS)) {
-            failures.push("Unexpected paymentRecipient");
-        }
-        if (payload.amount !== expectedAmount) {
-            failures.push("Invalid payment amount");
-        }
-        if (payload.periodSeconds <= BigInt(0)) {
-            failures.push("Invalid periodSeconds");
-        }
-        if (!payload.commitment || !isBytes32Hex(payload.commitment)) {
-            failures.push("Invalid commitment");
-        }
-        if (!payload.nullifierHash || !isBytes32Hex(payload.nullifierHash)) {
-            failures.push("Invalid nullifierHash");
-        }
-        if (!payload.proof || payload.proof.length < 2) {
-            failures.push("Invalid proof length");
-        } else if (!payload.proof.every(isBytes32Hex)) {
-            failures.push("Invalid proof item format");
-        }
-
-        if (payload.proof && payload.proof.length >= 2) {
-            const expectedPublicInputHash = keccak256(
-                encodePacked(["address", "uint256", "uint256"], [payload.paymentRecipient, payload.amount, payload.periodSeconds])
-            );
-            if (payload.proof[1] !== expectedPublicInputHash) {
-                failures.push("Proof public input hash mismatch");
-            }
-        }
-
-        if (failures.length > 0) {
-            console.error("[Premium Upgrade] Proof validation failure:", failures);
-        }
-
-        return failures;
     };
 
     const handleUpgrade = async () => {
@@ -980,7 +875,6 @@ export default function DashboardPage() {
             }
 
             const userAddress = getAddress(activeMerchantAddress) as `0x${string}`;
-            const paymentRecipient = getAddress(PREMIUM_PAYMENT_RECIPIENT_ADDRESS) as `0x${string}`;
 
             /* Step 1: Instantiate the USDC ERC20 contract using getContract from viem */
             const usdcContract = getContract({
@@ -996,94 +890,60 @@ export default function DashboardPage() {
             }
 
             const amount = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
-            const periodSeconds = BigInt(2592000);
 
-            /* Step 1: Read allowance from USDC contract */
-            setPremiumStatus("Checking USDC allowance");
-            const currentAllowance = await usdcContract.read.allowance([userAddress, SUBSCRIPT_ROUTER_ADDRESS]);
-
-            if (currentAllowance < amount) {
-                setPremiumStatus("Awaiting USDC Approval");
-                await publicClient.simulateContract({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: ERC20_ABI,
-                    functionName: "approve",
-                    account: userAddress,
-                    args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
-                });
-
-                const approveHash = await executeContractWrite({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: ERC20_ABI,
-                    functionName: "approve",
-                    args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
-                });
-
-                setPremiumStatus("Confirming USDC approval");
-                const approvalReceipt = await publicClient.waitForTransactionReceipt({
-                    hash: approveHash as `0x${string}`,
-                    timeout: 120_000,
-                });
-                if (approvalReceipt.status !== "success") {
-                    throw new Error("USDC approval transaction failed.");
-                }
-
-                const allowanceAfterApproval = await usdcContract.read.allowance([userAddress, SUBSCRIPT_ROUTER_ADDRESS]);
-                if (allowanceAfterApproval < amount) {
-                    throw new Error("USDC approval confirmed but allowance is still insufficient.");
-                }
-            }
-
-            /* Step 2: Proof Generation Sequencing */
-            setPremiumStatus("Preparing Secure Payment");
-            const proofPayload = buildPremiumProofPayload({
-                userAddress,
-                paymentRecipient,
-                amount,
-                periodSeconds,
+            /* Register purchase intent session in the database first */
+            setPremiumStatus("Registering purchase intent");
+            const checkoutRes = await fetch("/api/premium/checkout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    merchantAddress: userAddress,
+                }),
             });
-            const proofFailures = validatePremiumProofPayload(proofPayload, amount);
-            if (proofFailures.length > 0) {
-                throw new Error(`Invalid proof payload: ${proofFailures.join(", ")}`);
+            const checkoutData = await checkoutRes.json();
+            if (!checkoutRes.ok) {
+                throw new Error(checkoutData.error || "Failed to initialize premium checkout session");
             }
+
+            /* Refactor the upgrade sequence to perform a standard, fast USDC transfer targeting the SubScript Router proxy contract */
+            setPremiumStatus("Processing Payment");
 
             /* Step 3: Contract Execution Validation & Simulation before submission */
             await publicClient.simulateContract({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: ROUTER_ABI,
-                functionName: "depositAndCommit",
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "transfer",
                 account: userAddress,
-                args: [proofPayload.commitment, amount],
+                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
             });
 
-            setPremiumStatus("Submitting ZK payment deposit");
-            const depositTxHash = await executeContractWrite({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: ROUTER_ABI,
-                functionName: "depositAndCommit",
-                args: [proofPayload.commitment, amount],
+            const txHash = await executeContractWrite({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "transfer",
+                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
             });
 
             posthog.capture("premium_upgrade_initiated");
 
             /* Step 4: Receipt-Based Premium Activation checks */
-            const depositReceipt = await publicClient.waitForTransactionReceipt({
-                hash: depositTxHash as `0x${string}`,
+            const receipt = await publicClient.waitForTransactionReceipt({
+                hash: txHash as `0x${string}`,
                 timeout: 120_000,
             });
 
-            if (depositReceipt.status !== "success") {
-                throw new Error("Premium payment deposit reverted on-chain.");
+            if (receipt.status !== "success") {
+                throw new Error("Premium payment transfer reverted on-chain.");
             }
 
-            /* Assert receipt.to matches SUBSCRIPT_ROUTER_ADDRESS */
-            if (depositReceipt.to && getAddress(depositReceipt.to) !== getAddress(SUBSCRIPT_ROUTER_ADDRESS)) {
-                throw new Error("Deposit transaction destination does not match the Router contract.");
+            /* Assert receipt.to matches USDC_NATIVE_GAS_ADDRESS */
+            if (receipt.to && getAddress(receipt.to) !== getAddress(USDC_NATIVE_GAS_ADDRESS)) {
+                throw new Error("Transaction destination does not match the USDC contract address.");
             }
 
             const transferLogs = parseEventLogs({
                 abi: ERC20_ABI,
-                logs: depositReceipt.logs,
+                logs: receipt.logs,
             });
             const paymentLog = transferLogs.find(
                 (log) =>
@@ -1092,67 +952,10 @@ export default function DashboardPage() {
                     log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()
             );
             if (!paymentLog) {
-                throw new Error("USDC transfer to premium router not found in deposit receipt.");
+                throw new Error("USDC transfer to premium router not found in transaction logs.");
             }
             if (paymentLog.args.value !== amount) {
-                throw new Error(`Amount mismatch. Expected ${formatUnits(amount, 6)} USDC.`);
-            }
-
-            /* Simulate verifyAndActivate */
-            await publicClient.simulateContract({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: ROUTER_ABI,
-                functionName: "verifyAndActivate",
-                account: userAddress,
-                args: [
-                    [...proofPayload.proof],
-                    proofPayload.nullifierHash,
-                    proofPayload.paymentRecipient,
-                    proofPayload.amount,
-                    proofPayload.periodSeconds,
-                ],
-            });
-
-            setPremiumStatus("Confirming ZK activation");
-            const activationTxHash = await executeContractWrite({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: ROUTER_ABI,
-                functionName: "verifyAndActivate",
-                args: [
-                    [...proofPayload.proof],
-                    proofPayload.nullifierHash,
-                    proofPayload.paymentRecipient,
-                    proofPayload.amount,
-                    proofPayload.periodSeconds,
-                ],
-            });
-
-            const activationReceipt = await publicClient.waitForTransactionReceipt({
-                hash: activationTxHash as `0x${string}`,
-                timeout: 120_000,
-            });
-            if (activationReceipt.status !== "success") {
-                throw new Error("Premium ZK activation reverted on-chain.");
-            }
-
-            /* Assert receipt.to matches SUBSCRIPT_ROUTER_ADDRESS */
-            if (activationReceipt.to && getAddress(activationReceipt.to) !== getAddress(SUBSCRIPT_ROUTER_ADDRESS)) {
-                throw new Error("Activation transaction destination does not match the Router contract.");
-            }
-
-            const activationLogs = parseEventLogs({
-                abi: ROUTER_ABI,
-                logs: activationReceipt.logs,
-            });
-            const activationLog = activationLogs.find(
-                (log) =>
-                    log.eventName === "SubscriptionActivated" &&
-                    log.args.nullifierHash === proofPayload.nullifierHash &&
-                    log.args.merchant?.toLowerCase() === proofPayload.paymentRecipient.toLowerCase() &&
-                    log.args.amount === proofPayload.amount
-            );
-            if (!activationLog) {
-                throw new Error("ZK activation event not found in receipt.");
+                throw new Error(`USDC transfer amount mismatch. Expected 10 USDC.`);
             }
 
             setPremiumStatus("Syncing premium state with server...");
@@ -1160,17 +963,7 @@ export default function DashboardPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    depositTxHash,
-                    activationTxHash,
-                    planId: proofPayload.planId,
-                    paymentRecipient: proofPayload.paymentRecipient,
-                    proofData: {
-                        commitment: proofPayload.commitment,
-                        nullifierHash: proofPayload.nullifierHash,
-                        proof: proofPayload.proof,
-                        amountRaw: proofPayload.amount.toString(),
-                        periodSeconds: proofPayload.periodSeconds.toString(),
-                    },
+                    txHash,
                 }),
             });
             const upgradeData = await upgradeRes.json();
