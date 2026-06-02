@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import gsap from "gsap";
-import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
     Shield, Zap, RefreshCw, Lock, ArrowRight, Search,
     Code2, Blocks, Users, ChevronRight, Terminal, Star, Key, Webhook, Activity, FileText

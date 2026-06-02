@@ -116,8 +116,13 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid spender address" }, { status: 400 });
                 }
                 const normalizedSpender = spender.toLowerCase();
-                if (normalizedSpender !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() && normalizedSpender !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) {
-                    return NextResponse.json({ error: "Unauthorized spender address. Approve only standard or router subscript contracts." }, { status: 400 });
+                const PREMIUM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
+                if (
+                    normalizedSpender !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
+                    normalizedSpender !== STANDARD_CONTRACT_ADDRESS.toLowerCase() &&
+                    normalizedSpender !== PREMIUM_RECIPIENT.toLowerCase()
+                ) {
+                    return NextResponse.json({ error: "Unauthorized spender address. Approve only standard, router, or premium subscript contracts." }, { status: 400 });
                 }
                 
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;
@@ -192,6 +197,29 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "configurePayoutDestination";
                 finalArgs = [payoutAddress];
+                break;
+            }
+            case "setMerchantTier": {
+                const { merchant, tier } = args;
+                if (!merchant || typeof merchant !== "string" || !merchant.startsWith("0x") || merchant.length !== 42) {
+                    return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
+                }
+                const PREMIUM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
+                contractAddress = PREMIUM_RECIPIENT;
+                contractAbi = [
+                    {
+                        type: "function",
+                        name: "setMerchantTier",
+                        stateMutability: "nonpayable",
+                        inputs: [
+                            { name: "_merchant", type: "address" },
+                            { name: "_tier", type: "uint8" }
+                        ],
+                        outputs: []
+                    }
+                ];
+                functionName = "setMerchantTier";
+                finalArgs = [merchant, Number(tier)];
                 break;
             }
             default:
