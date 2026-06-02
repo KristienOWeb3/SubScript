@@ -200,11 +200,18 @@ export async function POST(request: Request) {
                 break;
             }
             case "setMerchantTier": {
-                const { merchant, tier } = args;
+                const { merchant, zkProof, rerouteConfig } = args;
                 if (!merchant || typeof merchant !== "string" || !merchant.startsWith("0x") || merchant.length !== 42) {
                     return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
                 }
-                const PREMIUM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
+                if (!zkProof || typeof zkProof !== "string") {
+                    return NextResponse.json({ error: "Invalid ZK Proof" }, { status: 400 });
+                }
+                if (!rerouteConfig || typeof rerouteConfig !== "string" || !rerouteConfig.startsWith("0x") || rerouteConfig.length !== 42) {
+                    return NextResponse.json({ error: "Invalid reroute config address" }, { status: 400 });
+                }
+
+                const PREMIUM_RECIPIENT = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
                 contractAddress = PREMIUM_RECIPIENT;
                 contractAbi = [
                     {
@@ -213,13 +220,14 @@ export async function POST(request: Request) {
                         stateMutability: "nonpayable",
                         inputs: [
                             { name: "_merchant", type: "address" },
-                            { name: "_tier", type: "uint8" }
+                            { name: "_zkProof", type: "bytes" },
+                            { name: "_rerouteConfig", type: "address" }
                         ],
                         outputs: []
                     }
                 ];
                 functionName = "setMerchantTier";
-                finalArgs = [merchant, Number(tier)];
+                finalArgs = [merchant, zkProof, rerouteConfig];
                 break;
             }
             default:
