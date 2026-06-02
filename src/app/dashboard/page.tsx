@@ -964,6 +964,7 @@ export default function DashboardPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     txHash,
+                    sessionId: checkoutData.sessionId,
                 }),
             });
             const upgradeData = await upgradeRes.json();
