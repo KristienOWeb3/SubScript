@@ -3,10 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { decryptPrivateKey } from "@/lib/crypto";
 import { getSessionWallet } from "@/lib/auth";
-import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
-
-const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
+import {
+    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+    STANDARD_CONTRACT_ADDRESS,
+    SUBSCRIPT_ROUTER_ADDRESS,
+    USDC_NATIVE_GAS_ADDRESS
+} from "@/lib/contracts/constants";
 const isProdEnv = process.env.NODE_ENV === "production";
 
 const ERC20_ABI = [
@@ -40,6 +42,19 @@ const SUBSCRIPT_ABI = [
         inputs: [
             { name: "commitment", type: "bytes32" },
             { name: "amount", type: "uint256" }
+        ],
+        outputs: []
+    },
+    {
+        type: "function",
+        name: "verifyAndActivate",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "proof", type: "bytes32[]" },
+            { name: "nullifierHash", type: "bytes32" },
+            { name: "merchant", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "period", type: "uint256" }
         ],
         outputs: []
     },
@@ -116,11 +131,9 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid spender address" }, { status: 400 });
                 }
                 const normalizedSpender = spender.toLowerCase();
-                const PREMIUM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
                 if (
                     normalizedSpender !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
-                    normalizedSpender !== STANDARD_CONTRACT_ADDRESS.toLowerCase() &&
-                    normalizedSpender !== PREMIUM_RECIPIENT.toLowerCase()
+                    normalizedSpender !== STANDARD_CONTRACT_ADDRESS.toLowerCase()
                 ) {
                     return NextResponse.json({ error: "Unauthorized spender address. Approve only standard, router, or premium subscript contracts." }, { status: 400 });
                 }
@@ -143,14 +156,31 @@ export async function POST(request: Request) {
                 finalArgs = [commitment, BigInt(amount)];
                 break;
             }
+            case "verifyAndActivate": {
+                const { proof, nullifierHash, merchant, amount, period } = args;
+                if (!Array.isArray(proof) || proof.length < 2 || proof.some((item) => typeof item !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(item))) {
+                    return NextResponse.json({ error: "Invalid proof payload" }, { status: 400 });
+                }
+                if (!nullifierHash || typeof nullifierHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(nullifierHash)) {
+                    return NextResponse.json({ error: "Invalid nullifier hash" }, { status: 400 });
+                }
+                if (!merchant || typeof merchant !== "string" || merchant.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                    return NextResponse.json({ error: "Invalid premium payment recipient" }, { status: 400 });
+                }
+
+                contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
+                contractAbi = SUBSCRIPT_ABI;
+                functionName = "verifyAndActivate";
+                finalArgs = [proof, nullifierHash, merchant, BigInt(amount), BigInt(period)];
+                break;
+            }
             case "transferUsdc": {
                 const { to, amount } = args;
                 if (!to || typeof to !== "string") {
                     return NextResponse.json({ error: "Invalid recipient address" }, { status: 400 });
                 }
                 
-                const PREMIUM_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
-                if (to.toLowerCase() !== PREMIUM_RECIPIENT.toLowerCase()) {
+                if (to.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
                     return NextResponse.json({ error: "Unauthorized transfer recipient. Transfer only to SubScript premium payout account." }, { status: 400 });
                 }
 
@@ -197,41 +227,6 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "configurePayoutDestination";
                 finalArgs = [payoutAddress];
-                break;
-            }
-            case "setMerchantTier": {
-                const { merchant, tier, zkProof, rerouteConfig } = args;
-                if (!merchant || typeof merchant !== "string" || !merchant.startsWith("0x") || merchant.length !== 42) {
-                    return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
-                }
-                if (typeof tier !== "number") {
-                    return NextResponse.json({ error: "Invalid tier ID" }, { status: 400 });
-                }
-                if (!zkProof || typeof zkProof !== "string") {
-                    return NextResponse.json({ error: "Invalid ZK Proof" }, { status: 400 });
-                }
-                if (!rerouteConfig || typeof rerouteConfig !== "string" || !rerouteConfig.startsWith("0x") || rerouteConfig.length !== 42) {
-                    return NextResponse.json({ error: "Invalid reroute config address" }, { status: 400 });
-                }
-
-                const PREMIUM_RECIPIENT = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-                contractAddress = PREMIUM_RECIPIENT;
-                contractAbi = [
-                    {
-                        type: "function",
-                        name: "setMerchantTier",
-                        stateMutability: "nonpayable",
-                        inputs: [
-                            { name: "_merchant", type: "address" },
-                            { name: "_tierId", type: "uint8" },
-                            { name: "_zkProof", type: "bytes" },
-                            { name: "_rerouteConfig", type: "address" }
-                        ],
-                        outputs: []
-                    }
-                ];
-                functionName = "setMerchantTier";
-                finalArgs = [merchant, Number(tier), zkProof, rerouteConfig];
                 break;
             }
             default:

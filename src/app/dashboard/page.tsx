@@ -11,7 +11,20 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import SubScriptCheckout from "@/components/SubScriptCheckout";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { createPublicClient, http, formatUnits, parseUnits, parseEventLogs } from "viem";
+import {
+    createPublicClient,
+    http,
+    formatUnits,
+    parseUnits,
+    parseEventLogs,
+    bytesToHex,
+    encodePacked,
+    getAddress,
+    isAddress,
+    keccak256,
+    getContract,
+    type Hex,
+} from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
@@ -23,10 +36,14 @@ import {
 
 import { 
     ARC_TESTNET_CHAIN_ID, 
+    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+    PREMIUM_PLAN_ID,
+    PREMIUM_PLAN_PRICE_USDC,
     SUBSCRIPT_ROUTER_ADDRESS, 
     STANDARD_CONTRACT_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS 
 } from "@/lib/contracts/constants";
+import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
@@ -35,81 +52,9 @@ const publicClient = createPublicClient({
     transport: http(),
 });
 
-const ERC20_ABI = [
-    {
-        type: "function" as const,
-        name: "balanceOf" as const,
-        stateMutability: "view" as const,
-        inputs: [{ name: "account", type: "address" }] as const,
-        outputs: [{ name: "", type: "uint256" }] as const,
-    }
-];
-
-const SUBSCRIPT_ABI = [
-    {
-        inputs: [],
-        name: "nextSubscriptionId",
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "", type: "uint256" }],
-        name: "subscriptions",
-        outputs: [
-            { name: "subscriber", type: "address" },
-            { name: "merchant", type: "address" },
-            { name: "amount", type: "uint256" },
-            { name: "period", type: "uint256" },
-            { name: "nextPayment", type: "uint256" },
-            { name: "isActive", type: "bool" },
-        ],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "_subId", type: "uint256" }],
-        name: "cancelSubscription",
-        outputs: [],
-        stateMutability: "nonpayable",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "", type: "address" }],
-        name: "merchantTiers",
-        outputs: [{ name: "", type: "uint8" }],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "", type: "address" }],
-        name: "merchantBalances",
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "", type: "address" }],
-        name: "merchantPayoutDestination",
-        outputs: [{ name: "", type: "address" }],
-        stateMutability: "view",
-        type: "function",
-    },
-    {
-        inputs: [],
-        name: "withdraw",
-        outputs: [],
-        stateMutability: "nonpayable",
-        type: "function",
-    },
-    {
-        inputs: [{ name: "_newDestination", type: "address" }],
-        name: "configurePayoutDestination",
-        outputs: [],
-        stateMutability: "nonpayable",
-        type: "function",
-    },
-] as const;
+const ERC20_ABI = USDC_ERC20_ABI;
+const ROUTER_ABI = SUBSCRIPT_ROUTER_ABI;
+const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 
 const tabs = [
@@ -178,6 +123,18 @@ export default function DashboardPage() {
             } else if (functionName === "approve") {
                 action = "approveUsdc";
                 serializedArgs = { spender: args[0], amount: args[1].toString() };
+            } else if (functionName === "depositAndCommit") {
+                action = "depositAndCommit";
+                serializedArgs = { commitment: args[0], amount: args[1].toString() };
+            } else if (functionName === "verifyAndActivate") {
+                action = "verifyAndActivate";
+                serializedArgs = {
+                    proof: args[0],
+                    nullifierHash: args[1],
+                    merchant: args[2],
+                    amount: args[3].toString(),
+                    period: args[4].toString()
+                };
             } else if (functionName === "setMerchantTier") {
                 action = "setMerchantTier";
                 serializedArgs = {
@@ -210,7 +167,7 @@ export default function DashboardPage() {
         }
     };
 
-    const { switchChain } = useSwitchChain();
+    const { switchChain, switchChainAsync } = useSwitchChain();
     const { chainId } = useAccount();
 
 
@@ -246,19 +203,19 @@ export default function DashboardPage() {
             const [tierRaw, vaultRaw, payoutRaw, walletRaw] = await Promise.all([
                 publicClient.readContract({
                     address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: SUBSCRIPT_ABI,
+                    abi: ROUTER_ABI,
                     functionName: "merchantTiers",
                     args: [address as `0x${string}`],
                 }),
                 publicClient.readContract({
                     address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: SUBSCRIPT_ABI,
+                    abi: ROUTER_ABI,
                     functionName: "merchantBalances",
                     args: [address as `0x${string}`],
                 }),
                 publicClient.readContract({
                     address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: SUBSCRIPT_ABI,
+                    abi: ROUTER_ABI,
                     functionName: "merchantPayoutDestination",
                     args: [address as `0x${string}`],
                 }),
@@ -693,10 +650,16 @@ export default function DashboardPage() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
             try {
-                const targetContract = isPremium ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
+                if (isPremium) {
+                    if (isSubscribed) {
+                        setLedgers([]);
+                    }
+                    return;
+                }
+
                 const nextId = await publicClient.readContract({
-                    address: targetContract,
-                    abi: SUBSCRIPT_ABI,
+                    address: STANDARD_CONTRACT_ADDRESS,
+                    abi: STANDARD_ABI,
                     functionName: "nextSubscriptionId",
                 });
                 
@@ -705,8 +668,8 @@ export default function DashboardPage() {
                 
                 for (let i = 1; i < nextIdNum; i++) {
                     const sub = await publicClient.readContract({
-                        address: targetContract,
-                        abi: SUBSCRIPT_ABI,
+                        address: STANDARD_CONTRACT_ADDRESS,
+                        abi: STANDARD_ABI,
                         functionName: "subscriptions",
                         args: [BigInt(i)],
                     });
@@ -786,8 +749,8 @@ export default function DashboardPage() {
     const handleRevokeCustomer = async (rawId: string) => {
         try {
             await executeContractWrite({
-                address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: SUBSCRIPT_ABI,
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
                 functionName: "cancelSubscription",
                 args: [BigInt(rawId)],
             });
@@ -835,7 +798,7 @@ export default function DashboardPage() {
         try {
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: SUBSCRIPT_ABI,
+                abi: ROUTER_ABI,
                 functionName: "withdraw",
             });
             setWithdrawSuccess(true);
@@ -850,11 +813,140 @@ export default function DashboardPage() {
     };
 
 
-    const generateZkCommitment = async (rerouteAddress: string, allocationBps: number): Promise<string> => {
-        /* Simulate ZK circuit computation for premium checkout */
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        /* Encapsulate reroute configuration in a dummy ZK proof string payload */
-        return "0x" + Array(64).fill("7").join("");
+    type PremiumProofPayload = {
+        userAddress: `0x${string}`;
+        planId: typeof PREMIUM_PLAN_ID;
+        proof: readonly [`0x${string}`, `0x${string}`];
+        commitment: `0x${string}`;
+        nullifierHash: `0x${string}`;
+        paymentRecipient: `0x${string}`;
+        amount: bigint;
+        periodSeconds: bigint;
+    };
+
+    const isBytes32Hex = (value: string): value is `0x${string}` => /^0x[0-9a-fA-F]{64}$/.test(value);
+
+    const getCheckoutErrorMessage = (error: any) => {
+        /* Walk the error to find the root cause if it is a viem/wagmi error */
+        let message = error?.shortMessage || error?.reason || error?.message || "";
+        let currentError = error;
+        while (currentError) {
+            if (currentError.shortMessage) {
+                message = currentError.shortMessage;
+            } else if (currentError.reason) {
+                message = currentError.reason;
+            } else if (currentError.details) {
+                message = currentError.details;
+            }
+            currentError = currentError.walk ? currentError.walk() : currentError.cause;
+        }
+
+        const code = error?.code || error?.cause?.code || error?.details?.code;
+        if (code === 4001 || /user rejected|rejected by user|user denied/i.test(String(message || ""))) {
+            return "Transaction was rejected in the wallet.";
+        }
+        if (/insufficient allowance/i.test(String(message || ""))) {
+            return "USDC allowance is insufficient for the premium router.";
+        }
+        if (/insufficient funds|exceeds balance/i.test(String(message || ""))) {
+            return "Wallet has insufficient USDC or gas balance for this payment.";
+        }
+        if (/execution reverted|revert/i.test(String(message || ""))) {
+            return `Contract reverted: ${message}`;
+        }
+        return message || "Premium checkout failed. Please try again.";
+    };
+
+    const buildPremiumProofPayload = ({
+        userAddress,
+        paymentRecipient,
+        amount,
+        periodSeconds,
+    }: {
+        userAddress: `0x${string}`;
+        paymentRecipient: `0x${string}`;
+        amount: bigint;
+        periodSeconds: bigint;
+    }): PremiumProofPayload => {
+        if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+            throw new Error("Secure browser randomness is unavailable.");
+        }
+
+        const secretBytes = new Uint8Array(32);
+        crypto.getRandomValues(secretBytes);
+
+        const secret = bytesToHex(secretBytes);
+        const commitment = keccak256(secret);
+        const nullifierHash = keccak256(
+            encodePacked(["bytes32", "address", "string"], [secret, userAddress, PREMIUM_PLAN_ID])
+        );
+        const publicInputHash = keccak256(
+            encodePacked(["address", "uint256", "uint256"], [paymentRecipient, amount, periodSeconds])
+        );
+
+        return {
+            userAddress,
+            planId: PREMIUM_PLAN_ID,
+            proof: [secret, publicInputHash],
+            commitment,
+            nullifierHash,
+            paymentRecipient,
+            amount,
+            periodSeconds,
+        };
+    };
+
+    const validatePremiumProofPayload = (payload: PremiumProofPayload, expectedAmount: bigint) => {
+        const failures: string[] = [];
+
+        if (!payload) {
+            failures.push("Payload is null or undefined");
+            return failures;
+        }
+        if (!payload.userAddress || !isAddress(payload.userAddress)) {
+            failures.push("Invalid userAddress");
+        }
+        if (payload.planId !== PREMIUM_PLAN_ID) {
+            failures.push("Invalid planId");
+        }
+        if (!payload.paymentRecipient || !isAddress(payload.paymentRecipient)) {
+            failures.push("Invalid paymentRecipient");
+        }
+        if (getAddress(payload.paymentRecipient) !== getAddress(PREMIUM_PAYMENT_RECIPIENT_ADDRESS)) {
+            failures.push("Unexpected paymentRecipient");
+        }
+        if (payload.amount !== expectedAmount) {
+            failures.push("Invalid payment amount");
+        }
+        if (payload.periodSeconds <= BigInt(0)) {
+            failures.push("Invalid periodSeconds");
+        }
+        if (!payload.commitment || !isBytes32Hex(payload.commitment)) {
+            failures.push("Invalid commitment");
+        }
+        if (!payload.nullifierHash || !isBytes32Hex(payload.nullifierHash)) {
+            failures.push("Invalid nullifierHash");
+        }
+        if (!payload.proof || payload.proof.length < 2) {
+            failures.push("Invalid proof length");
+        } else if (!payload.proof.every(isBytes32Hex)) {
+            failures.push("Invalid proof item format");
+        }
+
+        if (payload.proof && payload.proof.length >= 2) {
+            const expectedPublicInputHash = keccak256(
+                encodePacked(["address", "uint256", "uint256"], [payload.paymentRecipient, payload.amount, payload.periodSeconds])
+            );
+            if (payload.proof[1] !== expectedPublicInputHash) {
+                failures.push("Proof public input hash mismatch");
+            }
+        }
+
+        if (failures.length > 0) {
+            console.error("[Premium Upgrade] Proof validation failure:", failures);
+        }
+
+        return failures;
     };
 
     const handleUpgrade = async () => {
@@ -862,135 +954,224 @@ export default function DashboardPage() {
             setPremiumError("Please connect your merchant wallet first.");
             return;
         }
-        if (!embeddedWallet && chainId !== 5042002) {
-            setPremiumError("Not on Arc Testnet. Switching chain...");
-            switchChain?.({ chainId: 5042002 });
+
+        /* Enforce locking controls so user cannot submit multiple times */
+        if (isSubscribingPremium) {
             return;
         }
 
         setIsSubscribingPremium(true);
-        setPremiumStatus("Encrypting Payload");
+        setPremiumStatus("Checking network");
         setPremiumError(null);
 
         try {
-            const PAYMENT_RECIPIENT = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-            const REROUTE_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10";
-            const REROUTE_SHARE = 10000;
-            const amount = parseUnits("10", 6);
-
-            /* Generate the ZK proof encapsulating rerouting configuration */
-            const zkProof = await generateZkCommitment(REROUTE_ADDRESS, REROUTE_SHARE);
-
-            setPremiumStatus("Preparing 10 USDC payment...");
-
-            /* Step 1: Implement the Allowance Check */
-            const currentAllowance = await publicClient.readContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: [
-                    {
-                        type: "function",
-                        name: "allowance",
-                        stateMutability: "view",
-                        inputs: [
-                            { name: "owner", type: "address" },
-                            { name: "spender", type: "address" }
-                        ],
-                        outputs: [{ name: "", type: "uint256" }]
-                    }
-                ] as const,
-                functionName: "allowance",
-                args: [activeMerchantAddress as `0x${string}`, PAYMENT_RECIPIENT as `0x${string}`],
-            });
-
-            /* Step 2: Implement the Approval Flow */
-            if (currentAllowance < amount) {
-                setPremiumStatus("Awaiting USDC Approval");
-                const approveHash = await executeContractWrite({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: [
-                        {
-                            type: "function",
-                            name: "approve",
-                            stateMutability: "nonpayable",
-                            inputs: [
-                                { name: "spender", type: "address" },
-                                { name: "amount", type: "uint256" }
-                            ],
-                            outputs: [{ name: "", type: "bool" }]
-                        }
-                    ] as const,
-                    functionName: "approve",
-                    args: [PAYMENT_RECIPIENT, amount],
-                });
-
-                await publicClient.waitForTransactionReceipt({ hash: approveHash as `0x${string}` });
+            if (!isAddress(activeMerchantAddress)) {
+                throw new Error("Connected wallet address is invalid.");
             }
 
-            /* Step 3: Execute Payment */
-            setPremiumStatus("Confirming Payment");
-            const paymentHash = await executeContractWrite({
-                address: PAYMENT_RECIPIENT,
-                abi: [
-                    {
-                        type: "function",
-                        name: "setMerchantTier",
-                        stateMutability: "nonpayable",
-                        inputs: [
-                            { name: "_merchant", type: "address" },
-                            { name: "_tierId", type: "uint8" },
-                            { name: "_zkProof", type: "bytes" },
-                            { name: "_rerouteConfig", type: "address" }
-                        ],
-                        outputs: []
-                    }
-                ] as const,
-                functionName: "setMerchantTier",
-                args: [activeMerchantAddress, 1, zkProof, REROUTE_ADDRESS],
+            if (!embeddedWallet && chainId !== ARC_TESTNET_CHAIN_ID) {
+                setPremiumStatus("Switching to Arc Testnet");
+                if (switchChainAsync) {
+                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                } else {
+                    switchChain?.({ chainId: ARC_TESTNET_CHAIN_ID });
+                    throw new Error("Switch to Arc Testnet and retry checkout.");
+                }
+            }
+
+            const userAddress = getAddress(activeMerchantAddress) as `0x${string}`;
+            const paymentRecipient = getAddress(PREMIUM_PAYMENT_RECIPIENT_ADDRESS) as `0x${string}`;
+
+            /* Step 1: Instantiate the USDC ERC20 contract using getContract from viem */
+            const usdcContract = getContract({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                client: publicClient,
+            });
+
+            setPremiumStatus("Checking USDC decimals");
+            const tokenDecimals = await usdcContract.read.decimals();
+            if (Number(tokenDecimals) !== 6) {
+                throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
+            }
+
+            const amount = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
+            const periodSeconds = BigInt(2592000);
+
+            /* Step 1: Read allowance from USDC contract */
+            setPremiumStatus("Checking USDC allowance");
+            const currentAllowance = await usdcContract.read.allowance([userAddress, SUBSCRIPT_ROUTER_ADDRESS]);
+
+            if (currentAllowance < amount) {
+                setPremiumStatus("Awaiting USDC Approval");
+                await publicClient.simulateContract({
+                    address: USDC_NATIVE_GAS_ADDRESS,
+                    abi: ERC20_ABI,
+                    functionName: "approve",
+                    account: userAddress,
+                    args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+                });
+
+                const approveHash = await executeContractWrite({
+                    address: USDC_NATIVE_GAS_ADDRESS,
+                    abi: ERC20_ABI,
+                    functionName: "approve",
+                    args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+                });
+
+                setPremiumStatus("Confirming USDC approval");
+                const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                    hash: approveHash as `0x${string}`,
+                    timeout: 120_000,
+                });
+                if (approvalReceipt.status !== "success") {
+                    throw new Error("USDC approval transaction failed.");
+                }
+
+                const allowanceAfterApproval = await usdcContract.read.allowance([userAddress, SUBSCRIPT_ROUTER_ADDRESS]);
+                if (allowanceAfterApproval < amount) {
+                    throw new Error("USDC approval confirmed but allowance is still insufficient.");
+                }
+            }
+
+            /* Step 2: Proof Generation Sequencing */
+            setPremiumStatus("Preparing Secure Payment");
+            const proofPayload = buildPremiumProofPayload({
+                userAddress,
+                paymentRecipient,
+                amount,
+                periodSeconds,
+            });
+            const proofFailures = validatePremiumProofPayload(proofPayload, amount);
+            if (proofFailures.length > 0) {
+                throw new Error(`Invalid proof payload: ${proofFailures.join(", ")}`);
+            }
+
+            /* Step 3: Contract Execution Validation & Simulation before submission */
+            await publicClient.simulateContract({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "depositAndCommit",
+                account: userAddress,
+                args: [proofPayload.commitment, amount],
+            });
+
+            setPremiumStatus("Submitting ZK payment deposit");
+            const depositTxHash = await executeContractWrite({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "depositAndCommit",
+                args: [proofPayload.commitment, amount],
             });
 
             posthog.capture("premium_upgrade_initiated");
 
-            const receipt = await publicClient.waitForTransactionReceipt({ hash: paymentHash as `0x${string}` });
+            /* Step 4: Receipt-Based Premium Activation checks */
+            const depositReceipt = await publicClient.waitForTransactionReceipt({
+                hash: depositTxHash as `0x${string}`,
+                timeout: 120_000,
+            });
 
-            if (receipt.status !== "success") {
-                throw new Error("Payment transaction reverted on-chain.");
+            if (depositReceipt.status !== "success") {
+                throw new Error("Premium payment deposit reverted on-chain.");
+            }
+
+            /* Assert receipt.to matches SUBSCRIPT_ROUTER_ADDRESS */
+            if (depositReceipt.to && getAddress(depositReceipt.to) !== getAddress(SUBSCRIPT_ROUTER_ADDRESS)) {
+                throw new Error("Deposit transaction destination does not match the Router contract.");
             }
 
             const transferLogs = parseEventLogs({
-                abi: [
-                    {
-                        type: "event",
-                        name: "Transfer",
-                        inputs: [
-                            { name: "from", type: "address", indexed: true },
-                            { name: "to", type: "address", indexed: true },
-                            { name: "value", type: "uint256", indexed: false }
-                        ],
-                        anonymous: false
-                    }
-                ] as const,
-                logs: receipt.logs,
+                abi: ERC20_ABI,
+                logs: depositReceipt.logs,
             });
-
             const paymentLog = transferLogs.find(
                 (log) =>
                     log.eventName === "Transfer" &&
-                    log.args.from?.toLowerCase() === activeMerchantAddress.toLowerCase() &&
-                    log.args.to?.toLowerCase() === PAYMENT_RECIPIENT.toLowerCase()
+                    log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
+                    log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()
             );
-
             if (!paymentLog) {
-                throw new Error("Transfer event not found in receipt.");
+                throw new Error("USDC transfer to premium router not found in deposit receipt.");
             }
             if (paymentLog.args.value !== amount) {
                 throw new Error(`Amount mismatch. Expected ${formatUnits(amount, 6)} USDC.`);
+            }
+
+            /* Simulate verifyAndActivate */
+            await publicClient.simulateContract({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "verifyAndActivate",
+                account: userAddress,
+                args: [
+                    [...proofPayload.proof],
+                    proofPayload.nullifierHash,
+                    proofPayload.paymentRecipient,
+                    proofPayload.amount,
+                    proofPayload.periodSeconds,
+                ],
+            });
+
+            setPremiumStatus("Confirming ZK activation");
+            const activationTxHash = await executeContractWrite({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "verifyAndActivate",
+                args: [
+                    [...proofPayload.proof],
+                    proofPayload.nullifierHash,
+                    proofPayload.paymentRecipient,
+                    proofPayload.amount,
+                    proofPayload.periodSeconds,
+                ],
+            });
+
+            const activationReceipt = await publicClient.waitForTransactionReceipt({
+                hash: activationTxHash as `0x${string}`,
+                timeout: 120_000,
+            });
+            if (activationReceipt.status !== "success") {
+                throw new Error("Premium ZK activation reverted on-chain.");
+            }
+
+            /* Assert receipt.to matches SUBSCRIPT_ROUTER_ADDRESS */
+            if (activationReceipt.to && getAddress(activationReceipt.to) !== getAddress(SUBSCRIPT_ROUTER_ADDRESS)) {
+                throw new Error("Activation transaction destination does not match the Router contract.");
+            }
+
+            const activationLogs = parseEventLogs({
+                abi: ROUTER_ABI,
+                logs: activationReceipt.logs,
+            });
+            const activationLog = activationLogs.find(
+                (log) =>
+                    log.eventName === "SubscriptionActivated" &&
+                    log.args.nullifierHash === proofPayload.nullifierHash &&
+                    log.args.merchant?.toLowerCase() === proofPayload.paymentRecipient.toLowerCase() &&
+                    log.args.amount === proofPayload.amount
+            );
+            if (!activationLog) {
+                throw new Error("ZK activation event not found in receipt.");
             }
 
             setPremiumStatus("Syncing premium state with server...");
             const upgradeRes = await fetch("/api/premium/upgrade", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ txHash: paymentHash }),
+                body: JSON.stringify({
+                    depositTxHash,
+                    activationTxHash,
+                    planId: proofPayload.planId,
+                    paymentRecipient: proofPayload.paymentRecipient,
+                    proofData: {
+                        commitment: proofPayload.commitment,
+                        nullifierHash: proofPayload.nullifierHash,
+                        proof: proofPayload.proof,
+                        amountRaw: proofPayload.amount.toString(),
+                        periodSeconds: proofPayload.periodSeconds.toString(),
+                    },
+                }),
             });
             const upgradeData = await upgradeRes.json();
             if (!upgradeRes.ok) {
@@ -1000,11 +1181,11 @@ export default function DashboardPage() {
             posthog.capture("premium_upgrade_success");
 
             setPremiumStatus("Payment verified! Premium tier activated.");
-            refetchTier();
+            await refetchTier();
             setTimeout(() => setPremiumStatus(null), 4000);
         } catch (err: any) {
             console.error("Premium subscription failed:", err);
-            setPremiumError(err.shortMessage || err.message || "Transaction failed");
+            setPremiumError(getCheckoutErrorMessage(err));
         } finally {
             setIsSubscribingPremium(false);
         }
@@ -1021,7 +1202,7 @@ export default function DashboardPage() {
         try {
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
-                abi: SUBSCRIPT_ABI,
+                abi: ROUTER_ABI,
                 functionName: "configurePayoutDestination",
                 args: [rerouteAddress as `0x${string}`],
             });

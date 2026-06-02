@@ -1,13 +1,26 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useAccount, useWriteContract } from "wagmi";
-import { createPublicClient, http, parseUnits } from "viem";
+import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import {
+  bytesToHex,
+  createPublicClient,
+  encodePacked,
+  getAddress,
+  http,
+  isAddress,
+  keccak256,
+  parseEventLogs,
+  parseUnits
+} from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
+  ARC_TESTNET_CHAIN_ID,
+  SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
   USDC_NATIVE_GAS_ADDRESS 
 } from "@/lib/contracts/constants";
+import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "lucide-react";
 
 /* Initialize standard viem public client targeting Arc Testnet */
@@ -15,6 +28,10 @@ const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(),
 });
+
+const ERC20_ABI = USDC_ERC20_ABI;
+const ROUTER_ABI = SUBSCRIPT_ROUTER_ABI;
+const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 interface SubScriptCheckoutProps {
   publishableKey?: string;
@@ -35,11 +52,12 @@ export default function SubScriptCheckout({
   mode = "standard",
   onSuccess,
 }: SubScriptCheckoutProps) {
-  const { address: userWallet, isConnected } = useAccount();
+  const { address: userWallet, chainId, isConnected } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
   const [loadingState, setLoadingState] = useState<
-    "idle" | "Awaiting USDC Approval" | "Confirming Subscription" | "success" | "error"
+    "idle" | "Awaiting USDC Approval" | "Preparing Secure Payment" | "Confirming Subscription" | "success" | "error"
   >("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,14 +70,103 @@ export default function SubScriptCheckout({
     return BigInt(2592000); /* default to monthly (30 days) */
   }, [interval]);
 
-  /* Calculate plan amount in base units (6 decimals) */
-  const requiredAmount = useMemo(() => {
-    try {
-      return parseUnits(amountCap || "0", 6);
-    } catch (err) {
-      return BigInt(0);
+  type ZkCheckoutProof = {
+    userAddress: `0x${string}`;
+    planId: string;
+    commitment: `0x${string}`;
+    nullifierHash: `0x${string}`;
+    proof: readonly [`0x${string}`, `0x${string}`];
+    paymentRecipient: `0x${string}`;
+    amount: bigint;
+    periodSeconds: bigint;
+  };
+
+  const isBytes32Hex = (value: string): value is `0x${string}` => /^0x[0-9a-fA-F]{64}$/.test(value);
+
+  const getCheckoutErrorMessage = (error: any) => {
+    const code = error?.code || error?.cause?.code || error?.details?.code;
+    const message = error?.shortMessage || error?.reason || error?.details || error?.message;
+    if (code === 4001 || /user rejected|rejected by user|user denied/i.test(String(message || ""))) {
+      return "Transaction was rejected in the wallet.";
     }
-  }, [amountCap]);
+    if (/insufficient allowance/i.test(String(message || ""))) {
+      return "USDC allowance is insufficient for this checkout.";
+    }
+    if (/insufficient funds|exceeds balance/i.test(String(message || ""))) {
+      return "Wallet has insufficient USDC or gas balance.";
+    }
+    if (/execution reverted|revert/i.test(String(message || ""))) {
+      return `Contract reverted: ${message}`;
+    }
+    return message || "An error occurred during subscription processing.";
+  };
+
+  const buildZkCheckoutProof = ({
+    userAddress,
+    paymentRecipient,
+    amount,
+    periodSeconds,
+  }: {
+    userAddress: `0x${string}`;
+    paymentRecipient: `0x${string}`;
+    amount: bigint;
+    periodSeconds: bigint;
+  }): ZkCheckoutProof => {
+    if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+      throw new Error("Secure browser randomness is unavailable.");
+    }
+
+    const secretBytes = new Uint8Array(32);
+    crypto.getRandomValues(secretBytes);
+
+    const secret = bytesToHex(secretBytes);
+    const planId = `${planName}:${amountCap}:${interval}`;
+    const commitment = keccak256(secret);
+    const nullifierHash = keccak256(
+      encodePacked(["bytes32", "address", "string"], [secret, userAddress, planId])
+    );
+    const publicInputHash = keccak256(
+      encodePacked(["address", "uint256", "uint256"], [paymentRecipient, amount, periodSeconds])
+    );
+
+    return {
+      userAddress,
+      planId,
+      commitment,
+      nullifierHash,
+      proof: [secret, publicInputHash],
+      paymentRecipient,
+      amount,
+      periodSeconds,
+    };
+  };
+
+  const validateZkCheckoutProof = (payload: ZkCheckoutProof) => {
+    const failures: string[] = [];
+
+    if (!isAddress(payload.userAddress)) failures.push("Invalid userAddress");
+    if (!payload.planId) failures.push("Invalid planId");
+    if (!isAddress(payload.paymentRecipient)) failures.push("Invalid paymentRecipient");
+    if (payload.amount <= BigInt(0)) failures.push("Invalid amount");
+    if (payload.periodSeconds <= BigInt(0)) failures.push("Invalid period");
+    if (!isBytes32Hex(payload.commitment)) failures.push("Invalid commitment");
+    if (!isBytes32Hex(payload.nullifierHash)) failures.push("Invalid nullifierHash");
+    if (payload.proof.length < 2) failures.push("Invalid proof length");
+    if (!payload.proof.every(isBytes32Hex)) failures.push("Invalid proof item format");
+
+    const expectedPublicInputHash = keccak256(
+      encodePacked(["address", "uint256", "uint256"], [payload.paymentRecipient, payload.amount, payload.periodSeconds])
+    );
+    if (payload.proof[1] !== expectedPublicInputHash) {
+      failures.push("Proof public input hash mismatch");
+    }
+
+    if (failures.length > 0) {
+      console.error("[SubScriptCheckout] Proof validation failure:", failures);
+    }
+
+    return failures;
+  };
 
   const handleCheckout = async () => {
     if (!isConnected || !userWallet) {
@@ -68,7 +175,7 @@ export default function SubScriptCheckout({
       return;
     }
 
-    if (!merchantAddress || merchantAddress.length !== 42 || !merchantAddress.startsWith("0x")) {
+    if (!merchantAddress || !isAddress(merchantAddress)) {
       setErrorMessage("Invalid merchant payout address configured.");
       setLoadingState("error");
       return;
@@ -80,93 +187,217 @@ export default function SubScriptCheckout({
     setStatusMessage("Checking USDC allowance...");
 
     try {
-      /* Step 1: Pre-Flight Allowance Verification */
-      const currentAllowance = await publicClient.readContract({
+      if (chainId !== ARC_TESTNET_CHAIN_ID) {
+        setStatusMessage("Switching to Arc Testnet...");
+        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      }
+
+      const userAddress = getAddress(userWallet) as `0x${string}`;
+      const paymentRecipient = getAddress(merchantAddress) as `0x${string}`;
+      const spenderAddress = mode === "zk" ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
+      const tokenDecimals = await publicClient.readContract({
         address: USDC_NATIVE_GAS_ADDRESS,
-        abi: [
-          {
-            type: "function",
-            name: "allowance",
-            stateMutability: "view",
-            inputs: [
-              { name: "owner", type: "address" },
-              { name: "spender", type: "address" }
-            ],
-            outputs: [{ name: "", type: "uint256" }]
-          }
-        ] as const,
-        functionName: "allowance",
-        args: [userWallet as `0x${string}`, STANDARD_CONTRACT_ADDRESS as `0x${string}`],
+        abi: ERC20_ABI,
+        functionName: "decimals",
       });
 
-      /* Step 2: Implement the Multi-Step Approval Flow */
-      /* Check if current allowance is strictly less than the subscription price */
-      if (currentAllowance < requiredAmount) {
+      if (Number(tokenDecimals) !== 6) {
+        throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
+      }
+
+      const amount = parseUnits(amountCap || "0", Number(tokenDecimals));
+      if (amount <= BigInt(0)) {
+        throw new Error("Subscription amount must be greater than zero.");
+      }
+
+      const currentAllowance = await publicClient.readContract({
+        address: USDC_NATIVE_GAS_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "allowance",
+        args: [userAddress, spenderAddress],
+      });
+
+      if (currentAllowance < amount) {
         setStatusMessage("USDC allowance insufficient. Awaiting wallet approval...");
-        
-        /* 
-         * Request approval for standard contract address. 
-         * Approve 12 periods worth of the monthly price to cover future keeper executions.
-         */
-        const approvalAmount = requiredAmount * BigInt(12);
-        
+
+        const approvalAmount = mode === "zk" ? amount : amount * BigInt(12);
+
+        await publicClient.simulateContract({
+          address: USDC_NATIVE_GAS_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          account: userAddress,
+          args: [spenderAddress, approvalAmount],
+        });
+
         const approveHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
-          abi: [
-            {
-              type: "function",
-              name: "approve",
-              stateMutability: "nonpayable",
-              inputs: [
-                { name: "spender", type: "address" },
-                { name: "amount", type: "uint256" }
-              ],
-              outputs: [{ name: "", type: "bool" }]
-            }
-          ] as const,
+          abi: ERC20_ABI,
           functionName: "approve",
-          args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
+          args: [spenderAddress, approvalAmount],
         });
 
         setStatusMessage("Waiting for USDC approval transaction confirmation...");
         
         const approvalReceipt = await publicClient.waitForTransactionReceipt({
           hash: approveHash as `0x${string}`,
+          timeout: 120_000,
         });
 
         if (approvalReceipt.status !== "success") {
           throw new Error("USDC approval transaction failed.");
         }
+
+        const allowanceAfterApproval = await publicClient.readContract({
+          address: USDC_NATIVE_GAS_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: "allowance",
+          args: [userAddress, spenderAddress],
+        });
+        if (allowanceAfterApproval < amount) {
+          throw new Error("USDC approval confirmed but allowance is still insufficient.");
+        }
       }
 
-      /* Step 3: Secure Subscription Execution */
+      if (mode === "zk") {
+        setLoadingState("Preparing Secure Payment");
+        setStatusMessage("Preparing Secure Payment");
+
+        const proofPayload = buildZkCheckoutProof({
+          userAddress,
+          paymentRecipient,
+          amount,
+          periodSeconds,
+        });
+        const proofFailures = validateZkCheckoutProof(proofPayload);
+        if (proofFailures.length > 0) {
+          throw new Error(`Invalid proof payload: ${proofFailures.join(", ")}`);
+        }
+
+        await publicClient.simulateContract({
+          address: SUBSCRIPT_ROUTER_ADDRESS,
+          abi: ROUTER_ABI,
+          functionName: "depositAndCommit",
+          account: userAddress,
+          args: [proofPayload.commitment, proofPayload.amount],
+        });
+
+        setLoadingState("Confirming Subscription");
+        setStatusMessage("Submitting secure payment deposit...");
+        const depositHash = await writeContractAsync({
+          address: SUBSCRIPT_ROUTER_ADDRESS,
+          abi: ROUTER_ABI,
+          functionName: "depositAndCommit",
+          args: [proofPayload.commitment, proofPayload.amount],
+        });
+
+        const depositReceipt = await publicClient.waitForTransactionReceipt({
+          hash: depositHash as `0x${string}`,
+          timeout: 120_000,
+        });
+        if (depositReceipt.status !== "success") {
+          throw new Error("Secure payment deposit reverted on-chain.");
+        }
+
+        const transferLogs = parseEventLogs({
+          abi: ERC20_ABI,
+          logs: depositReceipt.logs,
+        });
+        const transferLog = transferLogs.find(
+          (log) =>
+            log.eventName === "Transfer" &&
+            log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
+            log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
+            log.args.value === proofPayload.amount
+        );
+        if (!transferLog) {
+          throw new Error("USDC payment transfer was not found in the deposit receipt.");
+        }
+
+        await publicClient.simulateContract({
+          address: SUBSCRIPT_ROUTER_ADDRESS,
+          abi: ROUTER_ABI,
+          functionName: "verifyAndActivate",
+          account: userAddress,
+          args: [
+            [...proofPayload.proof],
+            proofPayload.nullifierHash,
+            proofPayload.paymentRecipient,
+            proofPayload.amount,
+            proofPayload.periodSeconds,
+          ],
+        });
+
+        setStatusMessage("Submitting secure proof activation...");
+        const activationHash = await writeContractAsync({
+          address: SUBSCRIPT_ROUTER_ADDRESS,
+          abi: ROUTER_ABI,
+          functionName: "verifyAndActivate",
+          args: [
+            [...proofPayload.proof],
+            proofPayload.nullifierHash,
+            proofPayload.paymentRecipient,
+            proofPayload.amount,
+            proofPayload.periodSeconds,
+          ],
+        });
+
+        const activationReceipt = await publicClient.waitForTransactionReceipt({
+          hash: activationHash as `0x${string}`,
+          timeout: 120_000,
+        });
+        if (activationReceipt.status !== "success") {
+          throw new Error("Secure proof activation reverted on-chain.");
+        }
+
+        const activationLogs = parseEventLogs({
+          abi: ROUTER_ABI,
+          logs: activationReceipt.logs,
+        });
+        const activationLog = activationLogs.find(
+          (log) =>
+            log.eventName === "SubscriptionActivated" &&
+            log.args.nullifierHash === proofPayload.nullifierHash &&
+            log.args.merchant?.toLowerCase() === proofPayload.paymentRecipient.toLowerCase() &&
+            log.args.amount === proofPayload.amount
+        );
+        if (!activationLog) {
+          throw new Error("Secure activation event was not found in the receipt.");
+        }
+
+        setSuccessTxHash(activationHash);
+        setLoadingState("success");
+        setStatusMessage("Secure subscription activated successfully.");
+
+        if (onSuccess) {
+          onSuccess(activationHash);
+        }
+        return;
+      }
+
       setLoadingState("Confirming Subscription");
       setStatusMessage("Submitting subscription transaction on-chain...");
 
-      /* Execute primary subscription contract call createSubscription (selector 0x8a2405a8) */
+      await publicClient.simulateContract({
+        address: STANDARD_CONTRACT_ADDRESS,
+        abi: STANDARD_ABI,
+        functionName: "createSubscription",
+        account: userAddress,
+        args: [paymentRecipient, amount, periodSeconds],
+      });
+
       const subscriptionHash = await writeContractAsync({
         address: STANDARD_CONTRACT_ADDRESS,
-        abi: [
-          {
-            type: "function",
-            name: "createSubscription",
-            stateMutability: "nonpayable",
-            inputs: [
-              { name: "_merchant", type: "address" },
-              { name: "_amount", type: "uint256" },
-              { name: "_period", type: "uint256" }
-            ],
-            outputs: [{ name: "subId", type: "uint256" }]
-          }
-        ] as const,
+        abi: STANDARD_ABI,
         functionName: "createSubscription",
-        args: [merchantAddress as `0x${string}`, requiredAmount, periodSeconds],
+        args: [paymentRecipient, amount, periodSeconds],
       });
 
       setStatusMessage("Waiting for subscription confirmation...");
 
       const receipt = await publicClient.waitForTransactionReceipt({
         hash: subscriptionHash as `0x${string}`,
+        timeout: 120_000,
       });
 
       if (receipt.status !== "success") {
@@ -181,9 +412,7 @@ export default function SubScriptCheckout({
         onSuccess(subscriptionHash);
       }
     } catch (err: any) {
-      setErrorMessage(
-        err?.shortMessage || err?.message || "An error occurred during subscription processing."
-      );
+      setErrorMessage(getCheckoutErrorMessage(err));
       setLoadingState("error");
     }
   };
@@ -241,7 +470,7 @@ export default function SubScriptCheckout({
           </button>
         )}
 
-        {(loadingState === "Awaiting USDC Approval" || loadingState === "Confirming Subscription") && (
+        {(loadingState === "Awaiting USDC Approval" || loadingState === "Preparing Secure Payment" || loadingState === "Confirming Subscription") && (
           <div className="w-full p-4 bg-white/[0.02] border border-white/5 rounded-2xl text-center space-y-3">
             <div className="flex items-center justify-center gap-3 text-xs text-[#00d2b4] font-semibold">
               <Loader2 className="w-4 h-4 animate-spin" />
