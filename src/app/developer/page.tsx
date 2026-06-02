@@ -12,7 +12,7 @@ import Navbar from "@/components/Navbar";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import PromptGenerator from "@/components/PromptGenerator";
 import gsap from "gsap";
-import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 // ────────────────────────────────────────────────────────────────
 // Code snippet constants (unchanged from original)

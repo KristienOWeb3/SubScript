@@ -174,6 +174,12 @@ export default function DashboardPage() {
             } else if (functionName === "configurePayoutDestination") {
                 action = "configurePayoutDestination";
                 serializedArgs = { payoutAddress: args[0] };
+            } else if (functionName === "approve") {
+                action = "approveUsdc";
+                serializedArgs = { spender: args[0], amount: args[1].toString() };
+            } else if (functionName === "setMerchantTier") {
+                action = "setMerchantTier";
+                serializedArgs = { merchant: args[0], tier: Number(args[1]) };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
@@ -857,29 +863,72 @@ export default function DashboardPage() {
             const PAYMENT_RECIPIENT = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295";
             const amount = parseUnits("10", 6);
 
-            setPremiumStatus("Waiting for transfer signature...");
-            const transferHash = await executeContractWrite({
+            /* Step 1: Implement the Allowance Check */
+            const currentAllowance = await publicClient.readContract({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: [
                     {
                         type: "function",
-                        name: "transfer",
-                        stateMutability: "nonpayable",
+                        name: "allowance",
+                        stateMutability: "view",
                         inputs: [
-                            { name: "to", type: "address" },
-                            { name: "amount", type: "uint256" }
+                            { name: "owner", type: "address" },
+                            { name: "spender", type: "address" }
                         ],
-                        outputs: [{ name: "", type: "bool" }]
+                        outputs: [{ name: "", type: "uint256" }]
                     }
                 ] as const,
-                functionName: "transfer",
-                args: [PAYMENT_RECIPIENT, amount],
+                functionName: "allowance",
+                args: [activeMerchantAddress as `0x${string}`, PAYMENT_RECIPIENT as `0x${string}`],
+            });
+
+            /* Step 2: Implement the Approval Flow */
+            if (currentAllowance < amount) {
+                setPremiumStatus("Awaiting USDC Approval");
+                const approveHash = await executeContractWrite({
+                    address: USDC_NATIVE_GAS_ADDRESS,
+                    abi: [
+                        {
+                            type: "function",
+                            name: "approve",
+                            stateMutability: "nonpayable",
+                            inputs: [
+                                { name: "spender", type: "address" },
+                                { name: "amount", type: "uint256" }
+                            ],
+                            outputs: [{ name: "", type: "bool" }]
+                        }
+                    ] as const,
+                    functionName: "approve",
+                    args: [PAYMENT_RECIPIENT, amount],
+                });
+
+                await publicClient.waitForTransactionReceipt({ hash: approveHash as `0x${string}` });
+            }
+
+            /* Step 3: Execute Payment */
+            setPremiumStatus("Confirming Payment");
+            const paymentHash = await executeContractWrite({
+                address: PAYMENT_RECIPIENT,
+                abi: [
+                    {
+                        type: "function",
+                        name: "setMerchantTier",
+                        stateMutability: "nonpayable",
+                        inputs: [
+                            { name: "_merchant", type: "address" },
+                            { name: "_tier", type: "uint8" }
+                        ],
+                        outputs: []
+                    }
+                ] as const,
+                functionName: "setMerchantTier",
+                args: [activeMerchantAddress, 1],
             });
 
             posthog.capture("premium_upgrade_initiated");
 
-            setPremiumStatus("Confirming payment on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash: transferHash as `0x${string}` });
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: paymentHash as `0x${string}` });
 
             if (receipt.status !== "success") {
                 throw new Error("Payment transaction reverted on-chain.");
@@ -919,7 +968,7 @@ export default function DashboardPage() {
             const upgradeRes = await fetch("/api/premium/upgrade", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ txHash: transferHash }),
+                body: JSON.stringify({ txHash: paymentHash }),
             });
             const upgradeData = await upgradeRes.json();
             if (!upgradeRes.ok) {
