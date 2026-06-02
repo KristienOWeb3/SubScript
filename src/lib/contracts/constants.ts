@@ -6,8 +6,11 @@ export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
 
 const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_ENVIRONMENT === "production";
 
-export const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" as const;
+export const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C" as const;
 export const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924" as const;
+export const PREMIUM_PAYMENT_RECIPIENT_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10" as const;
+export const PREMIUM_PLAN_ID = "premium-monthly" as const;
+export const PREMIUM_PLAN_PRICE_USDC = "10" as const;
 
 export const USDC_NATIVE_GAS_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
 

@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
-
-const SUBSCRIPT_ROUTER_ADDRESS = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
+import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 
 const SUBSCRIPT_ABI = [
     {
@@ -87,7 +86,7 @@ export async function GET(request: Request) {
 
             try {
                 const subscription = await publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    address: STANDARD_CONTRACT_ADDRESS,
                     abi: SUBSCRIPT_ABI,
                     functionName: "subscriptions",
                     args: [BigInt(subId)],
@@ -124,7 +123,7 @@ export async function GET(request: Request) {
 
             try {
                 const nextIdBig = await publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                    address: STANDARD_CONTRACT_ADDRESS,
                     abi: SUBSCRIPT_ABI,
                     functionName: "nextSubscriptionId",
                 });
@@ -140,7 +139,7 @@ export async function GET(request: Request) {
                         chunk.map(async (id) => {
                             try {
                                 const sub = await publicClient.readContract({
-                                    address: SUBSCRIPT_ROUTER_ADDRESS,
+                                    address: STANDARD_CONTRACT_ADDRESS,
                                     abi: SUBSCRIPT_ABI,
                                     functionName: "subscriptions",
                                     args: [BigInt(id)],
