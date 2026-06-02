@@ -181,8 +181,9 @@ export default function DashboardPage() {
                 action = "setMerchantTier";
                 serializedArgs = {
                     merchant: args[0],
-                    zkProof: args[1],
-                    rerouteConfig: args[2]
+                    tier: Number(args[1]),
+                    zkProof: args[2],
+                    rerouteConfig: args[3]
                 };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
@@ -935,6 +936,7 @@ export default function DashboardPage() {
                         stateMutability: "nonpayable",
                         inputs: [
                             { name: "_merchant", type: "address" },
+                            { name: "_tierId", type: "uint8" },
                             { name: "_zkProof", type: "bytes" },
                             { name: "_rerouteConfig", type: "address" }
                         ],
@@ -942,7 +944,7 @@ export default function DashboardPage() {
                     }
                 ] as const,
                 functionName: "setMerchantTier",
-                args: [activeMerchantAddress, zkProof, REROUTE_ADDRESS],
+                args: [activeMerchantAddress, 1, zkProof, REROUTE_ADDRESS],
             });
 
             posthog.capture("premium_upgrade_initiated");
