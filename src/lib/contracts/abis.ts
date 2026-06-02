@@ -15,6 +15,16 @@ export const USDC_ERC20_ABI = [
     },
     {
         type: "function",
+        name: "transfer",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "recipient", type: "address" },
+            { name: "amount", type: "uint256" },
+        ],
+        outputs: [{ name: "", type: "bool" }],
+    },
+    {
+        type: "function",
         name: "allowance",
         stateMutability: "view",
         inputs: [

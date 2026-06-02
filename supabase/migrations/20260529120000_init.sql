@@ -17,8 +17,10 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     last_settlement_timestamp TIMESTAMPTZ,
     billing_interval_seconds BIGINT,
     amount_cap_usdc NUMERIC,
-    next_valid_commitment TEXT DEFAULT NULL,
-    status TEXT DEFAULT 'PENDING',
+    payment_tx_hash TEXT UNIQUE DEFAULT NULL,
+    status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACTIVE', 'FAILED')),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    expires_at TIMESTAMPTZ DEFAULT now() + INTERVAL '30 minutes',
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
