@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ARC_TESTNET_CHAIN_ID, ROUTER_ADDRESS, USDC_ADDRESS, PREMIUM_PRICE } from "./constants";
+import { ARC_TESTNET_CHAIN_ID, TREASURY_ADDRESS, USDC_ADDRESS, PREMIUM_PRICE } from "./constants";
 
 const ERC20_INTERFACE = new ethers.Interface([
     "function transfer(address to, uint256 value) external",
@@ -68,7 +68,7 @@ export async function verifyTransaction(
         return { valid: false, error: "Target is not USDC token contract" };
     }
 
-    /* 5. Parse transaction input data to assert it calls transfer(ROUTER_ADDRESS, 10 USDC) */
+    /* 5. Parse transaction input data to assert it calls transfer(TREASURY_ADDRESS, 10 USDC) */
     let parsedTx;
     try {
         parsedTx = ERC20_INTERFACE.parseTransaction({ data: tx.data, value: tx.value });
@@ -80,15 +80,15 @@ export async function verifyTransaction(
     if (
         !parsedTx ||
         parsedTx.name !== "transfer" ||
-        normalizeAddress(parsedTx.args[0]) !== normalizeAddress(ROUTER_ADDRESS) ||
+        normalizeAddress(parsedTx.args[0]) !== normalizeAddress(TREASURY_ADDRESS) ||
         BigInt(parsedTx.args[1]) !== BigInt(PREMIUM_PRICE)
     ) {
-        console.error(`[tx_failed_verification] Calldata is not transfer to SubScript Router Proxy of 10 USDC`);
-        return { valid: false, error: "Calldata is not transfer to SubScript Router Proxy of 10 USDC" };
+        console.error(`[tx_failed_verification] Calldata is not transfer to SubScript Treasury address of 10 USDC`);
+        return { valid: false, error: "Calldata is not transfer to SubScript Treasury address of 10 USDC" };
     }
 
     /* 6. Verify Transfer logs in receipt logs */
-    if (!findTransferLog(receipt, session.merchant_address, ROUTER_ADDRESS, BigInt(PREMIUM_PRICE))) {
+    if (!findTransferLog(receipt, session.merchant_address, TREASURY_ADDRESS, BigInt(PREMIUM_PRICE))) {
         console.error(`[tx_failed_verification] Transfer event log not found in receipt`);
         return { valid: false, error: "Transfer event log not found in receipt" };
     }

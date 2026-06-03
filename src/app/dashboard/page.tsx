@@ -914,14 +914,14 @@ export default function DashboardPage() {
                 abi: ERC20_ABI,
                 functionName: "transfer",
                 account: userAddress,
-                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, amount],
             });
 
             const txHash = await executeContractWrite({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: ERC20_ABI,
                 functionName: "transfer",
-                args: [SUBSCRIPT_ROUTER_ADDRESS, amount],
+                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, amount],
             });
 
             posthog.capture("premium_upgrade_initiated");
@@ -949,11 +949,11 @@ export default function DashboardPage() {
                 (log) =>
                     log.eventName === "Transfer" &&
                     log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
+                    log.args.to?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase() &&
                     log.args.value === amount
             );
             if (!paymentLog) {
-                throw new Error("USDC transfer to premium router not found in transaction logs.");
+                throw new Error("USDC transfer to premium recipient not found in transaction logs.");
             }
 
             setPremiumStatus("Syncing premium state with server...");
