@@ -190,13 +190,13 @@ export default function DashboardHeader({
                                              Withdraw Routed Funds
                                          </button>
                                      ) : (
-                                         <button
-                                             onClick={() => setIsDepositOpen(true)}
-                                             className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(0,210,180,0.25)] hover:shadow-[0_0_18px_rgba(0,210,180,0.45)] hover:scale-[1.02] active:scale-[0.98]"
-                                         >
-                                             <Shield className="w-3.5 h-3.5" />
-                                             Fund Private Routing
-                                         </button>
+                                          <button
+                                              onClick={() => setIsDepositOpen(true)}
+                                              className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(0,210,180,0.25)] hover:shadow-[0_0_18px_rgba(0,210,180,0.45)] hover:scale-[1.02] active:scale-[0.98]"
+                                          >
+                                              <Shield className="w-3.5 h-3.5" />
+                                              Activate Private Routing
+                                          </button>
                                      );
                                  })()}
 

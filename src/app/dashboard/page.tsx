@@ -814,15 +814,15 @@ export default function DashboardPage() {
     const handleWithdraw = async (targetAddress?: string) => {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
+        let merchantAddr = (address || "") as Hex;
+        let targetPayout = (targetAddress || payoutDestination || "") as string;
+        let nullifierHash = "";
+        let publicInputHash = "";
         try {
-            const merchantAddr = (address || "") as Hex;
             if (!merchantAddr) {
                 throw new Error("No merchant wallet address available.");
             }
 
-            /* Resolve payout target: use custom targetAddress, fall back to configured payout destination */
-            const targetPayout = (targetAddress || payoutDestination || "") as string;
-            
             if (
                 !targetPayout ||
                 targetPayout === "0x0000000000000000000000000000000000000000" ||
@@ -843,11 +843,11 @@ export default function DashboardPage() {
             const burnerSecret = bytesToHex(randomBytes);
             
             /* Compute nullifier hash (unique per withdrawal to prevent double-spend) */
-            const nullifierHash = keccak256(encodePacked(["bytes32", "address"], [burnerSecret, merchantAddr]));
+            nullifierHash = keccak256(encodePacked(["bytes32", "address"], [burnerSecret, merchantAddr]));
             
             /* Compute public input hash binding merchant and target, matching contract logic:
                keccak256(abi.encodePacked(merchant, target)) */
-            const publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout as Hex]));
+            publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout as Hex]));
             
             /* Assemble the proof array: [burnerSecret, publicInputHash] */
             const proof = [burnerSecret, publicInputHash] as readonly `0x${string}`[];
@@ -860,18 +860,62 @@ export default function DashboardPage() {
             console.log("Proof Payload:", proof);
             console.log("Local private routing proof simulation completed successfully.");
 
-            await executeContractWrite({
+            const txHash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
                 functionName: "withdrawWithProof",
                 args: [proof, nullifierHash, merchantAddr, targetPayout as Hex],
             });
+
+            /* Post-Execution Client-Side Audit Sync: Register the broadcasted withdrawal hash */
+            try {
+                await fetch("/api/premium/audit-withdrawal", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        merchantAddress: merchantAddr,
+                        destinationAddress: targetPayout,
+                        amount: vaultBalance,
+                        commitmentHash: publicInputHash,
+                        nullifierHash,
+                        txHash,
+                        proofType: "commit_reveal"
+                    })
+                });
+            } catch (auditErr) {
+                console.error("Failed to submit client withdrawal audit:", auditErr);
+            }
+
             setWithdrawSuccess(true);
             setTimeout(() => setWithdrawSuccess(false), 4000);
             refetchVaultBalance();
             refetchWalletBalance();
         } catch (err: any) {
             console.error("Withdraw failed:", err);
+
+            /* If the parameters were successfully constructed, record the transaction broadcast failure */
+            if (nullifierHash && publicInputHash) {
+                try {
+                    await fetch("/api/premium/audit-withdrawal", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            merchantAddress: merchantAddr,
+                            destinationAddress: targetPayout,
+                            amount: vaultBalance,
+                            commitmentHash: publicInputHash,
+                            nullifierHash,
+                            txHash: null,
+                            status: "FAILED_PERMANENTLY_CONTRACT",
+                            errorMessage: err.message || "Transaction signature or execution failed.",
+                            proofType: "commit_reveal"
+                        })
+                    });
+                } catch (auditErr) {
+                    console.error("Failed to log failed withdrawal audit:", auditErr);
+                }
+            }
+
             throw err;
         } finally {
             setIsWithdrawing(false);

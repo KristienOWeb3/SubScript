@@ -4,13 +4,11 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
     console.log(`[db_updated] Reconciliation worker initiated (Batch limit: ${limit})`);
 
     /* 1. Claim pending/failed sessions with transaction evidence atomically using PLpgSQL */
-    const { data: sessions, error: rpcError } = await supabase.rpc(
-        "claim_pending_payment_sessions",
-        { batch_size: limit }
-    );
+    const { data: sessions, error } = await supabase
+        .rpc("claim_pending_payment_sessions", { batch_size: limit });
 
-    if (rpcError) {
-        console.error(`[db_updated] Failed to claim sessions via RPC: ${rpcError.message}`);
+    if (error) {
+        console.error(`[db_updated] Failed to claim payment sessions: ${error.message}`);
         return { success: false, processedCount: 0, results: [] };
     }
 
@@ -18,8 +16,11 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
 
     if (sessions && sessions.length > 0) {
         console.log(`[db_updated] Claimed ${sessions.length} sessions for verification.`);
+        
+        /* Observability queue depth metric log */
+        console.log(`[metric] reconciliation_queue_depth: ${sessions.length}`);
 
-        /* Bounded concurrency setup */
+        /* Bounded concurrency setup to prevent RPC and Database rate limits */
         const concurrency = 25;
         let activeIndex = 0;
 
@@ -43,11 +44,26 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
             } catch (err: any) {
                 console.error(`[db_updated] Error reconciling session ${session.session_id}:`, err);
                 
-                /* Reset session status to FAILED so it can be retried later */
+                const newAttempts = (session.processing_attempts || 0) + 1;
+                const isPermanent = newAttempts >= 5;
+
+                /* Mark database status as FAILED or FAILED_PERMANENTLY, incrementing attempts */
                 await supabase
                     .from("payment_sessions")
-                    .update({ status: "FAILED", updated_at: new Date().toISOString() })
+                    .update({ 
+                        status: isPermanent ? "FAILED_PERMANENTLY" : "FAILED",
+                        processing_attempts: newAttempts,
+                        last_error: err.message || "Reconciliation worker crash",
+                        failure_code: "RECONCILIATION_CRASH",
+                        updated_at: new Date().toISOString() 
+                    })
                     .eq("session_id", session.session_id);
+
+                /* Metrics & Alerts */
+                console.log(`[metric] checkout_sessions_failed: ${session.session_id}, attempts: ${newAttempts}, reason: RECONCILIATION_CRASH`);
+                if (isPermanent) {
+                    console.error(`[ALERT] FAILED_PERMANENTLY checkout session: ${session.session_id}, reason: RECONCILIATION_CRASH`);
+                }
 
                 results[index] = {
                     sessionId: session.session_id,
@@ -77,12 +93,15 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
         await Promise.all(workers);
     } else {
         console.log(`[db_updated] No pending sessions found requiring verification.`);
+        console.log(`[metric] reconciliation_queue_depth: 0`);
     }
+
+    const processedCount = sessions ? sessions.length : 0;
+    console.log(`[db_updated] Reconciliation worker execution completed. Processed: ${processedCount}`);
 
     return {
         success: true,
-        processedCount: results.length,
+        processedCount,
         results
     };
 }
-

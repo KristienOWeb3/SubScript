@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ROUTER_ADDRESS } from "./constants";
+import { ROUTER_ADDRESS, ARC_TESTNET_CHAIN_ID } from "./constants";
 
 const ROUTER_INTERFACE = new ethers.Interface([
     "function setMerchantTier(address _merchant, uint8 _tier) external",
@@ -24,7 +24,7 @@ export async function activateSubscription({
     const normalizedUser = normalizeAddress(merchantAddress);
     const premiumSubId = Number(BigInt(normalizedUser) & BigInt("9007199254740991"));
 
-    /* 1. Fetch merchant details from database to avoid redundant writes */
+    /* 1. Fetch merchant details from database to avoid redundant writes and capture prior tier */
     const { data: merchant, error: fetchError } = await supabase
         .from("merchants")
         .select("*")
@@ -36,6 +36,7 @@ export async function activateSubscription({
         throw fetchError;
     }
 
+    const tierBefore = merchant ? merchant.tier : 0;
     const contract = new ethers.Contract(ROUTER_ADDRESS, ROUTER_INTERFACE, adminWallet);
 
     /* 2. On-chain tier check */
@@ -45,6 +46,8 @@ export async function activateSubscription({
     } catch (err) {
         console.error(`[db_updated] Failed to verify merchant tier on-chain:`, err);
     }
+
+    let activationTxHash = txHash;
 
     if (merchant && merchant.tier >= 1 && currentContractTier >= 1) {
         console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database.`);
@@ -73,7 +76,8 @@ export async function activateSubscription({
             console.error(`[db_updated] setMerchantTier transaction reverted`);
             throw new Error("On-chain setMerchantTier transaction failed");
         }
-        console.log(`[tier_updated] Tier activated on-chain. Tx: ${upgradeTx.hash}`);
+        activationTxHash = upgradeTx.hash;
+        console.log(`[tier_updated] Tier activated on-chain. Tx: ${activationTxHash}`);
     } else {
         console.log(`[activation_skipped] Merchant already premium on-chain.`);
     }
@@ -110,6 +114,28 @@ export async function activateSubscription({
     if (subUpsertError) {
         console.error(`[db_updated] Failed to upsert subscription: ${subUpsertError.message}`);
         throw subUpsertError;
+    }
+
+    /* 5. Insert Premium Activation Audit Record */
+    const { error: auditError } = await supabase
+        .from("premium_upgrade_events")
+        .insert({
+            merchant: normalizedUser,
+            payment_session: sessionId,
+            tx_hash: txHash,
+            chain_id: ARC_TESTNET_CHAIN_ID,
+            tier_before: tierBefore,
+            tier_after: 1,
+            admin_wallet: adminWallet.address.toLowerCase(),
+            activation_tx_hash: activationTxHash
+        });
+
+    if (auditError) {
+        /* Log error but do not revert entire transaction if audit record fails */
+        console.error(`[db_updated] Failed to write premium upgrade audit record: ${auditError.message}`);
+    } else {
+        /* Observability metric log */
+        console.log(`[metric] premium_upgrades_successful: ${sessionId}, merchant: ${normalizedUser}`);
     }
 
     const { error: sessionUpdateError } = await supabase
