@@ -35,6 +35,7 @@ interface DashboardHeaderProps {
     isWithdrawing?: boolean;
     hasDeposited?: boolean;
     onDepositSuccess?: () => void;
+    isPremium?: boolean;
 }
 
 export default function DashboardHeader({
@@ -45,6 +46,7 @@ export default function DashboardHeader({
     isWithdrawing = false,
     hasDeposited = false,
     onDepositSuccess,
+    isPremium = false,
 }: DashboardHeaderProps) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [copiedAddress, setCopiedAddress] = useState(false);
@@ -172,6 +174,7 @@ export default function DashboardHeader({
 
                                 /* Deposit/Withdraw Button */
                                 {(() => {
+                                    if (!isPremium) return null;
                                     const showWithdraw = vaultBalance > 0 || hasDeposited;
                                     return showWithdraw ? (
                                         <button
@@ -180,14 +183,14 @@ export default function DashboardHeader({
                                             className="px-4 sm:px-5 py-2 border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all duration-200 flex items-center gap-1.5"
                                         >
                                             {isWithdrawing && <Loader2 className="w-3 h-3 animate-spin" />}
-                                            Withdraw
+                                            Withdraw Premium Funds
                                         </button>
                                     ) : (
                                         <button
                                             onClick={() => setIsDepositOpen(true)}
                                             className="px-4 sm:px-5 py-2 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200"
                                         >
-                                            Deposit
+                                            Deposit & Commit
                                         </button>
                                     );
                                 })()}
