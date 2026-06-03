@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const serverCard = {
     name: "subscript",
     version: "1.0.0",
-    description: "SubScript ZK Protocol MCP Server",
+    description: "SubScript Private Routing Protocol MCP Server",
     configSchema: {}
 };
 

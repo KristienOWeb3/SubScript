@@ -83,10 +83,10 @@ export async function processPremiumUpgrade({
             return { success: false, status: 403, error: "Session owner address mismatch." };
         }
 
-        /* Check expiration */
+        /* Check expiration - skip timeout check if a transaction hash exists */
         const nowMs = Date.now();
         const expiresMs = new Date(session.expires_at).getTime();
-        if (nowMs > expiresMs) {
+        if (nowMs > expiresMs && !txHash && !session.tx_hash) {
             console.error(`[session_expired] Session ${sessionId} expired at ${session.expires_at}`);
             await supabase
                 .from("payment_sessions")

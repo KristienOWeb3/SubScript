@@ -205,29 +205,12 @@ export default function DashboardPage() {
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
     const [isPremium, setIsPremium] = useState(false);
-    const [hasDeposited, setHasDeposited] = useState(false);
-    const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "zk">("standard");
+    const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
 
     useEffect(() => {
-        setPromptFlowMode(isPremium ? "zk" : "standard");
+        setPromptFlowMode(isPremium ? "private" : "standard");
     }, [isPremium]);
-
-    useEffect(() => {
-        if (typeof window !== "undefined" && address) {
-            const stored = localStorage.getItem(`deposited_${address.toLowerCase()}`);
-            setHasDeposited(stored === "true");
-        } else {
-            setHasDeposited(false);
-        }
-    }, [address]);
-
-    const handleDepositSuccess = () => {
-        if (address) {
-            localStorage.setItem(`deposited_${address.toLowerCase()}`, "true");
-            setHasDeposited(true);
-        }
-    };
 
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
@@ -275,6 +258,10 @@ export default function DashboardPage() {
             console.error("Error reading contract data in background:", error);
         }
     }, [address]);
+
+    const handleDepositSuccess = () => {
+        refetchBalancesAndTier();
+    };
 
     useEffect(() => {
         if (!address) return;
@@ -833,9 +820,17 @@ export default function DashboardPage() {
                 throw new Error("No merchant wallet address available.");
             }
 
-            /* Resolve payout target: use custom targetAddress, fall back to configured payout destination or treasury */
-            const targetPayout = (targetAddress || payoutDestination || "0x725D56151CeaC9eAd625241D13b8307B22EDDb10") as Hex;
+            /* Resolve payout target: use custom targetAddress, fall back to configured payout destination */
+            const targetPayout = (targetAddress || payoutDestination || "") as string;
             
+            if (
+                !targetPayout ||
+                targetPayout === "0x0000000000000000000000000000000000000000" ||
+                !isAddress(targetPayout)
+            ) {
+                throw new Error("Configure a valid payout destination before withdrawing.");
+            }
+
             /* Generate random 32-byte burner secret hex */
             const randomBytes = new Uint8Array(32);
             if (typeof window !== "undefined" && window.crypto) {
@@ -852,37 +847,32 @@ export default function DashboardPage() {
             
             /* Compute public input hash binding merchant and target, matching contract logic:
                keccak256(abi.encodePacked(merchant, target)) */
-            const publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout]));
+            const publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout as Hex]));
             
             /* Assemble the proof array: [burnerSecret, publicInputHash] */
             const proof = [burnerSecret, publicInputHash] as readonly `0x${string}`[];
             
-            console.log("Generating local zk-SNARK proof for payout routing...");
+            console.log("Generating local proof for private routing...");
             console.log("Merchant Address:", merchantAddr);
             console.log("Payout Target:", targetPayout);
             console.log("Nullifier Hash:", nullifierHash);
             console.log("Public Input Hash:", publicInputHash);
-            console.log("ZK Proof Payload:", proof);
-            console.log("Local ZK proof simulation completed successfully.");
+            console.log("Proof Payload:", proof);
+            console.log("Local private routing proof simulation completed successfully.");
 
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
                 functionName: "withdrawWithProof",
-                args: [proof, nullifierHash, merchantAddr, targetPayout],
+                args: [proof, nullifierHash, merchantAddr, targetPayout as Hex],
             });
             setWithdrawSuccess(true);
             setTimeout(() => setWithdrawSuccess(false), 4000);
             refetchVaultBalance();
             refetchWalletBalance();
-            
-            /* Clear deposit status on successful withdrawal */
-            if (typeof window !== "undefined" && address) {
-                localStorage.removeItem(`deposited_${address.toLowerCase()}`);
-                setHasDeposited(false);
-            }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Withdraw failed:", err);
+            throw err;
         } finally {
             setIsWithdrawing(false);
         }
@@ -1938,12 +1928,12 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     <select
                                         value={promptFlowMode}
                                         disabled={!isPremium}
-                                        onChange={(e) => setPromptFlowMode(e.target.value as "standard" | "zk")}
+                                        onChange={(e) => setPromptFlowMode(e.target.value as "standard" | "private")}
                                         className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#00d2b4]/40 transition-colors font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
-                                        <option value="zk" disabled={!isPremium} className="bg-[#0a0a0c]">
-                                            ZK Privacy (Routed) {!isPremium && "🔒 (Premium Only)"}
+                                        <option value="private" disabled={!isPremium} className="bg-[#0a0a0c]">
+                                            Private Routing (Premium) {!isPremium && "🔒 (Premium Only)"}
                                         </option>
                                     </select>
                                 </div>
@@ -2243,7 +2233,6 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 vaultBalance={vaultBalance}
                 onWithdraw={async () => setIsWithdrawOpen(true)}
                 isWithdrawing={isWithdrawing}
-                hasDeposited={hasDeposited}
                 onDepositSuccess={handleDepositSuccess}
                 isPremium={isPremium}
                 promptFlowMode={promptFlowMode}

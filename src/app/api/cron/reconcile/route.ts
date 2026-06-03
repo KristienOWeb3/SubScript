@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        const result = await reconcile(supabase, 50);
+        const result = await reconcile(supabase, 300);
 
         return NextResponse.json(result, { status: 200 });
 

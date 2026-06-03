@@ -87,8 +87,8 @@ export default function WithdrawModal({
                                     <Wallet className="w-4 h-4 text-red-400" />
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider">Withdraw Private Funds</h3>
-                                    <p className="text-[10px] text-white/40 font-mono mt-0.5">ZK Payout Rerouting</p>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider">Withdraw Routed Funds</h3>
+                                    <p className="text-[10px] text-white/40 font-mono mt-0.5">Private Payout Routing</p>
                                 </div>
                             </div>
                             <button
@@ -206,7 +206,7 @@ export default function WithdrawModal({
                         >
                             {isWithdrawing ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 animate-spin" /> Executing ZK Withdrawal...
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Executing Private Withdrawal...
                                 </>
                             ) : (
                                 <>

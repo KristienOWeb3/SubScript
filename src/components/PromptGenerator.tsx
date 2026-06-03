@@ -73,7 +73,7 @@ Here is my specific deployment data:
 - USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
 - Routing Metadata: { "routing": "private" }
 
-Since I am a Premium Merchant, we will use the ZK Burner subscription flow. Run the following CLI command to automatically scaffold the Zero-Knowledge components and cryptographical dependencies:
+Since I am a Premium Merchant, we will use the Private Routing subscription flow. Run the following CLI command to automatically scaffold the Privacy-Enhanced Routing components and cryptographical dependencies:
 npx @subscript-protocol/cli@latest init --merchant ${displayAddress}
 
 Please write the integration wrappers and pages for the generated paywall:
@@ -137,12 +137,12 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
               Payment Flow Mode
             </label>
             <select
-              value={isPremium ? "zk" : "standard"}
-              onChange={(e) => setIsPremium(e.target.value === "zk")}
+              value={isPremium ? "private" : "standard"}
+              onChange={(e) => setIsPremium(e.target.value === "private")}
               className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
             >
               <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
-              <option value="zk" className="bg-[#0a0a0c]">ZK Privacy (Routed)</option>
+              <option value="private" className="bg-[#0a0a0c]">Private Routing (Premium)</option>
             </select>
           </div>
 
