@@ -116,8 +116,8 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
           Generate a production-ready integration prompt for Cursor or Claude Code. Type your treasury address and price, copy the output, and get instant code.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="space-y-1.5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="space-y-1.5 md:col-span-1">
             <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               Merchant Wallet / Treasury Address
             </label>
@@ -128,6 +128,20 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
               onChange={(e) => setActiveMerchantAddress(e.target.value)}
               className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              Payment Flow Mode
+            </label>
+            <select
+              value={isPremium ? "zk" : "standard"}
+              onChange={(e) => setIsPremium(e.target.value === "zk")}
+              className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
+            >
+              <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
+              <option value="zk" className="bg-[#0a0a0c]">ZK Privacy (Routed)</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -161,14 +175,11 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
           </div>
         </div>
 
-        {/* Live Prompt Preview */}
-        <div className="relative rounded-2xl bg-black border border-white/5 p-4 mb-6">
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 text-[9px] text-white/30 font-mono uppercase">
-            <Terminal className="w-3 h-3" /> Preview
-          </div>
-          <pre className="text-[10px] text-white/60 font-mono whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto pr-2">
-            {generatePrompt()}
-          </pre>
+        {/* Configuration Status Card */}
+        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-6 text-center">
+          <p className="text-xs text-white/60">
+            Prompt configurations compiled successfully. Ready to copy for your AI coding assistant.
+          </p>
         </div>
       </div>
 
@@ -182,11 +193,11 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4" /> Prompt Copied! Paste into AI
+            <Check className="w-4 h-4" /> Copied to Clipboard!
           </>
         ) : (
           <>
-            <Copy className="w-4 h-4" /> Copy Integration Prompt
+            <Copy className="w-4 h-4" /> Copy Setup Prompt
           </>
         )}
       </button>

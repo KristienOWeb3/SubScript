@@ -21,13 +21,13 @@ export default function IntegrationPrompt({
 }: IntegrationPromptProps) {
   const { address } = useAccount();
   const [copied, setCopied] = useState(false);
+  const [isPremiumState, setIsPremiumState] = useState(isPremium);
 
   const activeAddress = merchantAddress !== undefined ? merchantAddress : address;
-  const isPremiumTier = isPremium;
 
   const promptText = useMemo(() => {
     const addressStr = activeAddress || "CONNECTING_WALLET...";
-    if (isPremiumTier) {
+    if (isPremiumState) {
       return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
 
 SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
@@ -78,7 +78,7 @@ INTEGRATION WORKFLOW REQUIREMENTS:
 
 Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
     }
-  }, [activeAddress, isPremiumTier]);
+  }, [activeAddress, isPremiumState]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(promptText);
@@ -113,13 +113,27 @@ Please write clean, TypeScript-safe React components and backend routes using vi
             <div className="h-24 bg-white/5 rounded"></div>
           </div>
         ) : (
-          <div className="relative rounded-2xl bg-black border border-white/5 p-4 mb-6">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 text-[9px] text-white/30 font-mono uppercase">
-              <Terminal className="w-3 h-3" /> Preview
+          <div className="space-y-4 mb-6">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                Payment Flow Mode
+              </label>
+              <select
+                value={isPremiumState ? "zk" : "standard"}
+                onChange={(e) => setIsPremiumState(e.target.value === "zk")}
+                className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
+              >
+                <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
+                <option value="zk" className="bg-[#0a0a0c]">ZK Privacy (Routed)</option>
+              </select>
             </div>
-            <pre className="text-[10px] text-white/60 font-mono whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto pr-2">
-              {promptText}
-            </pre>
+
+            {/* Configuration Status Card */}
+            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center">
+              <p className="text-xs text-white/60 leading-relaxed">
+                Prompt configurations compiled successfully. Ready to copy for your AI coding assistant.
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -129,17 +143,17 @@ Please write clean, TypeScript-safe React components and backend routes using vi
         disabled={isLoading}
         className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
           copied
-            ? "bg-[#ccff00] text-black shadow-[0_0_20px_rgba(204,255,0,0.25)]"
+            ? "bg-[#ccff00] text-[#111111] shadow-[0_0_20px_rgba(204,255,0,0.25)]"
             : "bg-white/5 hover:bg-[#ccff00]/10 border border-white/10 hover:border-[#ccff00]/30 text-white hover:text-[#ccff00]"
         }`}
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4" /> Prompt Copied! Paste into AI
+            <Check className="w-4 h-4" /> Copied to Clipboard!
           </>
         ) : (
           <>
-            <Copy className="w-4 h-4" /> Copy Integration Prompt
+            <Copy className="w-4 h-4" /> Copy Setup Prompt
           </>
         )}
       </button>
