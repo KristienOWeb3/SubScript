@@ -59,6 +59,12 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         address indexed newDestination
     );
 
+    event ERC20Rescued(
+        address indexed token,
+        address indexed recipient,
+        uint256 amount
+    );
+
     // ─────────────────────────── Constructor / Initializer ───────────
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -120,6 +126,21 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
      */
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /**
+     * @notice Recover stuck ERC20 tokens in the contract.
+     */
+    function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
+        require(token != address(0), "Invalid token address");
+        require(to != address(0), "Invalid receiver address");
+        require(amount > 0, "Amount must be greater than zero");
+        
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(amount <= balance, "Insufficient balance");
+        
+        IERC20(token).safeTransfer(to, amount);
+        emit ERC20Rescued(token, to, amount);
     }
 
     // ─────────────────────────── Core Functions ─────────────────────

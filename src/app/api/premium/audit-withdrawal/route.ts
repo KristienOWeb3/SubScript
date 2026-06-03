@@ -32,43 +32,57 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        /* Enforce Server-Side Premium Merchant Verification check */
+        const { data: merchantData } = await supabase
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", merchantAddress.toLowerCase())
+            .maybeSingle();
+
+        if (!merchantData || merchantData.tier < 1) {
+            return NextResponse.json({ error: "Forbidden: Private routing operations require an active premium tier." }, { status: 403 });
+        }
+
         /* Determine current status by querying the chain state if a txHash is provided */
-        let status = "PENDING";
+        let status = txHash ? "BROADCASTED" : "PENDING";
         let errorMessage: string | null = null;
         let completedAt: string | null = null;
+        let usedRpcEndpoint: string | null = null;
 
         if (txHash) {
             try {
-                const receipt = await executeWithRpcFallback(async (provider) => {
+                const { result: receipt, rpcEndpoint } = await executeWithRpcFallback(async (provider) => {
                     return await provider.getTransactionReceipt(txHash);
                 });
+
+                usedRpcEndpoint = rpcEndpoint;
 
                 if (receipt) {
                     if (receipt.status === 1) {
                         /* Confirm target of the call is the subscript router proxy */
                         const targetContract = receipt.to ? receipt.to.toLowerCase() : "";
                         if (targetContract === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
-                            status = "SUCCESS";
+                            status = "CONFIRMED";
                             completedAt = new Date().toISOString();
                             console.log(`[metric] withdrawals_successful: ${merchantAddress}, amount: ${amount}`);
                         } else {
-                            status = "FAILED_PERMANENTLY_VERIFICATION";
+                            status = "FAILED";
                             errorMessage = `Target contract mismatch. Expected ${SUBSCRIPT_ROUTER_ADDRESS}, got ${receipt.to}`;
                             console.log(`[metric] withdrawals_failed: ${merchantAddress}, reason: target_mismatch`);
                         }
                     } else {
-                        status = "FAILED_PERMANENTLY_CONTRACT";
+                        status = "FAILED";
                         errorMessage = "EVM transaction reverted on-chain.";
                         console.log(`[metric] withdrawals_failed: ${merchantAddress}, reason: tx_reverted`);
                     }
                 }
             } catch (rpcErr: any) {
                 console.warn(`RPC lookup failed during withdrawal audit: ${rpcErr.message}`);
-                /* Leave as PENDING to allow reconciliation or background workers to verify */
+                /* Keep as BROADCASTED or PENDING so reconciliation can verify it later */
             }
         }
 
-        /* Upsert the withdrawal audit log to prevent duplicates via unique nullifier_hash constraint */
+        /* Upsert the withdrawal audit log with idempotency guarantee */
         const { error: dbError } = await supabase
             .from("private_withdrawals")
             .upsert({
@@ -82,6 +96,7 @@ export async function POST(request: Request) {
                 error_message: errorMessage,
                 completed_at: completedAt,
                 proof_type: proofType,
+                rpc_endpoint: usedRpcEndpoint,
                 updated_at: new Date().toISOString()
             }, { onConflict: "nullifier_hash" });
 
