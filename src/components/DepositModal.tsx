@@ -36,6 +36,7 @@ interface DepositModalProps {
     onClose: () => void;
     isEmbeddedWallet: boolean;
     depositAddress: string;
+    onSuccess?: () => void;
 }
 
 export default function DepositModal({
@@ -43,6 +44,7 @@ export default function DepositModal({
     onClose,
     isEmbeddedWallet,
     depositAddress,
+    onSuccess,
 }: DepositModalProps) {
     const [copied, setCopied] = useState(false);
     const [depositStep, setDepositStep] = useState<"approve" | "transfer">("approve");
@@ -193,9 +195,8 @@ export default function DepositModal({
 
             setTxStatus("Confirming transfer...");
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            console.log("Transfer transaction confirmed:", receipt);
-
             resetAndClose();
+            if (onSuccess) onSuccess();
         } catch (err) {
             console.error("Transfer failed:", err);
         } finally {

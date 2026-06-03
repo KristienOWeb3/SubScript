@@ -196,6 +196,23 @@ export default function DashboardPage() {
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
     const [isPremium, setIsPremium] = useState(false);
+    const [hasDeposited, setHasDeposited] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== "undefined" && address) {
+            const stored = localStorage.getItem(`deposited_${address.toLowerCase()}`);
+            setHasDeposited(stored === "true");
+        } else {
+            setHasDeposited(false);
+        }
+    }, [address]);
+
+    const handleDepositSuccess = () => {
+        if (address) {
+            localStorage.setItem(`deposited_${address.toLowerCase()}`, "true");
+            setHasDeposited(true);
+        }
+    };
 
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
@@ -805,6 +822,12 @@ export default function DashboardPage() {
             setTimeout(() => setWithdrawSuccess(false), 4000);
             refetchVaultBalance();
             refetchWalletBalance();
+            
+            /* Clear deposit status on successful withdrawal */
+            if (typeof window !== "undefined" && address) {
+                localStorage.removeItem(`deposited_${address.toLowerCase()}`);
+                setHasDeposited(false);
+            }
         } catch (err) {
             console.error("Withdraw failed:", err);
         } finally {
@@ -2119,7 +2142,13 @@ Please write clean, TypeScript-safe React components and backend routes using vi
         <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
             <AnimatedGradientBg />
             <div className="relative z-10">
-            <DashboardHeader />
+            <DashboardHeader 
+                vaultBalance={vaultBalance}
+                onWithdraw={handleWithdraw}
+                isWithdrawing={isWithdrawing}
+                hasDeposited={hasDeposited}
+                onDepositSuccess={handleDepositSuccess}
+            />
 
             {/* Dashboard Content */}
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
