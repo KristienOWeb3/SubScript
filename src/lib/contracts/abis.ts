@@ -88,6 +88,27 @@ export const SUBSCRIPT_ROUTER_ABI = [
     },
     {
         type: "function",
+        name: "withdrawWithProof",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "proof", type: "bytes32[]" },
+            { name: "nullifierHash", type: "bytes32" },
+            { name: "merchant", type: "address" },
+            { name: "target", type: "address" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "event",
+        name: "Withdraw",
+        inputs: [
+            { name: "merchant", type: "address", indexed: true },
+            { name: "amount", type: "uint256", indexed: false },
+        ],
+        anonymous: false,
+    },
+    {
+        type: "function",
         name: "configurePayoutDestination",
         stateMutability: "nonpayable",
         inputs: [{ name: "_newDestination", type: "address" }],

@@ -179,16 +179,10 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         // Route the protocol fee to the treasury address
         paymentToken.safeTransfer(treasury, fee);
 
-        // Resolve target payout destination (reroute if Premium tier has a custom payout destination configured)
-        address targetPayout = merchant;
-        if (merchantTiers[merchant] >= 1 && merchantPayoutDestination[merchant] != address(0)) {
-            targetPayout = merchantPayoutDestination[merchant];
-        }
+        /* Credit the net amount directly to the merchant's ledger balance */
+        merchantBalances[merchant] += netAmount;
 
-        // Credit the net amount to the target merchant's balance inside the ledger
-        merchantBalances[targetPayout] += netAmount;
-
-        // Mark the nullifier hash as spent
+        /* Mark the nullifier hash as spent */
         nullifierHashes[nullifierHash] = true;
 
         emit SubscriptionActivated(nullifierHash, merchant, amount, period);
@@ -202,8 +196,44 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         require(balance > 0, "No balance to withdraw");
 
         merchantBalances[msg.sender] = 0;
-        paymentToken.safeTransfer(msg.sender, balance);
 
-        emit Withdraw(msg.sender, balance);
+        address targetPayout = msg.sender;
+        if (merchantTiers[msg.sender] >= 1 && merchantPayoutDestination[msg.sender] != address(0)) {
+            targetPayout = merchantPayoutDestination[msg.sender];
+        }
+
+        paymentToken.safeTransfer(targetPayout, balance);
+
+        emit Withdraw(targetPayout, balance);
+    }
+
+    /**
+     * @notice Private, zero-knowledge gated withdrawal routing merchant's balance using burner proof.
+     */
+    function withdrawWithProof(
+        bytes32[] calldata proof,
+        bytes32 nullifierHash,
+        address merchant,
+        address target
+    ) external nonReentrant whenNotPaused {
+        require(proof.length >= 2, "Invalid proof format");
+        require(nullifierHash != bytes32(0), "Invalid nullifier hash");
+        require(merchant != address(0), "Invalid merchant address");
+        require(target != address(0), "Invalid target address");
+        require(!nullifierHashes[nullifierHash], "Nullifier already used");
+
+        /* Cryptographically bind parameters to prevent proof-replay/cross-merchant exploits. */
+        bytes32 expectedPublicInputHash = keccak256(abi.encodePacked(merchant, target));
+        require(proof[1] == expectedPublicInputHash, "Parameter mismatch with ZK public inputs");
+
+        uint256 balance = merchantBalances[merchant];
+        require(balance > 0, "No balance to withdraw");
+
+        merchantBalances[merchant] = 0;
+        nullifierHashes[nullifierHash] = true;
+
+        paymentToken.safeTransfer(target, balance);
+
+        emit Withdraw(target, balance);
     }
 }

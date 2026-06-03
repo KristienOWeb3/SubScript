@@ -67,6 +67,18 @@ const SUBSCRIPT_ABI = [
     },
     {
         type: "function",
+        name: "withdrawWithProof",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "proof", type: "bytes32[]" },
+            { name: "nullifierHash", type: "bytes32" },
+            { name: "merchant", type: "address" },
+            { name: "target", type: "address" }
+        ],
+        outputs: []
+    },
+    {
+        type: "function",
         name: "cancelSubscription",
         stateMutability: "nonpayable",
         inputs: [{ name: "_subId", type: "uint256" }],
@@ -195,6 +207,27 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "withdraw";
                 finalArgs = [];
+                break;
+            }
+            case "withdrawWithProof": {
+                const { proof, nullifierHash, merchant, target } = args;
+                if (!Array.isArray(proof) || proof.length < 2 || proof.some((item) => typeof item !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(item))) {
+                    return NextResponse.json({ error: "Invalid proof payload" }, { status: 400 });
+                }
+                if (!nullifierHash || typeof nullifierHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(nullifierHash)) {
+                    return NextResponse.json({ error: "Invalid nullifier hash" }, { status: 400 });
+                }
+                if (!merchant || typeof merchant !== "string" || !merchant.startsWith("0x") || merchant.length !== 42) {
+                    return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
+                }
+                if (!target || typeof target !== "string" || !target.startsWith("0x") || target.length !== 42) {
+                    return NextResponse.json({ error: "Invalid target address" }, { status: 400 });
+                }
+
+                contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
+                contractAbi = SUBSCRIPT_ABI;
+                functionName = "withdrawWithProof";
+                finalArgs = [proof, nullifierHash, merchant, target];
                 break;
             }
             case "cancelSubscription": {
