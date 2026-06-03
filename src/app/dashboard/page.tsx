@@ -143,6 +143,14 @@ export default function DashboardPage() {
                     zkProof: args[2],
                     rerouteConfig: args[3]
                 };
+            } else if (functionName === "withdrawWithProof") {
+                action = "withdrawWithProof";
+                serializedArgs = {
+                    proof: args[0],
+                    nullifierHash: args[1],
+                    merchant: args[2],
+                    target: args[3]
+                };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
@@ -818,7 +826,13 @@ export default function DashboardPage() {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
-            const payoutDestination = (address || "0x725D56151CeaC9eAd625241D13b8307B22EDDb10") as Hex;
+            const merchantAddr = (address || "") as Hex;
+            if (!merchantAddr) {
+                throw new Error("No merchant wallet address available.");
+            }
+
+            /* Resolve payout target: use configured payout destination, fall back to treasury */
+            const targetPayout = (payoutDestination || "0x725D56151CeaC9eAd625241D13b8307B22EDDb10") as Hex;
             
             /* Generate random 32-byte burner secret hex */
             const randomBytes = new Uint8Array(32);
@@ -831,22 +845,29 @@ export default function DashboardPage() {
             }
             const burnerSecret = bytesToHex(randomBytes);
             
-            /* Compute simulated commitment hash and public input hash to break the public link to merchant address */
-            const commitmentHash = keccak256(encodePacked(["string", "address"], [burnerSecret, payoutDestination]));
-            const publicInputHash = keccak256(encodePacked(["address", "uint256"], [payoutDestination, parseUnits(vaultBalance.toString(), 6)]));
+            /* Compute nullifier hash (unique per withdrawal to prevent double-spend) */
+            const nullifierHash = keccak256(encodePacked(["bytes32", "address"], [burnerSecret, merchantAddr]));
+            
+            /* Compute public input hash binding merchant and target, matching contract logic:
+               keccak256(abi.encodePacked(merchant, target)) */
+            const publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout]));
+            
+            /* Assemble the proof array: [burnerSecret, publicInputHash] */
+            const proof = [burnerSecret, publicInputHash] as readonly `0x${string}`[];
             
             console.log("Generating local zk-SNARK proof for payout routing...");
-            console.log("Payout Destination (Treasury Target):", payoutDestination);
-            console.log("Simulated Burner Secret:", burnerSecret);
-            console.log("Simulated Commitment Hash:", commitmentHash);
-            console.log("Simulated Public Input Hash:", publicInputHash);
-            console.log("ZK Proof Payload:", [burnerSecret, publicInputHash]);
+            console.log("Merchant Address:", merchantAddr);
+            console.log("Payout Target:", targetPayout);
+            console.log("Nullifier Hash:", nullifierHash);
+            console.log("Public Input Hash:", publicInputHash);
+            console.log("ZK Proof Payload:", proof);
             console.log("Local ZK proof simulation completed successfully.");
 
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
-                functionName: "withdraw",
+                functionName: "withdrawWithProof",
+                args: [proof, nullifierHash, merchantAddr, targetPayout],
             });
             setWithdrawSuccess(true);
             setTimeout(() => setWithdrawSuccess(false), 4000);
@@ -864,6 +885,7 @@ export default function DashboardPage() {
             setIsWithdrawing(false);
         }
     };
+
 
 
     const getCheckoutErrorMessage = (error: any) => {
