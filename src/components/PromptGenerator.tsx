@@ -51,6 +51,7 @@ Here is my specific deployment data:
 - PAYMENT_PERIOD_SECONDS = ${period}
 - SUBSCRIPT_CONTRACT = "0x3c7f095575C66eF21D501D63E265A51240849924" (STANDARD_CONTRACT_ADDRESS)
 - USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
+- Routing Metadata: { "routing": "traceable" }
 
 Please write the Wagmi/Viem React hooks and components to implement the standard transparent subscription flow:
 1. Approve USDC allowance for the contract: USDC_ADDRESS.approve(SUBSCRIPT_CONTRACT, totalPeriodAmount).
@@ -70,6 +71,7 @@ Here is my specific deployment data:
 - PAYMENT_PERIOD_SECONDS = ${period}
 - SUBSCRIPT_ROUTER = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29"
 - USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
+- Routing Metadata: { "routing": "private" }
 
 Since I am a Premium Merchant, we will use the ZK Burner subscription flow. Run the following CLI command to automatically scaffold the Zero-Knowledge components and cryptographical dependencies:
 npx @subscript-protocol/cli@latest init --merchant ${displayAddress}
@@ -193,11 +195,11 @@ Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all 
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4" /> Copied to Clipboard!
+            <Check className="w-4 h-4" /> ✓ Prompt Copied
           </>
         ) : (
           <>
-            <Copy className="w-4 h-4" /> Copy Setup Prompt
+            <Copy className="w-4 h-4" /> Copy Payment Prompt
           </>
         )}
       </button>
