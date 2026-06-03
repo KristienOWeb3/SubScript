@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap } from "lucide-react";
+import { Wallet, Copy, Check, PlugZap, Loader2 } from "lucide-react";
 import DepositModal from "./DepositModal";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
@@ -30,9 +30,22 @@ const publicClient = createPublicClient({
 interface DashboardHeaderProps {
     embeddedWallet?: { wallet: string; email: string } | null;
     onDisconnect?: () => void;
+    vaultBalance?: number;
+    onWithdraw?: () => Promise<void>;
+    isWithdrawing?: boolean;
+    hasDeposited?: boolean;
+    onDepositSuccess?: () => void;
 }
 
-export default function DashboardHeader({ embeddedWallet, onDisconnect }: DashboardHeaderProps) {
+export default function DashboardHeader({
+    embeddedWallet,
+    onDisconnect,
+    vaultBalance = 0,
+    onWithdraw,
+    isWithdrawing = false,
+    hasDeposited = false,
+    onDepositSuccess,
+}: DashboardHeaderProps) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [copiedAddress, setCopiedAddress] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
@@ -157,15 +170,29 @@ export default function DashboardHeader({ embeddedWallet, onDisconnect }: Dashbo
                                     </p>
                                 </div>
 
-                                {/* Deposit Button */}
-                                <button
-                                    onClick={() => setIsDepositOpen(true)}
-                                    className="px-4 sm:px-5 py-2 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200"
-                                >
-                                    Deposit
-                                </button>
+                                /* Deposit/Withdraw Button */
+                                {(() => {
+                                    const showWithdraw = vaultBalance > 0 || hasDeposited;
+                                    return showWithdraw ? (
+                                        <button
+                                            onClick={onWithdraw}
+                                            disabled={isWithdrawing}
+                                            className="px-4 sm:px-5 py-2 border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all duration-200 flex items-center gap-1.5"
+                                        >
+                                            {isWithdrawing && <Loader2 className="w-3 h-3 animate-spin" />}
+                                            Withdraw
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => setIsDepositOpen(true)}
+                                            className="px-4 sm:px-5 py-2 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200"
+                                        >
+                                            Deposit
+                                        </button>
+                                    );
+                                })()}
 
-                                {/* Disconnect */}
+                                /* Disconnect */
                                 <button
                                     onClick={handleDisconnect}
                                     className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
@@ -188,12 +215,13 @@ export default function DashboardHeader({ embeddedWallet, onDisconnect }: Dashbo
                 </header>
             </div>
 
-            {/* Deposit Modal */}
+            /* Deposit Modal */
             <DepositModal
                 isOpen={isDepositOpen}
                 onClose={() => setIsDepositOpen(false)}
                 isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={depositAddress}
+                onSuccess={onDepositSuccess}
             />
         </>
     );
