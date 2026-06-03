@@ -949,13 +949,11 @@ export default function DashboardPage() {
                 (log) =>
                     log.eventName === "Transfer" &&
                     log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()
+                    log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
+                    log.args.value === amount
             );
             if (!paymentLog) {
                 throw new Error("USDC transfer to premium router not found in transaction logs.");
-            }
-            if (paymentLog.args.value !== amount) {
-                throw new Error(`USDC transfer amount mismatch. Expected 10 USDC.`);
             }
 
             setPremiumStatus("Syncing premium state with server...");
