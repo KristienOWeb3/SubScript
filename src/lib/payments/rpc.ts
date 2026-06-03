@@ -9,7 +9,7 @@ const RPC_ENDPOINTS = [
 /* Exposes a wrapper function that retries operations across providers sequentially if a network or endpoint-specific error occurs */
 export async function executeWithRpcFallback<T>(
     operation: (provider: ethers.JsonRpcProvider) => Promise<T>
-): Promise<T> {
+): Promise<{ result: T; rpcEndpoint: string }> {
     let lastError: any = null;
     let failoverCount = 0;
 
@@ -32,7 +32,7 @@ export async function executeWithRpcFallback<T>(
                 console.log(`[metric] rpc_failovers: ${failoverCount}`);
             }
 
-            return result;
+            return { result, rpcEndpoint: url };
         } catch (err: any) {
             const errorMessage = (err.message || "").toLowerCase();
             console.warn(`RPC lookup attempt failed on endpoint ${url}: ${errorMessage}`);

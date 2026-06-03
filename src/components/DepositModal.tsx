@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, ArrowRight, Wallet, QrCode, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import Link from "next/link";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
-import { createPublicClient, http, parseUnits, bytesToHex, keccak256 } from "viem";
+import { createPublicClient, http, parseUnits, formatUnits, bytesToHex, keccak256 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import routerAbi from "@/lib/contracts/abi.json";
@@ -21,6 +21,13 @@ const ERC20_ABI = [
             { name: "amount", type: "uint256" }
         ],
         outputs: [{ name: "", type: "bool" }]
+    },
+    {
+        type: "function",
+        name: "balanceOf",
+        stateMutability: "view",
+        inputs: [{ name: "account", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }]
     }
 ] as const;
 
@@ -37,6 +44,12 @@ interface DepositModalProps {
     isEmbeddedWallet: boolean;
     depositAddress: string;
     onSuccess?: () => void;
+    executeContractWrite: (params: {
+        address: string;
+        abi: any;
+        functionName: string;
+        args?: any[];
+    }) => Promise<string>;
 }
 
 export default function DepositModal({
@@ -45,6 +58,7 @@ export default function DepositModal({
     isEmbeddedWallet,
     depositAddress,
     onSuccess,
+    executeContractWrite,
 }: DepositModalProps) {
     const [copied, setCopied] = useState(false);
     const [depositStep, setDepositStep] = useState<"approve" | "transfer">("approve");
@@ -53,10 +67,57 @@ export default function DepositModal({
     const [txLoading, setTxLoading] = useState(false);
     const [txStatus, setTxStatus] = useState<string | null>(null);
     const [agreed, setAgreed] = useState(false);
+    const [txError, setTxError] = useState<string | null>(null);
+
+    const [usdcBalance, setUsdcBalance] = useState("0.00");
+    const [lastActive, setLastActive] = useState(Date.now());
+    const [pollingTimeout, setPollingTimeout] = useState(false);
 
     const { chainId, isConnected } = useAccount();
     const { switchChain } = useSwitchChain();
-    const { writeContractAsync, isPending, isError, error } = useWriteContract();
+    const { isPending, isError, error } = useWriteContract();
+
+    const fetchBalance = async () => {
+        if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
+        try {
+            const balanceRaw = await publicClient.readContract({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "balanceOf",
+                args: [depositAddress as `0x${string}`],
+            });
+            setUsdcBalance(parseFloat(formatUnits(balanceRaw as bigint, 6)).toFixed(2));
+        } catch (err) {
+            console.error("Failed to read balance in modal:", err);
+        }
+    };
+
+    const handleRefresh = async () => {
+        setLastActive(Date.now());
+        setPollingTimeout(false);
+        await fetchBalance();
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        setLastActive(Date.now());
+        setPollingTimeout(false);
+        fetchBalance();
+
+        const interval = setInterval(async () => {
+            const timeSinceActive = Date.now() - lastActive;
+            if (timeSinceActive > 60000) {
+                setPollingTimeout(true);
+                clearInterval(interval);
+                console.log("Inactivity timeout reached. Stopping USDC balance polling.");
+            } else {
+                await fetchBalance();
+            }
+        }, 10000);
+
+        return () => clearInterval(interval);
+    }, [isOpen, depositAddress, lastActive]);
 
     const handleCopy = async () => {
         await navigator.clipboard.writeText(depositAddress);
@@ -69,12 +130,12 @@ export default function DepositModal({
             console.error("Terms not agreed.");
             return;
         }
-        if (!isConnected) {
+        if (!isConnected && !isEmbeddedWallet) {
             console.error("Wallet not connected.");
             return;
         }
 
-        if (chainId !== 5042002) {
+        if (chainId !== 5042002 && !isEmbeddedWallet) {
             console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
             switchChain?.({ chainId: 5042002 });
             return;
@@ -82,6 +143,7 @@ export default function DepositModal({
 
         setTxLoading(true);
         setTxStatus("Preparing approval...");
+        setTxError(null);
 
         try {
             let currentSecret = secret;
@@ -120,7 +182,7 @@ export default function DepositModal({
             }
 
             setTxStatus("Waiting for signature...");
-            const hash = await writeContractAsync({
+            const hash = await executeContractWrite({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: ERC20_ABI,
                 functionName: "approve",
@@ -128,12 +190,13 @@ export default function DepositModal({
             });
 
             setTxStatus("Confirming approval...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
             console.log("Approval transaction confirmed:", receipt);
 
             setDepositStep("transfer");
-        } catch (err) {
+        } catch (err: any) {
             console.error("Approval failed:", err);
+            setTxError(err.message || "Approval failed");
         } finally {
             setTxLoading(false);
             setTxStatus(null);
@@ -145,12 +208,12 @@ export default function DepositModal({
             console.error("Terms not agreed.");
             return;
         }
-        if (!isConnected) {
+        if (!isConnected && !isEmbeddedWallet) {
             console.error("Wallet not connected.");
             return;
         }
 
-        if (chainId !== 5042002) {
+        if (chainId !== 5042002 && !isEmbeddedWallet) {
             console.log("Not on Arc Testnet. Triggering switch to chain 5042002...");
             switchChain?.({ chainId: 5042002 });
             return;
@@ -163,6 +226,7 @@ export default function DepositModal({
 
         setTxLoading(true);
         setTxStatus("Preparing transfer...");
+        setTxError(null);
 
         try {
             const amount = parseUnits("1", 6);
@@ -186,7 +250,7 @@ export default function DepositModal({
             }
 
             setTxStatus("Waiting for signature...");
-            const hash = await writeContractAsync({
+            const hash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
                 functionName: "depositAndCommit",
@@ -194,11 +258,12 @@ export default function DepositModal({
             });
 
             setTxStatus("Confirming transfer...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
             resetAndClose();
             if (onSuccess) onSuccess();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Transfer failed:", err);
+            setTxError(err.message || "Transfer failed");
         } finally {
             setTxLoading(false);
             setTxStatus(null);
@@ -212,11 +277,12 @@ export default function DepositModal({
         setTxLoading(false);
         setTxStatus(null);
         setAgreed(false);
+        setTxError(null);
         onClose();
     };
 
     const isLoading = isPending || txLoading;
-    const isWrongNetwork = chainId !== 5042002;
+    const isWrongNetwork = chainId !== 5042002 && !isEmbeddedWallet;
 
     return (
         <AnimatePresence>
@@ -274,7 +340,7 @@ export default function DepositModal({
                                     </div>
                                 </div>
 
-                                {isEmbeddedWallet ? (
+                                {isEmbeddedWallet && parseFloat(usdcBalance) === 0 ? (
                                     <div className="text-center">
                                         <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-leetcode-teal/10 text-leetcode-teal rounded-full text-sm font-medium mb-6">
                                             <QrCode className="w-4 h-4" />
@@ -285,6 +351,35 @@ export default function DepositModal({
                                             Top up your SubScript balance by sending USDC to this
                                             address on <span className="text-white font-medium">Base</span>.
                                         </p>
+
+                                        {/* Current Balance Indicator with manual Refresh */}
+                                        <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
+                                            <div className="text-left">
+                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
+                                                <p className="text-lg font-bold text-white tracking-tight leading-none">
+                                                    ${usdcBalance}
+                                                    <span className="text-xs text-white/50 font-normal ml-1">USDC</span>
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {pollingTimeout ? (
+                                                    <span className="text-[10px] text-yellow-500/70 font-medium">Polling paused</span>
+                                                ) : (
+                                                    <span className="flex h-2 w-2 relative">
+                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-leetcode-teal opacity-75"></span>
+                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-leetcode-teal"></span>
+                                                    </span>
+                                                )}
+                                                <button
+                                                    onClick={handleRefresh}
+                                                    disabled={!agreed}
+                                                    className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
+                                                    title="Refresh balance"
+                                                >
+                                                    <Loader2 className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                                                </button>
+                                            </div>
+                                        </div>
 
                                         <div className={`p-4 rounded-xl inline-block mb-6 transition-all duration-300 relative ${agreed ? "bg-white" : "bg-white/5 filter blur-[6px] pointer-events-none"}`}>
                                             <QRCodeSVG
@@ -335,15 +430,34 @@ export default function DepositModal({
                                     </div>
                                 ) : (
                                     <div>
-                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-400 rounded-full text-sm font-medium mb-6">
+                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#00d2b4]/10 text-[#00d2b4] rounded-full text-sm font-medium mb-6">
                                             <Wallet className="w-4 h-4" />
-                                            External Wallet
+                                            {isEmbeddedWallet ? "Embedded Wallet (Funded)" : "External Wallet"}
+                                        </div>
+
+                                        {/* Current Balance Indicator */}
+                                        <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
+                                            <div className="text-left">
+                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
+                                                <p className="text-lg font-bold text-white tracking-tight leading-none">
+                                                    ${usdcBalance}
+                                                    <span className="text-xs text-white/50 font-normal ml-1">USDC</span>
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={handleRefresh}
+                                                disabled={!agreed}
+                                                className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
+                                                title="Refresh balance"
+                                            >
+                                                <Loader2 className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                                            </button>
                                         </div>
 
                                         <div className="flex items-center gap-3 mb-8">
                                             <div
                                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${depositStep === "approve"
-                                                    ? "bg-leetcode-teal text-white"
+                                                    ? "bg-[#00d2b4] text-[#111111]"
                                                     : "bg-white/5 text-white/50"
                                                     }`}
                                             >
@@ -355,7 +469,7 @@ export default function DepositModal({
                                             <ArrowRight className="w-4 h-4 text-white/30" />
                                             <div
                                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${depositStep === "transfer"
-                                                    ? "bg-leetcode-teal text-white"
+                                                    ? "bg-[#00d2b4] text-[#111111]"
                                                     : "bg-white/5 text-white/50"
                                                     }`}
                                             >
@@ -393,9 +507,9 @@ export default function DepositModal({
                                                 <button
                                                     onClick={handleApprove}
                                                     disabled={isLoading || !agreed}
-                                                    className="w-full py-3 bg-leetcode-teal text-white font-semibold rounded-xl
+                                                    className="w-full py-3 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
                                                              hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
-                                                             transition-all duration-200 flex items-center justify-center gap-2"
+                                                             transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
                                                 >
                                                     {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
                                                     {isWrongNetwork 
@@ -412,7 +526,7 @@ export default function DepositModal({
                                                     deposit.
                                                 </p>
 
-                                                <div className="bg-leetcode-teal/10 border border-leetcode-teal/20 rounded-xl p-4 mb-6">
+                                                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-xl p-4 mb-6">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-white/70">
                                                             You&apos;re depositing
@@ -426,9 +540,9 @@ export default function DepositModal({
                                                 <button
                                                     onClick={handleTransfer}
                                                     disabled={isLoading}
-                                                    className="w-full py-3 bg-leetcode-teal text-white font-semibold rounded-xl
+                                                    className="w-full py-3 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
                                                              hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
-                                                             transition-all duration-200 flex items-center justify-center gap-2"
+                                                             transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
                                                 >
                                                     {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
                                                     {isWrongNetwork 
@@ -440,13 +554,13 @@ export default function DepositModal({
                                             </div>
                                         )}
 
-                                        {isError && error && (
+                                        {(txError || (isError && error)) && (
                                             <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-col gap-1.5 text-left">
                                                 <span className="text-red-400 text-xs font-semibold uppercase tracking-wide">
                                                     Transaction Failed
                                                 </span>
                                                 <p className="text-red-200 text-xs font-mono break-all leading-relaxed whitespace-pre-wrap">
-                                                    {error.message}
+                                                    {txError || error?.message}
                                                 </p>
                                             </div>
                                         )}

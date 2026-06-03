@@ -10,6 +10,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import SubScriptCheckout from "@/components/SubScriptCheckout";
 import WithdrawModal from "@/components/WithdrawModal";
+import DepositModal from "@/components/DepositModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -207,6 +208,7 @@ export default function DashboardPage() {
     const [isPremium, setIsPremium] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+    const [isDepositOpen, setIsDepositOpen] = useState(false);
 
     useEffect(() => {
         setPromptFlowMode(isPremium ? "private" : "standard");
@@ -2274,12 +2276,15 @@ Please write clean, TypeScript-safe React components and backend routes using vi
             <AnimatedGradientBg />
             <div className="relative z-10">
             <DashboardHeader 
+                embeddedWallet={embeddedWallet}
+                onDisconnect={handleLogout}
                 vaultBalance={vaultBalance}
                 onWithdraw={async () => setIsWithdrawOpen(true)}
                 isWithdrawing={isWithdrawing}
                 onDepositSuccess={handleDepositSuccess}
                 isPremium={isPremium}
                 promptFlowMode={promptFlowMode}
+                onDeposit={() => setIsDepositOpen(true)}
             />
 
             {/* Dashboard Content */}
@@ -2397,6 +2402,14 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                     setIsWithdrawOpen(false);
                 }}
                 isWithdrawing={isWithdrawing}
+            />
+            <DepositModal
+                isOpen={isDepositOpen}
+                onClose={() => setIsDepositOpen(false)}
+                isEmbeddedWallet={!!embeddedWallet}
+                depositAddress={address || ""}
+                onSuccess={handleDepositSuccess}
+                executeContractWrite={executeContractWrite}
             />
         </div>
     );

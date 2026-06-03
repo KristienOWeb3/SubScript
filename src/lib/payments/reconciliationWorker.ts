@@ -1,9 +1,29 @@
+import crypto from "crypto";
 import { processPremiumUpgrade } from "./processPremiumUpgrade";
 
 export async function reconcile(supabase: any, limit: number = 300): Promise<{ success: boolean; processedCount: number; results: any[] }> {
     console.log(`[db_updated] Reconciliation worker initiated (Batch limit: ${limit})`);
 
-    /* 1. Claim pending/failed sessions with transaction evidence atomically using PLpgSQL */
+    /* 0. Operational Circuit Breaker Gate */
+    const { data: settings, error: settingsError } = await supabase
+        .from("system_settings")
+        .select("reconciliation_enabled")
+        .eq("id", 1)
+        .maybeSingle();
+
+    if (settingsError) {
+        console.error(`[db_updated] Failed to query system settings: ${settingsError.message}`);
+    }
+
+    if (settings && !settings.reconciliation_enabled) {
+        console.error(`[ALERT] Reconciliation worker execution blocked by circuit breaker system flag.`);
+        return { success: false, processedCount: 0, results: [] };
+    }
+
+    /* 1. Generate unique correlation identifier for this batch run */
+    const reconciliationRunId = crypto.randomUUID();
+
+    /* 2. Claim pending/failed sessions with transaction evidence atomically using PLpgSQL */
     const { data: sessions, error } = await supabase
         .rpc("claim_pending_payment_sessions", { batch_size: limit });
 
@@ -15,7 +35,7 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
     const results: any[] = [];
 
     if (sessions && sessions.length > 0) {
-        console.log(`[db_updated] Claimed ${sessions.length} sessions for verification.`);
+        console.log(`[db_updated] Claimed ${sessions.length} sessions for verification. Run ID: ${reconciliationRunId}`);
         
         /* Observability queue depth metric log */
         console.log(`[metric] reconciliation_queue_depth: ${sessions.length}`);
@@ -25,6 +45,9 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
         let activeIndex = 0;
 
         const processSessionTask = async (session: any, index: number) => {
+            /* Correlation tracing logs for incident investigation */
+            console.log(`[metric] reconciliation_run: run_id=${reconciliationRunId}, session_id=${session.session_id}, tx_hash=${session.tx_hash}, merchant=${session.merchant_address}`);
+
             try {
                 const res = await processPremiumUpgrade({
                     supabase,

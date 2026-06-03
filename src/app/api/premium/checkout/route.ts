@@ -37,6 +37,17 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        /* Circuit Breaker check: verify checkouts are active */
+        const { data: settings } = await supabase
+            .from("system_settings")
+            .select("checkout_enabled")
+            .eq("id", 1)
+            .maybeSingle();
+
+        if (settings && !settings.checkout_enabled) {
+            return NextResponse.json({ error: "Service Unavailable: Premium checkout operations are temporarily paused by administrator." }, { status: 503 });
+        }
+
         /* Check if merchant is already premium in database */
         const { data: merchantData } = await supabase
             .from("merchants")

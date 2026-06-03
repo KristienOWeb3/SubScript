@@ -13,13 +13,15 @@ export async function activateSubscription({
     merchantAddress,
     txHash,
     adminWallet,
-    sessionId
+    sessionId,
+    rpcEndpoint
 }: {
     supabase: any;
     merchantAddress: string;
     txHash: string;
     adminWallet: ethers.Wallet;
     sessionId: string;
+    rpcEndpoint?: string;
 }) {
     const normalizedUser = normalizeAddress(merchantAddress);
     const premiumSubId = Number(BigInt(normalizedUser) & BigInt("9007199254740991"));
@@ -127,7 +129,8 @@ export async function activateSubscription({
             tier_before: tierBefore,
             tier_after: 1,
             admin_wallet: adminWallet.address.toLowerCase(),
-            activation_tx_hash: activationTxHash
+            activation_tx_hash: activationTxHash,
+            rpc_endpoint: rpcEndpoint || null
         });
 
     if (auditError) {

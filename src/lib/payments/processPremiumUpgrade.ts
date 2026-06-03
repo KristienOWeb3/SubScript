@@ -20,7 +20,7 @@ export async function processPremiumUpgrade({
 }): Promise<{ success: boolean; error?: string; status: number; tier?: number; upgradeTxHash?: string | null; message?: string }> {
     console.log(`[tx_received] Processing premium upgrade for merchant: ${walletAddress}, session: ${sessionId}, tx: ${txHash}`);
 
-    /* 1. Acquire atomic database-level session lock */
+    /* 1. Acquire database session lock */
     const sessionRes = await lockPaymentSession(supabase, sessionId, txHash);
     
     if (!sessionRes.data) {
@@ -117,7 +117,7 @@ export async function processPremiumUpgrade({
             throw new Error("Admin private key configuration missing on server.");
         }
 
-        const verificationResult = await executeWithRpcFallback(async (provider) => {
+        const { result: verificationResult, rpcEndpoint } = await executeWithRpcFallback(async (provider) => {
             const network = await provider.getNetwork();
             if (network.chainId !== BigInt(ARC_TESTNET_CHAIN_ID)) {
                 console.error(`[tx_invalid_chain] RPC network chain ID mismatch. Expected ${ARC_TESTNET_CHAIN_ID}, got ${network.chainId}`);
@@ -222,7 +222,8 @@ export async function processPremiumUpgrade({
             merchantAddress: normalizedUser,
             txHash,
             adminWallet,
-            sessionId
+            sessionId,
+            rpcEndpoint
         });
 
         /* Structured observability metric log */
