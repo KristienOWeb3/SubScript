@@ -258,7 +258,7 @@ export default function DepositModal({
                                         About this deposit
                                     </p>
                                     <p>
-                                        This deposit is a sandbox protocol gas commitment of $1.00 USDC to secure automated, zero-knowledge recurring transactions. By depositing and committing, you fund the ZK execution gas pool under the SubScript Smart Contract.
+                                        This deposit is a sandbox protocol gas commitment of $1.00 USDC to secure automated, privacy-enhanced recurring transactions. By depositing and committing, you fund the private execution gas pool under the SubScript Smart Contract.
                                     </p>
                                     <div className="flex items-start gap-2 pt-2 border-t border-white/5 mt-2">
                                         <input

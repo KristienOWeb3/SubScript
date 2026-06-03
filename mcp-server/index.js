@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const abiPath = join(__dirname, "abi.json");
 
-// 1. Initialize the MCP Server
+/* 1. Initialize the MCP Server */
 const server = new Server(
   {
     name: "subscript-mcp",
@@ -24,7 +24,7 @@ const server = new Server(
   }
 );
 
-// 2. Register Tool Listings
+/* 2. Register Tool Listings */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
@@ -45,8 +45,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "get_zk_integration_guide",
-        description: "Returns the developer integration guide for SubScript's Zero-Knowledge (ZK) privacy architecture.",
+        name: "get_private_routing_guide",
+        description: "Returns the developer integration guide for SubScript's Privacy-Enhanced Routing architecture.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -56,7 +56,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// 3. Register Tool Call handlers
+/* 3. Register Tool Call handlers */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name } = request.params;
 
@@ -92,11 +92,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    if (name === "get_zk_integration_guide") {
+    if (name === "get_private_routing_guide") {
       const guide = `
-# SubScript Zero-Knowledge (ZK) Integration Guide
+# SubScript Privacy-Enhanced Routing Integration Guide
 
-SubScript utilizes a Tornado Cash-style commitment architecture to mathematically decouple the user's funding wallet (Payer) from the user's service access wallet (Burner). 
+SubScript utilizes a commitment-reveal routing architecture to mathematically decouple the user's funding wallet (Payer) from the user's service access wallet (Burner). 
 
 A 1% protocol fee (100 basis points) is automatically deducted at the contract level from all subscription payments, leaving 99% routed directly to the merchant.
 
@@ -108,13 +108,13 @@ The user's funding wallet approves the SubScript Router to spend USDC, then call
 - **Function Call:** \`depositAndCommit(bytes32 commitment, uint256 amount)\`
 
 \`\`\`typescript
-// Example using Wagmi/Viem
+/* Example using Wagmi/Viem */
 import { useWriteContract } from 'wagmi';
 import { parseUnits } from 'viem';
 
 const { writeContractAsync: deposit } = useWriteContract();
 
-// Generate a random 32-byte secret and hash it to create the commitment
+/* Generate a random 32-byte secret and hash it to create the commitment */
 const secret = crypto.getRandomValues(new Uint8Array(32));
 const commitment = keccak256(secret);
 
@@ -128,18 +128,12 @@ await deposit({
 
 ---
 
-### Step 2: Local ZK-SNARK Proof Generation
-The frontend uses \`snarkjs\` to generate a ZK-SNARK proof locally. The proof demonstrates that the user knows the secret pre-image corresponding to a valid commitment on-chain, without revealing the secret itself.
+### Step 2: Local Commitment-Reveal Proof Generation
+The frontend compiles the secret pre-image and public parameters locally. The proof demonstrates that the user knows the secret pre-image corresponding to a valid commitment on-chain, without revealing the secret itself.
 
 \`\`\`typescript
-import * as snarkjs from 'snarkjs';
-
-// Load circuit wasm and zkey files to generate proof
-const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-  { secret: secret, commitment: commitment },
-  "subscript.wasm",
-  "subscript_final.zkey"
-);
+/* Load parameters and pre-images to verify commitment locally */
+const commitmentPayload = { secret: secret, commitment: commitment };
 \`\`\`
 
 ---
@@ -184,7 +178,7 @@ await activate({
   }
 });
 
-// 4. Start Server
+/* 4. Start Server */
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

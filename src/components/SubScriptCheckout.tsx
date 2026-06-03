@@ -40,7 +40,7 @@ interface SubScriptCheckoutProps {
   amountCap?: string; /* e.g. "15" USDC */
   interval?: string; /* "weekly" | "monthly" | "yearly" */
   fundingChain?: string;
-  mode?: "zk" | "standard";
+  mode?: "private" | "standard";
   onSuccess?: (txHash: string) => void;
 }
 
@@ -70,7 +70,7 @@ export default function SubScriptCheckout({
     return BigInt(2592000); /* default to monthly (30 days) */
   }, [interval]);
 
-  type ZkCheckoutProof = {
+  type PrivateCheckoutProof = {
     userAddress: `0x${string}`;
     planId: string;
     commitment: `0x${string}`;
@@ -101,7 +101,7 @@ export default function SubScriptCheckout({
     return message || "An error occurred during subscription processing.";
   };
 
-  const buildZkCheckoutProof = ({
+  const buildPrivateCheckoutProof = ({
     userAddress,
     paymentRecipient,
     amount,
@@ -111,7 +111,7 @@ export default function SubScriptCheckout({
     paymentRecipient: `0x${string}`;
     amount: bigint;
     periodSeconds: bigint;
-  }): ZkCheckoutProof => {
+  }): PrivateCheckoutProof => {
     if (typeof crypto === "undefined" || !crypto.getRandomValues) {
       throw new Error("Secure browser randomness is unavailable.");
     }
@@ -141,7 +141,7 @@ export default function SubScriptCheckout({
     };
   };
 
-  const validateZkCheckoutProof = (payload: ZkCheckoutProof) => {
+  const validatePrivateCheckoutProof = (payload: PrivateCheckoutProof) => {
     const failures: string[] = [];
 
     if (!isAddress(payload.userAddress)) failures.push("Invalid userAddress");
@@ -194,7 +194,7 @@ export default function SubScriptCheckout({
 
       const userAddress = getAddress(userWallet) as `0x${string}`;
       const paymentRecipient = getAddress(merchantAddress) as `0x${string}`;
-      const spenderAddress = mode === "zk" ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
+      const spenderAddress = mode === "private" ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
       const tokenDecimals = await publicClient.readContract({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: ERC20_ABI,
@@ -220,7 +220,7 @@ export default function SubScriptCheckout({
       if (currentAllowance < amount) {
         setStatusMessage("USDC allowance insufficient. Awaiting wallet approval...");
 
-        const approvalAmount = mode === "zk" ? amount : amount * BigInt(12);
+        const approvalAmount = mode === "private" ? amount : amount * BigInt(12);
 
         await publicClient.simulateContract({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -259,17 +259,17 @@ export default function SubScriptCheckout({
         }
       }
 
-      if (mode === "zk") {
+      if (mode === "private") {
         setLoadingState("Preparing Secure Payment");
         setStatusMessage("Preparing Secure Payment");
 
-        const proofPayload = buildZkCheckoutProof({
+        const proofPayload = buildPrivateCheckoutProof({
           userAddress,
           paymentRecipient,
           amount,
           periodSeconds,
         });
-        const proofFailures = validateZkCheckoutProof(proofPayload);
+        const proofFailures = validatePrivateCheckoutProof(proofPayload);
         if (proofFailures.length > 0) {
           throw new Error(`Invalid proof payload: ${proofFailures.join(", ")}`);
         }

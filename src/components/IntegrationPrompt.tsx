@@ -29,32 +29,32 @@ export default function IntegrationPrompt({
     const addressStr = activeAddress || "CONNECTING_WALLET...";
     if (isPremiumState) {
       return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
-
-SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
-
-To scaffold the Zero-Knowledge burner architecture, run the SubScript CLI:
+ 
+SubScript uses Private Routing on Arc Testnet to implement secure, automated, recurring subscriptions.
+ 
+To scaffold the Privacy-Enhanced Routing architecture, run the SubScript CLI:
 npx @subscript-protocol/cli@latest init --merchant ${addressStr}
-
+ 
 LIVE MERCHANT DEPLOYMENT DETAILS:
 - Merchant Payout Wallet: "${addressStr}"
 - SubScript Router Contract: "${SUBSCRIPT_ROUTER_ADDRESS}"
 - USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
 - Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
 - Routing Metadata: { "routing": "private" }
-
+ 
 INTEGRATION WORKFLOW REQUIREMENTS:
-1. FRONTEND USER FLOW (ZK Burner Method)
+1. FRONTEND USER FLOW (Private Routing Method)
    - Step 1: User connects Funding Wallet and approves USDC token allowance for the router contract:
      USDC_NATIVE_GAS_ADDRESS.approve(SUBSCRIPT_ROUTER_ADDRESS, amount * 12)
    - Step 2: Generate a local cryptographically secure random 32-byte secret. Create commitment = keccak256(secret). Store the secret in the user's browser localStorage.
    - Step 3: Call depositAndCommit(commitment, amount) on the SubScript Router contract from the Funding Wallet.
-   - Step 4: Construct the ZK-friendly parameter proof array: [secret, expectedPublicInputHash] where expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period)).
+   - Step 4: Construct the commitment-reveal parameter proof array: [secret, expectedPublicInputHash] where expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period)).
    - Step 5: Burner wallet calls verifyAndActivate(proof, nullifierHash, merchant, amount, period) on the SubScript Router.
-
+ 
 2. WEBHOOK LOGIC & SIGNATURE VERIFICATION
    - Create a webhook receiver endpoint (e.g. POST /api/webhooks).
    - Verify the webhook signature using: HMAC-SHA256(webhook_secret_key, json_payload)
-
+ 
 Please write clean, TypeScript-safe React components and backend routes using viem and ethers to implement this complete checkout workflow.`;
     } else {
       return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
@@ -121,12 +121,12 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 Payment Flow Mode
               </label>
               <select
-                value={isPremiumState ? "zk" : "standard"}
-                onChange={(e) => setIsPremiumState(e.target.value === "zk")}
+                value={isPremiumState ? "private" : "standard"}
+                onChange={(e) => setIsPremiumState(e.target.value === "private")}
                 className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#ccff00]/40 transition-colors font-mono"
               >
                 <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
-                <option value="zk" className="bg-[#0a0a0c]">ZK Privacy (Routed)</option>
+                <option value="private" className="bg-[#0a0a0c]">Private Routing (Premium)</option>
               </select>
             </div>
 
