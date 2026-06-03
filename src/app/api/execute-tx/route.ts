@@ -9,6 +9,8 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
+import { executeWithRpcFallback } from "@/lib/payments/rpc";
+
 const isProdEnv = process.env.NODE_ENV === "production";
 
 const ERC20_ABI = [
@@ -90,6 +92,13 @@ const SUBSCRIPT_ABI = [
         stateMutability: "nonpayable",
         inputs: [{ name: "_newDestination", type: "address" }],
         outputs: []
+    },
+    {
+        type: "function",
+        name: "merchantBalances",
+        stateMutability: "view",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }]
     }
 ];
 
@@ -125,16 +134,12 @@ export async function POST(request: Request) {
         }
 
         const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
-        const rpcUrl = isProdEnv
-            ? "https://rpc.mainnet.arc.network"
-            : "https://rpc.testnet.arc.network";
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
-        const walletSigner = new ethers.Wallet(privateKey, provider);
 
         let contractAddress = "";
         let contractAbi: any = null;
         let functionName = "";
         let finalArgs: any[] = [];
+        let pendingAuditDetails: any = null;
 
         switch (action) {
             case "approveUsdc": {
@@ -228,6 +233,14 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "withdrawWithProof";
                 finalArgs = [proof, nullifierHash, merchant, target];
+
+                /* Capture details for server-side pre-audit insert */
+                pendingAuditDetails = {
+                    merchant,
+                    target,
+                    commitmentHash: proof[1],
+                    nullifierHash
+                };
                 break;
             }
             case "cancelSubscription": {
@@ -266,19 +279,84 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: `Unsupported execution action: ${action}` }, { status: 400 });
         }
 
-        try {
-            const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
-            const method = contract[functionName] as any;
-            if (typeof method !== "function") {
-                return NextResponse.json({ error: `Method ${functionName} does not exist on contract` }, { status: 400 });
+        /* Server-Side Pre-Audit log generation on the trusted path for embedded wallet withdrawals */
+        if (action === "withdrawWithProof" && pendingAuditDetails) {
+            try {
+                let amountFormatted = 0;
+                await executeWithRpcFallback(async (provider) => {
+                    const walletSigner = new ethers.Wallet(privateKey, provider);
+                    const routerContract = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, SUBSCRIPT_ABI, walletSigner);
+                    const rawBal = await routerContract.merchantBalances(pendingAuditDetails.merchant);
+                    amountFormatted = Number(ethers.formatUnits(rawBal, 6));
+                });
+
+                await supabase
+                    .from("private_withdrawals")
+                    .upsert({
+                        merchant_address: pendingAuditDetails.merchant.toLowerCase(),
+                        destination_address: pendingAuditDetails.target.toLowerCase(),
+                        amount: amountFormatted,
+                        commitment_hash: pendingAuditDetails.commitmentHash,
+                        nullifier_hash: pendingAuditDetails.nullifierHash,
+                        status: "PENDING",
+                        proof_type: "commit_reveal",
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: "nullifier_hash" });
+            } catch (dbErr: any) {
+                console.error(`[db_updated] Failed to record pre-withdrawal audit log: ${dbErr.message}`);
             }
-            
-            const tx = await method(...finalArgs);
+        }
+
+        try {
+            /* Execute contract transaction with RPC redundancy failover wrapper */
+            const tx = await executeWithRpcFallback(async (provider) => {
+                const walletSigner = new ethers.Wallet(privateKey, provider);
+                const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
+                const method = contract[functionName] as any;
+                if (typeof method !== "function") {
+                    throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
+                }
+                return await method(...finalArgs);
+            });
+
+            /* Post-Execution Success Audit Sync */
+            if (action === "withdrawWithProof" && pendingAuditDetails) {
+                try {
+                    await supabase
+                        .from("private_withdrawals")
+                        .update({
+                            withdrawal_tx_hash: tx.hash.toLowerCase(),
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("nullifier_hash", pendingAuditDetails.nullifierHash);
+                } catch (dbErr: any) {
+                    console.error(`[db_updated] Failed to update successful withdrawal audit: ${dbErr.message}`);
+                }
+            }
+
             return NextResponse.json({ success: true, txHash: tx.hash }, { status: 200 });
+
         } catch (err: any) {
             console.error("EVM execution error:", err);
             
             const revertReason = err?.reason || err?.info?.error?.message || err?.message || "Transaction execution failed";
+
+            /* Post-Execution Failure Audit Sync */
+            if (action === "withdrawWithProof" && pendingAuditDetails) {
+                try {
+                    await supabase
+                        .from("private_withdrawals")
+                        .update({
+                            status: "FAILED_PERMANENTLY_CONTRACT",
+                            error_message: revertReason,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("nullifier_hash", pendingAuditDetails.nullifierHash);
+                } catch (dbErr: any) {
+                    console.error(`[db_updated] Failed to record failed withdrawal audit: ${dbErr.message}`);
+                }
+            }
+
             return NextResponse.json({ error: `Execution reverted: ${revertReason}` }, { status: 400 });
         }
 
