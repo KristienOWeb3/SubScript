@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap, Loader2 } from "lucide-react";
+import { Wallet, Copy, Check, PlugZap, Loader2, Shield } from "lucide-react";
 import DepositModal from "./DepositModal";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
@@ -36,6 +36,7 @@ interface DashboardHeaderProps {
     hasDeposited?: boolean;
     onDepositSuccess?: () => void;
     isPremium?: boolean;
+    promptFlowMode?: "standard" | "zk";
 }
 
 export default function DashboardHeader({
@@ -47,6 +48,7 @@ export default function DashboardHeader({
     hasDeposited = false,
     onDepositSuccess,
     isPremium = false,
+    promptFlowMode = "standard",
 }: DashboardHeaderProps) {
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [copiedAddress, setCopiedAddress] = useState(false);
@@ -172,25 +174,30 @@ export default function DashboardHeader({
                                     </p>
                                 </div>
 
-                                /* Deposit/Withdraw Button */
+                                {/* Deposit/Withdraw Button */}
                                 {(() => {
-                                    if (!isPremium) return null;
+                                    if (!isPremium || promptFlowMode !== "zk") return null;
                                     const showWithdraw = vaultBalance > 0 || hasDeposited;
                                     return showWithdraw ? (
                                         <button
                                             onClick={onWithdraw}
                                             disabled={isWithdrawing}
-                                            className="px-4 sm:px-5 py-2 border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all duration-200 flex items-center gap-1.5"
+                                            className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-red-500/10 via-pink-500/15 to-red-500/10 border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.25)] hover:scale-[1.02] active:scale-[0.98]"
                                         >
-                                            {isWithdrawing && <Loader2 className="w-3 h-3 animate-spin" />}
-                                            Withdraw Premium Funds
+                                            {isWithdrawing ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <Wallet className="w-3.5 h-3.5" />
+                                            )}
+                                            Withdraw Private Funds
                                         </button>
                                     ) : (
                                         <button
                                             onClick={() => setIsDepositOpen(true)}
-                                            className="px-4 sm:px-5 py-2 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200"
+                                            className="w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-2.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(0,210,180,0.25)] hover:shadow-[0_0_18px_rgba(0,210,180,0.45)] hover:scale-[1.02] active:scale-[0.98]"
                                         >
-                                            Deposit & Commit
+                                            <Shield className="w-3.5 h-3.5" />
+                                            Deposit Privacy Funds
                                         </button>
                                     );
                                 })()}

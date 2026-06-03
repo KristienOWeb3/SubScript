@@ -9,6 +9,7 @@ import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import SubScriptCheckout from "@/components/SubScriptCheckout";
+import WithdrawModal from "@/components/WithdrawModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -206,6 +207,7 @@ export default function DashboardPage() {
     const [isPremium, setIsPremium] = useState(false);
     const [hasDeposited, setHasDeposited] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "zk">("standard");
+    const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
 
     useEffect(() => {
         setPromptFlowMode(isPremium ? "zk" : "standard");
@@ -822,7 +824,7 @@ export default function DashboardPage() {
     };
 
 
-    const handleWithdraw = async () => {
+    const handleWithdraw = async (targetAddress?: string) => {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
@@ -831,8 +833,8 @@ export default function DashboardPage() {
                 throw new Error("No merchant wallet address available.");
             }
 
-            /* Resolve payout target: use configured payout destination, fall back to treasury */
-            const targetPayout = (payoutDestination || "0x725D56151CeaC9eAd625241D13b8307B22EDDb10") as Hex;
+            /* Resolve payout target: use custom targetAddress, fall back to configured payout destination or treasury */
+            const targetPayout = (targetAddress || payoutDestination || "0x725D56151CeaC9eAd625241D13b8307B22EDDb10") as Hex;
             
             /* Generate random 32-byte burner secret hex */
             const randomBytes = new Uint8Array(32);
@@ -1148,6 +1150,7 @@ LIVE MERCHANT DEPLOYMENT DETAILS:
 - SubScript Contract: "${STANDARD_CONTRACT_ADDRESS}"
 - USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
 - Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Routing Metadata: { "routing": "traceable" }
 - Merchant Secret API Key (for server integration): [GENERATE IN API KEYS TAB]
 - Webhook Secret Key (for validation): [RETRIEVE IN WEBHOOKS TAB]
 
@@ -1191,6 +1194,7 @@ LIVE MERCHANT DEPLOYMENT DETAILS:
 - SubScript Router Contract: "${SUBSCRIPT_ROUTER_ADDRESS}"
 - USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
 - Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Routing Metadata: { "routing": "private" }
 - Merchant Secret API Key (for server integration): [GENERATE IN API KEYS TAB]
 - Webhook Secret Key (for validation): [RETRIEVE IN WEBHOOKS TAB]
 
@@ -1293,7 +1297,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 <div className="flex items-center justify-between">
                                     <p className="text-[10px] text-white/30">Claimable USDC in router</p>
                                     <button
-                                        onClick={handleWithdraw}
+                                        onClick={() => handleWithdraw()}
                                         disabled={vaultBalance <= 0 || isWithdrawing}
                                         className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
                                             vaultBalance > 0 
@@ -1864,28 +1868,34 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                             </div>
 
                             {/* Code output Block */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden flex flex-col justify-between shadow-2xl bg-black/40">
-                                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
+                            <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40 p-6 flex flex-col justify-between space-y-4">
+                                <div className="space-y-1">
                                     <span className="text-xs font-bold text-white/40 uppercase tracking-widest">SDK Code Snippet</span>
-                                    <div className="flex items-center gap-3">
-                                        {copiedText === "Checkout Snippet" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
-                                        )}
-                                        <button 
-                                            onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
-                                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                        >
-                                            <Copy className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
+                                    <p className="text-[10px] text-white/30">React checkout paywall integration code snippet.</p>
                                 </div>
-                                <div className="flex-1 p-6 font-mono text-[11px] text-white/80 overflow-x-auto leading-relaxed">
-                                    <pre><code>{checkoutCode}</code></pre>
+                                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center flex-1 flex items-center justify-center">
+                                    <p className="text-xs text-white/60 leading-relaxed">
+                                        Checkout paywall configurations compiled successfully. Ready to deploy.
+                                    </p>
                                 </div>
-                                <div className="border-t border-white/5 px-6 py-4 bg-white/[0.01] text-[10px] text-white/30 flex justify-between font-mono">
-                                    <span>React SDK Component</span>
-                                    <span>Wallet: {address?.slice(0, 6)}...{address?.slice(-4)}</span>
-                                </div>
+                                <button 
+                                    onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
+                                    className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
+                                        copiedText === "Checkout Snippet"
+                                            ? "bg-[#00d2b4] text-[#111111] shadow-[0_0_20px_rgba(0,210,180,0.25)]"
+                                            : "bg-white/5 hover:bg-[#00d2b4]/10 border border-white/10 hover:border-[#00d2b4]/30 text-white hover:text-[#00d2b4]"
+                                    }`}
+                                >
+                                    {copiedText === "Checkout Snippet" ? (
+                                        <>
+                                            <Check className="w-4 h-4" /> ✓ Snippet Copied
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Copy className="w-4 h-4" /> Copy React SDK Component
+                                        </>
+                                    )}
+                                </button>
                             </div>
                         </div>
 
@@ -1927,11 +1937,14 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     </label>
                                     <select
                                         value={promptFlowMode}
+                                        disabled={!isPremium}
                                         onChange={(e) => setPromptFlowMode(e.target.value as "standard" | "zk")}
-                                        className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#00d2b4]/40 transition-colors font-mono"
+                                        className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#00d2b4]/40 transition-colors font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
-                                        <option value="zk" className="bg-[#0a0a0c]">ZK Privacy (Routed)</option>
+                                        <option value="zk" disabled={!isPremium} className="bg-[#0a0a0c]">
+                                            ZK Privacy (Routed) {!isPremium && "🔒 (Premium Only)"}
+                                        </option>
                                     </select>
                                 </div>
 
@@ -1952,11 +1965,11 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 >
                                     {copiedText === "Agent Prompt" ? (
                                         <>
-                                            <Check className="w-4 h-4" /> Copied to Clipboard!
+                                            <Check className="w-4 h-4" /> ✓ Prompt Copied
                                         </>
                                     ) : (
                                         <>
-                                            <Copy className="w-4 h-4" /> Copy Setup Prompt
+                                            <Copy className="w-4 h-4" /> Copy Payment Prompt
                                         </>
                                     )}
                                 </button>
@@ -1964,27 +1977,34 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                         </div>
 
                         {/* MCP Config */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
-                            <div className="flex items-center justify-between border-b border-white/5 px-6 py-4 bg-white/[0.01]">
-                                <div>
-                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
-                                    <p className="text-[10px] text-white/30 mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    {copiedText === "MCP Config" && (
-                                        <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
-                                    )}
-                                    <button
-                                        onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
-                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-all"
-                                    >
-                                        <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
+                        <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40 p-6 space-y-4">
+                            <div className="space-y-1">
+                                <span className="text-xs font-bold text-white/40 uppercase tracking-widest">cursor_mcp.json</span>
+                                <p className="text-[10px] text-white/30 mt-0.5">Drop-in MCP context for Cursor or compatible agents.</p>
                             </div>
-                            <div className="p-6 font-mono text-[11px] text-emerald-300/90 overflow-x-auto leading-relaxed max-h-[420px]">
-                                <pre>{cursorMcpConfig}</pre>
+                            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center">
+                                <p className="text-xs text-white/60 leading-relaxed font-sans">
+                                    Cursor MCP Server configurations compiled successfully. Ready to deploy.
+                                </p>
                             </div>
+                            <button
+                                onClick={() => handleCopy(cursorMcpConfig, "MCP Config")}
+                                className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
+                                    copiedText === "MCP Config"
+                                        ? "bg-[#00d2b4] text-[#111111] shadow-[0_0_20px_rgba(0,210,180,0.25)]"
+                                        : "bg-white/5 hover:bg-[#00d2b4]/10 border border-white/10 hover:border-[#00d2b4]/30 text-white hover:text-[#00d2b4]"
+                                }`}
+                            >
+                                {copiedText === "MCP Config" ? (
+                                    <>
+                                        <Check className="w-4 h-4" /> ✓ MCP Config Copied
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="w-4 h-4" /> Copy MCP Configuration
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 );
@@ -2221,11 +2241,12 @@ Please write clean, TypeScript-safe React components and backend routes using vi
             <div className="relative z-10">
             <DashboardHeader 
                 vaultBalance={vaultBalance}
-                onWithdraw={handleWithdraw}
+                onWithdraw={async () => setIsWithdrawOpen(true)}
                 isWithdrawing={isWithdrawing}
                 hasDeposited={hasDeposited}
                 onDepositSuccess={handleDepositSuccess}
                 isPremium={isPremium}
+                promptFlowMode={promptFlowMode}
             />
 
             {/* Dashboard Content */}
@@ -2332,6 +2353,18 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                 </footer>
             </main>
             </div>
+            <WithdrawModal
+                isOpen={isWithdrawOpen}
+                onClose={() => setIsWithdrawOpen(false)}
+                vaultBalance={vaultBalance}
+                connectedAddress={address || ""}
+                payoutDestination={payoutDestination}
+                onConfirmWithdraw={async (targetAddress) => {
+                    await handleWithdraw(targetAddress);
+                    setIsWithdrawOpen(false);
+                }}
+                isWithdrawing={isWithdrawing}
+            />
         </div>
     );
 }

@@ -40,6 +40,7 @@ LIVE MERCHANT DEPLOYMENT DETAILS:
 - SubScript Router Contract: "${SUBSCRIPT_ROUTER_ADDRESS}"
 - USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
 - Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Routing Metadata: { "routing": "private" }
 
 INTEGRATION WORKFLOW REQUIREMENTS:
 1. FRONTEND USER FLOW (ZK Burner Method)
@@ -65,6 +66,7 @@ LIVE MERCHANT DEPLOYMENT DETAILS:
 - SubScript Contract: "${STANDARD_CONTRACT_ADDRESS}"
 - USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
 - Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
+- Routing Metadata: { "routing": "traceable" }
 
 INTEGRATION WORKFLOW REQUIREMENTS:
 1. FRONTEND USER FLOW (Standard Transparent Method)
@@ -149,11 +151,11 @@ Please write clean, TypeScript-safe React components and backend routes using vi
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4" /> Copied to Clipboard!
+            <Check className="w-4 h-4" /> ✓ Prompt Copied
           </>
         ) : (
           <>
-            <Copy className="w-4 h-4" /> Copy Setup Prompt
+            <Copy className="w-4 h-4" /> Copy Payment Prompt
           </>
         )}
       </button>
