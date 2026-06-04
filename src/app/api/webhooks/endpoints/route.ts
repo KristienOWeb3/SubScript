@@ -12,6 +12,17 @@ function getSupabase() {
     return createClient(supabaseUrl, supabaseServiceKey);
 }
 
+async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
+    const { data: merchant, error } = await supabase
+        .from("merchants")
+        .select("tier")
+        .eq("wallet_address", walletAddress.toLowerCase())
+        .maybeSingle();
+    if (error || !merchant) return false;
+    return merchant.tier >= 1;
+}
+
+
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -20,6 +31,11 @@ export async function GET(request: Request) {
         }
 
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const { data: endpoints, error } = await supabase
             .from("webhook_endpoints")
             .select("*")
@@ -54,6 +70,12 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object" || !body.url) {
             return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -68,7 +90,6 @@ export async function POST(request: Request) {
         }
 
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
-        const supabase = getSupabase();
 
         const { data: endpoint, error: insertError } = await supabase
             .from("webhook_endpoints")
@@ -117,6 +138,10 @@ export async function DELETE(request: Request) {
         }
 
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
         
         const { data: endpointCheck, error: checkError } = await supabase
             .from("webhook_endpoints")

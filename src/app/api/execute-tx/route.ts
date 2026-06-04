@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
+import crypto from "crypto";
 import { decryptPrivateKey } from "@/lib/crypto";
 import { getSessionWallet } from "@/lib/auth";
 import {
@@ -111,6 +112,7 @@ const SUBSCRIPT_ABI = [
 
 export async function POST(request: Request) {
     try {
+        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -129,6 +131,33 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Server Configuration Error: Supabase client not initialized." }, { status: 500 });
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        /* Enforce Backend Tier Checks */
+        const premiumActions = ["depositAndCommit", "configurePayoutDestination", "withdraw", "withdrawWithProof", "verifyAndActivate"];
+        if (premiumActions.includes(action)) {
+            let merchantToCheck = wallet;
+            if (action === "verifyAndActivate") {
+                if (args && args.merchant) {
+                    merchantToCheck = args.merchant;
+                } else {
+                    return NextResponse.json({ error: "merchant address is required in args" }, { status: 400 });
+                }
+            }
+            const { data: merchantData, error: merchantErr } = await supabase
+                .from("merchants")
+                .select("tier")
+                .eq("wallet_address", merchantToCheck.toLowerCase())
+                .maybeSingle();
+
+            if (merchantErr) {
+                console.error(`[execute-tx] Failed to query merchant: ${merchantErr.message}`);
+            }
+            const dbMerchantTier = merchantData ? merchantData.tier : 0;
+            if (dbMerchantTier < 1) {
+                console.warn(`[execute-tx] Forbidden: Action ${action} requires active premium tier for merchant ${merchantToCheck}. requestId: ${requestId}`);
+                return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+            }
+        }
 
         /* Circuit Breaker Check */
         const { data: settings } = await supabase
@@ -255,15 +284,19 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid target address" }, { status: 400 });
                 }
 
-                /* Idempotency check: query database to prevent duplicate withdrawals */
+                /* Idempotency check: query database to prevent duplicate withdrawals & reentrancy */
                 const { data: existingWithdrawal } = await supabase
                     .from("private_withdrawals")
                     .select("withdrawal_tx_hash, status")
                     .eq("nullifier_hash", nullifierHash)
                     .maybeSingle();
 
-                if (existingWithdrawal && (existingWithdrawal.status === "PENDING" || existingWithdrawal.status === "BROADCASTED" || existingWithdrawal.status === "CONFIRMED")) {
-                    if (existingWithdrawal.withdrawal_tx_hash) {
+                if (existingWithdrawal) {
+                    if (["PROCESSING", "BROADCASTED", "CONFIRMED"].includes(existingWithdrawal.status)) {
+                        console.warn(`[Withdrawal Failed] Conflict: Withdrawal is already being processed, broadcasted, or confirmed for nullifier: ${nullifierHash}. requestId: ${requestId}`);
+                        return NextResponse.json({ error: "Conflict: Withdrawal is already being processed, broadcasted, or confirmed." }, { status: 409 });
+                    }
+                    if (existingWithdrawal.status === "PENDING" && existingWithdrawal.withdrawal_tx_hash) {
                         console.log(`[idempotency] Duplicate withdrawal submission detected for nullifier: ${nullifierHash}. Returning existing tx: ${existingWithdrawal.withdrawal_tx_hash}`);
                         return NextResponse.json({ success: true, txHash: existingWithdrawal.withdrawal_tx_hash }, { status: 200 });
                     }
@@ -368,7 +401,7 @@ export async function POST(request: Request) {
                         amount: merchantBalanceBefore,
                         commitment_hash: pendingAuditDetails.commitmentHash,
                         nullifier_hash: pendingAuditDetails.nullifierHash,
-                        status: "PENDING",
+                        status: "PROCESSING",
                         proof_type: "commit_reveal",
                         merchant_balance_before: merchantBalanceBefore,
                         router_balance_before: routerBalanceBefore,
@@ -382,6 +415,10 @@ export async function POST(request: Request) {
         }
 
         try {
+            if (action === "withdraw" || action === "withdrawWithProof") {
+                console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${action === "withdrawWithProof" ? args.target : wallet}, requestId: ${requestId}`);
+            }
+
             /* Execute contract transaction with RPC redundancy failover wrapper */
             const { result: tx, rpcEndpoint } = await executeWithRpcFallback(async (provider) => {
                 const walletSigner = new ethers.Wallet(privateKey, provider);
@@ -429,12 +466,20 @@ export async function POST(request: Request) {
                 }
             }
 
+            if (action === "withdraw" || action === "withdrawWithProof") {
+                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${tx.hash}, requestId: ${requestId}`);
+            }
+
             return NextResponse.json({ success: true, txHash: tx.hash }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);
             
             const revertReason = err?.reason || err?.info?.error?.message || err?.message || "Transaction execution failed";
+
+            if (action === "withdraw" || action === "withdrawWithProof") {
+                console.error(`[Withdrawal Failed] session: ${wallet}, action: ${action}, error: ${revertReason}, requestId: ${requestId}`);
+            }
 
             /* Post-Execution Failure Audit Sync */
             if (action === "withdrawWithProof" && pendingAuditDetails) {

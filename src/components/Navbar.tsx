@@ -150,11 +150,6 @@ export default function Navbar() {
     }, []);
 
     const navLinks = [
-        { name: "Premium", href: "/dashboard", className: "text-[#d4a853] hover:text-[#e5be70]" },
-        { name: "Explore", href: "/explore", className: pathname === "/explore" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
-        { name: "Product", href: "/product", className: pathname === "/product" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
-        { name: "Docs", href: "/docs", className: pathname === "/docs" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
-        { name: "Developer", href: "/developer", className: pathname === "/developer" ? "text-[#00d2b4] font-semibold" : "text-[#9ca3af] hover:text-white" },
         { name: "Sign in", href: "/dashboard", className: "text-[#9ca3af] hover:text-white" },
     ];
 

@@ -53,7 +53,9 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
                     supabase,
                     txHash: session.tx_hash,
                     sessionId: session.session_id,
-                    walletAddress: session.merchant_address
+                    walletAddress: session.merchant_address,
+                    isReconciler: true,
+                    requestId: reconciliationRunId
                 });
 
                 results[index] = {
