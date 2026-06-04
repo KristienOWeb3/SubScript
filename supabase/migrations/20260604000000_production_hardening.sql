@@ -7,7 +7,26 @@ ALTER TABLE private_withdrawals ADD COLUMN IF NOT EXISTS withdrawal_tx_hash TEXT
 ALTER TABLE private_withdrawals ALTER COLUMN withdrawal_tx_hash DROP NOT NULL;
 
 -- 2. Update payment_sessions check constraints
-ALTER TABLE payment_sessions DROP CONSTRAINT IF EXISTS payment_sessions_status_check;
+-- Dynamically find and drop any check constraint on status column of payment_sessions
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+        WHERE nsp.nspname = 'public'
+          AND rel.relname = 'payment_sessions'
+          AND con.contype = 'c'
+          AND pg_get_constraintdef(con.oid) LIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE payment_sessions DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END;
+$$;
+
 ALTER TABLE payment_sessions ADD CONSTRAINT payment_sessions_status_check 
     CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'FAILED_PERMANENTLY', 'NEEDS_RECONCILIATION'));
 
@@ -16,7 +35,22 @@ ALTER TABLE private_withdrawals DROP CONSTRAINT IF EXISTS check_withdrawal_statu
 ALTER TABLE private_withdrawals ADD CONSTRAINT check_withdrawal_status 
     CHECK (status IN ('PENDING', 'PROCESSING', 'BROADCASTED', 'CONFIRMED', 'FAILED'));
 
--- 4. Create partial unique index on payment_sessions for active sessions
+-- 4. Clean up duplicate active payment sessions by setting older ones to FAILED
+UPDATE payment_sessions p
+SET status = 'FAILED', updated_at = now()
+WHERE status IN ('PENDING', 'PROCESSING')
+  AND EXISTS (
+    SELECT 1
+    FROM payment_sessions p2
+    WHERE p2.merchant_address = p.merchant_address
+      AND p2.status IN ('PENDING', 'PROCESSING')
+      AND (
+        p2.created_at > p.created_at
+        OR (p2.created_at = p.created_at AND p2.session_id > p.session_id)
+      )
+  );
+
+-- 5. Create partial unique index on payment_sessions for active sessions
 CREATE UNIQUE INDEX IF NOT EXISTS idx_active_payment_sessions 
     ON payment_sessions (merchant_address) 
     WHERE (status IN ('PENDING', 'PROCESSING'));
