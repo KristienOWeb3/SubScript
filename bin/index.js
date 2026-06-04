@@ -17,7 +17,13 @@ const dim = "\x1b[2m";
 const reset = "\x1b[0m";
 function printUsage() {
     console.log(`
-${green}${bold}SubScript CLI${reset} - Production Integration Scaffolder
+${green}${bold}   _____       __   _____           _       __ 
+  / ___/__  __/ /_ / ___/__________(_)___  / /_
+  \\__ \\/ / / / __ \\\\__ \\/ ___/ ___/ / __ \\/ __/
+ ___/ / /_/ / /_/ /__/ / /__/ /  / / /_/ / /_  
+/____/\\__,_/_.___/____/\\___/_/  /_/ .___/\\__/  
+                                 /_/           ${reset}
+                  ${bold}SubScript CLI${reset} - Production Integration Scaffolder
 
 Usage:
   npx @subscript/cli <command> [options]
