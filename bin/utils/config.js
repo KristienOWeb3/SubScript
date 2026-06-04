@@ -1,7 +1,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-export const CLI_VERSION = "1.2.0";
-export const TEMPLATE_VERSION = "1.2.0";
+export const CLI_VERSION = "1.2.1";
+export const TEMPLATE_VERSION = "1.2.1";
 export function getProjectPaths(cwd, framework) {
     const hasSrc = existsSync(path.join(cwd, "src"));
     const baseDir = hasSrc ? path.join(cwd, "src") : cwd;
