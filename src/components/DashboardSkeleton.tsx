@@ -3,17 +3,18 @@
 import React from "react";
 import Skeleton from "./ui/Skeleton";
 import { 
-    Activity, Key, Code2, Webhook, Crown, Shield 
+    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
     const tabs = [
         { id: "overview", label: "Overview", icon: Activity },
         { id: "premium", label: "Premium", icon: Crown },
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
         { id: "apikeys", label: "API Keys", icon: Key },
         { id: "checkout", label: "Checkout Setup", icon: Code2 },
         { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -21,6 +22,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
 
     const renderContentSkeleton = () => {
         switch (activeTab) {
+            case "analytics":
             case "overview":
                 return (
                     <div className="space-y-8">

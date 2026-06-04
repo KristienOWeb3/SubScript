@@ -14,6 +14,7 @@ export async function activateSubscription({
     txHash,
     adminWallet,
     sessionId,
+    subId,
     rpcEndpoint,
     requestId = "unknown"
 }: {
@@ -22,6 +23,7 @@ export async function activateSubscription({
     txHash: string;
     adminWallet: ethers.Wallet;
     sessionId: string;
+    subId: number;
     rpcEndpoint?: string;
     requestId?: string;
 }) {
@@ -112,7 +114,7 @@ export async function activateSubscription({
 
     /* 4. Atomic entitlement sync in database using PL/pgSQL function */
     try {
-        const premiumSubId = Number(BigInt(normalizedUser) & BigInt("9007199254740991"));
+        const premiumSubId = subId;
         const { error: rpcError } = await supabase.rpc("activate_premium_merchant", {
             p_merchant_address: normalizedUser,
             p_subscription_id: premiumSubId,

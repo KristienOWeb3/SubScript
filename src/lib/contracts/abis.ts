@@ -53,6 +53,16 @@ export const USDC_ERC20_ABI = [
         ],
         anonymous: false,
     },
+    {
+        type: "event",
+        name: "Approval",
+        inputs: [
+            { name: "owner", type: "address", indexed: true },
+            { name: "spender", type: "address", indexed: true },
+            { name: "value", type: "uint256", indexed: false },
+        ],
+        anonymous: false,
+    },
 ] as const;
 
 export const SUBSCRIPT_ROUTER_ABI = [
@@ -164,6 +174,16 @@ export const SUBSCRIPT_ROUTER_ABI = [
             { name: "newDestination", type: "address", indexed: true },
         ],
         anonymous: false,
+    },
+    {
+        type: "function",
+        name: "setMerchantTier",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_merchant", type: "address" },
+            { name: "_tier", type: "uint8" },
+        ],
+        outputs: [],
     },
 ] as const;
 

@@ -1,28 +1,30 @@
 import { ethers } from "ethers";
 import { ARC_TESTNET_CHAIN_ID, TREASURY_ADDRESS, USDC_ADDRESS, PREMIUM_PRICE } from "./constants";
 
-const ERC20_INTERFACE = new ethers.Interface([
-    "function transfer(address to, uint256 value) external",
-    "event Transfer(address indexed from, address indexed to, uint256 value)"
+const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
+
+const SUBSCRIPT_INTERFACE = new ethers.Interface([
+    "function createSubscription(address _merchant, uint256 _amount, uint256 _period) external returns (uint256 subId)",
+    "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)"
 ]);
 
 const normalizeAddress = (value: string) => ethers.getAddress(value).toLowerCase();
 
-const findTransferLog = (
+const findSubscriptionCreatedLog = (
     receipt: any,
-    from: string,
-    to: string,
+    subscriber: string,
+    merchant: string,
     amount: bigint
 ) => {
     for (const log of receipt.logs) {
-        if (normalizeAddress(log.address) !== normalizeAddress(USDC_ADDRESS)) continue;
+        if (normalizeAddress(log.address) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS)) continue;
         try {
-            const parsed = ERC20_INTERFACE.parseLog(log);
+            const parsed = SUBSCRIPT_INTERFACE.parseLog(log);
             if (
-                parsed?.name === "Transfer" &&
-                normalizeAddress(parsed.args.from) === normalizeAddress(from) &&
-                normalizeAddress(parsed.args.to) === normalizeAddress(to) &&
-                BigInt(parsed.args.value) === amount
+                parsed?.name === "SubscriptionCreated" &&
+                normalizeAddress(parsed.args.subscriber) === normalizeAddress(subscriber) &&
+                normalizeAddress(parsed.args.merchant) === normalizeAddress(merchant) &&
+                BigInt(parsed.args.amount) === amount
             ) {
                 return true;
             }
@@ -62,16 +64,16 @@ export async function verifyTransaction(
         return { valid: false, error: "Transaction reverted on-chain" };
     }
 
-    /* 4. Target contract must be the USDC contract */
-    if (!tx.to || !receipt.to || normalizeAddress(tx.to) !== normalizeAddress(USDC_ADDRESS) || normalizeAddress(receipt.to) !== normalizeAddress(USDC_ADDRESS)) {
-        console.error(`[tx_failed_verification] Target is not USDC token contract`);
-        return { valid: false, error: "Target is not USDC token contract" };
+    /* 4. Target contract must be the standard SubScript contract */
+    if (!tx.to || !receipt.to || normalizeAddress(tx.to) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS) || normalizeAddress(receipt.to) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS)) {
+        console.error(`[tx_failed_verification] Target is not SubScript contract`);
+        return { valid: false, error: "Target is not SubScript contract" };
     }
 
-    /* 5. Parse transaction input data to assert it calls transfer(TREASURY_ADDRESS, 10 USDC) */
+    /* 5. Parse transaction input data to assert it calls createSubscription(TREASURY_ADDRESS, 10 USDC, 30 days) */
     let parsedTx;
     try {
-        parsedTx = ERC20_INTERFACE.parseTransaction({ data: tx.data, value: tx.value });
+        parsedTx = SUBSCRIPT_INTERFACE.parseTransaction({ data: tx.data, value: tx.value });
     } catch (e) {
         console.error(`[tx_failed_verification] Failed to parse transaction calldata`);
         return { valid: false, error: "Failed to parse transaction calldata" };
@@ -79,18 +81,19 @@ export async function verifyTransaction(
 
     if (
         !parsedTx ||
-        parsedTx.name !== "transfer" ||
+        parsedTx.name !== "createSubscription" ||
         normalizeAddress(parsedTx.args[0]) !== normalizeAddress(TREASURY_ADDRESS) ||
-        BigInt(parsedTx.args[1]) !== BigInt(PREMIUM_PRICE)
+        BigInt(parsedTx.args[1]) !== BigInt(PREMIUM_PRICE) ||
+        BigInt(parsedTx.args[2]) !== BigInt(2592000)
     ) {
-        console.error(`[tx_failed_verification] Calldata is not transfer to SubScript Treasury address of 10 USDC`);
-        return { valid: false, error: "Calldata is not transfer to SubScript Treasury address of 10 USDC" };
+        console.error(`[tx_failed_verification] Calldata is not createSubscription to SubScript Treasury address of 10 USDC for 30 days`);
+        return { valid: false, error: "Calldata is not createSubscription to SubScript Treasury address of 10 USDC for 30 days" };
     }
 
-    /* 6. Verify Transfer logs in receipt logs */
-    if (!findTransferLog(receipt, session.merchant_address, TREASURY_ADDRESS, BigInt(PREMIUM_PRICE))) {
-        console.error(`[tx_failed_verification] Transfer event log not found in receipt`);
-        return { valid: false, error: "Transfer event log not found in receipt" };
+    /* 6. Verify SubscriptionCreated log in receipt logs */
+    if (!findSubscriptionCreatedLog(receipt, session.merchant_address, TREASURY_ADDRESS, BigInt(PREMIUM_PRICE))) {
+        console.error(`[tx_failed_verification] SubscriptionCreated event log not found in receipt`);
+        return { valid: false, error: "SubscriptionCreated event log not found in receipt" };
     }
 
     /* 7. Verify transaction block timestamp is within the last 24 hours */
