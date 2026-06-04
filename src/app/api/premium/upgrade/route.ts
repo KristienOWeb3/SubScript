@@ -6,6 +6,7 @@ import { processPremiumUpgrade } from "@/lib/payments/processPremiumUpgrade";
 type PremiumUpgradeBody = {
     txHash?: string;
     sessionId?: string;
+    subId?: number;
 };
 
 const isTxHash = (value: unknown): value is string =>
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, sessionId } = body;
+        const { txHash, sessionId, subId } = body;
         if (!txHash || !isTxHash(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid premium transaction hash" }, { status: 400 });
         }
@@ -54,7 +55,8 @@ export async function POST(request: Request) {
             supabase,
             txHash,
             sessionId,
-            walletAddress
+            walletAddress,
+            subId: subId ? Number(subId) : undefined
         });
 
         if (!result.success) {

@@ -15,46 +15,40 @@ const subscriptions = [
 
 function RedactedShuffleText({ text, isHovered }: { text: string; isHovered: boolean }) {
     const [displayText, setDisplayText] = useState(text);
-    const [isShuffling, setIsShuffling] = useState(false);
 
-    const triggerShuffle = () => {
-        if (isShuffling) return;
-        setIsShuffling(true);
+    useEffect(() => {
         const chars = "██▓▓▒▒░░01X$&#%?*+=-";
         let iteration = 0;
-        
-        const interval = setInterval(() => {
-            setDisplayText(
-                text
-                    .split("")
-                    .map((char, index) => {
-                        if (char === " ") return " ";
-                        if (index < iteration) {
-                            return text[index];
-                        }
-                        return chars[Math.floor(Math.random() * chars.length)];
-                    })
-                    .join("")
-            );
-            
-            if (iteration >= text.length) {
-                clearInterval(interval);
-                setIsShuffling(false);
-            }
-            iteration += 1 / 3;
-        }, 35);
-    };
+        let interval: NodeJS.Timeout;
 
-    useEffect(() => {
-        if (isHovered) {
-            triggerShuffle();
-        }
-    }, [isHovered]);
+        const startShuffle = () => {
+            interval = setInterval(() => {
+                setDisplayText(
+                    text
+                        .split("")
+                        .map((char, index) => {
+                            if (char === " ") return " ";
+                            if (index < iteration) {
+                                return text[index];
+                            }
+                            return chars[Math.floor(Math.random() * chars.length)];
+                        })
+                        .join("")
+                );
 
-    // Scramble on initial mount to simulate decryption load
-    useEffect(() => {
-        triggerShuffle();
-    }, []);
+                if (iteration >= text.length) {
+                    clearInterval(interval);
+                }
+                iteration += 1 / 3;
+            }, 35);
+        };
+
+        startShuffle();
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [text, isHovered]);
 
     return (
         <span className="font-mono tracking-wide">
@@ -65,6 +59,16 @@ function RedactedShuffleText({ text, isHovered }: { text: string; isHovered: boo
 
 function MockupDashboardCard() {
     const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+    const [isMobile, setIsMobile] = useState(true);
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+        return () => window.removeEventListener("resize", checkMobile);
+    }, []);
 
     return (
         <motion.div
@@ -76,7 +80,9 @@ function MockupDashboardCard() {
             {/* 3D tilted float card container (made wider and more horizontal) */}
             <motion.div
                 className="w-full max-w-[420px] sm:max-w-[460px] cursor-pointer"
-                animate={{
+                animate={isMobile ? {
+                    y: [0, -6, 0]
+                } : {
                     y: [0, -10, 0],
                     rotateX: [8, 6, 8],
                     rotateY: [-12, -9, -12],
@@ -88,8 +94,9 @@ function MockupDashboardCard() {
                 }}
                 style={{
                     transformStyle: "preserve-3d",
+                    willChange: "transform",
                 }}
-                whileHover={{
+                whileHover={isMobile ? {} : {
                     scale: 1.03,
                     rotateX: 4,
                     rotateY: -4,
@@ -629,39 +636,46 @@ function WaitlistForm() {
 }
 
 export default function Home() {
+    const [isMobile, setIsMobile] = useState(true);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+        return () => window.removeEventListener("resize", checkMobile);
+    }, []);
+
     return (
         <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative z-0 bg-transparent selection:bg-[#00d2b4]/30 selection:text-white">
             <Navbar />
 
-            {/* Background Video (PC/Desktop) */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30 hidden md:block">
-                <video
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="w-full h-full object-cover"
-                >
-                    <source src="/subscript_video_pc.mp4" type="video/mp4" />
-                </video>
-                {/* Dark Vignette Overlay to ensure contrast and readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
-            </div>
+            {/* Background Video (PC/Desktop) - Only loaded on desktop viewports after mount */}
+            {mounted && !isMobile && (
+                <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30">
+                    <video
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        className="w-full h-full object-cover"
+                    >
+                        <source src="/subscript_video_pc.mp4" type="video/mp4" />
+                    </video>
+                    {/* Dark Vignette Overlay to ensure contrast and readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
+                </div>
+            )}
 
-            {/* Background Video (Mobile) */}
-            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30 md:hidden">
-                <video
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="w-full h-full object-cover"
-                >
-                    <source src="/subscript_video_mobile.mp4" type="video/mp4" />
-                </video>
-                {/* Dark Vignette Overlay to ensure contrast and readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
-            </div>
+            {/* Mobile dark vignette static background fallback (no heavy video downloads) */}
+            {mounted && isMobile && (
+                <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/80" />
+                </div>
+            )}
 
             {/* Background Orbs */}
             <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />

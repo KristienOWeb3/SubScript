@@ -12,6 +12,7 @@ export async function processPremiumUpgrade({
     txHash,
     sessionId,
     walletAddress,
+    subId,
     isReconciler = false,
     requestId = "unknown"
 }: {
@@ -19,6 +20,7 @@ export async function processPremiumUpgrade({
     txHash: string;
     sessionId: string;
     walletAddress: string;
+    subId?: number;
     isReconciler?: boolean;
     requestId?: string;
 }): Promise<{ success: boolean; error?: string; status: number; tier?: number; upgradeTxHash?: string | null; message?: string }> {
@@ -243,7 +245,7 @@ export async function processPremiumUpgrade({
             return { success: false, status: 400, error: verificationResult.error || "Payment verification failed." };
         }
 
-        // Revalidate Ownership: verify transaction sender matches session owner and authenticated walletAddress
+        /* Revalidate Ownership: verify transaction sender matches session owner and authenticated walletAddress */
         const txSender = normalizeAddress(verificationResult.tx!.from);
         if (txSender !== sessionOwner || txSender !== normalizedUser) {
             console.error(`[Premium Upgrade Failed] Transaction sender ${txSender} does not match session owner ${sessionOwner} or auth user ${normalizedUser}. requestId: ${requestId}`);
@@ -256,7 +258,7 @@ export async function processPremiumUpgrade({
             return { success: false, status: 403, error: "Transaction sender does not match session owner." };
         }
 
-        // On-Chain Confirmation Depth Check (Configurable)
+        /* On-Chain Confirmation Depth Check (Configurable) */
         const minConfirmations = Number(process.env.PREMIUM_MIN_CONFIRMATIONS || "3");
         const currentBlock = await verificationResult.provider.getBlockNumber();
         const confirmations = currentBlock - verificationResult.receipt!.blockNumber + 1;
@@ -279,7 +281,7 @@ export async function processPremiumUpgrade({
             };
         }
 
-        // Expiration Enforcement vs Block Timestamp
+        /* Expiration Enforcement vs Block Timestamp */
         const block = await verificationResult.provider.getBlock(verificationResult.receipt!.blockNumber);
         const blockTimestampMs = block ? block.timestamp * 1000 : 0;
         if (blockTimestampMs > expiresMs) {
@@ -341,7 +343,30 @@ export async function processPremiumUpgrade({
             throw lockError;
         }
 
-        /* 4. Activate premium subscription */
+        /* 4. Extract subId from logs if not provided */
+        let extractedSubId = subId;
+        if (!extractedSubId) {
+            const subscriptInterface = new ethers.Interface([
+                "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)"
+            ]);
+            for (const log of verificationResult.receipt!.logs) {
+                try {
+                    const parsed = subscriptInterface.parseLog(log);
+                    if (parsed?.name === "SubscriptionCreated") {
+                        extractedSubId = Number(parsed.args.subId);
+                        break;
+                    }
+                } catch {
+                    /* Ignore log parsing errors */
+                }
+            }
+        }
+
+        if (!extractedSubId) {
+            throw new Error("Unable to extract subscription ID from transaction logs.");
+        }
+
+        /* 5. Activate premium subscription */
         const provider = verificationResult.provider;
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
         
@@ -351,6 +376,7 @@ export async function processPremiumUpgrade({
             txHash,
             adminWallet,
             sessionId,
+            subId: extractedSubId,
             rpcEndpoint,
             requestId
         });

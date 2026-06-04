@@ -33,8 +33,9 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield
+    Wallet, Shield, BarChart3
 } from "lucide-react";
+import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 
 import { 
     ARC_TESTNET_CHAIN_ID, 
@@ -62,6 +63,7 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -76,6 +78,9 @@ export default function DashboardPage() {
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
+
+    const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
+    const [isCancellingPremium, setIsCancellingPremium] = useState(false);
 
 
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
@@ -255,6 +260,7 @@ export default function DashboardPage() {
                 const tierData = await tierRes.json();
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
+                setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
             }
         } catch (error) {
             console.error("Error reading contract data in background:", error);
@@ -989,7 +995,7 @@ export default function DashboardPage() {
 
             const userAddress = getAddress(activeMerchantAddress) as `0x${string}`;
 
-            /* Step 1: Instantiate the USDC ERC20 contract using getContract from viem */
+            /* Instantiate the USDC ERC20 contract using getContract from viem */
             const usdcContract = getContract({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: ERC20_ABI,
@@ -1002,7 +1008,9 @@ export default function DashboardPage() {
                 throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
             }
 
-            const amount = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
+            const planPrice = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
+            const approvalAmount = parseUnits("120", Number(tokenDecimals));
+            const subscriptionPeriod = 2592000;
 
             /* Register purchase intent session in the database first */
             setPremiumStatus("Registering purchase intent");
@@ -1018,56 +1026,76 @@ export default function DashboardPage() {
                 throw new Error(checkoutData.error || "Failed to initialize premium checkout session");
             }
 
-            /* Refactor the upgrade sequence to perform a standard, fast USDC transfer targeting the SubScript Router proxy contract */
-            setPremiumStatus("Processing Payment");
-
-            /* Step 3: Contract Execution Validation & Simulation before submission */
+            setPremiumStatus("Approving USDC Allowance");
             await publicClient.simulateContract({
                 address: USDC_NATIVE_GAS_ADDRESS,
                 abi: ERC20_ABI,
-                functionName: "transfer",
+                functionName: "approve",
                 account: userAddress,
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, amount],
+                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
+            });
+
+            const approveTxHash = await executeContractWrite({
+                address: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "approve",
+                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
+            });
+
+            setPremiumStatus("Waiting for approval confirmation...");
+            const approveReceipt = await publicClient.waitForTransactionReceipt({
+                hash: approveTxHash as `0x${string}`,
+                timeout: 120_000,
+            });
+
+            if (approveReceipt.status !== "success") {
+                throw new Error("USDC approval transaction reverted.");
+            }
+
+            setPremiumStatus("Creating Premium Subscription");
+            await publicClient.simulateContract({
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
+                functionName: "createSubscription",
+                account: userAddress,
+                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
 
             const txHash = await executeContractWrite({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "transfer",
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, amount],
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
+                functionName: "createSubscription",
+                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
 
             posthog.capture("premium_upgrade_initiated");
 
-            /* Step 4: Receipt-Based Premium Activation checks */
+            setPremiumStatus("Confirming subscription on-chain...");
             const receipt = await publicClient.waitForTransactionReceipt({
                 hash: txHash as `0x${string}`,
                 timeout: 120_000,
             });
 
             if (receipt.status !== "success") {
-                throw new Error("Premium payment transfer reverted on-chain.");
+                throw new Error("Subscription creation transaction reverted on-chain.");
             }
 
-            /* Assert receipt.to matches USDC_NATIVE_GAS_ADDRESS */
-            if (receipt.to && getAddress(receipt.to) !== getAddress(USDC_NATIVE_GAS_ADDRESS)) {
-                throw new Error("Transaction destination does not match the USDC contract address.");
-            }
-
-            const transferLogs = parseEventLogs({
-                abi: ERC20_ABI,
+            const subscriptionLogs = parseEventLogs({
+                abi: STANDARD_ABI,
                 logs: receipt.logs,
             });
-            const paymentLog = transferLogs.find(
+            const createLog = subscriptionLogs.find(
                 (log) =>
-                    log.eventName === "Transfer" &&
-                    log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.to?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase() &&
-                    log.args.value === amount
+                    log.eventName === "SubscriptionCreated" &&
+                    log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
+                    log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
             );
-            if (!paymentLog) {
-                throw new Error("USDC transfer to premium recipient not found in transaction logs.");
+
+            if (!createLog) {
+                throw new Error("SubscriptionCreated event not found in logs.");
             }
+
+            const subId = Number(createLog.args.subId);
 
             setPremiumStatus("Syncing premium state with server...");
             const upgradeRes = await fetch("/api/premium/upgrade", {
@@ -1076,6 +1104,7 @@ export default function DashboardPage() {
                 body: JSON.stringify({
                     txHash,
                     sessionId: checkoutData.sessionId,
+                    subId,
                 }),
             });
             const upgradeData = await upgradeRes.json();
@@ -1085,14 +1114,71 @@ export default function DashboardPage() {
 
             posthog.capture("premium_upgrade_success");
 
-            setPremiumStatus("Payment verified! Premium tier activated.");
-            await refetchTier();
+            setPremiumStatus("Subscription active! Premium tier activated.");
+            await refetchBalancesAndTier();
             setTimeout(() => setPremiumStatus(null), 4000);
         } catch (err: any) {
             console.error("Premium subscription failed:", err);
             setPremiumError(getCheckoutErrorMessage(err));
         } finally {
             setIsSubscribingPremium(false);
+        }
+    };
+
+    const handleCancelPremium = async () => {
+        if (!isConnected || !activeMerchantAddress || premiumSubId === null) {
+            setPremiumError("No active subscription metadata to cancel.");
+            return;
+        }
+
+        if (isCancellingPremium) {
+            return;
+        }
+
+        if (!confirm("Are you sure you want to cancel your Premium Plan subscription? This will downgrade your account on-chain.")) {
+            return;
+        }
+
+        setIsCancellingPremium(true);
+        setPremiumStatus("Executing cancellation on-chain...");
+        setPremiumError(null);
+
+        try {
+            const txHash = await executeContractWrite({
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
+                functionName: "cancelSubscription",
+                args: [BigInt(premiumSubId)],
+            });
+
+            setPremiumStatus("Waiting for confirmation...");
+            const receipt = await publicClient.waitForTransactionReceipt({
+                hash: txHash as `0x${string}`,
+                timeout: 120_000,
+            });
+
+            if (receipt.status !== "success") {
+                throw new Error("Cancellation transaction reverted on-chain.");
+            }
+
+            setPremiumStatus("Syncing cancellation state with server...");
+            const cancelRes = await fetch("/api/premium/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            const cancelData = await cancelRes.json();
+            if (!cancelRes.ok) {
+                throw new Error(cancelData.error || "Failed to sync cancellation to database.");
+            }
+
+            setPremiumStatus("Subscription cancelled. Downgraded to Standard.");
+            await refetchBalancesAndTier();
+            setTimeout(() => setPremiumStatus(null), 4000);
+        } catch (err: any) {
+            console.error("Cancellation failed:", err);
+            setPremiumError(err.message || "Cancellation failed.");
+        } finally {
+            setIsCancellingPremium(false);
         }
     };
 
@@ -1341,6 +1427,17 @@ Please write clean, TypeScript-safe React components and backend routes using vi
         }
 
         switch (activeTab) {
+            case "analytics":
+                return (
+                    <AnalyticsDashboard
+                        isPremium={isPremium}
+                        setActiveTab={setActiveTab}
+                        walletBalance={walletBalance}
+                        vaultBalance={vaultBalance}
+                        ledgers={ledgers}
+                    />
+                );
+
             case "overview":
                 return (
                     <div className="space-y-8">
@@ -1639,6 +1736,31 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                     {keeperError && (
                                         <p className="text-red-400 text-xs font-mono break-all">{keeperError}</p>
                                     )}
+                                </div>
+
+                                {/* Subscription Cancellation Control */}
+                                <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 shadow-2xl space-y-6 bg-red-500/[0.01]">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <ShieldAlert className="w-4 h-4 text-red-400" />
+                                        Cancel Subscription
+                                    </h3>
+                                    <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                        Cancel your active SubScript Premium subscription. This will downgrade your account to the Standard tier immediately.
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                        <div>
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                            <p className="text-xs font-semibold text-white/80">Active (Renews monthly)</p>
+                                        </div>
+                                        <button
+                                            onClick={handleCancelPremium}
+                                            disabled={isCancellingPremium || premiumSubId === null}
+                                            className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                                            Cancel Premium Plan
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Premium Features Summary */}
