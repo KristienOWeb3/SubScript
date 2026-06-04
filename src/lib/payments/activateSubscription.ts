@@ -14,7 +14,8 @@ export async function activateSubscription({
     txHash,
     adminWallet,
     sessionId,
-    rpcEndpoint
+    rpcEndpoint,
+    requestId = "unknown"
 }: {
     supabase: any;
     merchantAddress: string;
@@ -22,9 +23,9 @@ export async function activateSubscription({
     adminWallet: ethers.Wallet;
     sessionId: string;
     rpcEndpoint?: string;
+    requestId?: string;
 }) {
     const normalizedUser = normalizeAddress(merchantAddress);
-    const premiumSubId = Number(BigInt(normalizedUser) & BigInt("9007199254740991"));
 
     /* 1. Fetch merchant details from database to avoid redundant writes and capture prior tier */
     const { data: merchant, error: fetchError } = await supabase
@@ -52,18 +53,42 @@ export async function activateSubscription({
     let activationTxHash = txHash;
 
     if (merchant && merchant.tier >= 1 && currentContractTier >= 1) {
-        console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database.`);
+        console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database. requestId: ${requestId}`);
         
         /* Ensure the payment session is marked COMPLETED */
-        await supabase
+        const { error: sessionUpdateError } = await supabase
             .from("payment_sessions")
             .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
             .eq("session_id", sessionId);
 
+        if (sessionUpdateError) {
+            console.error(`[db_updated] Failed to finalize payment session status: ${sessionUpdateError.message}`);
+            throw sessionUpdateError;
+        }
+
         return;
     }
 
+    /* Circuit Breaker Check: Verify upgrades are active */
+    if (process.env.ADMIN_UPGRADE_DISABLED === "true") {
+        console.warn(`[ALERT] [Premium Upgrade Failed] ADMIN_UPGRADE_DISABLED circuit breaker is active. requestId: ${requestId}, sessionId: ${sessionId}`);
+        const { error: sessionUpdateError } = await supabase
+            .from("payment_sessions")
+            .update({
+                status: "PENDING",
+                last_error: "Premium upgrades are temporarily paused by administrator.",
+                updated_at: new Date().toISOString()
+            })
+            .eq("session_id", sessionId);
+
+        if (sessionUpdateError) {
+            console.error(`[db_updated] Failed to update payment session status under circuit breaker: ${sessionUpdateError.message}`);
+        }
+        throw new Error("Admin upgrade disabled");
+    }
+
     /* 3. Execute on-chain tier activation if required */
+    let onChainUpdated = false;
     if (currentContractTier < 1) {
         try {
             await contract.setMerchantTier.staticCall(normalizedUser, 1);
@@ -79,80 +104,68 @@ export async function activateSubscription({
             throw new Error("On-chain setMerchantTier transaction failed");
         }
         activationTxHash = upgradeTx.hash;
-        console.log(`[tier_updated] Tier activated on-chain. Tx: ${activationTxHash}`);
+        onChainUpdated = true;
+        console.log(`[tier_updated] Tier activated on-chain. Tx: ${activationTxHash}, requestId: ${requestId}`);
     } else {
-        console.log(`[activation_skipped] Merchant already premium on-chain.`);
+        console.log(`[activation_skipped] Merchant already premium on-chain. requestId: ${requestId}`);
     }
 
-    /* 4. Atomic entitlement sync in database */
-    const { error: merchantUpsertError } = await supabase
-        .from("merchants")
-        .upsert({
-            wallet_address: normalizedUser,
-            tier: 1,
-            updated_at: new Date().toISOString()
-        }, { onConflict: "wallet_address" });
-
-    if (merchantUpsertError) {
-        console.error(`[db_updated] Failed to upsert merchant: ${merchantUpsertError.message}`);
-        throw merchantUpsertError;
-    }
-
-    const { error: subUpsertError } = await supabase
-        .from("subscriptions")
-        .upsert({
-            subscription_id: premiumSubId,
-            merchant_address: normalizedUser,
-            current_nonce: 0,
-            last_settlement_timestamp: new Date().toISOString(),
-            billing_interval_seconds: 2592000,
-            amount_cap_usdc: 10,
-            payment_tx_hash: txHash,
-            status: "ACTIVE",
-            tier: 1,
-            updated_at: new Date().toISOString()
-        }, { onConflict: "subscription_id" });
-
-    if (subUpsertError) {
-        console.error(`[db_updated] Failed to upsert subscription: ${subUpsertError.message}`);
-        throw subUpsertError;
-    }
-
-    /* 5. Insert Premium Activation Audit Record */
-    const { error: auditError } = await supabase
-        .from("premium_upgrade_events")
-        .insert({
-            merchant: normalizedUser,
-            payment_session: sessionId,
-            tx_hash: txHash,
-            chain_id: ARC_TESTNET_CHAIN_ID,
-            tier_before: tierBefore,
-            tier_after: 1,
-            admin_wallet: adminWallet.address.toLowerCase(),
-            activation_tx_hash: activationTxHash,
-            rpc_endpoint: rpcEndpoint || null
+    /* 4. Atomic entitlement sync in database using PL/pgSQL function */
+    try {
+        const premiumSubId = Number(BigInt(normalizedUser) & BigInt("9007199254740991"));
+        const { error: rpcError } = await supabase.rpc("activate_premium_merchant", {
+            p_merchant_address: normalizedUser,
+            p_subscription_id: premiumSubId,
+            p_session_id: sessionId,
+            p_tx_hash: txHash,
+            p_amount: 10,
+            p_period: 2592000
         });
 
-    if (auditError) {
-        /* Log error but do not revert entire transaction if audit record fails */
-        console.error(`[db_updated] Failed to write premium upgrade audit record: ${auditError.message}`);
-    } else {
-        /* Observability metric log */
-        console.log(`[metric] premium_upgrades_successful: ${sessionId}, merchant: ${normalizedUser}`);
+        if (rpcError) {
+            console.error(`[db_updated] Failed to call activate_premium_merchant RPC: ${rpcError.message}`);
+            throw rpcError;
+        }
+
+        /* 5. Insert Premium Activation Audit Record */
+        const { error: auditError } = await supabase
+            .from("premium_upgrade_events")
+            .insert({
+                merchant: normalizedUser,
+                payment_session: sessionId,
+                tx_hash: txHash,
+                chain_id: ARC_TESTNET_CHAIN_ID,
+                tier_before: tierBefore,
+                tier_after: 1,
+                admin_wallet: adminWallet.address.toLowerCase(),
+                activation_tx_hash: activationTxHash,
+                rpc_endpoint: rpcEndpoint || null
+            });
+
+        if (auditError) {
+            /* Log error but do not revert entire transaction if audit record fails */
+            console.error(`[db_updated] Failed to write premium upgrade audit record: ${auditError.message}`);
+        } else {
+            /* Observability metric log */
+            console.log(`[metric] premium_upgrades_successful: ${sessionId}, merchant: ${normalizedUser}`);
+        }
+
+        console.log(`[db_updated] Merchant premium tier synchronization complete for ${normalizedUser}, requestId: ${requestId}`);
+
+    } catch (dbError: any) {
+        console.error(`[db_updated] Database activation failed. requestId: ${requestId}, error: ${dbError.message || dbError}`);
+        
+        if (onChainUpdated || currentContractTier >= 1) {
+            console.warn(`[ALERT] [Needs Reconciliation] On-chain succeeded but DB failed. sessionId: ${sessionId}, merchant: ${normalizedUser}`);
+            await supabase
+                .from("payment_sessions")
+                .update({
+                    status: "NEEDS_RECONCILIATION",
+                    last_error: `On-chain upgrade succeeded but database write failed: ${dbError.message || dbError}`,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("session_id", sessionId);
+        }
+        throw dbError;
     }
-
-    const { error: sessionUpdateError } = await supabase
-        .from("payment_sessions")
-        .update({
-            status: "COMPLETED",
-            updated_at: new Date().toISOString()
-        })
-        .eq("session_id", sessionId);
-
-    if (sessionUpdateError) {
-        console.error(`[db_updated] Failed to finalize payment session status: ${sessionUpdateError.message}`);
-        throw sessionUpdateError;
-    }
-
-    console.log(`[db_updated] Merchant premium tier synchronization complete for ${normalizedUser}`);
 }

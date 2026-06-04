@@ -355,11 +355,13 @@ export default function DepositModal({
                                         {/* Current Balance Indicator with manual Refresh */}
                                         <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
                                             <div className="text-left">
-                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
-                                                <p className="text-lg font-bold text-white tracking-tight leading-none">
-                                                    ${usdcBalance}
-                                                    <span className="text-xs text-white/50 font-normal ml-1">USDC</span>
-                                                </p>
+                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Current Balance</p>
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className="text-lg font-bold text-white tracking-tight">
+                                                        ${usdcBalance}
+                                                    </span>
+                                                    <span className="text-xs text-white/50 font-normal">USDC</span>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {pollingTimeout ? (
@@ -438,11 +440,13 @@ export default function DepositModal({
                                         {/* Current Balance Indicator */}
                                         <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
                                             <div className="text-left">
-                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
-                                                <p className="text-lg font-bold text-white tracking-tight leading-none">
-                                                    ${usdcBalance}
-                                                    <span className="text-xs text-white/50 font-normal ml-1">USDC</span>
-                                                </p>
+                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Current Balance</p>
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className="text-lg font-bold text-white tracking-tight">
+                                                        ${usdcBalance}
+                                                    </span>
+                                                    <span className="text-xs text-white/50 font-normal">USDC</span>
+                                                </div>
                                             </div>
                                             <button
                                                 onClick={handleRefresh}
@@ -491,12 +495,12 @@ export default function DepositModal({
                                                     <label className="text-xs text-white/50 uppercase tracking-wide">
                                                         Amount to Deposit
                                                     </label>
-                                                    <div className="flex items-center gap-2 mt-2">
+                                                    <div className="flex items-baseline gap-2 mt-2">
                                                         <input
                                                             type="text"
                                                             value="1.00"
                                                             readOnly
-                                                            className="flex-1 bg-transparent text-2xl font-bold text-white outline-none cursor-not-allowed"
+                                                            className="flex-1 bg-transparent text-2xl font-bold text-white outline-none cursor-not-allowed border-0 p-0 focus:ring-0"
                                                         />
                                                         <span className="text-white/60 font-medium">
                                                             USDC

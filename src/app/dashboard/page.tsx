@@ -1306,7 +1306,40 @@ Please write clean, TypeScript-safe React components and backend routes using vi
     const primaryColorText = "text-[#00d2b4]";
     const primaryColorBg = "bg-[#00d2b4]";
 
+    const renderPremiumLock = (tabLabel: string) => {
+        return (
+            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-10 shadow-2xl bg-black/60 flex flex-col items-center justify-center text-center gap-6 min-h-[400px] relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#d4a853]/5 rounded-full blur-3xl -z-10" />
+                <div className="p-5 rounded-3xl bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] animate-pulse">
+                    <Crown className="w-12 h-12" />
+                </div>
+                <div className="space-y-3 max-w-md">
+                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Feature Locked</h2>
+                    <p className="text-xs text-white/60 leading-relaxed font-sans">
+                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setActiveTab("premium")}
+                    className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)]"
+                >
+                    <Crown className="w-4 h-4" />
+                    Upgrade to Premium
+                </button>
+            </div>
+        );
+    };
+
     const renderView = () => {
+        if (!isPremium && ["apikeys", "checkout", "webhooks"].includes(activeTab)) {
+            const labelMap = {
+                apikeys: "API Keys Management",
+                checkout: "Checkout Setup & Generator",
+                webhooks: "Developer Webhooks"
+            };
+            return renderPremiumLock(labelMap[activeTab as "apikeys" | "checkout" | "webhooks"]);
+        }
+
         switch (activeTab) {
             case "overview":
                 return (

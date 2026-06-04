@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ARC_TESTNET_CHAIN_ID, PREMIUM_PRICE } from "@/lib/payments/constants";
+import crypto from "crypto";
 
 const parseBody = async (request: Request) => {
     try {
@@ -12,13 +13,15 @@ const parseBody = async (request: Request) => {
 };
 
 export async function POST(request: Request) {
+    const requestId = crypto.randomUUID();
+    let body: any = null;
     try {
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
             return NextResponse.json({ error: "Unauthorized: Please connect your wallet first." }, { status: 401 });
         }
 
-        const body = await parseBody(request);
+        body = await parseBody(request);
         if (!body || !body.merchantAddress) {
             return NextResponse.json({ error: "Bad Request: Missing merchantAddress in body" }, { status: 400 });
         }
@@ -63,6 +66,31 @@ export async function POST(request: Request) {
             }, { status: 200 });
         }
 
+        /* Check for existing non-expired PENDING or PROCESSING payment session for this merchant */
+        const { data: existingSession, error: existingSessionError } = await supabase
+            .from("payment_sessions")
+            .select("session_id, expires_at, status")
+            .eq("merchant_address", userWallet)
+            .in("status", ["PENDING", "PROCESSING"])
+            .gt("expires_at", new Date().toISOString())
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (existingSessionError) {
+            console.error(`[db_updated] Failed to query existing active sessions for merchant ${userWallet}:`, existingSessionError);
+        }
+
+        if (existingSession) {
+            console.log(`[Premium Checkout Created] Reusing existing session. requestId: ${requestId}, merchantAddress: ${userWallet}, sessionId: ${existingSession.session_id}`);
+            return NextResponse.json({
+                success: true,
+                sessionId: existingSession.session_id,
+                status: existingSession.status,
+                expiresAt: existingSession.expires_at
+            }, { status: 200 });
+        }
+
         /* Ensure merchant record exists before creating payment session */
         const { error: merchantUpsertError } = await supabase
             .from("merchants")
@@ -95,7 +123,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Database Sync Error: Failed to register payment session" }, { status: 500 });
         }
 
-        console.log(`[intent_created] Payment session created successfully for merchant ${userWallet}, sessionId: ${session.session_id}`);
+        console.log(`[Premium Checkout Created] New session. requestId: ${requestId}, merchantAddress: ${userWallet}, sessionId: ${session.session_id}`);
 
         return NextResponse.json({
             success: true,
@@ -105,7 +133,7 @@ export async function POST(request: Request) {
         }, { status: 200 });
 
     } catch (error: any) {
-        console.error("Premium checkout creation error:", error);
+        console.error(`[Premium Checkout Failed] requestId: ${requestId}, merchantAddress: ${body?.merchantAddress || "unknown"}, error: ${error.message || "Internal Server Error"}`);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

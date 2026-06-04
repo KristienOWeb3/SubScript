@@ -12,6 +12,17 @@ function getSupabase() {
     return createClient(supabaseUrl, supabaseServiceKey);
 }
 
+async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
+    const { data: merchant, error } = await supabase
+        .from("merchants")
+        .select("tier")
+        .eq("wallet_address", walletAddress.toLowerCase())
+        .maybeSingle();
+    if (error || !merchant) return false;
+    return merchant.tier >= 1;
+}
+
+
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -20,6 +31,11 @@ export async function GET(request: Request) {
         }
 
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const { data: keys, error } = await supabase
             .from("api_keys")
             .select("*")
@@ -57,6 +73,10 @@ export async function POST(request: Request) {
 
         const walletLower = wallet.toLowerCase();
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
 
         const { error: revokeError } = await supabase
             .from("api_keys")
@@ -118,6 +138,10 @@ export async function DELETE(request: Request) {
         }
 
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
         
         const { data: keyCheck, error: checkError } = await supabase
             .from("api_keys")

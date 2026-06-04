@@ -1,10 +1,10 @@
 import { ethers } from "ethers";
 
-const RPC_ENDPOINTS = [
-    process.env.RPC_URL || "https://rpc.testnet.arc.network",
-    process.env.RPC_FALLBACK_URL_1 || "https://rpc.testnet.arc.network",
+const RPC_ENDPOINTS = Array.from(new Set([
+    process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network",
+    process.env.ARC_RPC_SECONDARY || process.env.RPC_FALLBACK_URL_1 || "https://rpc.testnet.arc.network",
     process.env.RPC_FALLBACK_URL_2 || "https://rpc.testnet.arc.network"
-];
+].filter(Boolean)));
 
 /* Exposes a wrapper function that retries operations across providers sequentially if a network or endpoint-specific error occurs */
 export async function executeWithRpcFallback<T>(

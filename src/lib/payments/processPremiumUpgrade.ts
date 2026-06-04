@@ -11,84 +11,140 @@ export async function processPremiumUpgrade({
     supabase,
     txHash,
     sessionId,
-    walletAddress
+    walletAddress,
+    isReconciler = false,
+    requestId = "unknown"
 }: {
     supabase: any;
     txHash: string;
     sessionId: string;
     walletAddress: string;
+    isReconciler?: boolean;
+    requestId?: string;
 }): Promise<{ success: boolean; error?: string; status: number; tier?: number; upgradeTxHash?: string | null; message?: string }> {
-    console.log(`[tx_received] Processing premium upgrade for merchant: ${walletAddress}, session: ${sessionId}, tx: ${txHash}`);
+    const normalizedUser = normalizeAddress(walletAddress);
 
-    /* 1. Acquire database session lock */
-    const sessionRes = await lockPaymentSession(supabase, sessionId, txHash);
-    
-    if (!sessionRes.data) {
-        /* Lock acquisition failed; check the current session status for structured handling */
-        const { data: currentSession, error: fetchErr } = await supabase
+    let session;
+    if (isReconciler) {
+        console.log(`[Premium Upgrade Started] Reconciler bypass active. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
+        const { data, error } = await supabase
             .from("payment_sessions")
             .select("*")
             .eq("session_id", sessionId)
             .maybeSingle();
 
-        if (fetchErr) {
-            console.error(`[db_updated] Failed to fetch session state: ${fetchErr.message}`);
-            return { success: false, status: 500, error: "Database error retrieving session state." };
+        if (error || !data) {
+            console.error(`[Premium Upgrade Failed] Session fetch failed for reconciler: ${error?.message || "Not found"}. requestId: ${requestId}`);
+            return { success: false, status: 404, error: "Checkout session not found." };
+        }
+        session = data;
+    } else {
+        console.log(`[Premium Upgrade Started] Acquiring lock. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
+        const sessionRes = await lockPaymentSession(supabase, sessionId, txHash);
+        
+        if (sessionRes.error) {
+            if (sessionRes.error.code === "23505") {
+                console.error(`[Premium Upgrade Failed] Duplicate tx hash detected. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
+                
+                const { data: currentSession } = await supabase
+                    .from("payment_sessions")
+                    .select("processing_attempts")
+                    .eq("session_id", sessionId)
+                    .maybeSingle();
+
+                const currentAttempts = currentSession?.processing_attempts || 0;
+                const newAttempts = currentAttempts + 1;
+                const isPermanent = newAttempts >= 5;
+
+                await supabase
+                    .from("payment_sessions")
+                    .update({
+                        status: isPermanent ? "FAILED_PERMANENTLY" : "FAILED",
+                        processing_attempts: newAttempts,
+                        last_error: "Transaction hash has already been processed by another session.",
+                        failure_code: "DUPLICATE_TX",
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("session_id", sessionId);
+
+                return {
+                    success: false,
+                    status: 400,
+                    error: "Transaction hash has already been processed by another session."
+                };
+            }
+            console.error(`[Premium Upgrade Failed] lockPaymentSession failed: ${sessionRes.error.message}, requestId: ${requestId}`);
+            return { success: false, status: 500, error: "Database error during lock acquisition." };
         }
 
-        if (currentSession) {
-            if (currentSession.status === "COMPLETED") {
-                console.log(`[activation_skipped] Session ${sessionId} already completed.`);
-                return {
-                    success: true,
-                    status: 200,
-                    tier: 1,
-                    upgradeTxHash: null,
-                    message: "Premium tier is already active."
-                };
+        if (!sessionRes.data) {
+            const { data: currentSession, error: fetchErr } = await supabase
+                .from("payment_sessions")
+                .select("*")
+                .eq("session_id", sessionId)
+                .maybeSingle();
+
+            if (fetchErr) {
+                console.error(`[Premium Upgrade Failed] Failed to fetch session state. requestId: ${requestId}, error: ${fetchErr.message}`);
+                return { success: false, status: 500, error: "Database error retrieving session state." };
             }
-            if (currentSession.status === "PROCESSING") {
-                console.warn(`[replay_detected] Session ${sessionId} is currently processing elsewhere.`);
-                return {
-                    success: false,
-                    status: 409,
-                    error: "Payment verification is already in progress. Please wait."
-                };
+
+            if (currentSession) {
+                if (currentSession.status === "COMPLETED") {
+                    console.log(`[Premium Upgrade Verified] Session ${sessionId} already completed. requestId: ${requestId}`);
+                    return {
+                        success: true,
+                        status: 200,
+                        tier: 1,
+                        upgradeTxHash: null,
+                        message: "Premium tier is already active."
+                    };
+                }
+                if (currentSession.status === "PROCESSING") {
+                    console.warn(`[Premium Upgrade Failed] Replay/concurrent process detected. requestId: ${requestId}`);
+                    return {
+                        success: false,
+                        status: 409,
+                        error: "Payment verification is already in progress. Please wait."
+                    };
+                }
+                if (currentSession.status === "FAILED_PERMANENTLY") {
+                    console.error(`[Premium Upgrade Failed] Session ${sessionId} is permanently failed. requestId: ${requestId}`);
+                    return {
+                        success: false,
+                        status: 400,
+                        error: "Checkout session has permanently failed due to retry exhaustion. Please contact support."
+                    };
+                }
+                if (currentSession.status === "FAILED") {
+                    console.error(`[Premium Upgrade Failed] Session ${sessionId} is marked FAILED. requestId: ${requestId}`);
+                    return {
+                        success: false,
+                        status: 400,
+                        error: "Checkout session has failed. Please create a new checkout session."
+                    };
+                }
             }
-            if (currentSession.status === "FAILED_PERMANENTLY") {
-                console.error(`[verification_blocked] Session ${sessionId} is permanently failed.`);
-                return {
-                    success: false,
-                    status: 400,
-                    error: "Checkout session has permanently failed due to retry exhaustion. Please contact support."
-                };
-            }
-            if (currentSession.status === "FAILED") {
-                console.error(`[replay_detected] Upgrade failed because session ${sessionId} is marked FAILED.`);
-                return {
-                    success: false,
-                    status: 400,
-                    error: "Checkout session has failed. Please create a new checkout session."
-                };
-            }
+            return { success: false, status: 404, error: "Checkout session not found." };
         }
-        return { success: false, status: 404, error: "Checkout session not found." };
+        session = sessionRes.data;
     }
 
-    const session = sessionRes.data;
+    if (session.status === "COMPLETED") {
+        console.log(`[Premium Upgrade Verified] Session already completed. requestId: ${requestId}`);
+        return { success: true, status: 200, tier: 1, message: "Premium tier is already active." };
+    }
 
     if (session.status === "FAILED_PERMANENTLY" || (session.processing_attempts || 0) >= 5) {
-        console.error(`[replay_blocked] Checkout session ${sessionId} has permanently failed.`);
+        console.error(`[Premium Upgrade Failed] Session has permanently failed. requestId: ${requestId}, attempts: ${session.processing_attempts}`);
         return { success: false, status: 400, error: "Checkout session has permanently failed." };
     }
 
     try {
-        const normalizedUser = normalizeAddress(walletAddress);
-        /* Verify session identity match */
-        if (normalizeAddress(session.merchant_address) !== normalizedUser) {
-            console.error(`[replay_detected] Authenticated address ${walletAddress} does not match session owner ${session.merchant_address}`);
+        const sessionOwner = normalizeAddress(session.merchant_address);
+        if (sessionOwner !== normalizedUser) {
+            console.error(`[Premium Upgrade Failed] Authenticated address ${walletAddress} does not match session owner ${session.merchant_address}. requestId: ${requestId}`);
             
-            /* Reset session back to PENDING to allow the correct owner to pay */
             await supabase
                 .from("payment_sessions")
                 .update({ tx_hash: null, status: "PENDING", updated_at: new Date().toISOString() })
@@ -101,7 +157,7 @@ export async function processPremiumUpgrade({
         const nowMs = Date.now();
         const expiresMs = new Date(session.expires_at).getTime();
         if (nowMs > expiresMs && !txHash && !session.tx_hash) {
-            console.error(`[session_expired] Session ${sessionId} expired at ${session.expires_at}`);
+            console.error(`[Premium Upgrade Failed] Session ${sessionId} expired at ${session.expires_at}. requestId: ${requestId}`);
             await supabase
                 .from("payment_sessions")
                 .update({ status: "FAILED", updated_at: new Date().toISOString() })
@@ -110,10 +166,29 @@ export async function processPremiumUpgrade({
             return { success: false, status: 400, error: "Checkout session has expired. Please start a new session." };
         }
 
+        /* Circuit Breaker Check: Verify upgrades are active */
+        if (process.env.ADMIN_UPGRADE_DISABLED === "true") {
+            console.error(`[ALERT] Premium Upgrade Failed: ADMIN_UPGRADE_DISABLED circuit breaker is active. requestId: ${requestId}, sessionId: ${sessionId}`);
+            await supabase
+                .from("payment_sessions")
+                .update({
+                    status: "PENDING",
+                    last_error: "Premium upgrades are temporarily paused by administrator.",
+                    updated_at: new Date().toISOString()
+                })
+                .eq("session_id", sessionId);
+
+            return {
+                success: false,
+                status: 503,
+                error: "Service Unavailable: Premium upgrades are temporarily paused by administrator."
+            };
+        }
+
         /* 2. Connect to network and validate receipt metadata using RPC redundancy */
         const adminPrivateKey = process.env.PRIVATE_KEY;
         if (!adminPrivateKey) {
-            console.error("[db_updated] Admin private key configuration missing on server.");
+            console.error("[Premium Upgrade Failed] Admin private key configuration missing on server. requestId:", requestId);
             throw new Error("Admin private key configuration missing on server.");
         }
 
@@ -134,13 +209,12 @@ export async function processPremiumUpgrade({
             }
 
             const verification = await verifyTransaction(tx, receipt, session, provider);
-            return { isPendingReceipt: false, valid: verification.valid, error: verification.error, provider };
+            return { isPendingReceipt: false, valid: verification.valid, error: verification.error, provider, tx, receipt };
         });
 
         if (verificationResult.isPendingReceipt) {
-            console.warn(`[tx_failed_verification] Transaction receipt not indexed yet for hash: ${txHash}`);
+            console.warn(`[Premium Upgrade Failed] Transaction receipt not indexed yet for hash: ${txHash}. requestId: ${requestId}`);
             
-            /* Release lock back to PENDING so verification can be retried */
             await supabase
                 .from("payment_sessions")
                 .update({ tx_hash: null, status: "PENDING", updated_at: new Date().toISOString() })
@@ -150,7 +224,7 @@ export async function processPremiumUpgrade({
         }
 
         if (!verificationResult.valid) {
-            console.error(`[tx_failed_verification] Transaction validation failed: ${verificationResult.error}`);
+            console.error(`[Premium Upgrade Failed] Transaction validation failed: ${verificationResult.error}. requestId: ${requestId}`);
             
             const newAttempts = (session.processing_attempts || 0) + 1;
             const isPermanent = newAttempts >= 5;
@@ -166,16 +240,69 @@ export async function processPremiumUpgrade({
                 })
                 .eq("session_id", sessionId);
 
-            /* Observability metric log */
-            console.log(`[metric] checkout_sessions_failed: ${sessionId}, attempts: ${newAttempts}, reason: VERIFICATION_FAILED`);
-            if (isPermanent) {
-                console.error(`[ALERT] FAILED_PERMANENTLY checkout session: ${sessionId}, reason: VERIFICATION_FAILED`);
-            }
-
             return { success: false, status: 400, error: verificationResult.error || "Payment verification failed." };
         }
 
-        console.log(`[tx_verified] Transaction verified successfully. Event logs validated.`);
+        // Revalidate Ownership: verify transaction sender matches session owner and authenticated walletAddress
+        const txSender = normalizeAddress(verificationResult.tx!.from);
+        if (txSender !== sessionOwner || txSender !== normalizedUser) {
+            console.error(`[Premium Upgrade Failed] Transaction sender ${txSender} does not match session owner ${sessionOwner} or auth user ${normalizedUser}. requestId: ${requestId}`);
+            
+            await supabase
+                .from("payment_sessions")
+                .update({ tx_hash: null, status: "PENDING", updated_at: new Date().toISOString() })
+                .eq("session_id", sessionId);
+
+            return { success: false, status: 403, error: "Transaction sender does not match session owner." };
+        }
+
+        // On-Chain Confirmation Depth Check (Configurable)
+        const minConfirmations = Number(process.env.PREMIUM_MIN_CONFIRMATIONS || "3");
+        const currentBlock = await verificationResult.provider.getBlockNumber();
+        const confirmations = currentBlock - verificationResult.receipt!.blockNumber + 1;
+
+        if (confirmations < minConfirmations) {
+            console.log(`[Premium Upgrade Failed] Pending block confirmations (${confirmations}/${minConfirmations}). requestId: ${requestId}, sessionId: ${sessionId}`);
+            
+            await supabase
+                .from("payment_sessions")
+                .update({
+                    status: "PENDING",
+                    updated_at: new Date().toISOString()
+                })
+                .eq("session_id", sessionId);
+
+            return {
+                success: false,
+                status: 202,
+                error: "PAYMENT_PENDING_CONFIRMATIONS"
+            };
+        }
+
+        // Expiration Enforcement vs Block Timestamp
+        const block = await verificationResult.provider.getBlock(verificationResult.receipt!.blockNumber);
+        const blockTimestampMs = block ? block.timestamp * 1000 : 0;
+        if (blockTimestampMs > expiresMs) {
+            console.error(`[Premium Upgrade Failed] Transaction block timestamp ${blockTimestampMs} is after session expiration ${expiresMs}. requestId: ${requestId}`);
+            
+            const newAttempts = (session.processing_attempts || 0) + 1;
+            const isPermanent = newAttempts >= 5;
+
+            await supabase
+                .from("payment_sessions")
+                .update({
+                    status: isPermanent ? "FAILED_PERMANENTLY" : "FAILED",
+                    processing_attempts: newAttempts,
+                    last_error: "Transaction was mined after the payment session expired.",
+                    failure_code: "EXPIRED_TRANSACTION",
+                    updated_at: new Date().toISOString()
+                })
+                .eq("session_id", sessionId);
+
+            return { success: false, status: 400, error: "Transaction was mined after the payment session expired." };
+        }
+
+        console.log(`[Premium Upgrade Verified] Transaction verified and fully confirmed. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
 
         /* 3. Idempotency Check: Save transaction globally in webhook_events */
         const { error: lockError } = await supabase
@@ -191,8 +318,8 @@ export async function processPremiumUpgrade({
             });
 
         if (lockError) {
-            if (lockError.code === "23505") { /* unique_violation */
-                console.error(`[duplicate_tx] Transaction ${txHash} has already been processed globally.`);
+            if (lockError.code === "23505") {
+                console.error(`[Premium Upgrade Failed] Global duplicate tx hash. requestId: ${requestId}, tx: ${txHash}`);
                 
                 const newAttempts = (session.processing_attempts || 0) + 1;
                 const isPermanent = newAttempts >= 5;
@@ -210,24 +337,25 @@ export async function processPremiumUpgrade({
 
                 return { success: false, status: 400, error: "Transaction has already been processed by another session." };
             }
-            console.error(`[db_updated] Failed to record idempotency lock: ${lockError.message}`);
+            console.error(`[Premium Upgrade Failed] Failed to record idempotency lock: ${lockError.message}`);
             throw lockError;
         }
 
-        /* 4. Activate premium subscription and mark COMPLETED */
+        /* 4. Activate premium subscription */
         const provider = verificationResult.provider;
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+        
         await activateSubscription({
             supabase,
             merchantAddress: normalizedUser,
             txHash,
             adminWallet,
             sessionId,
-            rpcEndpoint
+            rpcEndpoint,
+            requestId
         });
 
-        /* Structured observability metric log */
-        console.log(`[metric] checkout_sessions_completed: ${sessionId}, merchant: ${normalizedUser}`);
+        console.log(`[Premium Upgrade Activated] Success. requestId: ${requestId}, merchant: ${normalizedUser}`);
 
         return {
             success: true,
@@ -237,7 +365,7 @@ export async function processPremiumUpgrade({
         };
 
     } catch (error: any) {
-        console.error(`[db_updated] Execution failure in processPremiumUpgrade:`, error);
+        console.error(`[Premium Upgrade Failed] Execution failure in processPremiumUpgrade:`, error);
         
         const newAttempts = (session.processing_attempts || 0) + 1;
         const isPermanent = newAttempts >= 5;
@@ -262,10 +390,8 @@ export async function processPremiumUpgrade({
             })
             .eq("session_id", sessionId);
 
-        /* Metric log */
-        console.log(`[metric] checkout_sessions_failed: ${sessionId}, attempts: ${newAttempts}, reason: ${failureCode}`);
         if (isPermanent) {
-            console.error(`[ALERT] FAILED_PERMANENTLY checkout session: ${sessionId}, reason: ${failureCode}`);
+            console.error(`[ALERT] FAILED_PERMANENTLY checkout session: ${sessionId}, reason: ${failureCode}, requestId: ${requestId}`);
         }
 
         return { success: false, status: 500, error: error.message || "Internal Server Error" };

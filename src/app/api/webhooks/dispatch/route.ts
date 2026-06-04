@@ -49,6 +49,21 @@ export async function POST(request: Request) {
         const normalizedWallet = walletAddress.toLowerCase();
         const supabase = getSupabase();
 
+        const { data: merchantData, error: merchantErr } = await supabase
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", normalizedWallet)
+            .maybeSingle();
+
+        if (merchantErr) {
+            console.error(`[dispatch] Failed to query merchant: ${merchantErr.message}`);
+        }
+        const dbMerchantTier = merchantData ? merchantData.tier : 0;
+        if (dbMerchantTier < 1) {
+            console.warn(`[dispatch] Skip dispatch: Merchant ${normalizedWallet} is not premium (Tier ${dbMerchantTier}).`);
+            return NextResponse.json({ error: "Forbidden: Event dispatching requires an active premium tier." }, { status: 403 });
+        }
+
         const { data: endpoints, error: fetchError } = await supabase
             .from("webhook_endpoints")
             .select("*")
