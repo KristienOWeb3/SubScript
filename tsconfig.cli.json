@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["es2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./bin",
+    "rootDir": "./src/cli",
+    "noEmit": false
+  },
+  "include": ["src/cli/**/*"]
+}
