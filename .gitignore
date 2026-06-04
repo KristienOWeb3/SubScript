@@ -56,3 +56,4 @@ cache/
 scratch/
 test-results/
 /subscript/
+snapshot_*.json
