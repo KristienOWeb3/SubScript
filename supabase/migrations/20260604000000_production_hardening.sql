@@ -1,5 +1,9 @@
 -- Production Hardening Migration
--- 1. Relax NOT NULL constraint on private_withdrawals.withdrawal_tx_hash
+-- 1. Ensure columns exist on private_withdrawals and relax NOT NULL constraint
+ALTER TABLE private_withdrawals ADD COLUMN IF NOT EXISTS merchant_address TEXT;
+ALTER TABLE private_withdrawals ADD COLUMN IF NOT EXISTS commitment_hash TEXT;
+ALTER TABLE private_withdrawals ADD COLUMN IF NOT EXISTS nullifier_hash TEXT;
+ALTER TABLE private_withdrawals ADD COLUMN IF NOT EXISTS withdrawal_tx_hash TEXT;
 ALTER TABLE private_withdrawals ALTER COLUMN withdrawal_tx_hash DROP NOT NULL;
 
 -- 2. Update payment_sessions check constraints
