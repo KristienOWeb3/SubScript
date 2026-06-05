@@ -63,7 +63,7 @@ Also include:
 
 CRITICAL INSTRUCTIONS:
 1. Do little to no frontend task or styling. Avoid writing custom premium designs, CSS, or complex animations. Keep the subscription paywall interface completely bare-bones and minimal.
-2. The only frontend interface task you should implement is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors).
+2. The only frontend interface task you should implement (or check/reuse) is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors). Create a new wallet connection flow ONLY if the project does not already have one set up; otherwise, reuse the existing connection provider and address hook.
 3. The wallet connection implementation must actively and definitely work, updating the UI state when connected, displaying the connected address, and enabling the payment execution.
 4. Handle the payment state (idle, approving, executing, success, error) with simple text indicators.`.trim();
     } else {
@@ -90,7 +90,7 @@ Also include:
 
 CRITICAL INSTRUCTIONS:
 1. Do little to no frontend task or styling. Avoid writing custom premium designs, CSS, or complex animations. Keep the subscription paywall interface completely bare-bones and minimal.
-2. The only frontend interface task you should implement is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors).
+2. The only frontend interface task you should implement (or check/reuse) is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors). Create a new wallet connection flow ONLY if the project does not already have one set up; otherwise, reuse the existing connection provider and address hook.
 3. The wallet connection implementation must actively and definitely work, updating the UI state when connected, displaying the connected address, and enabling the payment execution.
 4. Handle the payment state (idle, approving, executing, success, error) with simple text indicators.`.trim();
     }
