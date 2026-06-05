@@ -336,15 +336,7 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "subscriptionId is required" }, { status: 400 });
                 }
 
-                const { data: merchant } = await supabase
-                    .from("merchants")
-                    .select("tier")
-                    .eq("wallet_address", wallet.toLowerCase())
-                    .maybeSingle();
-
-                const isPremium = merchant ? merchant.tier >= 1 : false;
-                
-                contractAddress = isPremium ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
+                contractAddress = STANDARD_CONTRACT_ADDRESS;
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "cancelSubscription";
                 finalArgs = [BigInt(subscriptionId)];
