@@ -5,7 +5,7 @@ export async function GET() {
   const config = {
     chainId: 5042002,
     routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
-    standardAddress: "0x3c7f095575C66eF21D501D63E265A51240849924",
+    standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
     usdcAddress: "0x3600000000000000000000000000000000000000",
     feeBps: 100,
     minimumProtocolVersion: "1.1.0",

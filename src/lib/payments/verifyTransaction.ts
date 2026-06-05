@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { ARC_TESTNET_CHAIN_ID, TREASURY_ADDRESS, USDC_ADDRESS, PREMIUM_PRICE } from "./constants";
 
-const STANDARD_CONTRACT_ADDRESS = "0x3c7f095575C66eF21D501D63E265A51240849924";
+const STANDARD_CONTRACT_ADDRESS = "0x38594705B7feE26B5E05a04069695A907b725b9f";
 
 const SUBSCRIPT_INTERFACE = new ethers.Interface([
     "function createSubscription(address _merchant, uint256 _amount, uint256 _period) external returns (uint256 subId)",
