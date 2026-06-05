@@ -18,7 +18,7 @@ export default function AnalyticsDashboard({
     ledgers,
     onRetryCharge,
 }: AnalyticsDashboardProps) {
-    /* Compute metrics based on active subscriptions in ledger */
+    // Compute metrics based on active subscriptions in ledger
     const [retryingId, setRetryingId] = useState<string | null>(null);
 
     const handleRetryClick = async (id: string) => {
@@ -47,11 +47,11 @@ export default function AnalyticsDashboard({
     }, [ledgers]);
 
     const totalVolume = useMemo(() => {
-        /* Estimate total historical volume as active MRR + vault balance */
+        // Estimate total historical volume as active MRR + vault balance
         return mrr * 1.25 + vaultBalance;
     }, [mrr, vaultBalance]);
 
-    /* Calculate dynamic retention rate from ledger count */
+    // Calculate dynamic retention rate from ledger count
     const stats = useMemo(() => {
         const total = ledgers.length;
         if (total === 0) {
@@ -64,12 +64,12 @@ export default function AnalyticsDashboard({
         return { churn, retention };
     }, [ledgers]);
 
-    /* Dynamic SVG stroke offset based on actual retention rate */
+    // Dynamic SVG stroke offset based on actual retention rate
     const strokeDashoffset = useMemo(() => {
         return 251.2 - (251.2 * stats.retention) / 100;
     }, [stats.retention]);
 
-    /* Scale bar heights dynamically up to 100% of container height */
+    // Scale bar heights dynamically up to 100% of container height
     const barHeights = useMemo(() => {
         if (mrr === 0) return [0, 0, 0, 0, 0, 0];
         const values = [
@@ -84,19 +84,19 @@ export default function AnalyticsDashboard({
         return values.map((v) => (maxVal > 0 ? (v / maxVal) * 100 : 0));
     }, [mrr]);
 
-    /* Display list of actual active premium subscribers */
+    // Display list of actual active premium subscribers
     const displayList = useMemo(() => {
         return ledgers
             .filter((sub) => sub.active)
             .slice(0, 4)
             .map((sub: any) => ({
                 address: sub.shortSubAddress || "0x0000...0000",
-                tier: 1, /* Active subscribers of standard subscription represent tier 1 setup */
+                tier: 1, // Active subscribers of standard subscription represent tier 1 setup
                 timestamp: sub.nextBilling || new Date().toLocaleDateString()
             }));
     }, [ledgers]);
 
-    /* Filter to display list of inactive subscriptions */
+    // Filter to display list of inactive subscriptions
     const inactiveList = useMemo(() => {
         return ledgers
             .filter((sub) => !sub.active)
@@ -164,7 +164,7 @@ export default function AnalyticsDashboard({
                             </div>
                             <div className="flex justify-between items-end mt-8">
                                 <p className="text-[9px] text-white/30 max-w-md">
-                                    /* Net volume metrics derived from historical transaction ledger settlements */
+                                    // Net volume metrics derived from historical transaction ledger settlements
                                 </p>
                                 <button
                                     onClick={() => setActiveTab("overview")}
@@ -198,7 +198,7 @@ export default function AnalyticsDashboard({
                                 </div>
                             </div>
                             <p className="text-[9px] text-white/30 font-sans mt-4">
-                                /* Subscriptions active this billing cycle vs cancellations */
+                                // Subscriptions active this billing cycle vs cancellations
                             </p>
                         </div>
                     </div>
@@ -240,7 +240,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans mt-4">
-                                /* Measured in standard USDC token routing volume */
+                                // Measured in standard USDC token routing volume
                             </p>
                         </div>
 
@@ -277,7 +277,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans">
-                                /* Sorted by latest settlement transaction */
+                                // Sorted by latest settlement transaction
                             </p>
                         </div>
 
@@ -323,7 +323,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans">
-                                /* Manual on-chain execution of overdue payment */
+                                // Manual on-chain execution of overdue payment
                             </p>
                         </div>
                     </div>
