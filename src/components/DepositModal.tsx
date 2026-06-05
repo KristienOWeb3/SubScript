@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, ArrowRight, Wallet, QrCode, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import Link from "next/link";
-import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { createPublicClient, http, parseUnits, formatUnits, bytesToHex, keccak256 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -75,7 +75,6 @@ export default function DepositModal({
 
     const { chainId, isConnected } = useAccount();
     const { switchChain } = useSwitchChain();
-    const { isPending, isError, error } = useWriteContract();
 
     const fetchBalance = async () => {
         if (!depositAddress || depositAddress === "0xYOUR_CONNECTED_WALLET_ADDRESS") return;
@@ -190,8 +189,25 @@ export default function DepositModal({
             });
 
             setTxStatus("Confirming approval...");
-            const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
-            console.log("Approval transaction confirmed:", receipt);
+            let receipt;
+            try {
+                receipt = await publicClient.waitForTransactionReceipt({ 
+                    hash: hash as `0x${string}`,
+                    timeout: 60_000,
+                });
+            } catch (waitErr) {
+                console.warn("waitForTransactionReceipt failed for approval, checking manually:", waitErr);
+                try {
+                    receipt = await publicClient.getTransactionReceipt({ hash: hash as `0x${string}` });
+                } catch (recErr) {
+                    console.error("Failed to get approval receipt manually:", recErr);
+                    throw waitErr;
+                }
+            }
+
+            if (receipt && receipt.status === "reverted") {
+                throw new Error("Approval transaction reverted on-chain.");
+            }
 
             setDepositStep("transfer");
         } catch (err: any) {
@@ -258,7 +274,26 @@ export default function DepositModal({
             });
 
             setTxStatus("Confirming transfer...");
-            await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+            let receipt;
+            try {
+                receipt = await publicClient.waitForTransactionReceipt({ 
+                    hash: hash as `0x${string}`,
+                    timeout: 60_000,
+                });
+            } catch (waitErr) {
+                console.warn("waitForTransactionReceipt failed for transfer, checking manually:", waitErr);
+                try {
+                    receipt = await publicClient.getTransactionReceipt({ hash: hash as `0x${string}` });
+                } catch (recErr) {
+                    console.error("Failed to get transfer receipt manually:", recErr);
+                    throw waitErr;
+                }
+            }
+
+            if (receipt && receipt.status === "reverted") {
+                throw new Error("Transaction reverted on-chain.");
+            }
+
             resetAndClose();
             if (onSuccess) onSuccess();
         } catch (err: any) {
@@ -281,7 +316,7 @@ export default function DepositModal({
         onClose();
     };
 
-    const isLoading = isPending || txLoading;
+    const isLoading = txLoading;
     const isWrongNetwork = chainId !== 5042002 && !isEmbeddedWallet;
 
     return (
@@ -304,11 +339,11 @@ export default function DepositModal({
                         className="fixed inset-0 z-50 flex items-center justify-center p-4"
                     >
                         <div
-                            className="bg-dark-charcoal border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+                            className="bg-dark-charcoal border border-white/10 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-                                <h2 className="text-xl font-bold text-white">Deposit USDC</h2>
+                            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                                <h2 className="text-lg font-bold text-white">Deposit USDC</h2>
                                 <button
                                     onClick={resetAndClose}
                                     className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -318,258 +353,258 @@ export default function DepositModal({
                                 </button>
                             </div>
 
-                            <div className="p-6">
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-[11px] text-white/70 leading-relaxed font-sans space-y-2">
-                                    <p className="font-bold text-white uppercase tracking-wider text-[10px] text-leetcode-teal">
+                            <div className="p-5">
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4 text-[10px] text-white/70 leading-relaxed font-sans space-y-1.5">
+                                    <p className="font-bold text-white uppercase tracking-wider text-[9px] text-[#00d2b4]">
                                         About this deposit
                                     </p>
                                     <p>
-                                        This deposit is a sandbox protocol gas commitment of $1.00 USDC to secure automated, privacy-enhanced recurring transactions. By depositing and committing, you fund the private execution gas pool under the SubScript Smart Contract.
+                                        Commit $1.00 USDC to fund the privacy-enhanced subscription execution gas pool on-chain.
                                     </p>
-                                    <div className="flex items-start gap-2 pt-2 border-t border-white/5 mt-2">
+                                    <div className="flex items-center gap-2 pt-1.5 border-t border-white/5 mt-1.5">
                                         <input
                                             type="checkbox"
                                             id="agree-checkbox"
                                             checked={agreed}
                                             onChange={(e) => setAgreed(e.target.checked)}
-                                            className="mt-0.5 rounded border-white/10 bg-black text-[#00d2b4] focus:ring-0 cursor-pointer"
+                                            className="rounded border-white/10 bg-black text-[#00d2b4] focus:ring-0 cursor-pointer w-3 h-3"
                                         />
-                                        <label htmlFor="agree-checkbox" className="text-[10px] text-white/50 cursor-pointer select-none leading-snug">
-                                            I agree to the <Link href="/terms" target="_blank" className="text-leetcode-teal underline hover:text-white transition">Terms of Service</Link> and <Link href="/privacy" target="_blank" className="text-leetcode-teal underline hover:text-white transition">Privacy Policy</Link>, and authorize this transaction.
+                                        <label htmlFor="agree-checkbox" className="text-[9px] text-white/50 cursor-pointer select-none leading-none">
+                                            I agree to the <Link href="/terms" target="_blank" className="text-[#00d2b4] underline">Terms</Link> and authorize this transaction.
                                         </label>
                                     </div>
                                 </div>
 
-                                {isEmbeddedWallet && parseFloat(usdcBalance) === 0 ? (
-                                    <div className="text-center">
-                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-leetcode-teal/10 text-leetcode-teal rounded-full text-sm font-medium mb-6">
-                                            <QrCode className="w-4 h-4" />
-                                            Embedded Wallet
-                                        </div>
+                                 {isEmbeddedWallet && parseFloat(usdcBalance) === 0 ? (
+                                     <div className="text-center">
+                                         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#00d2b4]/10 text-[#00d2b4] rounded-full text-xs font-medium mb-3">
+                                             <QrCode className="w-3.5 h-3.5" />
+                                             Embedded Wallet
+                                         </div>
 
-                                        <p className="text-white/70 text-sm mb-6">
-                                            Top up your SubScript balance by sending USDC to this
-                                            address on <span className="text-white font-medium">Base</span>.
-                                        </p>
+                                         <p className="text-white/70 text-xs mb-3">
+                                             Top up your SubScript balance by sending USDC to this
+                                             address on <span className="text-white font-medium">Base</span>.
+                                         </p>
 
-                                        {/* Current Balance Indicator with manual Refresh */}
-                                        <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
-                                            <div className="text-left">
-                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Current Balance</p>
-                                                <div className="flex items-baseline gap-1">
-                                                    <span className="text-lg font-bold text-white tracking-tight">
-                                                        ${usdcBalance}
-                                                    </span>
-                                                    <span className="text-xs text-white/50 font-normal">USDC</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {pollingTimeout ? (
-                                                    <span className="text-[10px] text-yellow-500/70 font-medium">Polling paused</span>
-                                                ) : (
-                                                    <span className="flex h-2 w-2 relative">
-                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-leetcode-teal opacity-75"></span>
-                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-leetcode-teal"></span>
-                                                    </span>
-                                                )}
-                                                <button
-                                                    onClick={handleRefresh}
-                                                    disabled={!agreed}
-                                                    className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
-                                                    title="Refresh balance"
-                                                >
-                                                    <Loader2 className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-                                                </button>
-                                            </div>
-                                        </div>
+                                         {/* Current Balance Indicator with manual Refresh */}
+                                         <div className="text-center px-3 py-2 bg-white/[0.03] border border-white/5 rounded-xl mb-4 flex items-center justify-between">
+                                             <div className="text-left">
+                                                 <p className="text-[9px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
+                                                 <div className="flex items-baseline gap-1">
+                                                     <span className="text-base font-bold text-white tracking-tight">
+                                                         ${usdcBalance}
+                                                     </span>
+                                                     <span className="text-[10px] text-white/50 font-normal">USDC</span>
+                                                 </div>
+                                             </div>
+                                             <div className="flex items-center gap-1.5">
+                                                 {pollingTimeout ? (
+                                                     <span className="text-[9px] text-yellow-500/70 font-medium">Polling paused</span>
+                                                 ) : (
+                                                     <span className="flex h-1.5 w-1.5 relative">
+                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d2b4] opacity-75"></span>
+                                                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#00d2b4]"></span>
+                                                     </span>
+                                                 )}
+                                                 <button
+                                                     onClick={handleRefresh}
+                                                     disabled={!agreed}
+                                                     className="p-1.5 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
+                                                     title="Refresh balance"
+                                                 >
+                                                     <Loader2 className={`w-3 h-3 ${isLoading ? "animate-spin" : ""}`} />
+                                                 </button>
+                                             </div>
+                                         </div>
 
-                                        <div className={`p-4 rounded-xl inline-block mb-6 transition-all duration-300 relative ${agreed ? "bg-white" : "bg-white/5 filter blur-[6px] pointer-events-none"}`}>
-                                            <QRCodeSVG
-                                                value={depositAddress}
-                                                size={180}
-                                                level="H"
-                                                includeMargin={false}
-                                            />
-                                            {!agreed && (
-                                                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white/70 bg-black/40 rounded-xl">
-                                                    Agree to terms to view QR
-                                                </div>
-                                            )}
-                                        </div>
+                                         <div className={`p-3 rounded-xl inline-block mb-4 transition-all duration-300 relative ${agreed ? "bg-white" : "bg-white/5 filter blur-[6px] pointer-events-none"}`}>
+                                             <QRCodeSVG
+                                                 value={depositAddress}
+                                                 size={130}
+                                                 level="H"
+                                                 includeMargin={false}
+                                             />
+                                             {!agreed && (
+                                                 <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/70 bg-black/40 rounded-xl">
+                                                     Agree to terms to view QR
+                                                 </div>
+                                             )}
+                                         </div>
 
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                                            <p className="text-xs text-white/50 uppercase tracking-wide mb-2">
-                                                Your Deposit Address
-                                            </p>
-                                            <div className="flex items-center gap-2">
-                                                <code className="flex-1 text-sm text-white font-mono break-all">
-                                                    {depositAddress}
-                                                </code>
-                                                <button
-                                                    onClick={handleCopy}
-                                                    disabled={!agreed}
-                                                    className="p-2 text-leetcode-teal hover:bg-leetcode-teal/10 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:pointer-events-none"
-                                                    title="Copy address"
-                                                >
-                                                    {copied ? (
-                                                        <Check className="w-5 h-5" />
-                                                    ) : (
-                                                        <Copy className="w-5 h-5" />
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </div>
+                                         <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                                             <p className="text-[10px] text-white/50 uppercase tracking-wide mb-1">
+                                                 Your Deposit Address
+                                             </p>
+                                             <div className="flex items-center gap-2">
+                                                 <code className="flex-1 text-xs text-white font-mono break-all text-left">
+                                                     {depositAddress}
+                                                 </code>
+                                                 <button
+                                                     onClick={handleCopy}
+                                                     disabled={!agreed}
+                                                     className="p-1.5 text-[#00d2b4] hover:bg-[#00d2b4]/10 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:pointer-events-none"
+                                                     title="Copy address"
+                                                 >
+                                                     {copied ? (
+                                                         <Check className="w-4 h-4" />
+                                                     ) : (
+                                                         <Copy className="w-4 h-4" />
+                                                     )}
+                                                 </button>
+                                             </div>
+                                         </div>
 
-                                        {copied && (
-                                            <motion.p
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className="text-leetcode-teal text-sm mt-4"
-                                            >
-                                                Address copied to clipboard
-                                            </motion.p>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div>
-                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#00d2b4]/10 text-[#00d2b4] rounded-full text-sm font-medium mb-6">
-                                            <Wallet className="w-4 h-4" />
-                                            {isEmbeddedWallet ? "Embedded Wallet (Funded)" : "External Wallet"}
-                                        </div>
+                                         {copied && (
+                                             <motion.p
+                                                 initial={{ opacity: 0, y: 10 }}
+                                                 animate={{ opacity: 1, y: 0 }}
+                                                 className="text-[#00d2b4] text-xs mt-3"
+                                             >
+                                                 Address copied to clipboard
+                                             </motion.p>
+                                         )}
+                                     </div>
+                                 ) : (
+                                     <div>
+                                         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#00d2b4]/10 text-[#00d2b4] rounded-full text-xs font-medium mb-3">
+                                             <Wallet className="w-3.5 h-3.5" />
+                                             {isEmbeddedWallet ? "Embedded Wallet (Funded)" : "External Wallet"}
+                                         </div>
 
-                                        {/* Current Balance Indicator */}
-                                        <div className="text-center px-4 py-2.5 bg-white/[0.03] border border-white/5 rounded-xl mb-6 flex items-center justify-between">
-                                            <div className="text-left">
-                                                <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Current Balance</p>
-                                                <div className="flex items-baseline gap-1">
-                                                    <span className="text-lg font-bold text-white tracking-tight">
-                                                        ${usdcBalance}
-                                                    </span>
-                                                    <span className="text-xs text-white/50 font-normal">USDC</span>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={handleRefresh}
-                                                disabled={!agreed}
-                                                className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
-                                                title="Refresh balance"
-                                            >
-                                                <Loader2 className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-                                            </button>
-                                        </div>
+                                         {/* Current Balance Indicator */}
+                                         <div className="text-center px-3 py-2 bg-white/[0.03] border border-white/5 rounded-xl mb-4 flex items-center justify-between">
+                                             <div className="text-left">
+                                                 <p className="text-[9px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1">Current Balance</p>
+                                                 <div className="flex items-baseline gap-1">
+                                                     <span className="text-base font-bold text-white tracking-tight">
+                                                         ${usdcBalance}
+                                                     </span>
+                                                     <span className="text-[10px] text-white/50 font-normal">USDC</span>
+                                                 </div>
+                                             </div>
+                                             <button
+                                                 onClick={handleRefresh}
+                                                 disabled={!agreed}
+                                                 className="p-1.5 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center justify-center disabled:opacity-30"
+                                                 title="Refresh balance"
+                                             >
+                                                 <Loader2 className={`w-3 h-3 ${isLoading ? "animate-spin" : ""}`} />
+                                             </button>
+                                         </div>
 
-                                        <div className="flex items-center gap-3 mb-8">
-                                            <div
-                                                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${depositStep === "approve"
-                                                    ? "bg-[#00d2b4] text-[#111111]"
-                                                    : "bg-white/5 text-white/50"
-                                                    }`}
-                                            >
-                                                <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
-                                                    1
-                                                </span>
-                                                Approve
-                                            </div>
-                                            <ArrowRight className="w-4 h-4 text-white/30" />
-                                            <div
-                                                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${depositStep === "transfer"
-                                                    ? "bg-[#00d2b4] text-[#111111]"
-                                                    : "bg-white/5 text-white/50"
-                                                    }`}
-                                            >
-                                                <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
-                                                    2
-                                                </span>
-                                                Transfer
-                                            </div>
-                                        </div>
+                                         <div className="flex items-center gap-2 mb-4 text-xs">
+                                             <div
+                                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${depositStep === "approve"
+                                                     ? "bg-[#00d2b4] text-[#111111] font-semibold"
+                                                     : "bg-white/5 text-white/50"
+                                                     }`}
+                                             >
+                                                 <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">
+                                                     1
+                                                 </span>
+                                                 Approve
+                                             </div>
+                                             <ArrowRight className="w-3 h-3 text-white/30" />
+                                             <div
+                                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${depositStep === "transfer"
+                                                     ? "bg-[#00d2b4] text-[#111111] font-semibold"
+                                                     : "bg-white/5 text-white/50"
+                                                     }`}
+                                             >
+                                                 <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">
+                                                     2
+                                                 </span>
+                                                 Transfer
+                                             </div>
+                                         </div>
 
-                                        {depositStep === "approve" ? (
-                                            <div>
-                                                <p className="text-white/70 text-sm mb-6">
-                                                    First, approve SubScript to spend your USDC. This is
-                                                    a one-time approval.
-                                                </p>
+                                         {depositStep === "approve" ? (
+                                             <div>
+                                                 <p className="text-white/70 text-xs mb-4">
+                                                     First, approve SubScript to spend your USDC. This is
+                                                     a one-time approval.
+                                                 </p>
 
-                                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
-                                                    <label className="text-xs text-white/50 uppercase tracking-wide">
-                                                        Amount to Deposit
-                                                    </label>
-                                                    <div className="flex items-baseline gap-2 mt-2">
-                                                        <input
-                                                            type="text"
-                                                            value="1.00"
-                                                            readOnly
-                                                            className="flex-1 bg-transparent text-2xl font-bold text-white outline-none cursor-not-allowed border-0 p-0 focus:ring-0"
-                                                        />
-                                                        <span className="text-white/60 font-medium">
-                                                            USDC
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                                 <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4">
+                                                     <label className="text-[10px] text-white/50 uppercase tracking-wide">
+                                                         Amount to Deposit
+                                                     </label>
+                                                     <div className="flex items-baseline gap-2 mt-1">
+                                                         <input
+                                                             type="text"
+                                                             value="1.00"
+                                                             readOnly
+                                                             className="flex-1 bg-transparent text-xl font-bold text-white outline-none cursor-not-allowed border-0 p-0 focus:ring-0"
+                                                         />
+                                                         <span className="text-xs text-white/60 font-medium">
+                                                             USDC
+                                                         </span>
+                                                     </div>
+                                                 </div>
 
-                                                <button
-                                                    onClick={handleApprove}
-                                                    disabled={isLoading || !agreed}
-                                                    className="w-full py-3 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
-                                                             hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
-                                                             transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
-                                                >
-                                                    {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
-                                                    {isWrongNetwork 
-                                                        ? "Switch to Arc Testnet" 
-                                                        : isLoading 
-                                                            ? (txStatus || "Processing...") 
-                                                            : "Approve $1 USDC"}
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <p className="text-white/70 text-sm mb-6">
-                                                    Great! Now confirm the transfer to complete your
-                                                    deposit.
-                                                </p>
+                                                 <button
+                                                     onClick={handleApprove}
+                                                     disabled={isLoading || !agreed}
+                                                     className="w-full py-2.5 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
+                                                              hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
+                                                              transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
+                                                 >
+                                                     {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                                                     {isWrongNetwork 
+                                                         ? "Switch to Arc Testnet" 
+                                                         : isLoading 
+                                                             ? (txStatus || "Processing...") 
+                                                             : "Approve $1 USDC"}
+                                                 </button>
+                                             </div>
+                                         ) : (
+                                             <div>
+                                                 <p className="text-white/70 text-xs mb-4">
+                                                     Great! Now confirm the transfer to complete your
+                                                     deposit.
+                                                 </p>
 
-                                                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-xl p-4 mb-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-white/70">
-                                                            You&apos;re depositing
-                                                        </span>
-                                                        <span className="text-xl font-bold text-white">
-                                                            1.00 USDC
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                                 <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-xl p-3 mb-4">
+                                                     <div className="flex items-center justify-between text-xs">
+                                                         <span className="text-white/70">
+                                                             You&apos;re depositing
+                                                         </span>
+                                                         <span className="text-base font-bold text-white">
+                                                             1.00 USDC
+                                                         </span>
+                                                     </div>
+                                                 </div>
 
-                                                <button
-                                                    onClick={handleTransfer}
-                                                    disabled={isLoading}
-                                                    className="w-full py-3 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
-                                                             hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
-                                                             transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
-                                                >
-                                                    {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
-                                                    {isWrongNetwork 
-                                                        ? "Switch to Arc Testnet" 
-                                                        : isLoading 
-                                                            ? (txStatus || "Processing...") 
-                                                            : "Deposit $1 USDC"}
-                                                </button>
-                                            </div>
-                                        )}
+                                                 <button
+                                                     onClick={handleTransfer}
+                                                     disabled={isLoading}
+                                                     className="w-full py-2.5 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
+                                                              hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
+                                                              transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
+                                                 >
+                                                     {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                                                     {isWrongNetwork 
+                                                         ? "Switch to Arc Testnet" 
+                                                         : isLoading 
+                                                             ? (txStatus || "Processing...") 
+                                                             : "Deposit $1 USDC"}
+                                                 </button>
+                                             </div>
+                                         )}
 
-                                        {(txError || (isError && error)) && (
-                                            <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-col gap-1.5 text-left">
-                                                <span className="text-red-400 text-xs font-semibold uppercase tracking-wide">
-                                                    Transaction Failed
-                                                </span>
-                                                <p className="text-red-200 text-xs font-mono break-all leading-relaxed whitespace-pre-wrap">
-                                                    {txError || error?.message}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                          {txError && (
+                                             <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex flex-col gap-1 text-left">
+                                                 <span className="text-red-400 text-[10px] font-semibold uppercase tracking-wide">
+                                                     Transaction Failed
+                                                 </span>
+                                                 <p className="text-red-200 text-[10px] font-mono break-all leading-relaxed whitespace-pre-wrap">
+                                                     {txError}
+                                                 </p>
+                                             </div>
+                                         )}
+                                     </div>
+                                 )}
 
                                 <p className="text-[10px] text-white/30 text-center mt-6">
                                     By depositing, you agree to our{" "}
