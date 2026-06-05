@@ -228,6 +228,13 @@ export const STANDARD_SUBSCRIPT_ABI = [
         outputs: [],
     },
     {
+        type: "function",
+        name: "executePayment",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_subId", type: "uint256" }],
+        outputs: [],
+    },
+    {
         type: "event",
         name: "SubscriptionCreated",
         inputs: [
