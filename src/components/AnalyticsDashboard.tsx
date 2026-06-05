@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Crown, BarChart3, ArrowUpRight } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2 } from "lucide-react";
 
 interface AnalyticsDashboardProps {
     isPremium: boolean;
@@ -7,6 +7,7 @@ interface AnalyticsDashboardProps {
     walletBalance: number;
     vaultBalance: number;
     ledgers: any[];
+    onRetryCharge: (subId: string) => Promise<void>;
 }
 
 export default function AnalyticsDashboard({
@@ -15,8 +16,22 @@ export default function AnalyticsDashboard({
     walletBalance,
     vaultBalance,
     ledgers,
+    onRetryCharge,
 }: AnalyticsDashboardProps) {
     /* Compute metrics based on active subscriptions in ledger */
+    const [retryingId, setRetryingId] = useState<string | null>(null);
+
+    const handleRetryClick = async (id: string) => {
+        setRetryingId(id);
+        try {
+            await onRetryCharge(id);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setRetryingId(null);
+        }
+    };
+
     const activeSubscribers = useMemo(() => {
         return ledgers.filter((sub) => sub.active).length;
     }, [ledgers]);
@@ -81,36 +96,15 @@ export default function AnalyticsDashboard({
             }));
     }, [ledgers]);
 
-    /* Deterministic regional distribution derived from wallet address hashes */
-    const distribution = useMemo(() => {
-        const activeSubs = ledgers.filter((sub) => sub.active);
-        if (activeSubs.length === 0) {
-            return { na: 0, eu: 0, ap: 0 };
-        }
-        
-        let naCount = 0;
-        let euCount = 0;
-        let apCount = 0;
-        
-        activeSubs.forEach((sub) => {
-            const addr = sub.address || "";
-            const lastChar = addr.slice(-1).toLowerCase();
-            const code = lastChar.charCodeAt(0);
-            if (code >= 48 && code <= 53) {
-                naCount++;
-            } else if (code >= 54 && code <= 57) {
-                euCount++;
-            } else {
-                apCount++;
-            }
-        });
-        
-        const total = activeSubs.length;
-        return {
-            na: Math.round((naCount / total) * 100),
-            eu: Math.round((euCount / total) * 100),
-            ap: Math.round((apCount / total) * 100)
-        };
+    /* Filter to display list of inactive subscriptions */
+    const inactiveList = useMemo(() => {
+        return ledgers
+            .filter((sub) => !sub.active)
+            .map((sub: any) => ({
+                id: sub.rawId,
+                address: sub.shortSubAddress || "0x0000...0000",
+                timestamp: sub.nextBilling || new Date().toLocaleDateString()
+            }));
     }, [ledgers]);
 
     return (
@@ -287,47 +281,49 @@ export default function AnalyticsDashboard({
                             </p>
                         </div>
 
-                        {/* Bottom Right Card: Distribution/Map */}
+                        {/* Bottom Right Card: Inactive Subscriptions */}
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                             <div>
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Network Distribution</p>
-                                <p className="text-xs text-white/60">Node regional origins</p>
+                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Inactive Subscriptions</p>
+                                <p className="text-xs text-white/60">Failed or unpaid accounts</p>
                             </div>
 
-                            <div className="my-4 space-y-4">
-                                <div className="space-y-1.5">
-                                    <div className="flex justify-between text-[10px]">
-                                        <span className="text-white/60">North America</span>
-                                        <span className="text-white font-bold font-mono">{distribution.na}%</span>
+                            <div className="space-y-3 my-4 overflow-y-auto max-h-[180px]">
+                                {inactiveList.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-36 text-white/30 text-xs">
+                                        No inactive subscriptions
                                     </div>
-                                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-                                        <div className="bg-[#00d2b4] h-full rounded-full transition-all duration-500" style={{ width: `${distribution.na}%` }}></div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <div className="flex justify-between text-[10px]">
-                                        <span className="text-white/60">Europe</span>
-                                        <span className="text-white font-bold font-mono">{distribution.eu}%</span>
-                                    </div>
-                                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-                                        <div className="bg-[#00d2b4] h-full rounded-full transition-all duration-500" style={{ width: `${distribution.eu}%` }}></div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <div className="flex justify-between text-[10px]">
-                                        <span className="text-white/60">Asia Pacific</span>
-                                        <span className="text-white font-bold font-mono">{distribution.ap}%</span>
-                                    </div>
-                                    <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-                                        <div className="bg-[#00d2b4] h-full rounded-full transition-all duration-500" style={{ width: `${distribution.ap}%` }}></div>
-                                    </div>
-                                </div>
+                                ) : (
+                                    inactiveList.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-400 font-bold font-mono">
+                                                    ID{item.id}
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-mono text-white/90">{item.address}</p>
+                                                    <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleRetryClick(item.id)}
+                                                disabled={retryingId === item.id}
+                                                className="px-2.5 py-1.5 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 hover:border-[#00d2b4]/40 text-[#00d2b4] rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all disabled:opacity-50"
+                                            >
+                                                {retryingId === item.id ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                    <RefreshCw className="w-3 h-3" />
+                                                )}
+                                                Retry Charge
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans">
-                                /* Geoip resolution from webhook broadcast relays */
+                                /* Manual on-chain execution of overdue payment */
                             </p>
                         </div>
                     </div>

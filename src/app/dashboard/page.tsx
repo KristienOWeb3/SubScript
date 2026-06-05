@@ -662,6 +662,7 @@ export default function DashboardPage() {
 
     const [ledgers, setLedgers] = useState<any[]>([]);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
 
     useEffect(() => {
@@ -677,13 +678,6 @@ export default function DashboardPage() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
             try {
-                if (isPremium) {
-                    if (isSubscribed) {
-                        setLedgers([]);
-                    }
-                    return;
-                }
-
                 const nextId = await publicClient.readContract({
                     address: STANDARD_CONTRACT_ADDRESS,
                     abi: STANDARD_ABI,
@@ -741,7 +735,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium]);
+    }, [isConnected, address, isPremium, refreshTrigger]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -789,6 +783,50 @@ export default function DashboardPage() {
             }));
         } catch (err) {
             console.error("Error revoking subscription on-chain:", err);
+        }
+    };
+
+    const handleRetryCharge = async (rawId: string) => {
+        try {
+            const userAddress = address as `0x${string}`;
+            
+            if (isTestMode) {
+                console.log("Mocking retry charge for sub ID:", rawId);
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                setRefreshTrigger((prev) => prev + 1);
+                return;
+            }
+
+            await publicClient.simulateContract({
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
+                functionName: "executePayment",
+                account: userAddress,
+                args: [BigInt(rawId)],
+            });
+
+            const txHash = await executeContractWrite({
+                address: STANDARD_CONTRACT_ADDRESS,
+                abi: STANDARD_ABI,
+                functionName: "executePayment",
+                args: [BigInt(rawId)],
+            });
+
+            const receipt = await publicClient.waitForTransactionReceipt({
+                hash: txHash as `0x${string}`,
+                timeout: 120_000,
+            });
+
+            if (receipt.status !== "success") {
+                throw new Error("Payment execution transaction reverted on-chain.");
+            }
+
+            await refetchBalancesAndTier();
+            setRefreshTrigger((prev) => prev + 1);
+        } catch (err: any) {
+            console.error("Error retrying subscription charge:", err);
+            alert(err.message || "Failed to execute subscription payment.");
+            throw err;
         }
     };
 
@@ -1435,6 +1473,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                         walletBalance={walletBalance}
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
+                        onRetryCharge={handleRetryCharge}
                     />
                 );
 
