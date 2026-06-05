@@ -164,7 +164,7 @@ export default function AnalyticsDashboard({
                             </div>
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-8">
                                 <p className="text-[9px] text-white/30 max-w-md">
-                                    // Net volume metrics derived from historical transaction ledger settlements
+                                    Net volume metrics derived from historical transaction ledger settlements
                                 </p>
                                 <button
                                     onClick={() => setActiveTab("overview")}
@@ -198,7 +198,7 @@ export default function AnalyticsDashboard({
                                 </div>
                             </div>
                             <p className="text-[9px] text-white/30 font-sans mt-4">
-                                // Subscriptions active this billing cycle vs cancellations
+                                Subscriptions active this billing cycle vs cancellations
                             </p>
                         </div>
                     </div>
@@ -240,7 +240,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans mt-4">
-                                // Measured in standard USDC token routing volume
+                                Measured in standard USDC token routing volume
                             </p>
                         </div>
 
@@ -277,7 +277,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans">
-                                // Sorted by latest settlement transaction
+                                Sorted by latest settlement transaction
                             </p>
                         </div>
 
@@ -323,7 +323,7 @@ export default function AnalyticsDashboard({
                             </div>
 
                             <p className="text-[9px] text-white/30 font-sans">
-                                // Manual on-chain execution of overdue payment
+                                Manual on-chain execution of overdue payment
                             </p>
                         </div>
                     </div>
