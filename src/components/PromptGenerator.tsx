@@ -61,7 +61,11 @@ Also include:
 - A backend route to query/verify subscription status from the SubScript REST API: GET /api/v1/subscriptions?id=sub_... (passing 'Authorization: Bearer sk_test_...' in the headers).
 - A webhook handler verifying signature header 'x-subscript-signature' computed as HMAC-SHA256(webhook_secret, payload).
 
-Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all states (pending, success, error) gracefully.`.trim();
+CRITICAL INSTRUCTIONS:
+1. Do little to no frontend task or styling. Avoid writing custom premium designs, CSS, or complex animations. Keep the subscription paywall interface completely bare-bones and minimal.
+2. The only frontend interface task you should implement is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors).
+3. The wallet connection implementation must actively and definitely work, updating the UI state when connected, displaying the connected address, and enabling the payment execution.
+4. Handle the payment state (idle, approving, executing, success, error) with simple text indicators.`.trim();
     } else {
       return `Act as an expert Web3 Next.js developer. I want to integrate SubScript, a decentralized recurring payment protocol on the Arc Network, into my app.
 
@@ -84,7 +88,11 @@ Also include:
 - A backend route to query/verify subscription status from the SubScript REST API: GET /api/v1/subscriptions?id=sub_... (passing 'Authorization: Bearer sk_test_...' in the headers).
 - A webhook handler verifying signature header 'x-subscript-signature' computed as HMAC-SHA256(webhook_secret, payload).
 
-Ensure the UI looks premium with glassmorphism and Tailwind CSS, and handle all states (pending, success, error) gracefully.`.trim();
+CRITICAL INSTRUCTIONS:
+1. Do little to no frontend task or styling. Avoid writing custom premium designs, CSS, or complex animations. Keep the subscription paywall interface completely bare-bones and minimal.
+2. The only frontend interface task you should implement is a fully functional "Connect Wallet" button (using standard Wagmi connect/disconnect connectors).
+3. The wallet connection implementation must actively and definitely work, updating the UI state when connected, displaying the connected address, and enabling the payment execution.
+4. Handle the payment state (idle, approving, executing, success, error) with simple text indicators.`.trim();
     }
   };
 
