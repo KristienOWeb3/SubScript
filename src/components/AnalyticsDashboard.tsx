@@ -148,21 +148,21 @@ export default function AnalyticsDashboard({
 
                 {/* Dashboard layout */}
                 <div className={`space-y-6 transition-all duration-300 ${isPremium ? "" : "filter blur-[6px] pointer-events-none select-none"}`}>
-                    {/* Top Row: 2 columns, asymmetrical */}
-                    <div className="grid grid-cols-3 gap-6">
-                        {/* Top Left Card: spans 2 columns */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-2 flex flex-col justify-between min-h-[240px]">
-                            <div className="flex justify-between items-start">
+                    {/* Top Row: 2 columns, asymmetrical on desktop */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Top Left Card: spans 2 columns on desktop */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
+                            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                                 <div className="space-y-1">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Total Processed Volume</p>
-                                    <p className="text-5xl font-extrabold text-white tracking-tight">${totalVolume.toFixed(2)}</p>
+                                    <p className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">${totalVolume.toFixed(2)}</p>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-left sm:text-right">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Monthly Recurring Revenue</p>
-                                    <p className="text-2xl font-bold text-[#00d2b4] font-mono">${mrr.toFixed(2)}</p>
+                                    <p className="text-xl sm:text-2xl font-bold text-[#00d2b4] font-mono">${mrr.toFixed(2)}</p>
                                 </div>
                             </div>
-                            <div className="flex justify-between items-end mt-8">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-8">
                                 <p className="text-[9px] text-white/30 max-w-md">
                                     // Net volume metrics derived from historical transaction ledger settlements
                                 </p>
@@ -176,7 +176,7 @@ export default function AnalyticsDashboard({
                             </div>
                         </div>
 
-                        {/* Top Right Card: spans 1 column */}
+                        {/* Top Right Card: spans 1 column on desktop */}
                         <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 flex flex-col justify-between min-h-[240px]">
                             <div className="flex justify-between items-start">
                                 <div className="space-y-4">
@@ -203,8 +203,8 @@ export default function AnalyticsDashboard({
                         </div>
                     </div>
 
-                    {/* Bottom Row: 3 columns, symmetrical */}
-                    <div className="grid grid-cols-3 gap-6">
+                    {/* Bottom Row: 3 columns, symmetrical on desktop */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Bottom Left Card: Performance Chart */}
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                             <div>
