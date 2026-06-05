@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
+import crypto from "crypto";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -18,6 +19,7 @@ const ROUTER_ABI = [
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 
 export async function POST(request: Request) {
+    const requestId = crypto.randomUUID();
     try {
         /* 1. Authenticate with keeper secret key */
         const authHeader = request.headers.get("Authorization");
@@ -145,11 +147,11 @@ export async function POST(request: Request) {
             }
         }
 
-        /* 4. Query active/failed subscriptions from DB */
+        /* 4. Query active/failed/past_due subscriptions from DB */
         const { data: dbSubs, error: dbError } = await supabase
             .from("subscriptions")
             .select("*")
-            .in("status", ["ACTIVE", "FAILED"]);
+            .in("status", ["ACTIVE", "FAILED", "PAST_DUE"]);
 
         if (dbError) {
             return NextResponse.json({ error: `Database error: ${dbError.message}` }, { status: 500 });
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
             const retryExpiry = new Date(lastSettlement.getTime() + 60 * 24 * 60 * 60 * 1000); /* 60 days total: 30 days interval + 30 days retries */
 
             let isEligible = false;
-            if (sub.status === "ACTIVE") {
+            if (sub.status === "ACTIVE" || sub.status === "PAST_DUE") {
                 isEligible = nextBilling <= now;
             } else if (sub.status === "FAILED") {
                 isEligible = sub.tier === 0 && now <= retryExpiry;
@@ -177,6 +179,103 @@ export async function POST(request: Request) {
             if (!isEligible) {
                 continue;
             }
+
+            const handlePaymentFailure = async (subscriberAddress: string, failureReason: string) => {
+                const currentFailures = Number(sub.downgrade_failures || 0);
+                const previousStatus = sub.status;
+
+                if (previousStatus === "ACTIVE") {
+                    console.log(`[Premium Entered Past Due] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}`);
+                    await supabase
+                        .from("subscriptions")
+                        .update({
+                            status: "PAST_DUE",
+                            downgrade_failures: 1,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("subscription_id", subId);
+
+                    results.push({
+                        subId,
+                        subscriber: subscriberAddress,
+                        action: "ENTERED_PAST_DUE",
+                        success: false,
+                        error: failureReason
+                    });
+                } else if (previousStatus === "PAST_DUE") {
+                    const newFailures = currentFailures + 1;
+                    if (newFailures < 3) {
+                        console.log(`[Premium Past Due Retry] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}, failures: ${newFailures}`);
+                        await supabase
+                            .from("subscriptions")
+                            .update({
+                                downgrade_failures: newFailures,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq("subscription_id", subId);
+
+                        results.push({
+                            subId,
+                            subscriber: subscriberAddress,
+                            action: "PAST_DUE_RETRY",
+                            success: false,
+                            failuresCount: newFailures,
+                            error: failureReason
+                        });
+                    } else {
+                        /* 3rd failure: perform downgrade */
+                        console.log(`[Premium Downgrade Triggered] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}`);
+                        const currentContractTier = Number(await routerContract.merchantTiers(subscriberAddress));
+                        let downgradeTxHash = null;
+
+                        if (currentContractTier > 0) {
+                            const tx = await routerContract.setMerchantTier(subscriberAddress, 0);
+                            const receipt = await tx.wait();
+                            if (receipt.status !== 1) {
+                                throw new Error("Downgrade transaction reverted");
+                            }
+                            downgradeTxHash = tx.hash;
+                        }
+                        console.log(`[Premium Downgrade Confirmed] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}, txHash: ${downgradeTxHash}`);
+
+                        await supabase
+                            .from("subscriptions")
+                            .update({
+                                status: "FAILED",
+                                tier: 0,
+                                downgrade_failures: newFailures,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq("subscription_id", subId);
+
+                        await supabase
+                            .from("merchants")
+                            .update({
+                                tier: 0,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq("wallet_address", subscriberAddress.toLowerCase());
+
+                        results.push({
+                            subId,
+                            subscriber: subscriberAddress,
+                            action: "DOWNGRADED_MAX_FAILURES",
+                            success: false,
+                            failuresCount: newFailures,
+                            downgradeTxHash,
+                            error: failureReason
+                        });
+                    }
+                } else {
+                    results.push({
+                        subId,
+                        subscriber: subscriberAddress,
+                        action: "RENEWAL_FAILED",
+                        success: false,
+                        error: failureReason
+                    });
+                }
+            };
 
             try {
                 /* Fetch subscription state on-chain */
@@ -233,45 +332,7 @@ export async function POST(request: Request) {
                 const requiredAmount = BigInt(subOnChain[2] || "10000000"); /* amount is index 2 */
 
                 if (balance < requiredAmount || allowance < requiredAmount) {
-                    /* Balance or allowance is insufficient, downgrade immediately if not already downgraded */
-                    const currentContractTier = Number(await routerContract.merchantTiers(subscriber));
-                    let downgradeTxHash = null;
-
-                    if (currentContractTier > 0) {
-                        const tx = await routerContract.setMerchantTier(subscriber, 0);
-                        const receipt = await tx.wait();
-                        if (receipt.status !== 1) {
-                            throw new Error("Downgrade transaction reverted");
-                        }
-                        downgradeTxHash = tx.hash;
-                    }
-
-                    await supabase
-                        .from("subscriptions")
-                        .update({
-                            status: "FAILED",
-                            tier: 0,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq("subscription_id", subId);
-
-                    await supabase
-                        .from("merchants")
-                        .update({
-                            tier: 0,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq("wallet_address", subscriber.toLowerCase());
-
-                    results.push({
-                        subId,
-                        subscriber,
-                        action: "INSUFFICIENT_FUNDS_OR_ALLOWANCE",
-                        success: false,
-                        downgradeTxHash,
-                        balance: balance.toString(),
-                        allowance: allowance.toString()
-                    });
+                    await handlePaymentFailure(subscriber, "Insufficient balance or allowance");
                     continue;
                 }
 
@@ -307,12 +368,17 @@ export async function POST(request: Request) {
                     upgradeTxHash = txUpgrade.hash;
                 }
 
+                if (sub.status === "PAST_DUE") {
+                    console.log(`[Premium Past Due Recovery] requestId: ${requestId}, merchantAddress: ${subscriber}, subscriptionId: ${subId}, txHash: ${tx.hash}`);
+                }
+
                 /* Update database to ACTIVE and tier 1 */
                 await supabase
                     .from("subscriptions")
                     .update({
                         status: "ACTIVE",
                         tier: 1,
+                        downgrade_failures: 0,
                         last_settlement_timestamp: new Date().toISOString(),
                         updated_at: new Date().toISOString()
                     })
@@ -337,50 +403,19 @@ export async function POST(request: Request) {
 
             } catch (err: any) {
                 console.error(`Error processing billing for subscription ${subId}:`, err);
-
-                /* Standard downgrade action on failure */
-                let downgradeTxHash = null;
                 try {
                     const subOnChain = await standardContract.subscriptions(subId);
                     const subscriber = subOnChain[0];
-                    const currentContractTier = Number(await routerContract.merchantTiers(subscriber));
-
-                    if (currentContractTier > 0) {
-                        const tx = await routerContract.setMerchantTier(subscriber, 0);
-                        const receipt = await tx.wait();
-                        if (receipt.status === 1) {
-                            downgradeTxHash = tx.hash;
-                        }
-                    }
-
-                    await supabase
-                        .from("subscriptions")
-                        .update({
-                            status: "FAILED",
-                            tier: 0,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq("subscription_id", subId);
-
-                    await supabase
-                        .from("merchants")
-                        .update({
-                            tier: 0,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq("wallet_address", subscriber.toLowerCase());
-
+                    await handlePaymentFailure(subscriber, err.message || "Unknown error");
                 } catch (fallbackErr: any) {
-                    console.error(`Fallback downgrade failed for sub ${subId}:`, fallbackErr);
+                    console.error(`Fallback check failed for sub ${subId}:`, fallbackErr);
+                    results.push({
+                        subId,
+                        action: "EXECUTION_FAILED",
+                        success: false,
+                        error: err.message || "Unknown error"
+                    });
                 }
-
-                results.push({
-                    subId,
-                    action: "EXECUTION_FAILED",
-                    success: false,
-                    error: err.message || "Unknown error",
-                    downgradeTxHash
-                });
             }
         }
 
