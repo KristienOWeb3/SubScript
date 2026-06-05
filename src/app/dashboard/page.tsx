@@ -1164,7 +1164,7 @@ export default function DashboardPage() {
     };
 
     const handleCancelPremium = async () => {
-        if (!isConnected || !activeMerchantAddress || premiumSubId === null) {
+        if (!isConnected || !activeMerchantAddress || !isPremium) {
             setPremiumError("No active subscription metadata to cancel.");
             return;
         }
@@ -1178,28 +1178,11 @@ export default function DashboardPage() {
         }
 
         setIsCancellingPremium(true);
-        setPremiumStatus("Executing cancellation on-chain...");
+        setPremiumStatus("Executing cancellation...");
         setPremiumError(null);
 
         try {
-            const txHash = await executeContractWrite({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "cancelSubscription",
-                args: [BigInt(premiumSubId)],
-            });
-
-            setPremiumStatus("Waiting for confirmation...");
-            const receipt = await publicClient.waitForTransactionReceipt({
-                hash: txHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (receipt.status !== "success") {
-                throw new Error("Cancellation transaction reverted on-chain.");
-            }
-
-            setPremiumStatus("Syncing cancellation state with server...");
+            /* Send the POST request to /api/premium/cancel */
             const cancelRes = await fetch("/api/premium/cancel", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
@@ -1793,7 +1776,7 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                         </div>
                                         <button
                                             onClick={handleCancelPremium}
-                                            disabled={isCancellingPremium || premiumSubId === null}
+                                            disabled={isCancellingPremium || !isPremium}
                                             className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                         >
                                             {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
