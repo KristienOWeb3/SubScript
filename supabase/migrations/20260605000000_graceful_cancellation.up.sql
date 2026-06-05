@@ -12,7 +12,7 @@ BEGIN
           AND ccu.column_name = 'status'
     LOOP
         EXECUTE 'ALTER TABLE subscriptions DROP CONSTRAINT ' || quote_ident(r.constraint_name);
-    END FOR;
+    END LOOP;
 END $$;
 
 /* 2. Re-create the check constraint to include 'CANCELED' */
