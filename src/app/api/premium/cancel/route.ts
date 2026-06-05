@@ -39,7 +39,7 @@ export async function POST(request: Request) {
             .select("subscription_id, next_billing_date")
             .eq("merchant_address", normalizedUser)
             .eq("tier", 1)
-            .eq("status", "ACTIVE")
+            .in("status", ["ACTIVE", "PAST_DUE"])
             .maybeSingle();
 
         if (subError || !subData) {

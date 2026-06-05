@@ -85,7 +85,7 @@ export async function fetchConfigAndVerify(): Promise<any> {
   // Signature verification (Addition 3)
   const message = JSON.stringify(config);
   const recoveredAddress = ethers.verifyMessage(message, signature);
-  const expectedAdminAddress = "0x59D67d7c31Ec4835648A3fCb9e9E767A18bBfC69";
+  const expectedAdminAddress = "0x49315D8b3282812B92f454d45Cf041920a403492";
 
   if (recoveredAddress.toLowerCase() !== expectedAdminAddress.toLowerCase()) {
     throw new Error(

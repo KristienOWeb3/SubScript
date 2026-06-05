@@ -36,7 +36,7 @@ export async function POST(request: Request) {
         const now = new Date();
         const nextBillingDate = new Date(subData.next_billing_date);
 
-        if (subData.status !== "ACTIVE") {
+        if (subData.status !== "ACTIVE" && subData.status !== "PAST_DUE") {
             return NextResponse.json({ error: "Cannot resume a subscription that is not active." }, { status: 400 });
         }
 

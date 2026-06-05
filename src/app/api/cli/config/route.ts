@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 
-const privateKey = process.env.PRIVATE_KEY;
-
 export async function GET() {
   const config = {
     chainId: 5042002,
@@ -11,10 +9,16 @@ export async function GET() {
     usdcAddress: "0x3600000000000000000000000000000000000000",
     feeBps: 100,
     minimumProtocolVersion: "1.1.0",
-    adminAddress: "0x59D67d7c31Ec4835648A3fCb9e9E767A18bBfC69"
+    adminAddress: "0x49315D8b3282812B92f454d45Cf041920a403492"
   };
 
-  if (!privateKey) {
+  let signingKey = process.env.CLI_CONFIG_SIGNING_KEY;
+  if (!signingKey) {
+    console.warn("[CLI] WARNING: Using legacy PRIVATE_KEY fallback. Configure CLI_CONFIG_SIGNING_KEY.");
+    signingKey = process.env.PRIVATE_KEY;
+  }
+
+  if (!signingKey) {
     return NextResponse.json(
       { error: "Server admin private key is not configured" },
       { status: 500 }
@@ -22,9 +26,11 @@ export async function GET() {
   }
 
   try {
-    const wallet = new ethers.Wallet(privateKey);
+    const wallet = new ethers.Wallet(signingKey);
     const message = JSON.stringify(config);
     const signature = await wallet.signMessage(message);
+
+    console.log(`[CLI Config Signed] recoveredAddress: ${wallet.address}`);
 
     return NextResponse.json({
       config,

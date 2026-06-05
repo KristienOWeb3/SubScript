@@ -84,6 +84,8 @@ export default function DashboardPage() {
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
     const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
     const [isResumingPremium, setIsResumingPremium] = useState(false);
+    const [dbSubscriptionStatus, setDbSubscriptionStatus] = useState<string | null>(null);
+    const [downgradeFailures, setDowngradeFailures] = useState<number>(0);
 
 
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
@@ -266,6 +268,8 @@ export default function DashboardPage() {
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
+                setDbSubscriptionStatus(tierData.status || null);
+                setDowngradeFailures(tierData.downgradeFailures ? Number(tierData.downgradeFailures) : 0);
             }
         } catch (error) {
             console.error("Error reading contract data in background:", error);
@@ -1714,6 +1718,34 @@ Please write clean, TypeScript-safe React components and backend routes using vi
 
                         {isPremium ? (
                             <>
+                                {/* PAST_DUE Warning Banner */}
+                                {dbSubscriptionStatus === "PAST_DUE" && (
+                                    <div className="liquid-glass border border-amber-500/20 rounded-3xl p-6 shadow-2xl space-y-4 bg-amber-500/[0.02]">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
+                                                <AlertTriangle className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Grace Period</h3>
+                                                <p className="text-xs text-white/50">Payment failed — access temporarily preserved</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-white/70 leading-relaxed font-sans">
+                                            Your Premium renewal payment could not be processed. Premium access remains active during the grace period. Please restore wallet balance or allowance to avoid interruption.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-4 bg-black/40 border border-white/5 rounded-2xl p-4">
+                                            <div>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                <p className="text-xs font-semibold text-amber-400">Attempt {downgradeFailures} of 3</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
+                                                <p className="text-xs font-semibold text-white/80">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Payout Rerouting Controls */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                                     <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
