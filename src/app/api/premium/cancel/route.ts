@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
-import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
-import { SUBSCRIPT_ROUTER_ABI, STANDARD_SUBSCRIPT_ABI } from "@/lib/contracts/abis";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+import { SUBSCRIPT_ROUTER_ABI } from "@/lib/contracts/abis";
 
 export async function POST(request: Request) {
     try {
@@ -23,7 +23,17 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        /* 3. Query active premium subscription from database */
+        /* 3. Query active premium subscription and merchant tier from database */
+        const { data: merchantData, error: merchantError } = await supabase
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", normalizedUser)
+            .maybeSingle();
+
+        if (merchantError || !merchantData || merchantData.tier < 1) {
+            return NextResponse.json({ error: "Merchant does not have an active premium tier." }, { status: 400 });
+        }
+
         const { data: subData, error: subError } = await supabase
             .from("subscriptions")
             .select("subscription_id")
@@ -38,7 +48,7 @@ export async function POST(request: Request) {
 
         const subId = Number(subData.subscription_id);
 
-        /* 4. Verify on-chain that the subscription is cancelled (isActive == false) */
+        /* 4. Execute the On-Chain Revocation */
         const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
         const adminPrivateKey = process.env.PRIVATE_KEY;
         if (!adminPrivateKey) {
@@ -48,20 +58,6 @@ export async function POST(request: Request) {
         const provider = new ethers.JsonRpcProvider(rpcUrl);
         const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
 
-        const standardContract = new ethers.Contract(
-            STANDARD_CONTRACT_ADDRESS,
-            STANDARD_SUBSCRIPT_ABI,
-            adminWallet
-        );
-
-        const subOnChain = await standardContract.subscriptions(subId);
-        const isActive = subOnChain[5];
-
-        if (isActive) {
-            return NextResponse.json({ error: "Subscription is still active on-chain. Please cancel on-chain first." }, { status: 400 });
-        }
-
-        /* 5. Downgrade merchant tier on-chain to 0 */
         const routerContract = new ethers.Contract(
             SUBSCRIPT_ROUTER_ADDRESS,
             SUBSCRIPT_ROUTER_ABI,
@@ -80,7 +76,7 @@ export async function POST(request: Request) {
             downgradeTxHash = tx.hash;
         }
 
-        /* 6. Update database records */
+        /* 5. Update database records in a single atomic sequence */
         const { error: merchantUpdateError } = await supabase
             .from("merchants")
             .update({ tier: 0, updated_at: new Date().toISOString() })
@@ -93,7 +89,7 @@ export async function POST(request: Request) {
         const { error: subUpdateError } = await supabase
             .from("subscriptions")
             .update({
-                status: "FAILED",
+                status: "CANCELED",
                 tier: 0,
                 updated_at: new Date().toISOString()
             })
