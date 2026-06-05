@@ -52,6 +52,99 @@ export async function POST(request: Request) {
         const routerContract = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, ROUTER_ABI, adminWallet);
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ERC20_ABI, adminWallet);
 
+        /* A. Process Graceful Downgrades first */
+        const { data: cancelSubs, error: cancelError } = await supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("status", "ACTIVE")
+            .eq("cancel_at_period_end", true)
+            .lte("next_billing_date", new Date().toISOString());
+
+        const downgradeResults = [];
+
+        if (cancelError) {
+            console.error("Error querying subscriptions for downgrade:", cancelError);
+        } else {
+            for (const sub of (cancelSubs || [])) {
+                const subId = Number(sub.subscription_id);
+                const merchantAddress = sub.merchant_address;
+
+                try {
+                    /* Verify DB merchant tier is indeed 1 (Addition 2) */
+                    const { data: merchant, error: mError } = await supabase
+                        .from("merchants")
+                        .select("tier")
+                        .eq("wallet_address", merchantAddress)
+                        .maybeSingle();
+
+                    if (mError || !merchant || merchant.tier !== 1) {
+                        console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not 1 (got ${merchant?.tier}). Skipping downgrade.`);
+                        continue;
+                    }
+
+                    /* Execute on-chain downgrade (setMerchantTier to 0) */
+                    const currentContractTier = Number(await routerContract.merchantTiers(merchantAddress));
+                    let downgradeTxHash = null;
+
+                    if (currentContractTier > 0) {
+                        const tx = await routerContract.setMerchantTier(merchantAddress, 0);
+                        const receipt = await tx.wait();
+                        if (receipt.status !== 1) {
+                            throw new Error("On-chain downgrade transaction reverted");
+                        }
+                        downgradeTxHash = tx.hash;
+                    }
+
+                    /* On-chain success confirmed: update DB to tier = 0 and status = CANCELED (Addition 2) */
+                    await supabase
+                        .from("merchants")
+                        .update({
+                            tier: 0,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("wallet_address", merchantAddress);
+
+                    await supabase
+                        .from("subscriptions")
+                        .update({
+                            status: "CANCELED",
+                            tier: 0,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("subscription_id", subId);
+
+                    downgradeResults.push({
+                        subId,
+                        merchantAddress,
+                        action: "DOWNGRADED",
+                        success: true,
+                        txHash: downgradeTxHash
+                    });
+
+                } catch (err: any) {
+                    console.error(`[Downgrade Failed] Failed to downgrade subscription ${subId} for ${merchantAddress}:`, err);
+
+                    /* On-chain failure: leave ACTIVE, keep cancel_at_period_end = true, increment downgrade_failures (Addition 3) */
+                    const currentFailures = Number(sub.downgrade_failures || 0);
+                    await supabase
+                        .from("subscriptions")
+                        .update({
+                            downgrade_failures: currentFailures + 1,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("subscription_id", subId);
+
+                    downgradeResults.push({
+                        subId,
+                        merchantAddress,
+                        action: "DOWNGRADE_FAILED",
+                        success: false,
+                        error: err.message || "Unknown error"
+                    });
+                }
+            }
+        }
+
         /* 4. Query active/failed subscriptions from DB */
         const { data: dbSubs, error: dbError } = await supabase
             .from("subscriptions")
@@ -66,6 +159,9 @@ export async function POST(request: Request) {
         const results = [];
 
         for (const sub of (dbSubs || [])) {
+            if (sub.cancel_at_period_end) {
+                continue;
+            }
             const subId = Number(sub.subscription_id);
             const nextBilling = new Date(sub.next_billing_date);
             const lastSettlement = new Date(sub.last_settlement_timestamp);
@@ -288,7 +384,7 @@ export async function POST(request: Request) {
             }
         }
 
-        return NextResponse.json({ success: true, processed: results.length, results }, { status: 200 });
+        return NextResponse.json({ success: true, processed: results.length, results, downgrades: downgradeResults }, { status: 200 });
 
     } catch (error: any) {
         console.error("Cron billing worker error:", error);

@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
-import { ethers } from "ethers";
-import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
-import { SUBSCRIPT_ROUTER_ABI } from "@/lib/contracts/abis";
 
 export async function POST(request: Request) {
     try {
@@ -23,56 +20,57 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        /* 3. Query active premium subscription and merchant tier from database */
-        const { data: merchantData, error: merchantError } = await supabase
-            .from("merchants")
-            .select("tier")
-            .eq("wallet_address", normalizedUser)
-            .maybeSingle();
-
-        if (merchantError || !merchantData || merchantData.tier < 1) {
-            return NextResponse.json({ error: "Merchant does not have an active premium tier." }, { status: 400 });
-        }
-
+        /* 3. Query active subscription with cancel_at_period_end = true */
         const { data: subData, error: subError } = await supabase
             .from("subscriptions")
-            .select("subscription_id, next_billing_date")
+            .select("subscription_id, next_billing_date, status, cancel_at_period_end")
             .eq("merchant_address", normalizedUser)
             .eq("tier", 1)
-            .eq("status", "ACTIVE")
             .maybeSingle();
 
         if (subError || !subData) {
-            return NextResponse.json({ error: "No active premium subscription found for this merchant." }, { status: 404 });
+            return NextResponse.json({ error: "No premium subscription found for this merchant." }, { status: 404 });
         }
 
-        const subId = Number(subData.subscription_id);
-        const nextBillingDate = subData.next_billing_date;
+        /* 4. Resume Validation (Addition 5) */
+        const now = new Date();
+        const nextBillingDate = new Date(subData.next_billing_date);
 
-        /* 4. Set cancel_at_period_end and cancel_requested_at in DB */
+        if (subData.status !== "ACTIVE") {
+            return NextResponse.json({ error: "Cannot resume a subscription that is not active." }, { status: 400 });
+        }
+
+        if (!subData.cancel_at_period_end) {
+            return NextResponse.json({ error: "Subscription is not scheduled for cancellation." }, { status: 400 });
+        }
+
+        if (nextBillingDate <= now) {
+            return NextResponse.json({ error: "Subscription has already expired." }, { status: 400 });
+        }
+
+        /* 5. Update subscription to reset cancel flags */
         const { error: subUpdateError } = await supabase
             .from("subscriptions")
             .update({
-                cancel_at_period_end: true,
-                cancel_requested_at: new Date().toISOString(),
+                cancel_at_period_end: false,
+                cancel_requested_at: null,
                 updated_at: new Date().toISOString()
             })
-            .eq("subscription_id", subId);
+            .eq("subscription_id", subData.subscription_id);
 
         if (subUpdateError) {
-            console.error("Error updating subscription cancel flag in DB:", subUpdateError);
-            return NextResponse.json({ error: "Database Sync Error: Failed to schedule subscription cancellation" }, { status: 500 });
+            console.error("Error resuming subscription in DB:", subUpdateError);
+            return NextResponse.json({ error: "Database Sync Error: Failed to resume subscription" }, { status: 500 });
         }
 
         return NextResponse.json({
             success: true,
-            message: "Premium subscription set to cancel at the end of the current period.",
-            cancelAtPeriodEnd: true,
-            nextBillingDate
+            message: "Premium subscription successfully restored.",
+            cancelAtPeriodEnd: false
         }, { status: 200 });
 
     } catch (error: any) {
-        console.error("Cancel premium subscription error:", error);
+        console.error("Resume premium subscription error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

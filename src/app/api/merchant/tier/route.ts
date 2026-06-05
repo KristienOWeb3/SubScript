@@ -26,7 +26,7 @@ export async function GET(request: Request) {
                 .maybeSingle(),
             supabase
                 .from("subscriptions")
-                .select("subscription_id")
+                .select("subscription_id, cancel_at_period_end, next_billing_date")
                 .eq("merchant_address", address.toLowerCase())
                 .eq("tier", 1)
                 .in("status", ["ACTIVE", "FAILED"])
@@ -35,12 +35,14 @@ export async function GET(request: Request) {
 
         if (merchantRes.error) {
             console.error("Error querying merchant tier:", merchantRes.error);
-            return NextResponse.json({ tier: 0, subscriptionId: null }, { status: 200 });
+            return NextResponse.json({ tier: 0, subscriptionId: null, cancelAtPeriodEnd: false, nextBillingDate: null }, { status: 200 });
         }
 
         const tier = merchantRes.data ? Number(merchantRes.data.tier) : 0;
         const subscriptionId = subRes.data ? subRes.data.subscription_id : null;
-        return NextResponse.json({ tier, subscriptionId }, { status: 200 });
+        const cancelAtPeriodEnd = subRes.data ? !!subRes.data.cancel_at_period_end : false;
+        const nextBillingDate = subRes.data ? subRes.data.next_billing_date : null;
+        return NextResponse.json({ tier, subscriptionId, cancelAtPeriodEnd, nextBillingDate }, { status: 200 });
     } catch (error) {
         console.error("Tier API error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
