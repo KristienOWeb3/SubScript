@@ -81,6 +81,9 @@ export default function DashboardPage() {
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
+    const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
+    const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
+    const [isResumingPremium, setIsResumingPremium] = useState(false);
 
 
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
@@ -261,6 +264,8 @@ export default function DashboardPage() {
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
+                setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
+                setCurrentPeriodEnd(tierData.nextBillingDate || null);
             }
         } catch (error) {
             console.error("Error reading contract data in background:", error);
@@ -1173,7 +1178,7 @@ export default function DashboardPage() {
             return;
         }
 
-        if (!confirm("Are you sure you want to cancel your Premium Plan subscription? This will downgrade your account on-chain.")) {
+        if (!confirm("Are you sure you want to cancel your Premium Plan subscription? Your Premium benefits will remain active until the end of your current billing period.")) {
             return;
         }
 
@@ -1192,14 +1197,50 @@ export default function DashboardPage() {
                 throw new Error(cancelData.error || "Failed to sync cancellation to database.");
             }
 
-            setPremiumStatus("Subscription cancelled. Downgraded to Standard.");
+            const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
+            setPremiumStatus(`Your Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
             await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 4000);
+            setTimeout(() => setPremiumStatus(null), 8000);
         } catch (err: any) {
             console.error("Cancellation failed:", err);
             setPremiumError(err.message || "Cancellation failed.");
         } finally {
             setIsCancellingPremium(false);
+        }
+    };
+
+    const handleResumePremium = async () => {
+        if (!isConnected || !activeMerchantAddress || !isPremium || !cancelAtPeriodEnd) {
+            setPremiumError("No cancellation schedule to resume.");
+            return;
+        }
+
+        if (isResumingPremium) {
+            return;
+        }
+
+        setIsResumingPremium(true);
+        setPremiumStatus("Restoring premium subscription...");
+        setPremiumError(null);
+
+        try {
+            const resumeRes = await fetch("/api/premium/resume", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            const resumeData = await resumeRes.json();
+            if (!resumeRes.ok) {
+                throw new Error(resumeData.error || "Failed to resume subscription.");
+            }
+
+            setPremiumStatus("Premium renewal has been restored. Your subscription will continue normally.");
+            await refetchBalancesAndTier();
+            setTimeout(() => setPremiumStatus(null), 6000);
+        } catch (err: any) {
+            console.error("Resume failed:", err);
+            setPremiumError(err.message || "Resume failed.");
+        } finally {
+            setIsResumingPremium(false);
         }
     };
 
@@ -1764,24 +1805,40 @@ Please write clean, TypeScript-safe React components and backend routes using vi
                                 <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 shadow-2xl space-y-6 bg-red-500/[0.01]">
                                     <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                         <ShieldAlert className="w-4 h-4 text-red-400" />
-                                        Cancel Subscription
+                                        {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Cancel Subscription"}
                                     </h3>
                                     <p className="text-xs text-white/50 leading-relaxed font-sans">
-                                        Cancel your active SubScript Premium subscription. This will downgrade your account to the Standard tier immediately.
+                                        {cancelAtPeriodEnd 
+                                            ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
+                                            : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
+                                        }
                                     </p>
                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
                                         <div>
                                             <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                            <p className="text-xs font-semibold text-white/80">Active (Renews monthly)</p>
+                                            <p className="text-xs font-semibold text-white/80">
+                                                 {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
+                                            </p>
                                         </div>
-                                        <button
-                                            onClick={handleCancelPremium}
-                                            disabled={isCancellingPremium || !isPremium}
-                                            className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                        >
-                                            {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                                            Cancel Premium Plan
-                                        </button>
+                                        {cancelAtPeriodEnd ? (
+                                            <button
+                                                onClick={handleResumePremium}
+                                                disabled={isResumingPremium || !isPremium}
+                                                className="px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                            >
+                                                {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                                Continue Subscription
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleCancelPremium}
+                                                disabled={isCancellingPremium || !isPremium}
+                                                className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                            >
+                                                {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                                                Cancel Premium Plan
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 

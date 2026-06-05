@@ -66,6 +66,18 @@ export async function POST(request: Request) {
             }, { status: 200 });
         }
 
+        /* Clean up any expired PENDING or PROCESSING sessions for this merchant first */
+        const { error: cleanupError } = await supabase
+            .from("payment_sessions")
+            .update({ status: "FAILED", updated_at: new Date().toISOString() })
+            .eq("merchant_address", userWallet)
+            .in("status", ["PENDING", "PROCESSING"])
+            .lte("expires_at", new Date().toISOString());
+
+        if (cleanupError) {
+            console.error(`[Premium Checkout] Failed to clean up stale payment sessions for merchant ${userWallet}:`, cleanupError);
+        }
+
         /* Check for existing non-expired PENDING or PROCESSING payment session for this merchant */
         const { data: existingSession, error: existingSessionError } = await supabase
             .from("payment_sessions")
