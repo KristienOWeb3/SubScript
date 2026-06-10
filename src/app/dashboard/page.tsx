@@ -100,6 +100,11 @@ export default function DashboardPage() {
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
+    const [showLinkAdvanced, setShowLinkAdvanced] = useState(false);
+    const [showCheckoutAdvanced, setShowCheckoutAdvanced] = useState(false);
+    const [ledgerPage, setLedgerPage] = useState(0);
+    const [linksPage, setLinksPage] = useState(0);
+    const [webhooksPage, setWebhooksPage] = useState(0);
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
@@ -1744,26 +1749,39 @@ Responsibilities:
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1 md:col-span-2">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Link Duration</label>
-                                <DurationPicker
-                                    value={linkDurationMinutes}
-                                    onChange={(mins) => setLinkDurationMinutes(mins)}
-                                />
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">External Reference (Optional)</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. internal-sku-102"
-                                    value={linkExternalReference}
-                                    onChange={(e) => setLinkExternalReference(e.target.value)}
-                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
-                                />
-                            </div>
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowLinkAdvanced(!showLinkAdvanced)}
+                                className="text-[10px] text-white/40 hover:text-white flex items-center gap-1.5 uppercase font-bold tracking-wider transition-colors"
+                            >
+                                <Sliders className="w-3.5 h-3.5" />
+                                {showLinkAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
+                            </button>
                         </div>
+
+                        {showLinkAdvanced && (
+                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                                <div className="space-y-1 col-span-2">
+                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Link Duration</label>
+                                    <DurationPicker
+                                        value={linkDurationMinutes}
+                                        onChange={(mins) => setLinkDurationMinutes(mins)}
+                                    />
+                                </div>
+
+                                <div className="space-y-1 col-span-2">
+                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">External Reference (Optional)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. internal-sku-102"
+                                        value={linkExternalReference}
+                                        onChange={(e) => setLinkExternalReference(e.target.value)}
+                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         {linkError && (
                             <p className="text-red-400 text-[10px] font-mono font-semibold">{linkError}</p>
@@ -1803,85 +1821,125 @@ Responsibilities:
                             <p className="text-white/40 text-xs font-sans">No payment links created yet.</p>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full border-collapse font-sans text-xs">
-                                <thead>
-                                    <tr className="border-b border-white/5 text-[9px] uppercase tracking-wider text-white/40 text-left font-sans">
-                                        <th className="pb-3 pr-4 font-bold">Title</th>
-                                        <th className="pb-3 px-4 font-bold">Amount</th>
-                                        <th className="pb-3 px-4 font-bold">Reference</th>
-                                        <th className="pb-3 px-4 font-bold">Expiration</th>
-                                        <th className="pb-3 px-4 font-bold">Status</th>
-                                        <th className="pb-3 pl-4 font-bold text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5 font-sans">
-                                    {paymentLinks.map((link) => {
-                                        const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-                                        const status = !link.active 
-                                            ? "Inactive" 
-                                            : isExpired 
-                                                ? "Expired" 
-                                                : "Active";
+                        <>
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse font-sans text-xs">
+                                    <thead>
+                                        <tr className="border-b border-white/5 text-[9px] uppercase tracking-wider text-white/40 text-left font-sans">
+                                            <th className="pb-3 pr-4 font-bold">Title</th>
+                                            <th className="pb-3 px-4 font-bold">Amount</th>
+                                            <th className="pb-3 px-4 font-bold">Reference</th>
+                                            <th className="pb-3 px-4 font-bold">Expiration</th>
+                                            <th className="pb-3 px-4 font-bold">Status</th>
+                                            <th className="pb-3 pl-4 font-bold text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5 font-sans">
+                                    {(() => {
+                                        const linksPageSize = 5;
+                                        const paginatedLinks = paymentLinks.slice(linksPage * linksPageSize, (linksPage + 1) * linksPageSize);
+                                        return paginatedLinks.map((link) => {
+                                            const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+                                            const status = !link.active 
+                                                ? "Inactive" 
+                                                : isExpired 
+                                                    ? "Expired" 
+                                                    : "Active";
 
-                                        return (
-                                            <tr key={link.id} className="hover:bg-white/[0.01] transition-colors">
-                                                <td className="py-4 pr-4">
-                                                    <div className="font-bold text-white">{link.title}</div>
-                                                    {link.description && (
-                                                        <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
-                                                    )}
-                                                </td>
-                                                <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
-                                                    ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
-                                                </td>
-                                                <td className="py-4 px-4 text-white/60 font-mono">
-                                                    {link.external_reference || "-"}
-                                                </td>
-                                                <td className="py-4 px-4 text-white/50">
-                                                    {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
-                                                </td>
-                                                <td className="py-4 px-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
-                                                        status === "Active"
-                                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                                            : status === "Expired"
-                                                                ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                                                                : "bg-white/5 border-white/10 text-white/40"
-                                                    }`}>
-                                                        {status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-4 pl-4 text-right space-x-2">
-                                                    <button
-                                                        onClick={() => handleCopyLink(link.id)}
-                                                        className="px-2.5 py-1 rounded bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all"
-                                                    >
-                                                        {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                        className={`px-2.5 py-1 rounded border text-[10px] font-bold uppercase transition-all ${
-                                                            link.active
-                                                                ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
-                                                                : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
-                                                        }`}
-                                                    >
-                                                        {link.active ? "Deactivate" : "Activate"}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteLink(link.id)}
-                                                        className="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                            return (
+                                                <tr key={link.id} className="hover:bg-white/[0.01] transition-colors">
+                                                    <td className="py-4 pr-4">
+                                                        <div className="font-bold text-white">{link.title}</div>
+                                                        {link.description && (
+                                                            <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
+                                                        ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                    </td>
+                                                    <td className="py-4 px-4 text-white/60 font-mono">
+                                                        {link.external_reference || "-"}
+                                                    </td>
+                                                    <td className="py-4 px-4 text-white/50">
+                                                        {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
+                                                    </td>
+                                                    <td className="py-4 px-4">
+                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                                                            status === "Active"
+                                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                                : status === "Expired"
+                                                                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                                                    : "bg-white/5 border-white/10 text-white/40"
+                                                        }`}>
+                                                            {status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-4 pl-4 text-right">
+                                                        <div className="flex gap-2.5 justify-end items-center font-sans">
+                                                            <button
+                                                                onClick={() => handleCopyLink(link.id)}
+                                                                className="px-4 py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5"
+                                                            >
+                                                                {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleToggleLinkActive(link.id, link.active)}
+                                                                className={`px-4 py-2 rounded-xl border text-[10px] font-bold uppercase transition-all ${
+                                                                    link.active
+                                                                        ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
+                                                                        : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
+                                                                }`}
+                                                            >
+                                                                {link.active ? "Deactivate" : "Activate"}
+                                                            </button>
+                                                            <div className="w-[1px] h-4 bg-white/10 mx-1" />
+                                                            <button
+                                                                onClick={() => handleDeleteLink(link.id)}
+                                                                className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        });
+                                    })()}
                                 </tbody>
                             </table>
                         </div>
+
+                        {(() => {
+                            const linksPageSize = 5;
+                            const totalPages = Math.ceil(paymentLinks.length / linksPageSize);
+                            if (totalPages <= 1) return null;
+                            return (
+                                <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
+                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                        Page {linksPage + 1} of {totalPages}
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={linksPage === 0}
+                                            onClick={() => setLinksPage((p) => Math.max(0, p - 1))}
+                                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                        >
+                                            Prev
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={linksPage >= totalPages - 1}
+                                            onClick={() => setLinksPage((p) => Math.min(totalPages - 1, p + 1))}
+                                            className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </>
                     )}
                 </div>
             </div>
@@ -2036,40 +2094,75 @@ Responsibilities:
                                                 </td>
                                             </tr>
                                         ) : (
-                                            ledgers.map((item) => (
-                                                <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                    <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                    <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
-                                                    <td className="py-4 text-[#d4a853]">{item.limit}</td>
-                                                    <td className="py-4">{item.nextBilling}</td>
-                                                    <td className="py-4">
-                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                            item.active 
-                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                        }`}>
-                                                            {item.active ? "Active" : "Revoked"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-4 text-right">
-                                                        {item.active ? (
-                                                            <button 
-                                                                onClick={() => handleRevokeCustomer(item.rawId)}
-                                                                className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                                title="Revoke Allowance"
-                                                            >
-                                                                <ShieldX className="w-4 h-4" />
-                                                            </button>
-                                                        ) : (
-                                                            <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))
+                                            (() => {
+                                                const ledgerPageSize = 5;
+                                                const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
+                                                return paginatedLedgers.map((item) => (
+                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
+                                                        <td className="py-4 font-semibold text-white">{item.id}</td>
+                                                        <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
+                                                        <td className="py-4 text-[#d4a853]">{item.limit}</td>
+                                                        <td className="py-4">{item.nextBilling}</td>
+                                                        <td className="py-4">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                                                item.active 
+                                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                            }`}>
+                                                                {item.active ? "Active" : "Revoked"}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-4 text-right">
+                                                            {item.active ? (
+                                                                <button 
+                                                                    onClick={() => handleRevokeCustomer(item.rawId)}
+                                                                    className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
+                                                                    title="Revoke Allowance"
+                                                                >
+                                                                    <ShieldX className="w-4 h-4" />
+                                                                </button>
+                                                            ) : (
+                                                                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ));
+                                            })()
                                         )}
                                     </tbody>
                                 </table>
                             </div>
+
+                            {(() => {
+                                const ledgerPageSize = 5;
+                                const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                if (totalPages <= 1) return null;
+                                return (
+                                    <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
+                                        <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                            Page {ledgerPage + 1} of {totalPages}
+                                        </span>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={ledgerPage === 0}
+                                                onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+                                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                            >
+                                                Prev
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={ledgerPage >= totalPages - 1}
+                                                onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
+                                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                            >
+                                                Next
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 );
@@ -2591,18 +2684,31 @@ Responsibilities:
                                                 </select>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
-                                            <select 
-                                                value={subChain}
-                                                onChange={(e) => setSubChain(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                        <div className="pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowCheckoutAdvanced(!showCheckoutAdvanced)}
+                                                className="text-[10px] text-white/40 hover:text-white flex items-center gap-1.5 uppercase font-bold tracking-wider transition-colors"
                                             >
-                                                <option value="base">Base (CCTP Auto-Routing)</option>
-                                                <option value="solana">Solana (CCTP Auto-Routing)</option>
-                                                <option value="arc">Arc Network (Native)</option>
-                                            </select>
+                                                <Sliders className="w-3.5 h-3.5" />
+                                                {showCheckoutAdvanced ? "Hide Advanced Options" : "Show Advanced Options"}
+                                            </button>
                                         </div>
+
+                                        {showCheckoutAdvanced && (
+                                            <div className="pt-3 border-t border-white/5">
+                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
+                                                <select 
+                                                    value={subChain}
+                                                    onChange={(e) => setSubChain(e.target.value)}
+                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                                >
+                                                    <option value="base">Base (CCTP Auto-Routing)</option>
+                                                    <option value="solana">Solana (CCTP Auto-Routing)</option>
+                                                    <option value="arc">Arc Network (Native)</option>
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="mt-8 pt-4 border-t border-white/5 text-[10px] text-white/40">
@@ -2881,32 +2987,67 @@ Responsibilities:
                                                 <p className="text-[10px] text-white/20">Trigger events on-chain (like creating subscriptions) to see delivery reports here.</p>
                                             </div>
                                         ) : (
-                                            webhookEvents.map((item) => (
-                                                <button
-                                                    key={item.id}
-                                                    onClick={() => setSelectedWebhook(item.id)}
-                                                    className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
-                                                        selectedWebhook === item.id 
-                                                            ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
-                                                            : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
-                                                    }`}
-                                                >
-                                                    <div className="font-mono text-[11px] space-y-1 max-w-[70%]">
-                                                        <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
-                                                        <p className="text-white/40 text-[9px] truncate">{item.endpointUrl}</p>
-                                                        <p className="text-white/30 text-[9px]">{item.time}</p>
-                                                    </div>
-                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                                                        item.status >= 200 && item.status < 300
-                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                    }`}>
-                                                        HTTP {item.status}
-                                                    </span>
-                                                </button>
-                                            ))
+                                            (() => {
+                                                const webhookPageSize = 5;
+                                                const paginatedWebhooks = webhookEvents.slice(webhooksPage * webhookPageSize, (webhooksPage + 1) * webhookPageSize);
+                                                return paginatedWebhooks.map((item) => (
+                                                    <button
+                                                        key={item.id}
+                                                        onClick={() => setSelectedWebhook(item.id)}
+                                                        className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
+                                                            selectedWebhook === item.id 
+                                                                ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 shadow-inner"
+                                                                : "bg-white/[0.01] border-white/5 hover:bg-white/[0.02]"
+                                                        }`}
+                                                    >
+                                                        <div className="font-mono text-[11px] space-y-1 max-w-[70%]">
+                                                            <p className="font-bold text-white uppercase tracking-wider">{item.event}</p>
+                                                            <p className="text-white/40 text-[9px] truncate">{item.endpointUrl}</p>
+                                                            <p className="text-white/30 text-[9px]">{item.time}</p>
+                                                        </div>
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                                            item.status >= 200 && item.status < 300
+                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                        }`}>
+                                                            HTTP {item.status}
+                                                        </span>
+                                                    </button>
+                                                ));
+                                            })()
                                         )}
                                     </div>
+
+                                    {(() => {
+                                        const webhookPageSize = 5;
+                                        const totalPages = Math.ceil(webhookEvents.length / webhookPageSize);
+                                        if (totalPages <= 1) return null;
+                                        return (
+                                            <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
+                                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                                    Page {webhooksPage + 1} of {totalPages}
+                                                </span>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={webhooksPage === 0}
+                                                        onClick={() => setWebhooksPage((p) => Math.max(0, p - 1))}
+                                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Prev
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={webhooksPage >= totalPages - 1}
+                                                        onClick={() => setWebhooksPage((p) => Math.min(totalPages - 1, p + 1))}
+                                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Next
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                                 
                                 <div className="mt-6 pt-4 border-t border-white/5 text-[10px] text-white/40 flex items-center justify-between">
@@ -2997,7 +3138,7 @@ Responsibilities:
             {/* Dashboard Content */}
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
                 {/* Header Row */}
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+                <div className="flex flex-row items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div>
                         <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
                             Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
@@ -3042,9 +3183,9 @@ Responsibilities:
                 ) : isLoading ? (
                     <DashboardSkeleton activeTab={activeTab} />
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+                    <div className="grid grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="lg:col-span-1 space-y-2">
+                        <div className="col-span-1 space-y-2">
                             {tabs.map((tab) => (
                                 <button
                                     key={tab.id}
@@ -3071,7 +3212,7 @@ Responsibilities:
                         </div>
 
                         {/* View Content */}
-                        <div className="lg:col-span-3 min-h-[500px]">
+                        <div className="col-span-3 min-h-[500px]">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTab}
