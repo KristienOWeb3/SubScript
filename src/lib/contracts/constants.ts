@@ -8,6 +8,7 @@ const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_
 
 export const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C" as const;
 export const STANDARD_CONTRACT_ADDRESS = "0x38594705B7feE26B5E05a04069695A907b725b9f" as const;
+export const CONFIDENTIAL_CONTRACT_ADDRESS = "0x78E91A54b42A0Dcd5aC6153096b72b9a7A2Fbc1E" as const;
 export const PREMIUM_PAYMENT_RECIPIENT_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10" as const;
 export const PREMIUM_PLAN_ID = "premium-monthly" as const;
 export const PREMIUM_PLAN_PRICE_USDC = "10" as const;

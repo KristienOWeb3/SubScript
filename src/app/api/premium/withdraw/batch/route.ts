@@ -41,7 +41,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { recipients, idempotencyKey } = body;
+        const { recipients, idempotencyKey, viewKey } = body;
 
         if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
             return NextResponse.json({ error: "Bad Request: Recipients list must be a non-empty array" }, { status: 400 });
@@ -85,15 +85,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Service Unavailable: Batch payouts are temporarily disabled." }, { status: 503 });
         }
 
-        /* Check merchant is Premium */
+        /* Check merchant details including tier and confidentiality settings */
         const { data: merchant, error: merchError } = await supabase
             .from("merchants")
-            .select("tier")
+            .select("tier, shielded_payouts_enabled, view_key_hash")
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
 
         if (merchError || !merchant || Number(merchant.tier) < 1) {
             return NextResponse.json({ error: "Forbidden: Premium merchant tier required for batch payouts" }, { status: 403 });
+        }
+
+        const isShielded = !!merchant.shielded_payouts_enabled;
+        if (isShielded && (!viewKey || typeof viewKey !== "string")) {
+            return NextResponse.json({ error: "Bad Request: viewKey is required for shielded payouts" }, { status: 400 });
         }
 
         /* Create idempotency key in processing state */
@@ -279,31 +284,64 @@ export async function POST(request: Request) {
                             throw new Error("PRIVATE_KEY not configured on server");
                         }
 
-                        /* Execute batch transfer on-chain via SubScriptRouter */
+                        /* Execute batch transfer on-chain */
                         const txResult = await executeWithRpcFallback(async (provider) => {
                             const wallet = new ethers.Wallet(adminPrivateKey, provider);
                             const usdcContract = new ethers.Contract(ProtocolConfig.USDC_ADDRESS, USDC_ABI, wallet);
                             
+                            const spenderAddress = isShielded 
+                                ? "0x78E91A54b42A0Dcd5aC6153096b72b9a7A2Fbc1E" /* CONFIDENTIAL_CONTRACT_ADDRESS */
+                                : ProtocolConfig.ROUTER_ADDRESS;
+
                             /* Check and approve USDC allowance if necessary */
-                            const allowance = await usdcContract.allowance(wallet.address, ProtocolConfig.ROUTER_ADDRESS);
+                            const allowance = await usdcContract.allowance(wallet.address, spenderAddress);
                             if (allowance < chunkTotal) {
-                                const approveTx = await usdcContract.approve(ProtocolConfig.ROUTER_ADDRESS, ethers.MaxUint256);
+                                const approveTx = await usdcContract.approve(spenderAddress, ethers.MaxUint256);
                                 await approveTx.wait();
                             }
 
-                            const routerContract = new ethers.Contract(ProtocolConfig.ROUTER_ADDRESS, ROUTER_ABI, wallet);
-                            
-                            /* Static call check */
-                            await routerContract.executeBatchPayout.staticCall(
-                                chunkItems.map((item: any) => item.recipient_address),
-                                chunkItems.map((item: any) => BigInt(item.amount_usdc))
-                            );
+                            if (isShielded) {
+                                const confidentialContract = new ethers.Contract(
+                                    spenderAddress,
+                                    [
+                                        "function executeBatchPayout(address[] calldata recipients, uint256[] calldata amounts, bool isShielded, bytes32 viewKey) external"
+                                    ],
+                                    wallet
+                                );
 
-                            const tx = await routerContract.executeBatchPayout(
-                                chunkItems.map((item: any) => item.recipient_address),
-                                chunkItems.map((item: any) => BigInt(item.amount_usdc))
-                            );
-                            return { hash: tx.hash };
+                                /* Ensure viewKey is padded to bytes32 format */
+                                const formattedViewKey = ethers.zeroPadValue(viewKey || ethers.ZeroHash, 32);
+
+                                /* Static call check */
+                                await confidentialContract.executeBatchPayout.staticCall(
+                                    chunkItems.map((item: any) => item.recipient_address),
+                                    chunkItems.map((item: any) => BigInt(item.amount_usdc)),
+                                    true,
+                                    formattedViewKey
+                                );
+
+                                const tx = await confidentialContract.executeBatchPayout(
+                                    chunkItems.map((item: any) => item.recipient_address),
+                                    chunkItems.map((item: any) => BigInt(item.amount_usdc)),
+                                    true,
+                                    formattedViewKey
+                                );
+                                return { hash: tx.hash };
+                            } else {
+                                const routerContract = new ethers.Contract(spenderAddress, ROUTER_ABI, wallet);
+                                
+                                /* Static call check */
+                                await routerContract.executeBatchPayout.staticCall(
+                                    chunkItems.map((item: any) => item.recipient_address),
+                                    chunkItems.map((item: any) => BigInt(item.amount_usdc))
+                                );
+
+                                const tx = await routerContract.executeBatchPayout(
+                                    chunkItems.map((item: any) => item.recipient_address),
+                                    chunkItems.map((item: any) => BigInt(item.amount_usdc))
+                                );
+                                return { hash: tx.hash };
+                            }
                         });
 
                         const txHash = txResult.result.hash;
