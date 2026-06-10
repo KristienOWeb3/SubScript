@@ -38,10 +38,10 @@ export const metadata: Metadata = {
         siteName: "SubScript Protocol",
         images: [
             {
-                url: "/logo-colored.png",
-                width: 800,
-                height: 800,
-                alt: "SubScript Logo",
+                url: "/subscript-og.png",
+                width: 1200,
+                height: 630,
+                alt: "SubScript - Automated Crypto Subscriptions",
             },
         ],
         locale: "en_US",
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
         card: "summary_large_image",
         title: "SubScript | Automated Crypto Subscriptions",
         description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
-        images: ["/logo-colored.png"],
+        images: ["/subscript-og.png"],
     },
     verification: {
         google: "google-site-verification-placeholder",
