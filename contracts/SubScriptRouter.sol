@@ -74,7 +74,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
     /* ─────────────────────────── Constructor / Initializer ─────────── */
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    /** @custom:oz-upgrades-unsafe-allow constructor */
     constructor() {
         _disableInitializers();
     }
@@ -198,6 +198,13 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
         bytes32 expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period));
         require(proof[1] == expectedPublicInputHash, "Parameter mismatch with ZK public inputs");
+
+        /* Derive and verify the commitment from the proof's secret pre-image */
+        bytes32 commitment = keccak256(abi.encodePacked(proof[0]));
+        require(commitments[commitment], "Commitment not found or already spent");
+
+        /* Burn the commitment to prevent reuse */
+        commitments[commitment] = false;
 
         /* Calculate 1% fee (100 bps) */
         uint256 fee = (amount * 100) / 10000;
