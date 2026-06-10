@@ -6,6 +6,7 @@ import { X, Copy, Check, ArrowRight, Wallet, QrCode, Loader2 } from "lucide-reac
 import { QRCodeSVG } from "qrcode.react";
 import Link from "next/link";
 import { useAccount, useSwitchChain } from "wagmi";
+import { useRouter } from "next/navigation";
 import { createPublicClient, http, parseUnits, formatUnits, bytesToHex, keccak256 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -60,6 +61,7 @@ export default function DepositModal({
     onSuccess,
     executeContractWrite,
 }: DepositModalProps) {
+    const router = useRouter();
     const [copied, setCopied] = useState(false);
     const [depositStep, setDepositStep] = useState<"approve" | "transfer">("approve");
     const [secret, setSecret] = useState<string | null>(null);
@@ -293,6 +295,10 @@ export default function DepositModal({
             if (receipt && receipt.status === "reverted") {
                 throw new Error("Transaction reverted on-chain.");
             }
+
+            /* Force immediate state refetch of ZK balance and Next.js page state refresh */
+            await fetchBalance();
+            router.refresh();
 
             resetAndClose();
             if (onSuccess) onSuccess();

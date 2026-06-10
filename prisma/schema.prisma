@@ -283,4 +283,22 @@ model AuditEvent {
   @@map("audit_events")
 }
 
+model Customer {
+  walletAddress String   @id @map("wallet_address")
+  email         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("customers")
+}
+
+model MerchantEmailTemplate {
+  merchantAddress String  @id @map("merchant_address")
+  isActive        Boolean @default(false) @map("is_active")
+  subjectLine     String  @map("subject_line")
+  bodyContent     String  @map("body_content")
+
+  @@map("merchant_email_templates")
+}
+
+
 

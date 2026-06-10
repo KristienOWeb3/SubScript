@@ -122,7 +122,15 @@ export async function POST(request: Request) {
                 description: description || null,
                 amount_usdc: amountBigInt.toString(),
                 active: true,
-                expires_at: expires_at ? new Date(expires_at).toISOString() : null,
+                expires_at: expires_at
+                    ? (() => {
+                        const num = Number(expires_at);
+                        if (!isNaN(num)) {
+                            return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
+                        }
+                        return new Date(expires_at).toISOString();
+                    })()
+                    : null,
                 external_reference: external_reference || null
             })
             .select()
