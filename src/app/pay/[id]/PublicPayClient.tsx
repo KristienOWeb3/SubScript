@@ -1,17 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
-    Loader2, CheckCircle, AlertTriangle, 
+    Loader2, CheckCircle, AlertTriangle, AlertCircle,
     Wallet, ExternalLink, ArrowRight, Lock
 } from "lucide-react";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
-    USDC_NATIVE_GAS_ADDRESS 
+    USDC_NATIVE_GAS_ADDRESS,
+    ARC_TESTNET_CHAIN_ID
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
@@ -25,6 +26,8 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
+    const chainId = useChainId();
+    const { switchChainAsync } = useSwitchChain();
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
@@ -50,6 +53,11 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
 
     const requiredAmount = linkData ? BigInt(linkData.amount_usdc) : BigInt(0);
     const isInsufficientBalance = isConnected && balanceData && balanceData.value < requiredAmount;
+
+    // Determine expected chain ID from the payment link record, or default to Arc Testnet
+    const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : ARC_TESTNET_CHAIN_ID;
+    const isWrongChain = isConnected && chainId !== expectedChainId;
+    const expectedChainName = expectedChainId === ARC_TESTNET_CHAIN_ID ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
     useEffect(() => {
         if (initialLinkData) {
@@ -79,10 +87,25 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
         connect({ connector: injected() });
     };
 
+    const handleSwitchChain = async () => {
+        try {
+            await switchChainAsync({ chainId: expectedChainId });
+        } catch (err: any) {
+            setVerificationError(`Failed to switch network: ${err.message || "User rejected the request"}`);
+        }
+    };
+
     const handlePay = async () => {
         if (!linkData || !address) return;
         setVerificationError(null);
         setVerificationStatus(null);
+
+        // Guard: prevent cross-chain payment mistakes
+        if (chainId !== expectedChainId) {
+            setVerificationError(`Wrong network detected. Please switch to ${expectedChainName} before paying.`);
+            return;
+        }
+
         setIsPaying(true);
 
         try {
@@ -177,7 +200,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
             <AnimatedGradientBg />
             
             <div className="relative z-10 w-full max-w-md">
-                {/* Brand Header */}
+
                 <div className="text-center mb-8">
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">checkout</span>
@@ -204,7 +227,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                     </div>
                 ) : (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
-                        {/* Status / Expiration Badge */}
+
                         {linkData.expires_at && (
                             <div className="flex justify-end">
                                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
@@ -213,7 +236,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         )}
 
-                        {/* Product Information */}
+
                         <div className="space-y-2">
                             <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">You are paying for</span>
                             <h2 className="text-2xl font-extrabold text-white tracking-tight">{linkData.title}</h2>
@@ -222,7 +245,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             )}
                         </div>
 
-                        {/* Amount Panel */}
+
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
@@ -233,7 +256,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         </div>
 
-                        {/* Wallet Section */}
+
                         {!isConnected ? (
                             <div className="space-y-4">
                                 <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
@@ -249,7 +272,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                {/* Wallet Info */}
+
                                 <div className="flex flex-col gap-1.5 border-t border-b border-white/5 py-3 text-[10px] font-mono text-white/40">
                                     <div className="flex items-center justify-between">
                                         <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
@@ -263,7 +286,26 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                     </div>
                                 </div>
 
-                                {verificationStatus ? (
+                                {isWrongChain ? (
+                                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 space-y-4">
+                                        <div className="flex items-center gap-3">
+                                            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                                            <div>
+                                                <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">Wrong Network</p>
+                                                <p className="text-[10px] text-white/50 mt-0.5 leading-relaxed">
+                                                    Your wallet is connected to a different chain. Switch to <span className="font-bold text-white/70">{expectedChainName}</span> to continue.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSwitchChain}
+                                            className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                        >
+                                            Switch to {expectedChainName}
+                                        </button>
+                                    </div>
+                                ) : verificationStatus ? (
                                     <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                         {isVerifying ? (
                                             <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
@@ -322,7 +364,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         )}
 
-                        {/* Footer Security Note */}
+
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
                         </div>

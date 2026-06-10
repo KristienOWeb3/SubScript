@@ -22,5 +22,5 @@ instructions: |
   - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
 
   Mandatory Formatting Constraints (CRITICAL):
-  - You are strictly forbidden from writing, suggesting, or approving double-slash comments. If you suggest code edits, you must only use standard block comments (/* ... */). Flag any existing double-slash comments as a violation.
+  - Both double-slash (//) and block (/* ... */) comments are permitted in TypeScript and JavaScript scopes. However, inside JSX return blocks, comments must always be wrapped as JSX expressions: {/* comment */}. Raw /* ... */ or // comments inside JSX will render as visible DOM text and must be flagged as a critical UI regression.
   - Flag and request changes for any emojis found in the code, comments, UI text strings, or commit messages.
