@@ -19,13 +19,23 @@ export async function triggerExitSurvey(
     customerAddressOrSubId: string | number,
     subscriptionTier: string | number
 ) {
-    if (!resend || !supabaseAdmin) {
-        console.warn("Resend client or supabaseAdmin not configured. Skip exit survey.");
+    /* Bypassed: Email plan held since there is no domain configured currently */
+    const isDomainConfigured = process.env.HAS_CUSTOM_DOMAIN === "true";
+    if (!isDomainConfigured) {
+        console.log("Exit survey email dispatch held: no domain configured.");
         return;
     }
 
+    const db = supabaseAdmin;
+    const client = resend;
+
     try {
-        const { data: template, error: templateError } = await supabaseAdmin
+        if (!db) {
+            console.error("Supabase admin client is not initialized.");
+            return;
+        }
+
+        const { data: template, error: templateError } = await db
             .from("merchant_email_templates")
             .select("*")
             .eq("merchant_address", merchantAddress.toLowerCase())
@@ -62,22 +72,26 @@ export async function triggerExitSurvey(
         }
 
         let email = "";
-        const { data: customerData } = await supabaseAdmin
+        const customerResult = await db
             .from("customers")
             .select("email")
             .eq("wallet_address", customerAddress.toLowerCase())
             .maybeSingle();
+        
+        const customerData = customerResult?.data;
 
-        if (customerData && customerData.email) {
+        if (customerData?.email) {
             email = customerData.email;
         } else {
-            const { data: walletData } = await supabaseAdmin
+            const walletResult = await db
                 .from("user_embedded_wallets")
                 .select("email")
                 .eq("wallet_address", customerAddress.toLowerCase())
                 .maybeSingle();
+            
+            const walletData = walletResult?.data;
 
-            if (walletData && walletData.email) {
+            if (walletData?.email) {
                 email = walletData.email;
             }
         }
@@ -98,7 +112,12 @@ export async function triggerExitSurvey(
             .replace(/\{\{customer_wallet\}\}/g, customerWalletStr)
             .replace(/\{\{subscription_tier\}\}/g, tierStr);
 
-        const response = await resend.emails.send({
+        if (!client) {
+            console.error("Resend client is not initialized.");
+            return;
+        }
+
+        const response = await client.emails.send({
             from: senderEmail,
             to: email,
             subject: subject,

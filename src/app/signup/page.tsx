@@ -196,19 +196,33 @@ export default function SignupPage() {
           <p className="text-xs text-white/50">Configure your payout channel and connect to the SubScript protocol.</p>
         </div>
 
-        {otpError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{otpError}</span>
-          </div>
-        )}
-
-        {siweError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{siweError}</span>
-          </div>
-        )}
+        {/* Onboarding Progress Indicator */}
+        <div className="flex items-center justify-between px-2 py-4 border-b border-white/5">
+          {[{ step: 1, label: "Method" }, { step: 2, label: "Verify" }, { step: 3, label: "Access" }].map((s) => {
+            const currentStep = authMethod === "select" ? 1 : (!otpSent && authMethod === "email" ? 2 : 3);
+            const isCompleted = s.step < currentStep;
+            const isActive = s.step === currentStep;
+            return (
+              <div key={s.step} className="flex items-center gap-2">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  isCompleted 
+                    ? "bg-[#ccff00] text-black" 
+                    : isActive 
+                      ? "bg-[#ccff00]/20 text-[#ccff00] border border-[#ccff00]/40" 
+                      : "bg-white/5 text-white/30 border border-white/10"
+                }`}>
+                  {isCompleted ? "✓" : s.step}
+                </div>
+                <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                  isActive ? "text-[#ccff00]" : isCompleted ? "text-white/80" : "text-white/30"
+                }`}>
+                  {s.label}
+                </span>
+                {s.step < 3 && <div className="w-6 h-[1px] bg-white/10 hidden sm:block" />}
+              </div>
+            );
+          })}
+        </div>
 
         {authMethod === "select" ? (
           <div className="space-y-3">
@@ -263,6 +277,13 @@ export default function SignupPage() {
               )}
               Connect Web3 Wallet
             </button>
+
+            {siweError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2 mt-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{siweError}</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -280,6 +301,12 @@ export default function SignupPage() {
                     required
                     className="w-full text-xs p-3.5 bg-white/[0.02] border border-white/5 rounded-xl text-white focus:outline-none focus:border-[#ccff00]/40 transition font-sans"
                   />
+                  {otpError && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2 mt-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{otpError}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">
@@ -313,6 +340,12 @@ export default function SignupPage() {
                     required
                     className="w-full text-xs p-3.5 bg-white/[0.02] border border-white/5 rounded-xl text-white focus:outline-none focus:border-[#ccff00]/40 transition font-mono tracking-widest text-center"
                   />
+                  {otpError && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2 mt-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{otpError}</span>
+                    </div>
+                  )}
                 </div>
 
                 {sandboxOtp && (

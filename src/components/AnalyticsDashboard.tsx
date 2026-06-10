@@ -25,6 +25,7 @@ export default function AnalyticsDashboard({
     /* Compute metrics based on active subscriptions in ledger */
     const [retryingId, setRetryingId] = useState<string | null>(null);
     const [activeSubTab, setActiveSubTab] = useState<"metrics" | "automations">("metrics");
+    const [inactivePage, setInactivePage] = useState(0);
 
     /* Automations Tab States */
     const [isActive, setIsActive] = useState(false);
@@ -159,7 +160,7 @@ export default function AnalyticsDashboard({
     const displayList = useMemo(() => {
         return ledgers
             .filter((sub) => sub.active)
-            .slice(0, 4)
+            .slice(0, 5)
             .map((sub: any) => ({
                 address: sub.shortSubAddress || "0x0000...0000",
                 tier: 1, /* Active subscribers of standard subscription represent tier 1 setup */
@@ -389,39 +390,74 @@ export default function AnalyticsDashboard({
                                         <p className="text-xs text-white/60">Failed or unpaid accounts</p>
                                     </div>
 
-                                    <div className="space-y-3 my-4 overflow-y-auto max-h-[180px]">
+                                    <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
                                         {inactiveList.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-36 text-white/30 text-xs">
                                                 No inactive subscriptions
                                             </div>
                                         ) : (
-                                            inactiveList.map((item, idx) => (
-                                                <div key={idx} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-400 font-bold font-mono">
-                                                            ID{item.id}
+                                            (() => {
+                                                const inactivePageSize = 5;
+                                                const paginatedInactive = inactiveList.slice(inactivePage * inactivePageSize, (inactivePage + 1) * inactivePageSize);
+                                                return paginatedInactive.map((item) => (
+                                                    <div key={item.id} className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-2xl p-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[9px] text-red-400 font-bold font-mono">
+                                                                ID{item.id}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-mono text-white/90">{item.address}</p>
+                                                                <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="text-xs font-mono text-white/90">{item.address}</p>
-                                                            <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
-                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRetryClick(item.id)}
+                                                            disabled={retryingId === item.id}
+                                                            className="px-4 py-2 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 hover:border-[#00d2b4]/40 text-[#00d2b4] rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all disabled:opacity-50"
+                                                        >
+                                                            {retryingId === item.id ? (
+                                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                                            ) : (
+                                                                <RefreshCw className="w-3 h-3" />
+                                                            )}
+                                                            Retry Charge
+                                                        </button>
                                                     </div>
-                                                    <button
-                                                        onClick={() => handleRetryClick(item.id)}
-                                                        disabled={retryingId === item.id}
-                                                        className="px-2.5 py-1.5 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 hover:border-[#00d2b4]/40 text-[#00d2b4] rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all disabled:opacity-50"
-                                                    >
-                                                        {retryingId === item.id ? (
-                                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                                        ) : (
-                                                            <RefreshCw className="w-3 h-3" />
-                                                        )}
-                                                        Retry Charge
-                                                    </button>
-                                                </div>
-                                            ))
+                                                ));
+                                            })()
                                         )}
                                     </div>
+
+                                    {(() => {
+                                        const inactivePageSize = 5;
+                                        const totalPages = Math.ceil(inactiveList.length / inactivePageSize);
+                                        if (totalPages <= 1) return null;
+                                        return (
+                                            <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5 font-sans mb-3">
+                                                <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider">
+                                                    Page {inactivePage + 1} of {totalPages}
+                                                </span>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={inactivePage === 0}
+                                                        onClick={() => setInactivePage((p) => Math.max(0, p - 1))}
+                                                        className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Prev
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={inactivePage >= totalPages - 1}
+                                                        onClick={() => setInactivePage((p) => Math.min(totalPages - 1, p + 1))}
+                                                        className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[9px] font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Next
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     <p className="text-[9px] text-white/30 font-sans">
                                         Manual on-chain execution of overdue payment
