@@ -34,8 +34,9 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3, Link2, Zap
+    Wallet, Shield, BarChart3, Link2, Zap, QrCode
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 
 import { 
@@ -257,6 +258,10 @@ export default function DashboardPage() {
     const [copiedViewKey, setCopiedViewKey] = useState(false);
     const [isSavingConfidentiality, setIsSavingConfidentiality] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
+
+    /* QR Code modal states */
+    const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
+    const [activeQrCodeTitle, setActiveQrCodeTitle] = useState("");
 
     useEffect(() => {
         setPromptFlowMode(isPremium ? "private" : "standard");
@@ -1988,6 +1993,17 @@ Responsibilities:
                                                                 {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                             </button>
                                                             <button
+                                                                onClick={() => {
+                                                                    const url = `${window.location.origin}/pay/${link.id}`;
+                                                                    setActiveQrCodeLink(url);
+                                                                    setActiveQrCodeTitle(link.title);
+                                                                }}
+                                                                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
+                                                                title="Show QR Code"
+                                                            >
+                                                                <QrCode className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
                                                                 onClick={() => handleToggleLinkActive(link.id, link.active)}
                                                                 className={`px-4 py-2 rounded-xl border text-[10px] font-bold uppercase transition-all ${
                                                                     link.active
@@ -3474,9 +3490,73 @@ Responsibilities:
                 isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={address || ""}
                 onSuccess={handleDepositSuccess}
-                                executeContractWrite={executeContractWrite}
+                executeContractWrite={executeContractWrite}
+            />
+            {activeQrCodeLink && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="liquid-glass border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative space-y-6 text-center"
+                    >
+                        {/* Close button */}
+                        <button
+                            onClick={() => {
+                                setActiveQrCodeLink(null);
+                                setActiveQrCodeTitle("");
+                            }}
+                            className="absolute top-4 right-4 p-1 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-all"
+                        >
+                            <span className="sr-only">Close</span>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <div className="space-y-1">
+                            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
+                                <QrCode className="w-4 h-4 text-[#00d2b4]" />
+                                Payment Link QR Code
+                            </h3>
+                            <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider truncate px-4">
+                                {activeQrCodeTitle}
+                            </p>
+                        </div>
+
+                        {/* QR Code display */}
+                        <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
+                            <QRCodeSVG
+                                value={activeQrCodeLink}
+                                size={180}
+                                level="H"
+                                bgColor="#ffffff"
+                                fgColor="#000000"
                             />
-                            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
+                        </div>
+
+                        {/* Link Display and Copy Action */}
+                        <div className="space-y-2">
+                            <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider text-left">Checkout URL</p>
+                            <div className="bg-black/40 border border-white/5 rounded-xl p-3 flex items-center justify-between gap-3">
+                                <span className="text-[11px] font-mono text-white/70 truncate text-left flex-1">
+                                    {activeQrCodeLink}
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(activeQrCodeLink);
+                                    }}
+                                    className="p-1.5 text-[#00d2b4] hover:text-[#00d2b4]/80 rounded-lg hover:bg-[#00d2b4]/5 transition-all flex-shrink-0"
+                                    title="Copy URL"
+                                >
+                                    <Copy className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
                             {showToast && (
                                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
                                     <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
