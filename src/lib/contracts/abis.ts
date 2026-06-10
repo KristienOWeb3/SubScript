@@ -274,3 +274,50 @@ export const STANDARD_SUBSCRIPT_ABI = [
         anonymous: false,
     },
 ] as const;
+
+export const CONFIDENTIAL_CONTRACT_ABI = [
+    {
+        type: "function",
+        name: "registerViewKey",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
+        outputs: [],
+    },
+    {
+        type: "function",
+        name: "executeBatchPayout",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "recipients", type: "address[]" },
+            { name: "amounts", type: "uint256[]" },
+            { name: "isShielded", type: "bool" },
+            { name: "viewKey", type: "bytes32" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "function",
+        name: "getDecryptedBatchHistory",
+        stateMutability: "view",
+        inputs: [{ name: "viewKey", type: "bytes32" }],
+        outputs: [
+            {
+                name: "",
+                type: "tuple[]",
+                components: [
+                    { name: "recipients", type: "address[]" },
+                    { name: "amounts", type: "uint256[]" },
+                    { name: "isShielded", type: "bool" },
+                    { name: "timestamp", type: "uint256" },
+                ],
+            },
+        ],
+    },
+    {
+        type: "function",
+        name: "viewKeyHashes",
+        stateMutability: "view",
+        inputs: [{ name: "", type: "bytes32" }],
+        outputs: [{ name: "", type: "address" }],
+    },
+] as const;
