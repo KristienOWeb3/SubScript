@@ -207,6 +207,8 @@ export const STANDARD_SUBSCRIPT_ABI = [
             { name: "period", type: "uint256" },
             { name: "nextPayment", type: "uint256" },
             { name: "isActive", type: "bool" },
+            { name: "settlementToken", type: "address" },
+            { name: "paymentToken", type: "address" },
         ],
     },
     {
@@ -217,6 +219,19 @@ export const STANDARD_SUBSCRIPT_ABI = [
             { name: "_merchant", type: "address" },
             { name: "_amount", type: "uint256" },
             { name: "_period", type: "uint256" },
+        ],
+        outputs: [{ name: "subId", type: "uint256" }],
+    },
+    {
+        type: "function",
+        name: "createSubscription",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_merchant", type: "address" },
+            { name: "_amount", type: "uint256" },
+            { name: "_period", type: "uint256" },
+            { name: "_settlementToken", type: "address" },
+            { name: "_paymentToken", type: "address" },
         ],
         outputs: [{ name: "subId", type: "uint256" }],
     },

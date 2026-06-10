@@ -6,13 +6,15 @@ import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock
+    Wallet, ExternalLink, ArrowRight, Lock, Zap
 } from "lucide-react";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS,
-    ARC_TESTNET_CHAIN_ID
+    ARC_TESTNET_CHAIN_ID,
+    CCTP_CONFIG,
+    ARC_CCTP_DOMAIN_ID
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
@@ -31,6 +33,8 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
+    const [showToast, setShowToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     const { data: balanceData } = useBalance({
         address: address,
@@ -54,9 +58,12 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const requiredAmount = linkData ? BigInt(linkData.amount_usdc) : BigInt(0);
     const isInsufficientBalance = isConnected && balanceData && balanceData.value < requiredAmount;
 
-    // Determine expected chain ID from the payment link record, or default to Arc Testnet
+    /* Determine if the connected chain is a supported CCTP origin chain */
+    const isCctpChain = isConnected && chainId ? chainId in CCTP_CONFIG : false;
+
+    /* Determine expected chain ID from the payment link record, or default to Arc Testnet */
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : ARC_TESTNET_CHAIN_ID;
-    const isWrongChain = isConnected && chainId !== expectedChainId;
+    const isWrongChain = isConnected && chainId !== expectedChainId && !isCctpChain;
     const expectedChainName = expectedChainId === ARC_TESTNET_CHAIN_ID ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
     useEffect(() => {
@@ -100,31 +107,90 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
         setVerificationError(null);
         setVerificationStatus(null);
 
-        // Guard: prevent cross-chain payment mistakes
-        if (chainId !== expectedChainId) {
+        /* Guard: prevent cross-chain payment mistakes if not using CCTP */
+        if (chainId !== expectedChainId && !isCctpChain) {
             setVerificationError(`Wrong network detected. Please switch to ${expectedChainName} before paying.`);
             return;
         }
 
         setIsPaying(true);
 
-        try {
-            const hash = await writeContractAsync({
-                address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-                abi: USDC_ERC20_ABI,
-                functionName: "transfer",
-                args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
-            });
+        if (isCctpChain && chainId) {
+            /* CCTP Payment Flow */
+            try {
+                const cctpConfig = CCTP_CONFIG[chainId];
+                setVerificationStatus("Initiating CCTP transaction on origin chain...");
 
-            setTxHash(hash);
-            setSuccessTxHash(hash);
-            setIsVerifying(true);
-            setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
+                /* Step 1: Approve USDC spend by TokenMessenger */
+                setVerificationStatus("Approving USDC spend for CCTP TokenMessenger...");
+                const approveHash = await writeContractAsync({
+                    address: cctpConfig.usdc,
+                    abi: USDC_ERC20_ABI,
+                    functionName: "approve",
+                    args: [cctpConfig.tokenMessenger, requiredAmount],
+                });
 
-        } catch (err: any) {
-            setVerificationError(err.message || "Payment transaction failed");
-            setIsPaying(false);
-            setIsVerifying(false);
+                /* Step 2: Call depositForBurn */
+                setVerificationStatus("Initiating cross-chain deposit for burn via CCTP...");
+                const mintRecipientBytes32 = ("0x" + SUBSCRIPT_ROUTER_ADDRESS.slice(2).padStart(64, "0")) as `0x${string}`;
+                
+                const cctpHash = await writeContractAsync({
+                    address: cctpConfig.tokenMessenger,
+                    abi: [
+                        {
+                            type: "function",
+                            name: "depositForBurn",
+                            stateMutability: "nonpayable",
+                            inputs: [
+                                { name: "amount", type: "uint256" },
+                                { name: "destinationDomain", type: "uint32" },
+                                { name: "mintRecipient", type: "bytes32" },
+                                { name: "burnToken", type: "address" },
+                            ],
+                            outputs: [{ name: "nonce", type: "uint64" }],
+                        },
+                    ],
+                    functionName: "depositForBurn",
+                    args: [requiredAmount, ARC_CCTP_DOMAIN_ID, mintRecipientBytes32, cctpConfig.usdc],
+                });
+
+                setTxHash(cctpHash);
+                setSuccessTxHash(cctpHash);
+                setIsVerifying(true);
+                
+                /* Show the toast directly upon transaction submission on the origin chain */
+                setToastMessage("Settled via Malachite");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4000);
+                setVerificationStatus("CCTP transaction submitted successfully!");
+                setIsPaying(false);
+                setIsVerifying(false);
+
+            } catch (err: any) {
+                setVerificationError(err.message || "CCTP payment execution failed");
+                setIsPaying(false);
+                setIsVerifying(false);
+            }
+        } else {
+            /* Native Arc Network Payment Flow */
+            try {
+                const hash = await writeContractAsync({
+                    address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+                    abi: USDC_ERC20_ABI,
+                    functionName: "transfer",
+                    args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
+                });
+
+                setTxHash(hash);
+                setSuccessTxHash(hash);
+                setIsVerifying(true);
+                setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
+
+            } catch (err: any) {
+                setVerificationError(err.message || "Payment transaction failed");
+                setIsPaying(false);
+                setIsVerifying(false);
+            }
         }
     };
 
@@ -132,6 +198,19 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
         if (isConfirmed && txHash && linkData && address && verifiedHash !== txHash) {
             setVerifiedHash(txHash);
             
+            /* Show high-fidelity toast notification */
+            setToastMessage("Settled via Malachite");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4000);
+
+            if (isCctpChain) {
+                /* CCTP transactions don't require the Arc Network verifyPayment status stream */
+                setVerificationStatus("Payment confirmed and routed via CCTP!");
+                setIsVerifying(false);
+                setIsPaying(false);
+                return;
+            }
+
             const verifyPayment = async () => {
                 try {
                     /* Submit verification job */
@@ -307,11 +386,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                     </div>
                                 ) : verificationStatus ? (
                                     <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
-                                        {isVerifying ? (
-                                            <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
-                                        ) : (
-                                            <CheckCircle className="w-8 h-8 text-emerald-400" />
-                                        )}
+                                        <CheckCircle className="w-8 h-8 text-emerald-400" />
                                         <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
                                         {successTxHash && (
                                             <a 
@@ -350,7 +425,12 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                             >
                                                 {(isPaying || isConfirming) ? (
                                                     <>
-                                                        <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+                                                        Processing...
+                                                    </>
+                                                ) : isCctpChain ? (
+                                                    /* Subscribe seamlessly via CCTP */
+                                                    <>
+                                                        Subscribe seamlessly via CCTP <ArrowRight className="w-4 h-4" />
                                                     </>
                                                 ) : (
                                                     <>
@@ -371,6 +451,16 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                     </div>
                 )}
             </div>
+
+            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
+            {showToast && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
+                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                        Settled via Malachite
+                    </span>
+                </div>
+            )}
         </div>
     );
 }

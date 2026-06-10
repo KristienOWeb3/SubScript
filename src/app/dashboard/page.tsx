@@ -34,7 +34,7 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3, Link2
+    Wallet, Shield, BarChart3, Link2, Zap
 } from "lucide-react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 
@@ -99,6 +99,8 @@ export default function DashboardPage() {
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
+    const [showToast, setShowToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState("");
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
     const [showLinkAdvanced, setShowLinkAdvanced] = useState(false);
     const [showCheckoutAdvanced, setShowCheckoutAdvanced] = useState(false);
@@ -444,6 +446,9 @@ export default function DashboardPage() {
             }
 
             setLinkSuccess("Payment link created successfully!");
+            setToastMessage("Settled via Malachite");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4000);
             setLinkTitle("");
             setLinkDescription("");
             setLinkAmountUsdc("");
@@ -1104,6 +1109,9 @@ export default function DashboardPage() {
             }
 
             setWithdrawSuccess(true);
+            setToastMessage("Settled via Malachite");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4000);
             setTimeout(() => setWithdrawSuccess(false), 4000);
             refetchVaultBalance();
             refetchWalletBalance();
@@ -1796,8 +1804,8 @@ Responsibilities:
                                 disabled={isCreatingLink || !linkTitle || !linkAmountUsdc}
                                 className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 font-sans"
                             >
-                                {isCreatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                                Create Link
+                                <Link2 className="w-3.5 h-3.5" />
+                                {isCreatingLink ? "Creating..." : "Create Link"}
                             </button>
                         </div>
                     </form>
@@ -2006,8 +2014,8 @@ Responsibilities:
                                                 : "border-white/5 text-white/20 cursor-not-allowed"
                                         }`}
                                     >
-                                        {isWithdrawing ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ArrowDownToLine className="w-2.5 h-2.5" />}
-                                        Withdraw
+                                        <ArrowDownToLine className="w-2.5 h-2.5" />
+                                        {isWithdrawing ? "Withdrawing..." : "Withdraw"}
                                     </button>
                                 </div>
                                 {withdrawSuccess && (
@@ -3258,8 +3266,17 @@ Responsibilities:
                 isEmbeddedWallet={!!embeddedWallet}
                 depositAddress={address || ""}
                 onSuccess={handleDepositSuccess}
-                executeContractWrite={executeContractWrite}
-            />
-        </div>
-    );
-}
+                                executeContractWrite={executeContractWrite}
+                            />
+                            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
+                            {showToast && (
+                                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
+                                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                                        {toastMessage}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    );
+                }

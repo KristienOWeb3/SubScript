@@ -15,9 +15,13 @@ describe("SubScript", function () {
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    /* Deploy SubScript */
-    const SubScript = await ethers.getContractFactory("SubScript");
-    const subScript = await SubScript.deploy(await usdc.getAddress());
+    /* Deploy MockStableFX */
+    const MockStableFX = await ethers.getContractFactory("MockStableFX");
+    const stableFX = await MockStableFX.deploy();
+
+    /* Deploy SubScriptPSA */
+    const SubScript = await ethers.getContractFactory("SubScriptPSA");
+    const subScript = await SubScript.deploy(await usdc.getAddress(), await stableFX.getAddress());
 
     /* Mint 10 000 USDC to the subscriber (6 decimals) */
     const TEN_K = ethers.parseUnits("10000", 6);
@@ -31,6 +35,7 @@ describe("SubScript", function () {
 
     return {
       usdc,
+      stableFX,
       subScript,
       owner,
       subscriber,
@@ -58,9 +63,9 @@ describe("SubScript", function () {
     });
 
     it("should revert if deployed with address(0)", async function () {
-      const SubScript = await ethers.getContractFactory("SubScript");
+      const SubScript = await ethers.getContractFactory("SubScriptPSA");
       await expect(
-        SubScript.deploy(ethers.ZeroAddress)
+        SubScript.deploy(ethers.ZeroAddress, ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(SubScript, "InvalidAddress");
     });
   });
@@ -406,6 +411,60 @@ describe("SubScript", function () {
       await time.increase(PERIOD + 1);
 
       expect(await subScript.isPaymentDue(1, 1)).to.be.false;
+    });
+  });
+
+  /* STABLEFX MULTI-CURRENCY SWAPPING */
+  describe("StableFX Multi-Currency Swapping", function () {
+    it("should swap multi-currency subscriptions successfully on creation and execution", async function () {
+      const { subScript, usdc, stableFX, subscriber, merchant, keeper, AMOUNT, PERIOD, TEN_K } =
+        await loadFixture(deployFixture);
+
+      /* Deploy MockEURC as settlementToken */
+      const MockEURC = await ethers.getContractFactory("MockUSDC"); /* reuse MockUSDC contract factory */
+      const eurc = await MockEURC.deploy();
+      const eurcAddress = await eurc.getAddress();
+      const usdcAddress = await usdc.getAddress();
+
+      /* Set rate on MockStableFX: 1.10 input per output (EURC to USDC) */
+      await stableFX.setRate(110);
+
+      /* Mint EURC to StableFX contract so it can payout the merchant */
+      await eurc.mint(await stableFX.getAddress(), TEN_K);
+
+      /* Approve SubScript for subscriber USDC */
+      await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
+
+      const merchantEurcBefore = await eurc.balanceOf(merchant.address);
+      const subscriberUsdcBefore = await usdc.balanceOf(subscriber.address);
+
+      /* Create multi-currency subscription (merchant gets EURC, subscriber pays USDC) */
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD, eurcAddress, usdcAddress);
+
+      /* Verify first payment took place (swapped) */
+      const merchantEurcAfter = await eurc.balanceOf(merchant.address);
+      expect(merchantEurcAfter - merchantEurcBefore).to.equal(AMOUNT);
+
+      /* Verify subscriber paid correct USDC amount (15 EURC * 1.10 = 16.50 USDC) */
+      const subscriberUsdcAfter = await usdc.balanceOf(subscriber.address);
+      const expectedUsdcSpent = (AMOUNT * 110n) / 100n;
+      expect(subscriberUsdcBefore - subscriberUsdcAfter).to.equal(expectedUsdcSpent);
+
+      /* Fast-forward and execute payment */
+      await time.increase(PERIOD + 1);
+
+      const subscriberUsdcBeforeExecution = await usdc.balanceOf(subscriber.address);
+      const merchantEurcBeforeExecution = await eurc.balanceOf(merchant.address);
+
+      await subScript.connect(keeper).executePayment(1, 1);
+
+      const subscriberUsdcAfterExecution = await usdc.balanceOf(subscriber.address);
+      const merchantEurcAfterExecution = await eurc.balanceOf(merchant.address);
+
+      expect(merchantEurcAfterExecution - merchantEurcBeforeExecution).to.equal(AMOUNT);
+      expect(subscriberUsdcBeforeExecution - subscriberUsdcAfterExecution).to.equal(expectedUsdcSpent);
     });
   });
 });
