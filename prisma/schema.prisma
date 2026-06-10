@@ -70,3 +70,217 @@ model Session {
   @@map("sessions")
 }
 
+model PaymentLink {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress    String               @map("merchant_address")
+  title              String
+  description        String?
+  amountUsdc         BigInt               @map("amount_usdc")
+  active             Boolean              @default(true)
+  expiresAt          DateTime?            @map("expires_at")
+  externalReference  String?              @map("external_reference")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @default(now()) @map("updated_at")
+  payments           PaymentLinkPayment[]
+
+  @@index([merchantAddress], map: "payment_links_merchant_idx")
+  @@index([active], map: "payment_links_active_idx")
+  @@map("payment_links")
+}
+
+model PaymentLinkPayment {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentLinkId       String      @map("payment_link_id") @db.Uuid
+  paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Cascade)
+  payerAddress        String      @map("payer_address")
+  amountUsdc          BigInt      @map("amount_usdc")
+  txHash              String      @unique @map("tx_hash")
+  merchantAddress     String      @map("merchant_address")
+  credited            Boolean     @default(false)
+  creditedAt          DateTime?   @map("credited_at")
+  verificationBlock   BigInt?     @map("verification_block")
+  verificationChainId BigInt?     @map("verification_chain_id")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @default(now()) @map("updated_at")
+
+  @@index([paymentLinkId])
+  @@index([txHash])
+  @@index([merchantAddress])
+  @@map("payment_link_payments")
+}
+
+model SbtMintJob {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subscriptionId   BigInt    @unique @map("subscription_id")
+  recipientAddress String    @map("recipient_address")
+  status           String    @default("PENDING") @map("status")
+  attempts         Int       @default(0)
+  lastError        String?   @map("last_error")
+  lockedAt         DateTime? @map("locked_at")
+  lockedBy         String?   @map("locked_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @map("updated_at")
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("sbt_mint_jobs")
+}
+
+model PayoutBatch {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress String             @map("merchant_address")
+  status          String
+  recipientCount  Int                @map("recipient_count")
+  totalAmountUsdc BigInt             @map("total_amount_usdc")
+  txHash          String?            @map("tx_hash")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @default(now()) @map("updated_at")
+  chunks          PayoutBatchChunk[]
+  items           PayoutBatchItem[]
+
+  @@index([merchantAddress])
+  @@index([status])
+  @@map("payout_batches")
+}
+
+model PayoutBatchChunk {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId        String            @map("batch_id") @db.Uuid
+  batch          PayoutBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chunkIndex     Int               @map("chunk_index")
+  status         String
+  txHash         String?           @map("tx_hash")
+  recipientCount Int               @map("recipient_count")
+  totalAmount    BigInt            @map("total_amount")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @default(now()) @map("updated_at")
+  items          PayoutBatchItem[]
+
+  @@index([batchId])
+  @@map("payout_batch_chunks")
+}
+
+model PayoutBatchItem {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId          String            @map("batch_id") @db.Uuid
+  batch            PayoutBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chunkId          String?           @map("chunk_id") @db.Uuid
+  chunk            PayoutBatchChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  recipientAddress String            @map("recipient_address")
+  amountUsdc       BigInt            @map("amount_usdc")
+  status           String
+  txHash           String?           @map("tx_hash")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@index([batchId])
+  @@index([recipientAddress])
+  @@index([status])
+  @@map("payout_batch_items")
+}
+
+model IdempotencyKey {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  executionKey   String   @unique @map("execution_key")
+  status         String
+  responsePayload Json?    @map("response_payload")
+  expiresAt      DateTime @map("expires_at")
+  lastAccessedAt DateTime @default(now()) @map("last_accessed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  @@index([executionKey])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+model LedgerEntry {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress Bytes    @map("merchant_address")
+  entryType       String   @map("entry_type")
+  status          String   @default("PENDING")
+  amountUsdc      BigInt   @map("amount_usdc")
+  referenceType   String   @map("reference_type")
+  referenceId     String   @map("reference_id")
+  txHash          String?  @map("tx_hash")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([merchantAddress])
+  @@map("ledger_entries")
+}
+
+model EventLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId        String   @unique @map("event_id") @db.Uuid
+  entityId       String   @map("entity_id")
+  entityType     String   @map("entity_type")
+  eventType      String   @map("event_type")
+  correlationId  String   @map("correlation_id")
+  sequenceNumber BigInt   @map("sequence_number")
+  payload        Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId], map: "event_log_entity_idx")
+  @@index([entityId, sequenceNumber], map: "event_log_sequence_idx")
+  @@map("event_log")
+}
+
+model SystemSnapshot {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityId       String   @map("entity_id")
+  entityType     String   @map("entity_type")
+  sequenceOffset BigInt   @map("sequence_offset")
+  statePayload   Json     @map("state_payload")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId], map: "system_snapshots_entity_idx")
+  @@map("system_snapshots")
+}
+
+model TransactionVerification {
+  txHash        String   @id @map("tx_hash")
+  status        String
+  referenceType String   @map("reference_type")
+  referenceId   String   @map("reference_id")
+  confirmations Int      @default(0)
+  errorMessage  String?  @map("error_message")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  @@index([status], map: "transaction_verifications_status_idx")
+  @@map("transaction_verifications")
+}
+
+model WebhookDelivery {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookEndpointId String   @map("webhook_endpoint_id") @db.Uuid
+  event             String
+  status            String
+  payload           Json
+  signatureVersion  String   @default("v1") @map("signature_version")
+  attempts          Int      @default(0)
+  lastError         String?  @map("last_error")
+  responseBody      String?  @map("response_body")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at")
+
+  @@index([webhookEndpointId])
+  @@index([status])
+  @@map("webhook_deliveries")
+}
+
+model AuditEvent {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor        String
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String   @map("resource_id")
+  ipAddress    String?  @map("ip_address")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([actor])
+  @@index([action])
+  @@map("audit_events")
+}
+
+

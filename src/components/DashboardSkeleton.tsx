@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
@@ -191,6 +191,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                     </div>
                 );
 
+            case "payment-links":
             case "checkout":
                 return (
                     <div className="space-y-8">
