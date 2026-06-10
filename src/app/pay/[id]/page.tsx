@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useAccount, useConnect, useDisconnect, useWriteContract } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
@@ -25,6 +25,18 @@ export default function PublicPayPage() {
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
 
+    const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
+    const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
+
+    const { data: balanceData } = useBalance({
+        address: address,
+        token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+    });
+
+    const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+        hash: txHash,
+    });
+
     const [linkData, setLinkData] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -34,6 +46,9 @@ export default function PublicPayPage() {
     const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
+
+    const requiredAmount = linkData ? BigInt(linkData.amount_usdc) : BigInt(0);
+    const isInsufficientBalance = isConnected && balanceData && balanceData.value < requiredAmount;
 
     useEffect(() => {
         if (!id) return;
@@ -65,66 +80,17 @@ export default function PublicPayPage() {
         setIsPaying(true);
 
         try {
-            const txHash = await writeContractAsync({
-                address: USDC_NATIVE_GAS_ADDRESS,
+            const hash = await writeContractAsync({
+                address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                 abi: USDC_ERC20_ABI,
                 functionName: "transfer",
-                args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
+                args: ["0x6946B7746c2968B195BD15319D25F67E587CAe3C", BigInt(linkData.amount_usdc)],
             });
 
-            setSuccessTxHash(txHash);
+            setTxHash(hash);
+            setSuccessTxHash(hash);
             setIsVerifying(true);
             setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
-
-            /* Submit verification job */
-            const verifyRes = await fetch("/api/payment-links/verify", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash,
-                    paymentLinkId: linkData.id,
-                    payerAddress: address || ""
-                })
-            });
-
-            if (!verifyRes.ok) {
-                const verifyData = await verifyRes.json();
-                throw new Error(verifyData.error || "Failed to initiate verification");
-            }
-
-            /* Subscribe to real-time status stream via SSE */
-            const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${txHash}`);
-            
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.status === "PENDING_CONFIRMATIONS") {
-                        setVerificationStatus(`Confirming: Received ${data.confirmations} block confirmations...`);
-                    } else if (data.status === "VERIFYING") {
-                        setVerificationStatus("Transaction confirmed. Verifying parameters...");
-                    } else if (data.status === "CONFIRMED") {
-                        setVerificationStatus("Payment confirmed and settled successfully!");
-                        setIsVerifying(false);
-                        setIsPaying(false);
-                        eventSource.close();
-                    } else if (data.status === "FAILED") {
-                        setVerificationError(data.errorMessage || "Payment verification failed");
-                        setIsVerifying(false);
-                        setIsPaying(false);
-                        eventSource.close();
-                    }
-                } catch (e) {
-                    console.error("Error parsing event data:", e);
-                }
-            };
-
-            eventSource.onerror = (err) => {
-                console.error("EventSource connection error:", err);
-                eventSource.close();
-                setVerificationError("Real-time stream disconnected. Please verify on explorer.");
-                setIsVerifying(false);
-                setIsPaying(false);
-            };
 
         } catch (err: any) {
             setVerificationError(err.message || "Payment transaction failed");
@@ -132,6 +98,73 @@ export default function PublicPayPage() {
             setIsVerifying(false);
         }
     };
+
+    useEffect(() => {
+        if (isConfirmed && txHash && linkData && address && verifiedHash !== txHash) {
+            setVerifiedHash(txHash);
+            
+            const verifyPayment = async () => {
+                try {
+                    /* Submit verification job */
+                    const verifyRes = await fetch("/api/payment-links/verify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            txHash,
+                            paymentLinkId: linkData.id,
+                            payerAddress: address || ""
+                        })
+                    });
+
+                    if (!verifyRes.ok) {
+                        const verifyData = await verifyRes.json();
+                        throw new Error(verifyData.error || "Failed to initiate verification");
+                    }
+
+                    /* Subscribe to real-time status stream via SSE */
+                    const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${txHash}`);
+                    
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.status === "PENDING_CONFIRMATIONS") {
+                                setVerificationStatus(`Confirming: Received ${data.confirmations} block confirmations...`);
+                            } else if (data.status === "VERIFYING") {
+                                setVerificationStatus("Transaction confirmed. Verifying parameters...");
+                            } else if (data.status === "CONFIRMED") {
+                                setVerificationStatus("Payment confirmed and settled successfully!");
+                                setIsVerifying(false);
+                                setIsPaying(false);
+                                eventSource.close();
+                            } else if (data.status === "FAILED") {
+                                setVerificationError(data.errorMessage || "Payment verification failed");
+                                setIsVerifying(false);
+                                setIsPaying(false);
+                                eventSource.close();
+                            }
+                        } catch (e) {
+                            console.error("Error parsing event data:", e);
+                        }
+                    };
+
+                    eventSource.onerror = (err) => {
+                        console.error("EventSource connection error:", err);
+                        eventSource.close();
+                        setVerificationError("Real-time stream disconnected. Please verify on explorer.");
+                        setIsVerifying(false);
+                        setIsPaying(false);
+                    };
+
+                } catch (err: any) {
+                    setVerificationError(err.message || "Payment verification failed");
+                    setIsPaying(false);
+                    setIsVerifying(false);
+                }
+            };
+
+            verifyPayment();
+        }
+    }, [isConfirmed, txHash, linkData, address, verifiedHash]);
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-6 relative font-sans">
@@ -211,9 +244,17 @@ export default function PublicPayPage() {
                         ) : (
                             <div className="space-y-6">
                                 {/* Wallet Info */}
-                                <div className="flex items-center justify-between text-[10px] text-white/40 border-t border-b border-white/5 py-3 font-mono">
-                                    <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
-                                    <button onClick={() => disconnect()} className="hover:text-white transition-colors uppercase font-bold">Disconnect</button>
+                                <div className="flex flex-col gap-1.5 border-t border-b border-white/5 py-3 text-[10px] font-mono text-white/40">
+                                    <div className="flex items-center justify-between">
+                                        <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
+                                        <button type="button" onClick={() => disconnect()} className="hover:text-white transition-colors uppercase font-bold">Disconnect</button>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1 text-white/60">
+                                        <span>Available Balance:</span>
+                                        <span className="font-bold text-[#00d2b4]">
+                                            {balanceData ? `${parseFloat(balanceData.formatted).toFixed(2)} USDC` : "0.00 USDC"}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {verificationStatus ? (
@@ -244,21 +285,32 @@ export default function PublicPayPage() {
                                             </div>
                                         )}
                                         
-                                        <button
-                                            onClick={handlePay}
-                                            disabled={isPaying}
-                                            className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
-                                        >
-                                            {isPaying ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin" /> Processing Payment...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    Pay Now <ArrowRight className="w-4 h-4" />
-                                                </>
-                                            )}
-                                        </button>
+                                        {isInsufficientBalance ? (
+                                            <button
+                                                type="button"
+                                                disabled={true}
+                                                className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                            >
+                                                Insufficient USDC Balance
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={handlePay}
+                                                disabled={isPaying || isConfirming}
+                                                className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                            >
+                                                {(isPaying || isConfirming) ? (
+                                                    <>
+                                                        <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        Pay ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC <ArrowRight className="w-4 h-4" />
+                                                    </>
+                                                )}
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
