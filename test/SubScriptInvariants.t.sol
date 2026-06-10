@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: MIT */
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
@@ -10,15 +10,16 @@ contract SubScriptHandler is Test {
     SubScriptRouter public router;
     MockUSDC public usdc;
 
-    // Track active actors
+    /* Track active actors */
     address[] public users;
     address[] public merchants;
 
-    // Track commitments
+    /* Track commitments and secrets */
     bytes32[] public activeCommitments;
     mapping(bytes32 => uint256) public commitmentAmounts;
+    mapping(bytes32 => bytes32) public commitmentSecrets;
 
-    // Ghost variables for tracking state
+    /* Ghost variables for tracking state */
     uint256 public totalMerchantBalances;
     uint256 public totalFeesCollected;
 
@@ -26,7 +27,7 @@ contract SubScriptHandler is Test {
         router = _router;
         usdc = _usdc;
 
-        // Set up fuzzed users and merchants
+        /* Set up fuzzed users and merchants */
         users.push(address(0x1111111111111111111111111111111111111111));
         users.push(address(0x2222222222222222222222222222222222222222));
         users.push(address(0x3333333333333333333333333333333333333333));
@@ -35,9 +36,11 @@ contract SubScriptHandler is Test {
         merchants.push(address(0x5555555555555555555555555555555555555555));
     }
 
-    function deposit(uint256 userIndex, uint256 amount, bytes32 commitment) public {
-        amount = bound(amount, 1, 1_000_000 * 10**6); // Bound amount between $1 and $1M USDC
+    function deposit(uint256 userIndex, uint256 amount, bytes32 secret) public {
+        amount = bound(amount, 1, 1_000_000 * 10**6); /* Bound amount between $1 and $1M USDC */
         address user = users[userIndex % users.length];
+
+        bytes32 commitment = keccak256(abi.encodePacked(secret));
 
         vm.startPrank(user);
         usdc.mint(user, amount);
@@ -47,6 +50,7 @@ contract SubScriptHandler is Test {
 
         activeCommitments.push(commitment);
         commitmentAmounts[commitment] = amount;
+        commitmentSecrets[commitment] = secret;
     }
 
     function verifyAndActivate(
@@ -57,19 +61,20 @@ contract SubScriptHandler is Test {
         if (activeCommitments.length == 0) return;
         bytes32 commitment = activeCommitments[commitmentIndex % activeCommitments.length];
         uint256 amount = commitmentAmounts[commitment];
+        bytes32 secret = commitmentSecrets[commitment];
         if (amount == 0) return;
 
         address merchant = merchants[merchantIndex % merchants.length];
         period = bound(period, 1, 365 days);
 
         bytes32[] memory proof = new bytes32[](2);
-        proof[0] = bytes32(0);
+        proof[0] = secret;
         proof[1] = keccak256(abi.encodePacked(merchant, amount, period));
 
-        // Derive nullifier hash cryptographically from commitment to model 1-to-1 mapping
+        /* Derive nullifier hash cryptographically from commitment to model 1-to-1 mapping */
         bytes32 nullifierHash = keccak256(abi.encodePacked(commitment));
 
-        // Attempt verification and activation
+        /* Attempt verification and activation */
         try router.verifyAndActivate(proof, nullifierHash, merchant, amount, period) {
             uint256 fee = (amount * 100) / 10000;
             uint256 netAmount = amount - fee;
@@ -77,10 +82,10 @@ contract SubScriptHandler is Test {
             totalMerchantBalances += netAmount;
             totalFeesCollected += fee;
 
-            // Remove commitment to prevent reuse in the handler
+            /* Remove commitment to prevent reuse in the handler */
             _removeCommitment(commitmentIndex % activeCommitments.length);
         } catch {
-            // Revert is fine, fuzzer might input invalid state (e.g. duplicate nullifier)
+            /* Revert is fine, fuzzer might input invalid state (e.g. duplicate nullifier) */
         }
     }
 
@@ -129,7 +134,7 @@ contract SubScriptInvariants is Test {
 
         handler = new SubScriptHandler(router, usdc);
 
-        // Tell Foundry to target the handler contract for fuzzing
+        /* Tell Foundry to target the handler contract for fuzzing */
         targetContract(address(handler));
     }
 
@@ -149,7 +154,7 @@ contract SubScriptInvariants is Test {
 
         uint256 vaultUSDC = usdc.balanceOf(address(router));
 
-        // Assert sum of merchant balances <= vault USDC balance
+        /* Assert sum of merchant balances <= vault USDC balance */
         assertGe(
             vaultUSDC,
             sumMerchantBalances,
