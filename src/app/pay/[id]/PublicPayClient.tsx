@@ -90,7 +90,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                 address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                 abi: USDC_ERC20_ABI,
                 functionName: "transfer",
-                args: ["0x6946B7746c2968B195BD15319D25F67E587CAe3C", BigInt(linkData.amount_usdc)],
+                args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
             });
 
             setTxHash(hash);
@@ -177,7 +177,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
             <AnimatedGradientBg />
             
             <div className="relative z-10 w-full max-w-md">
-                /* Brand Header */
+                {/* Brand Header */}
                 <div className="text-center mb-8">
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">checkout</span>
@@ -204,7 +204,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                     </div>
                 ) : (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
-                        /* Status / Expiration Badge */
+                        {/* Status / Expiration Badge */}
                         {linkData.expires_at && (
                             <div className="flex justify-end">
                                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
@@ -213,7 +213,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         )}
 
-                        /* Product Information */
+                        {/* Product Information */}
                         <div className="space-y-2">
                             <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">You are paying for</span>
                             <h2 className="text-2xl font-extrabold text-white tracking-tight">{linkData.title}</h2>
@@ -222,7 +222,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             )}
                         </div>
 
-                        /* Amount Panel */
+                        {/* Amount Panel */}
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
@@ -233,7 +233,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         </div>
 
-                        /* Wallet Section */
+                        {/* Wallet Section */}
                         {!isConnected ? (
                             <div className="space-y-4">
                                 <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
@@ -249,7 +249,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                /* Wallet Info */
+                                {/* Wallet Info */}
                                 <div className="flex flex-col gap-1.5 border-t border-b border-white/5 py-3 text-[10px] font-mono text-white/40">
                                     <div className="flex items-center justify-between">
                                         <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
@@ -322,7 +322,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         )}
 
-                        /* Footer Security Note */
+                        {/* Footer Security Note */}
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
                         </div>
