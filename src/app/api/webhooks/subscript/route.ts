@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { triggerExitSurvey } from "@/lib/payments/email";
 
 let supabaseClient: any = null;
 
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     let eventIdInserted: string | null = null;
     
     try {
-        // 1. Enforce strict cryptographic HMAC-SHA256 signature verification
+        /* 1. Enforce strict cryptographic HMAC-SHA256 signature verification */
         const signatureHeader = request.headers.get("x-subscript-signature");
         if (!signatureHeader) {
             return NextResponse.json({ error: "Unauthorized: Missing signature header" }, { status: 400 });
@@ -35,13 +36,13 @@ export async function POST(request: Request) {
         const t = match[1];
         const v1 = match[2];
 
-        // Replay attack prevention: check timestamp age (max 5 minutes)
+        /* Replay attack prevention: check timestamp age (max 5 minutes) */
         const now = Math.floor(Date.now() / 1000);
         if (Math.abs(now - parseInt(t, 10)) > 300) {
             return NextResponse.json({ error: "Unauthorized: Signature expired" }, { status: 400 });
         }
 
-        // Retrieve raw body text to maintain exact byte alignment for hashing
+        /* Retrieve raw body text to maintain exact byte alignment for hashing */
         const rawBody = await request.text();
         const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
 
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized: Signature mismatch" }, { status: 401 });
         }
 
-        // 2. Parse the body object
+        /* 2. Parse the body object */
         const body = JSON.parse(rawBody);
         const { event, data } = body;
 
@@ -67,8 +68,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Missing unique txHash" }, { status: 400 });
         }
 
-        // 3. Database transaction execution & replay protection
-        // Direct insertion into webhook_events acts as a concurrent lock on the unique tx_hash
+        /* 3. Database transaction execution & replay protection */
+        /* Direct insertion into webhook_events acts as a concurrent lock on the unique tx_hash */
         const { data: eventLog, error: eventError } = await supabase
             .from("webhook_events")
             .insert({
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
             .single();
 
         if (eventError) {
-            if (eventError.code === "23505") { // unique_violation
+            if (eventError.code === "23505") { /* unique_violation */
                 console.log(`[Webhook Replay Protected] Uniqueness clash on tx_hash ${txHash}. Ignoring event.`);
                 return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
             }
@@ -90,13 +91,13 @@ export async function POST(request: Request) {
 
         eventIdInserted = eventLog.id;
 
-        // Extract merchant EVM wallet address and format
+        /* Extract merchant EVM wallet address and format */
         const merchantAddress = (data.merchant || "").toLowerCase();
         if (!merchantAddress) {
             throw new Error("Missing merchant address in data payload");
         }
 
-        // 4. Ensure Merchant wallet identity exists to prevent Foreign Key constraints failures
+        /* 4. Ensure Merchant wallet identity exists to prevent Foreign Key constraints failures */
         const { error: merchantError } = await supabase
             .from("merchants")
             .upsert({
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
             throw new Error(`Failed to sync merchant: ${merchantError.message}`);
         }
 
-        // 5. Parse and upsert subscription details
+        /* 5. Parse and upsert subscription details */
         const subIdStr = data.subscriptionId || data.subId;
         const cleanSubId = subIdStr ? parseInt(String(subIdStr).replace(/^sub_/, ""), 10) : null;
 
@@ -145,9 +146,15 @@ export async function POST(request: Request) {
                 console.error("[Webhook Database Error] Subscription upsert failed:", subError);
                 throw new Error(`Failed to sync subscription details: ${subError.message}`);
             }
+
+            if (status === "EXPIRED") {
+                triggerExitSurvey(merchantAddress, cleanSubId, 0).catch(err => {
+                    console.error("Failed to trigger exit survey:", err);
+                });
+            }
         }
 
-        // 6. Premium merchantPayoutDestination configurations retrieval
+        /* 6. Premium merchantPayoutDestination configurations retrieval */
         const { data: merchantInfo, error: fetchError } = await supabase
             .from("merchants")
             .select("tier, payout_destination")
@@ -161,7 +168,7 @@ export async function POST(request: Request) {
                 tier: merchantInfo.tier,
                 payoutDestination: merchantInfo.payout_destination || "Default connected address"
             });
-            // Execute premium alerts or configure automated payout cycles here
+            /* Execute premium alerts or configure automated payout cycles here */
         }
 
         return NextResponse.json({ success: true, message: "Webhook processed and synced to Supabase" });
@@ -169,7 +176,7 @@ export async function POST(request: Request) {
     } catch (err: any) {
         console.error("[CRITICAL Webhook Exception] Transaction execution failed. Reverting state changes.", err);
         
-        // Manual transaction rollback boundary to preserve off-chain database integrity
+        /* Manual transaction rollback boundary to preserve off-chain database integrity */
         if (eventIdInserted) {
             console.log(`[Rollback Active] Deleting logged webhook event ID: ${eventIdInserted}`);
             try {

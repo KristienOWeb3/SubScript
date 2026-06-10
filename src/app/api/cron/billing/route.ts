@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import crypto from "crypto";
+import { triggerExitSurvey } from "@/lib/payments/email";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -114,6 +115,16 @@ export async function POST(request: Request) {
                             updated_at: new Date().toISOString()
                         })
                         .eq("subscription_id", subId);
+
+                    const adminPrivateKey = process.env.PRIVATE_KEY || "";
+                    const adminAddress = adminPrivateKey 
+                        ? new ethers.Wallet(adminPrivateKey).address.toLowerCase()
+                        : "";
+                    if (adminAddress) {
+                        triggerExitSurvey(adminAddress, merchantAddress, 1).catch(err => {
+                            console.error("Failed to trigger exit survey:", err);
+                        });
+                    }
 
                     downgradeResults.push({
                         subId,
@@ -256,6 +267,22 @@ export async function POST(request: Request) {
                             })
                             .eq("wallet_address", subscriberAddress.toLowerCase());
 
+                        if (sub.tier === 1) {
+                            const adminPrivateKey = process.env.PRIVATE_KEY || "";
+                            const adminAddress = adminPrivateKey 
+                                ? new ethers.Wallet(adminPrivateKey).address.toLowerCase()
+                                : "";
+                            if (adminAddress) {
+                                triggerExitSurvey(adminAddress, subscriberAddress, 1).catch(err => {
+                                    console.error("Failed to trigger exit survey:", err);
+                                });
+                            }
+                        } else if (sub.tier === 0) {
+                            triggerExitSurvey(sub.merchant_address, subscriberAddress, 0).catch(err => {
+                                console.error("Failed to trigger exit survey:", err);
+                            });
+                        }
+
                         results.push({
                             subId,
                             subscriber: subscriberAddress,
@@ -315,6 +342,22 @@ export async function POST(request: Request) {
                             updated_at: new Date().toISOString()
                         })
                         .eq("wallet_address", subscriber.toLowerCase());
+
+                    if (sub.tier === 1) {
+                        const adminPrivateKey = process.env.PRIVATE_KEY || "";
+                        const adminAddress = adminPrivateKey 
+                            ? new ethers.Wallet(adminPrivateKey).address.toLowerCase()
+                            : "";
+                        if (adminAddress) {
+                            triggerExitSurvey(adminAddress, subscriber, 1).catch(err => {
+                                console.error("Failed to trigger exit survey:", err);
+                            });
+                        }
+                    } else if (sub.tier === 0) {
+                        triggerExitSurvey(sub.merchant_address, subscriber, 0).catch(err => {
+                            console.error("Failed to trigger exit survey:", err);
+                        });
+                    }
 
                     results.push({
                         subId,

@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 import { SUBSCRIPT_ROUTER_ABI } from "@/lib/contracts/abis";
+import { triggerExitSurvey } from "@/lib/payments/email";
+
 
 export async function POST(request: Request) {
     try {
@@ -64,6 +66,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Database Sync Error: Failed to schedule subscription cancellation" }, { status: 500 });
         }
 
+        const adminPrivateKey = process.env.PRIVATE_KEY || "";
+        const adminAddress = adminPrivateKey 
+            ? new ethers.Wallet(adminPrivateKey).address.toLowerCase()
+            : "";
+
+        if (adminAddress) {
+            triggerExitSurvey(adminAddress, normalizedUser, 1).catch(err => {
+                console.error("Failed to trigger exit survey:", err);
+            });
+        }
+
         return NextResponse.json({
             success: true,
             message: "Premium subscription set to cancel at the end of the current period.",
@@ -76,3 +89,4 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
+

@@ -11,6 +11,7 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import SubScriptCheckout from "@/components/SubScriptCheckout";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
+import DurationPicker from "@/components/DurationPicker";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -93,7 +94,7 @@ export default function DashboardPage() {
     const [linkTitle, setLinkTitle] = useState("");
     const [linkDescription, setLinkDescription] = useState("");
     const [linkAmountUsdc, setLinkAmountUsdc] = useState("");
-    const [linkExpiresAt, setLinkExpiresAt] = useState("");
+    const [linkDurationMinutes, setLinkDurationMinutes] = useState(1440); /* Default to 24 hours (1440 mins) */
     const [linkExternalReference, setLinkExternalReference] = useState("");
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
@@ -417,6 +418,9 @@ export default function DashboardPage() {
             }
 
             const rawAmount = parseUnits(linkAmountUsdc, 6).toString();
+            const totalSelectedSeconds = linkDurationMinutes * 60;
+            const expiresTimestamp = Math.floor(Date.now() / 1000) + totalSelectedSeconds;
+
             const res = await fetch("/api/payment-links", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -424,7 +428,7 @@ export default function DashboardPage() {
                     title: linkTitle,
                     description: linkDescription || null,
                     amount_usdc: rawAmount,
-                    expires_at: linkExpiresAt || null,
+                    expires_at: linkDurationMinutes > 0 ? expiresTimestamp : null,
                     external_reference: linkExternalReference || null
                 })
             });
@@ -438,7 +442,7 @@ export default function DashboardPage() {
             setLinkTitle("");
             setLinkDescription("");
             setLinkAmountUsdc("");
-            setLinkExpiresAt("");
+            setLinkDurationMinutes(1440);
             setLinkExternalReference("");
             await fetchPaymentLinks();
         } catch (err: any) {
@@ -1741,17 +1745,15 @@ Responsibilities:
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Expires At (Optional)</label>
-                                <input
-                                    type="datetime-local"
-                                    value={linkExpiresAt}
-                                    onChange={(e) => setLinkExpiresAt(e.target.value)}
-                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                            <div className="space-y-1 md:col-span-2">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Link Duration</label>
+                                <DurationPicker
+                                    value={linkDurationMinutes}
+                                    onChange={(mins) => setLinkDurationMinutes(mins)}
                                 />
                             </div>
 
-                            <div className="space-y-1">
+                            <div className="space-y-1 md:col-span-2">
                                 <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">External Reference (Optional)</label>
                                 <input
                                     type="text"
@@ -1909,6 +1911,7 @@ Responsibilities:
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
                         onRetryCharge={handleRetryCharge}
+                        merchantAddress={address || ""}
                     />
                 );
 

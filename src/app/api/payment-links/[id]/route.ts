@@ -109,7 +109,17 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         if (title !== undefined) updates.title = title;
         if (description !== undefined) updates.description = description;
         if (active !== undefined) updates.active = active;
-        if (expires_at !== undefined) updates.expires_at = expires_at ? new Date(expires_at).toISOString() : null;
+        if (expires_at !== undefined) {
+            updates.expires_at = expires_at
+                ? (() => {
+                    const num = Number(expires_at);
+                    if (!isNaN(num)) {
+                        return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
+                    }
+                    return new Date(expires_at).toISOString();
+                })()
+                : null;
+        }
         if (external_reference !== undefined) updates.external_reference = external_reference;
 
         const { data: updatedLink, error: updateError } = await supabase
