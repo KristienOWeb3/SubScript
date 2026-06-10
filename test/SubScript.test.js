@@ -3,31 +3,31 @@ const { ethers } = require("hardhat");
 const {
   loadFixture,
   time,
-} = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+} = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("SubScript", function () {
-  // ────────────── Shared Fixture ──────────────────────────────────
+  /* Shared Fixture */
   async function deployFixture() {
     const [owner, subscriber, merchant, keeper, stranger] =
       await ethers.getSigners();
 
-    // Deploy MockUSDC
+    /* Deploy MockUSDC */
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    // Deploy SubScript
+    /* Deploy SubScript */
     const SubScript = await ethers.getContractFactory("SubScript");
     const subScript = await SubScript.deploy(await usdc.getAddress());
 
-    // Mint 10 000 USDC to the subscriber (6 decimals)
+    /* Mint 10 000 USDC to the subscriber (6 decimals) */
     const TEN_K = ethers.parseUnits("10000", 6);
     await usdc.mint(subscriber.address, TEN_K);
 
-    // Subscriber approves SubScript for 10 000 USDC
+    /* Subscriber approves SubScript for 10 000 USDC */
     await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
 
-    const AMOUNT = ethers.parseUnits("15", 6); // 15 USDC
-    const PERIOD = 30 * 24 * 60 * 60; // 30 days in seconds
+    const AMOUNT = ethers.parseUnits("15", 6); /* 15 USDC */
+    const PERIOD = 30 * 24 * 60 * 60; /* 30 days in seconds */
 
     return {
       usdc,
@@ -43,10 +43,7 @@ describe("SubScript", function () {
     };
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  //  DEPLOYMENT
-  // ═══════════════════════════════════════════════════════════════
-
+  /* DEPLOYMENT */
   describe("Deployment", function () {
     it("should set the correct payment token", async function () {
       const { subScript, usdc } = await loadFixture(deployFixture);
@@ -68,10 +65,7 @@ describe("SubScript", function () {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  //  CREATE SUBSCRIPTION
-  // ═══════════════════════════════════════════════════════════════
-
+  /* CREATE SUBSCRIPTION */
   describe("createSubscription", function () {
     it("should create a subscription and take the first payment", async function () {
       const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
@@ -87,11 +81,11 @@ describe("SubScript", function () {
         .to.emit(subScript, "SubscriptionCreated")
         .withArgs(1, subscriber.address, merchant.address, AMOUNT, PERIOD);
 
-      // Verify first payment was taken
+      /* Verify first payment was taken */
       const merchantBalAfter = await usdc.balanceOf(merchant.address);
       expect(merchantBalAfter - merchantBalBefore).to.equal(AMOUNT);
 
-      // Verify subscription data
+      /* Verify subscription data */
       const sub = await subScript.subscriptions(1);
       expect(sub.subscriber).to.equal(subscriber.address);
       expect(sub.merchant).to.equal(merchant.address);
@@ -99,7 +93,7 @@ describe("SubScript", function () {
       expect(sub.period).to.equal(PERIOD);
       expect(sub.isActive).to.be.true;
 
-      // nextSubscriptionId should now be 2
+      /* nextSubscriptionId should now be 2 */
       expect(await subScript.nextSubscriptionId()).to.equal(2);
     });
 
@@ -137,26 +131,23 @@ describe("SubScript", function () {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  //  EXECUTE PAYMENT
-  // ═══════════════════════════════════════════════════════════════
-
+  /* EXECUTE PAYMENT */
   describe("executePayment", function () {
     it("should execute payment when due", async function () {
       const { subScript, usdc, subscriber, merchant, keeper, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
-      // Create subscription
+      /* Create subscription */
       await subScript
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Fast-forward time past the period
+      /* Fast-forward time past the period */
       await time.increase(PERIOD + 1);
 
       const merchantBalBefore = await usdc.balanceOf(merchant.address);
 
-      await expect(subScript.connect(keeper).executePayment(1))
+      await expect(subScript.connect(keeper).executePayment(1, 1))
         .to.emit(subScript, "PaymentExecuted");
 
       const merchantBalAfter = await usdc.balanceOf(merchant.address);
@@ -171,9 +162,9 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Try to execute immediately — should fail
+      /* Try to execute immediately — should fail */
       await expect(
-        subScript.executePayment(1)
+        subScript.executePayment(1, 1)
       ).to.be.revertedWithCustomError(subScript, "PaymentNotDue");
     });
 
@@ -185,13 +176,13 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Cancel the subscription
+      /* Cancel the subscription */
       await subScript.connect(subscriber).cancelSubscription(1);
 
       await time.increase(PERIOD + 1);
 
       await expect(
-        subScript.executePayment(1)
+        subScript.executePayment(1, 1)
       ).to.be.revertedWithCustomError(subScript, "SubscriptionNotActive");
     });
 
@@ -203,15 +194,15 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Revoke all remaining allowance
+      /* Revoke all remaining allowance */
       await usdc
         .connect(subscriber)
         .approve(await subScript.getAddress(), 0);
 
       await time.increase(PERIOD + 1);
 
-      // Should revert because allowance is 0
-      await expect(subScript.executePayment(1)).to.be.reverted;
+      /* Should revert because allowance is 0 */
+      await expect(subScript.executePayment(1, 1)).to.be.reverted;
     });
 
     it("should revert if subscriber has insufficient balance", async function () {
@@ -222,13 +213,13 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Drain subscriber balance (transfer all to merchant)
+      /* Drain subscriber balance (transfer all to merchant) */
       const bal = await usdc.balanceOf(subscriber.address);
       await usdc.connect(subscriber).transfer(merchant.address, bal);
 
       await time.increase(PERIOD + 1);
 
-      await expect(subScript.connect(keeper).executePayment(1)).to.be.reverted;
+      await expect(subScript.connect(keeper).executePayment(1, 1)).to.be.reverted;
     });
 
     it("should allow multiple sequential payments", async function () {
@@ -239,22 +230,19 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      // Execute 3 consecutive payments
-      for (let i = 0; i < 3; i++) {
+      /* Execute 3 consecutive payments */
+      for (let i = 1; i <= 3; i++) {
         await time.increase(PERIOD + 1);
-        await subScript.connect(keeper).executePayment(1);
+        await subScript.connect(keeper).executePayment(1, i);
       }
 
-      // Merchant should have received 4 payments total (1 initial + 3)
+      /* Merchant should have received 4 payments total (1 initial + 3) */
       const merchantBal = await usdc.balanceOf(merchant.address);
       expect(merchantBal).to.equal(AMOUNT * 4n);
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  //  CANCEL SUBSCRIPTION
-  // ═══════════════════════════════════════════════════════════════
-
+  /* CANCEL SUBSCRIPTION */
   describe("cancelSubscription", function () {
     it("should allow subscriber to cancel", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
@@ -314,10 +302,7 @@ describe("SubScript", function () {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  //  MODIFY SUBSCRIPTION
-  // ═══════════════════════════════════════════════════════════════
-
+  /* MODIFY SUBSCRIPTION */
   describe("modifySubscription", function () {
     it("should allow subscriber to modify amount and period", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
@@ -328,7 +313,7 @@ describe("SubScript", function () {
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
       const newAmount = ethers.parseUnits("25", 6);
-      const newPeriod = 7 * 24 * 60 * 60; // 7 days
+      const newPeriod = 7 * 24 * 60 * 60; /* 7 days */
 
       await expect(
         subScript.connect(subscriber).modifySubscription(1, newAmount, newPeriod)
@@ -383,10 +368,7 @@ describe("SubScript", function () {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  //  VIEW HELPERS
-  // ═══════════════════════════════════════════════════════════════
-
+  /* VIEW HELPERS */
   describe("isPaymentDue", function () {
     it("should return false when not yet due", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
@@ -396,7 +378,7 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      expect(await subScript.isPaymentDue(1)).to.be.false;
+      expect(await subScript.isPaymentDue(1, 1)).to.be.false;
     });
 
     it("should return true when due", async function () {
@@ -409,7 +391,7 @@ describe("SubScript", function () {
 
       await time.increase(PERIOD + 1);
 
-      expect(await subScript.isPaymentDue(1)).to.be.true;
+      expect(await subScript.isPaymentDue(1, 1)).to.be.true;
     });
 
     it("should return false for cancelled subscription", async function () {
@@ -423,7 +405,7 @@ describe("SubScript", function () {
       await subScript.connect(subscriber).cancelSubscription(1);
       await time.increase(PERIOD + 1);
 
-      expect(await subScript.isPaymentDue(1)).to.be.false;
+      expect(await subScript.isPaymentDue(1, 1)).to.be.false;
     });
   });
 });

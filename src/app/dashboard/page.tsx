@@ -33,7 +33,7 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3
+    Wallet, Shield, BarChart3, Link2
 } from "lucide-react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 
@@ -64,6 +64,7 @@ const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "payment-links", label: "Payment Links", icon: Link2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -78,6 +79,26 @@ export default function DashboardPage() {
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
+
+    /* Soulbound Access Key (SBT) State */
+    const [sbtTokenId, setSbtTokenId] = useState<string | null>(null);
+    const [sbtMetadata, setSbtMetadata] = useState<any>(null);
+    const [isLoadingSbt, setIsLoadingSbt] = useState(false);
+
+    /* Payment Links States */
+    const [paymentLinks, setPaymentLinks] = useState<any[]>([]);
+    const [isLinksLoading, setIsLinksLoading] = useState(false);
+    const [initialLinksFetched, setInitialLinksFetched] = useState(false);
+
+    const [linkTitle, setLinkTitle] = useState("");
+    const [linkDescription, setLinkDescription] = useState("");
+    const [linkAmountUsdc, setLinkAmountUsdc] = useState("");
+    const [linkExpiresAt, setLinkExpiresAt] = useState("");
+    const [linkExternalReference, setLinkExternalReference] = useState("");
+    const [isCreatingLink, setIsCreatingLink] = useState(false);
+    const [linkError, setLinkError] = useState<string | null>(null);
+    const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
+    const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
@@ -266,6 +287,7 @@ export default function DashboardPage() {
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
+                setSbtTokenId(tierData.sbtTokenId || null);
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
                 setDbSubscriptionStatus(tierData.status || null);
@@ -287,6 +309,31 @@ export default function DashboardPage() {
         return () => clearInterval(interval);
     }, [address, refetchBalancesAndTier]);
 
+    useEffect(() => {
+        if (!sbtTokenId) {
+            setSbtMetadata(null);
+            return;
+        }
+        const fetchSbtMetadata = async () => {
+            setIsLoadingSbt(true);
+            try {
+                const res = await fetch(`/api/sbt/${sbtTokenId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSbtMetadata(data);
+                } else {
+                    setSbtMetadata(null);
+                }
+            } catch (err) {
+                console.error("Error fetching SBT metadata:", err);
+                setSbtMetadata(null);
+            } finally {
+                setIsLoadingSbt(false);
+            }
+        };
+        fetchSbtMetadata();
+    }, [sbtTokenId]);
+
 
 
     const refetchTier = refetchBalancesAndTier;
@@ -300,7 +347,6 @@ export default function DashboardPage() {
 
     const [copiedText, setCopiedText] = useState<string | null>(null);
 
-
     const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
     
@@ -310,7 +356,7 @@ export default function DashboardPage() {
     const [initialEventsFetched, setInitialEventsFetched] = useState(false);
     const [initialContractFetched, setInitialContractFetched] = useState(false);
 
-    const isLoading = isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched));
+    const isLoading = isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched || !initialLinksFetched));
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { signMessageAsync } = useSignMessage();
 
@@ -339,6 +385,112 @@ export default function DashboardPage() {
     const [subCap, setSubCap] = useState("150.00");
     const [subInterval, setSubInterval] = useState("monthly");
     const [subChain, setSubChain] = useState("base");
+
+    const fetchPaymentLinks = async () => {
+        setIsLinksLoading(true);
+        try {
+            const res = await fetch("/api/payment-links");
+            const data = await res.json();
+            if (data.links) {
+                setPaymentLinks(data.links);
+            }
+        } catch (err) {
+            console.error("Error fetching payment links:", err);
+        } finally {
+            setIsLinksLoading(false);
+            setInitialLinksFetched(true);
+        }
+    };
+
+    const handleCreatePaymentLink = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLinkError(null);
+        setLinkSuccess(null);
+        setIsCreatingLink(true);
+
+        try {
+            if (!linkTitle.trim()) {
+                throw new Error("Title is required");
+            }
+            if (!linkAmountUsdc || isNaN(Number(linkAmountUsdc)) || Number(linkAmountUsdc) <= 0) {
+                throw new Error("Amount must be a positive number");
+            }
+
+            const rawAmount = parseUnits(linkAmountUsdc, 6).toString();
+            const res = await fetch("/api/payment-links", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: linkTitle,
+                    description: linkDescription || null,
+                    amount_usdc: rawAmount,
+                    expires_at: linkExpiresAt || null,
+                    external_reference: linkExternalReference || null
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Failed to create payment link");
+            }
+
+            setLinkSuccess("Payment link created successfully!");
+            setLinkTitle("");
+            setLinkDescription("");
+            setLinkAmountUsdc("");
+            setLinkExpiresAt("");
+            setLinkExternalReference("");
+            await fetchPaymentLinks();
+        } catch (err: any) {
+            setLinkError(err.message || "Something went wrong");
+        } finally {
+            setIsCreatingLink(false);
+        }
+    };
+
+    const handleToggleLinkActive = async (linkId: string, currentActive: boolean) => {
+        try {
+            const res = await fetch(`/api/payment-links/${linkId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ active: !currentActive }),
+            });
+            if (res.ok) {
+                await fetchPaymentLinks();
+            } else {
+                const data = await res.json();
+                console.error("Failed to toggle payment link active state:", data.error);
+            }
+        } catch (err) {
+            console.error("Error toggling payment link active state:", err);
+        }
+    };
+
+    const handleDeleteLink = async (linkId: string) => {
+        if (!confirm("Are you sure you want to delete this payment link?")) return;
+        try {
+            const res = await fetch(`/api/payment-links/${linkId}`, {
+                method: "DELETE",
+            });
+            if (res.ok) {
+                await fetchPaymentLinks();
+            } else {
+                const data = await res.json();
+                console.error("Failed to delete payment link:", data.error);
+            }
+        } catch (err) {
+            console.error("Error deleting payment link:", err);
+        }
+    };
+
+    const handleCopyLink = (linkId: string) => {
+        const url = `${window.location.origin}/pay/${linkId}`;
+        navigator.clipboard.writeText(url);
+        setLinkCopyFeedback(prev => ({ ...prev, [linkId]: true }));
+        setTimeout(() => {
+            setLinkCopyFeedback(prev => ({ ...prev, [linkId]: false }));
+        }, 2000);
+    };
 
     const fetchApiKeys = async () => {
         setIsKeysLoading(true);
@@ -566,6 +718,7 @@ export default function DashboardPage() {
             fetchApiKeys(),
             fetchWebhookEndpoints(),
             fetchWebhookEvents(),
+            fetchPaymentLinks(),
         ]);
     }, [sessionWallet]);
 
@@ -1512,6 +1665,227 @@ Responsibilities:
         );
     };
 
+    const renderPaymentLinksTab = () => {
+        if (isConnected && address && !sessionWallet && !embeddedWallet) {
+            return (
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                    <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
+                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                    <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                        To protect your payment configurations and links, please sign a secure message using your connected wallet.
+                    </p>
+                    <button
+                        onClick={handleBackendLogin}
+                        disabled={isLoggingIn}
+                        className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                    >
+                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                        Authenticate Developer Portal
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-8">
+                {/* Create Payment Link Form */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <Link2 className={`w-4 h-4 ${primaryColorText}`} />
+                            Create Hosted Payment Link
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Generate direct checkout links for individual purchases. Customers will pay USDC on the Arc Network.
+                        </p>
+                    </div>
+
+                    <form onSubmit={handleCreatePaymentLink} className="space-y-4 font-sans text-xs">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Product Title *</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Pro Membership Key"
+                                    value={linkTitle}
+                                    onChange={(e) => setLinkTitle(e.target.value)}
+                                    required
+                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount *</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    placeholder="e.g. 15.00"
+                                    value={linkAmountUsdc}
+                                    onChange={(e) => setLinkAmountUsdc(e.target.value)}
+                                    required
+                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Description</label>
+                            <textarea
+                                placeholder="Describe what the customer gets with this payment link..."
+                                value={linkDescription}
+                                onChange={(e) => setLinkDescription(e.target.value)}
+                                rows={3}
+                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Expires At (Optional)</label>
+                                <input
+                                    type="datetime-local"
+                                    value={linkExpiresAt}
+                                    onChange={(e) => setLinkExpiresAt(e.target.value)}
+                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">External Reference (Optional)</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. internal-sku-102"
+                                    value={linkExternalReference}
+                                    onChange={(e) => setLinkExternalReference(e.target.value)}
+                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                />
+                            </div>
+                        </div>
+
+                        {linkError && (
+                            <p className="text-red-400 text-[10px] font-mono font-semibold">{linkError}</p>
+                        )}
+                        {linkSuccess && (
+                            <p className="text-emerald-400 text-[10px] font-mono font-semibold">{linkSuccess}</p>
+                        )}
+
+                        <div className="flex justify-end pt-2">
+                            <button
+                                type="submit"
+                                disabled={isCreatingLink || !linkTitle || !linkAmountUsdc}
+                                className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 font-sans"
+                            >
+                                {isCreatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                                Create Link
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                {/* Existing Payment Links List */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2">Hosted Payment Links</h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Manage your created hosted payment links, monitor their status, and copy links for customers.
+                        </p>
+                    </div>
+
+                    {isLinksLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                        </div>
+                    ) : paymentLinks.length === 0 ? (
+                        <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
+                            <p className="text-white/40 text-xs font-sans">No payment links created yet.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full border-collapse font-sans text-xs">
+                                <thead>
+                                    <tr className="border-b border-white/5 text-[9px] uppercase tracking-wider text-white/40 text-left font-sans">
+                                        <th className="pb-3 pr-4 font-bold">Title</th>
+                                        <th className="pb-3 px-4 font-bold">Amount</th>
+                                        <th className="pb-3 px-4 font-bold">Reference</th>
+                                        <th className="pb-3 px-4 font-bold">Expiration</th>
+                                        <th className="pb-3 px-4 font-bold">Status</th>
+                                        <th className="pb-3 pl-4 font-bold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5 font-sans">
+                                    {paymentLinks.map((link) => {
+                                        const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+                                        const status = !link.active 
+                                            ? "Inactive" 
+                                            : isExpired 
+                                                ? "Expired" 
+                                                : "Active";
+
+                                        return (
+                                            <tr key={link.id} className="hover:bg-white/[0.01] transition-colors">
+                                                <td className="py-4 pr-4">
+                                                    <div className="font-bold text-white">{link.title}</div>
+                                                    {link.description && (
+                                                        <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
+                                                    )}
+                                                </td>
+                                                <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
+                                                    ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                </td>
+                                                <td className="py-4 px-4 text-white/60 font-mono">
+                                                    {link.external_reference || "-"}
+                                                </td>
+                                                <td className="py-4 px-4 text-white/50">
+                                                    {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
+                                                </td>
+                                                <td className="py-4 px-4">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                                                        status === "Active"
+                                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                            : status === "Expired"
+                                                                ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                                                : "bg-white/5 border-white/10 text-white/40"
+                                                    }`}>
+                                                        {status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 pl-4 text-right space-x-2">
+                                                    <button
+                                                        onClick={() => handleCopyLink(link.id)}
+                                                        className="px-2.5 py-1 rounded bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all"
+                                                    >
+                                                        {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleToggleLinkActive(link.id, link.active)}
+                                                        className={`px-2.5 py-1 rounded border text-[10px] font-bold uppercase transition-all ${
+                                                            link.active
+                                                                ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
+                                                                : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
+                                                        }`}
+                                                    >
+                                                        {link.active ? "Deactivate" : "Activate"}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteLink(link.id)}
+                                                        className="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const renderView = () => {
         if (!isPremium && ["apikeys", "checkout", "webhooks"].includes(activeTab)) {
             const labelMap = {
@@ -1523,6 +1897,9 @@ Responsibilities:
         }
 
         switch (activeTab) {
+            case "payment-links":
+                return renderPaymentLinksTab();
+
             case "analytics":
                 return (
                     <AnalyticsDashboard
@@ -1739,7 +2116,7 @@ Responsibilities:
                                     <p className="text-xs text-white/50 leading-relaxed">
                                         {isPremium 
                                             ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
-                                            : "Upgrade to Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
+                                    : "Upgrade to Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
                                         }
                                     </p>
                                 </div>
@@ -1747,184 +2124,215 @@ Responsibilities:
                         </div>
 
                         {isPremium ? (
-                            <>
-                                {/* PAST_DUE Warning Banner */}
-                                {dbSubscriptionStatus === "PAST_DUE" && (
-                                    <div className="liquid-glass border border-amber-500/20 rounded-3xl p-6 shadow-2xl space-y-4 bg-amber-500/[0.02]">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
-                                                <AlertTriangle className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Grace Period</h3>
-                                                <p className="text-xs text-white/50">Payment failed — access temporarily preserved</p>
-                                            </div>
-                                        </div>
-                                        <p className="text-xs text-white/70 leading-relaxed font-sans">
-                                            Your Premium renewal payment could not be processed. Premium access remains active during the grace period. Please restore wallet balance or allowance to avoid interruption.
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-4 bg-black/40 border border-white/5 rounded-2xl p-4">
-                                            <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                                <p className="text-xs font-semibold text-amber-400">Attempt {downgradeFailures} of 3</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
-                                                <p className="text-xs font-semibold text-white/80">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Payout Rerouting Controls */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <ArrowRightLeft className="w-4 h-4 text-[#d4a853]" />
-                                        Fund Rerouting
-                                    </h3>
-
-                                    {/* Current Destination */}
-                                    <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
-                                        {payoutDestination ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                                <div className="lg:col-span-2 space-y-6">
+                                    {/* PAST_DUE Warning Banner */}
+                                    {dbSubscriptionStatus === "PAST_DUE" && (
+                                        <div className="liquid-glass border border-amber-500/20 rounded-3xl p-6 shadow-2xl space-y-4 bg-amber-500/[0.02]">
                                             <div className="flex items-center gap-3">
-                                                <code className="text-sm font-mono text-[#d4a853] break-all">{payoutDestination}</code>
+                                                <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
+                                                    <AlertTriangle className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Grace Period</h3>
+                                                    <p className="text-xs text-white/50">Payment failed — access temporarily preserved</p>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-white/70 leading-relaxed font-sans">
+                                                Your Premium renewal payment could not be processed. Premium access remains active during the grace period. Please restore wallet balance or allowance to avoid interruption.
+                                            </p>
+                                            <div className="grid grid-cols-2 gap-4 bg-black/40 border border-white/5 rounded-2xl p-4">
+                                                <div>
+                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                    <p className="text-xs font-semibold text-amber-400">Attempt {downgradeFailures} of 3</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Grace Period</p>
+                                                    <p className="text-xs font-semibold text-white/80">{3 - downgradeFailures} {3 - downgradeFailures === 1 ? "day" : "days"} remaining</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Payout Rerouting Controls */}
+                                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <ArrowRightLeft className="w-4 h-4 text-[#d4a853]" />
+                                            Fund Rerouting
+                                        </h3>
+
+                                        {/* Current Destination */}
+                                        <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Current Payout Destination</p>
+                                            {payoutDestination ? (
+                                                <div className="flex items-center gap-3">
+                                                    <code className="text-sm font-mono text-[#d4a853] break-all">{payoutDestination}</code>
+                                                    <button
+                                                        onClick={() => handleCopy(payoutDestination, "Payout Destination")}
+                                                        className="p-1.5 text-white/30 hover:text-white rounded-lg hover:bg-white/5 transition-all flex-shrink-0"
+                                                    >
+                                                        {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#00d2b4]" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-white/50">Default — funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
+                                            )}
+                                        </div>
+
+                                        {/* Set New Destination */}
+                                        <div>
+                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
+                                                New Destination Address
+                                            </label>
+                                            <div className="flex gap-3">
+                                                <input 
+                                                    type="text" 
+                                                    value={rerouteAddress} 
+                                                    onChange={(e) => setRerouteAddress(e.target.value)}
+                                                    placeholder="0x... cold storage, multisig, or ledger address"
+                                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
+                                                />
                                                 <button
-                                                    onClick={() => handleCopy(payoutDestination, "Payout Destination")}
-                                                    className="p-1.5 text-white/30 hover:text-white rounded-lg hover:bg-white/5 transition-all flex-shrink-0"
+                                                    onClick={handleReroute}
+                                                    disabled={isRerouting || !rerouteAddress}
+                                                    className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
                                                 >
-                                                    {copiedText === "Payout Destination" ? <Check className="w-3.5 h-3.5 text-[#00d2b4]" /> : <Copy className="w-3.5 h-3.5" />}
+                                                    {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+                                                    Reroute
                                                 </button>
                                             </div>
-                                        ) : (
-                                            <p className="text-sm text-white/50">Default — funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
-                                        )}
+                                            {rerouteSuccess && (
+                                                <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain successfully!</p>
+                                            )}
+                                            {premiumError && (
+                                                <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    {/* Set New Destination */}
-                                    <div>
-                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
-                                            New Destination Address
-                                        </label>
-                                        <div className="flex gap-3">
-                                            <input 
-                                                type="text" 
-                                                value={rerouteAddress} 
-                                                onChange={(e) => setRerouteAddress(e.target.value)}
-                                                placeholder="0x... cold storage, multisig, or ledger address"
-                                                className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
-                                            />
+                                    {/* Manual Keeper Execution Control */}
+                                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <PlugZap className="w-4 h-4 text-[#d4a853]" />
+                                            Keeper Force Execution
+                                        </h3>
+                                        <p className="text-xs text-white/50 leading-relaxed">
+                                            Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                            <div>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
+                                                <p className="text-xs font-semibold text-white/80">Schedule: Idle (60s cycles)</p>
+                                            </div>
                                             <button
-                                                onClick={handleReroute}
-                                                disabled={isRerouting || !rerouteAddress}
-                                                className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                                onClick={handleTriggerKeeper}
+                                                disabled={isTriggeringKeeper}
+                                                className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                             >
-                                                {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-                                                Reroute
+                                                {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                                Run Keepers
                                             </button>
                                         </div>
-                                        {rerouteSuccess && (
-                                            <p className="text-emerald-400 text-xs mt-3 font-semibold">Payout destination updated on-chain successfully!</p>
+                                        {keeperStatus && (
+                                            <p className="text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
                                         )}
-                                        {premiumError && (
-                                            <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
+                                        {keeperError && (
+                                            <p className="text-red-400 text-xs font-mono break-all">{keeperError}</p>
                                         )}
                                     </div>
-                                </div>
 
-                                {/* Manual Keeper Execution Control */}
-                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <PlugZap className="w-4 h-4 text-[#d4a853]" />
-                                        Keeper Force Execution
-                                    </h3>
-                                    <p className="text-xs text-white/50 leading-relaxed">
-                                        Force the SubScript protocol keepers to check and execute any due subscription payments for your wallet immediately on-chain, bypassing the standard scheduler loop.
-                                    </p>
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
-                                        <div>
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Status</p>
-                                            <p className="text-xs font-semibold text-white/80">Schedule: Idle (60s cycles)</p>
+                                    {/* Subscription Cancellation Control */}
+                                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 shadow-2xl space-y-6 bg-red-500/[0.01]">
+                                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <ShieldAlert className="w-4 h-4 text-red-400" />
+                                            {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Cancel Subscription"}
+                                        </h3>
+                                        <p className="text-xs text-white/50 leading-relaxed font-sans">
+                                            {cancelAtPeriodEnd 
+                                                ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
+                                                : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
+                                            }
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
+                                            <div>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
+                                                <p className="text-xs font-semibold text-white/80">
+                                                     {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
+                                                </p>
+                                            </div>
+                                            {cancelAtPeriodEnd ? (
+                                                <button
+                                                    onClick={handleResumePremium}
+                                                    disabled={isResumingPremium || !isPremium}
+                                                    className="px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                >
+                                                    {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                                    Resume Premium
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={handleCancelPremium}
+                                                    disabled={isCancellingPremium || !isPremium}
+                                                    className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                >
+                                                    {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                                                    Cancel Premium
+                                                </button>
+                                            )}
                                         </div>
-                                        <button
-                                            onClick={handleTriggerKeeper}
-                                            disabled={isTriggeringKeeper}
-                                            className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                        >
-                                            {isTriggeringKeeper ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                            Run Keepers
-                                        </button>
                                     </div>
-                                    {keeperStatus && (
-                                        <p className="text-emerald-400 text-xs font-semibold">{keeperStatus}</p>
-                                    )}
-                                    {keeperError && (
-                                        <p className="text-red-400 text-xs font-mono break-all">{keeperError}</p>
-                                    )}
+
+                                    {/* Premium Features Summary */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        {[
+                                            { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
+                                            { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
+                                            { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
+                                            { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
+                                        ].map((feature, idx) => (
+                                            <div key={idx} className="liquid-glass border border-white/5 rounded-2xl p-5 flex items-start gap-3">
+                                                <div className="p-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] rounded-xl flex-shrink-0">
+                                                    <feature.icon className="w-4 h-4" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-white uppercase tracking-wider mb-0.5">{feature.title}</p>
+                                                    <p className="text-[10px] text-white/40 leading-relaxed">{feature.desc}</p>
+                                                </div>
+                                                <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">Active</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
 
-                                {/* Subscription Cancellation Control */}
-                                <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 shadow-2xl space-y-6 bg-red-500/[0.01]">
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <ShieldAlert className="w-4 h-4 text-red-400" />
-                                        {cancelAtPeriodEnd ? "Subscription Scheduled to End" : "Cancel Subscription"}
-                                    </h3>
-                                    <p className="text-xs text-white/50 leading-relaxed font-sans">
-                                        {cancelAtPeriodEnd 
-                                            ? `Your Premium subscription will remain active until ${currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : "the end of the current period"}. You can resume anytime before that date.`
-                                            : "Cancel your active SubScript Premium subscription. Your Premium benefits will remain active until the end of your current billing period."
-                                        }
-                                    </p>
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-black/40 border border-white/5 rounded-2xl p-5">
-                                        <div>
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest leading-none mb-1">Billing Status</p>
-                                            <p className="text-xs font-semibold text-white/80">
-                                                 {cancelAtPeriodEnd ? "Pending Cancellation" : "Active (Renews monthly)"}
+                                <div className="lg:col-span-1 space-y-6">
+                                    {/* SBT Card Display */}
+                                    {isLoadingSbt ? (
+                                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col items-center justify-center py-12 aspect-[2/3]">
+                                            <Loader2 className="w-8 h-8 animate-spin text-[#d4a853]" />
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mt-4">Loading Access Key...</p>
+                                        </div>
+                                    ) : sbtMetadata?.image ? (
+                                        <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4">
+                                            <h4 className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Soulbound Access Key</h4>
+                                            <div className="relative w-full max-w-[260px] aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 shadow-2xl hover:scale-[1.02] transition-transform duration-300">
+                                                <img src={sbtMetadata.image} alt="SBT Access Key Card" className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="w-full text-center space-y-1 font-mono text-[9px]">
+                                                <p className="text-[#d4a853] font-bold">Token ID: #{sbtTokenId}</p>
+                                                <p className="text-white/30">Contract: {process.env.NEXT_PUBLIC_SBT_CONTRACT_ADDRESS || "0x..."}</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl text-center py-12 font-sans space-y-3">
+                                            <Crown className="w-8 h-8 text-white/20 mx-auto" />
+                                            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Soulbound Key Pending</h4>
+                                            <p className="text-[10px] text-white/40 leading-relaxed">
+                                                Your Soulbound Access Key is being minted on-chain. This usually takes less than a minute.
                                             </p>
                                         </div>
-                                        {cancelAtPeriodEnd ? (
-                                            <button
-                                                onClick={handleResumePremium}
-                                                disabled={isResumingPremium || !isPremium}
-                                                className="px-5 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                            >
-                                                {isResumingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                                Continue Subscription
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={handleCancelPremium}
-                                                disabled={isCancellingPremium || !isPremium}
-                                                className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                            >
-                                                {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                                                Cancel Premium Plan
-                                            </button>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
-
-                                {/* Premium Features Summary */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    {[
-                                        { icon: ArrowRightLeft, title: "Fund Rerouting", desc: "Route subscription funds to cold storage, multisig, or custom wallets.", active: true },
-                                        { icon: Activity, title: "Priority Execution", desc: "Keeper bots prioritize your subscription renewals in the execution queue.", active: true },
-                                        { icon: Webhook, title: "Advanced Webhooks", desc: "Full webhook event stream with payload inspection and replay capability.", active: true },
-                                        { icon: Key, title: "Full API Access", desc: "Publishable and secret API keys for backend SDK integration.", active: true },
-                                    ].map((feature, idx) => (
-                                        <div key={idx} className="liquid-glass border border-white/5 rounded-2xl p-5 flex items-start gap-3">
-                                            <div className="p-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] rounded-xl flex-shrink-0">
-                                                <feature.icon className="w-4 h-4" />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-white uppercase tracking-wider mb-0.5">{feature.title}</p>
-                                                <p className="text-[10px] text-white/40 leading-relaxed">{feature.desc}</p>
-                                            </div>
-                                            <span className="ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">Active</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
+                            </div>
                         ) : (
                             /* Upgrade CTA for Standard tier */
                             <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
@@ -2698,6 +3106,7 @@ Responsibilities:
                     setIsWithdrawOpen(false);
                 }}
                 isWithdrawing={isWithdrawing}
+                isPremium={isPremium}
             />
             <DepositModal
                 isOpen={isDepositOpen}

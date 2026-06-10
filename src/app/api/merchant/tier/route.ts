@@ -26,7 +26,7 @@ export async function GET(request: Request) {
                 .maybeSingle(),
             supabase
                 .from("subscriptions")
-                .select("subscription_id, cancel_at_period_end, next_billing_date, status, downgrade_failures")
+                .select("subscription_id, cancel_at_period_end, next_billing_date, status, downgrade_failures, sbt_token_id")
                 .eq("merchant_address", address.toLowerCase())
                 .eq("tier", 1)
                 .in("status", ["ACTIVE", "FAILED", "PAST_DUE"])
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
         if (merchantRes.error) {
             console.error("Error querying merchant tier:", merchantRes.error);
-            return NextResponse.json({ tier: 0, subscriptionId: null, cancelAtPeriodEnd: false, nextBillingDate: null, status: null, downgradeFailures: 0 }, { status: 200 });
+            return NextResponse.json({ tier: 0, subscriptionId: null, cancelAtPeriodEnd: false, nextBillingDate: null, status: null, downgradeFailures: 0, sbtTokenId: null }, { status: 200 });
         }
 
         const tier = merchantRes.data ? Number(merchantRes.data.tier) : 0;
@@ -44,13 +44,15 @@ export async function GET(request: Request) {
         const nextBillingDate = subRes.data ? subRes.data.next_billing_date : null;
         const status = subRes.data ? subRes.data.status : null;
         const downgradeFailures = subRes.data ? Number(subRes.data.downgrade_failures || 0) : 0;
+        const sbtTokenId = subRes.data ? subRes.data.sbt_token_id : null;
         return NextResponse.json({ 
             tier, 
             subscriptionId, 
             cancelAtPeriodEnd, 
             nextBillingDate,
             status,
-            downgradeFailures
+            downgradeFailures,
+            sbtTokenId
         }, { status: 200 });
     } catch (error) {
         console.error("Tier API error:", error);

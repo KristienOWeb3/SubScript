@@ -129,6 +129,24 @@ export async function activateSubscription({
             throw rpcError;
         }
 
+        /* Enqueue SBT minting job in database */
+        const { error: mintJobError } = await supabase
+            .from("sbt_mint_jobs")
+            .insert({
+                subscription_id: premiumSubId,
+                recipient_address: normalizedUser,
+                status: "PENDING",
+                attempts: 0,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+
+        if (mintJobError) {
+            console.error(`[db_updated] Failed to enqueue SBT minting job: ${mintJobError.message}`);
+        } else {
+            console.log(`[db_updated] Successfully enqueued SBT minting job for subscription ${premiumSubId}`);
+        }
+
         /* 5. Insert Premium Activation Audit Record */
         const { error: auditError } = await supabase
             .from("premium_upgrade_events")
