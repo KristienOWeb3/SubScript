@@ -398,7 +398,7 @@ export default function WithdrawModal({
                                 >
                                     {isWithdrawing ? (
                                         <>
-                                            <Loader2 className="w-4 h-4 animate-spin" /> Executing Private Withdrawal...
+                                            Executing Private Withdrawal...
                                         </>
                                     ) : (
                                         <>
@@ -497,7 +497,7 @@ export default function WithdrawModal({
                                 >
                                     {isBatchExecuting ? (
                                         <>
-                                            <Loader2 className="w-4 h-4 animate-spin" /> Processing Batch Transfers...
+                                            Processing Batch Transfers...
                                         </>
                                     ) : (
                                         <>

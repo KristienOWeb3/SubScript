@@ -15,9 +15,13 @@ describe("SubScript Hardening & Chaos Testing", function () {
     const MockUSDC = await ethers.getContractFactory("MockUSDC");
     const usdc = await MockUSDC.deploy();
 
-    /* Deploy SubScript */
-    const SubScript = await ethers.getContractFactory("SubScript");
-    const subScript = await SubScript.deploy(await usdc.getAddress());
+    /* Deploy MockStableFX */
+    const MockStableFX = await ethers.getContractFactory("MockStableFX");
+    const stableFX = await MockStableFX.deploy();
+
+    /* Deploy SubScriptPSA */
+    const SubScript = await ethers.getContractFactory("SubScriptPSA");
+    const subScript = await SubScript.deploy(await usdc.getAddress(), await stableFX.getAddress());
 
     /* Mint USDC and approve */
     const INITIAL_BAL = ethers.parseUnits("5000", 6);
@@ -48,10 +52,14 @@ describe("SubScript Hardening & Chaos Testing", function () {
       /* Deploy MaliciousToken */
       const MaliciousToken = await ethers.getContractFactory("MaliciousToken");
       const malToken = await MaliciousToken.deploy();
+
+      /* Deploy MockStableFX */
+      const MockStableFX = await ethers.getContractFactory("MockStableFX");
+      const stableFX = await MockStableFX.deploy();
       
-      /* Deploy SubScript pointing to MaliciousToken */
-      const SubScript = await ethers.getContractFactory("SubScript");
-      const subScript = await SubScript.deploy(await malToken.getAddress());
+      /* Deploy SubScriptPSA pointing to MaliciousToken and MockStableFX */
+      const SubScript = await ethers.getContractFactory("SubScriptPSA");
+      const subScript = await SubScript.deploy(await malToken.getAddress(), await stableFX.getAddress());
       
       /* Deploy ReentrancyAttacker pointing to subScript */
       const ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");

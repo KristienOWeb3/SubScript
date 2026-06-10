@@ -57,3 +57,29 @@ export const ARC_MAINNET = {
     },
   },
 } as const;
+
+/* CCTP Configuration mapping chainId -> { tokenMessenger, usdc, name } */
+export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string }> = {
+  1: {
+    tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+    usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    name: "Ethereum Mainnet",
+  },
+  8453: {
+    tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    name: "Base Mainnet",
+  },
+  11155111: {
+    tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    name: "Ethereum Sepolia",
+  },
+  84532: {
+    tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    name: "Base Sepolia",
+  },
+} as const;
+
+export const ARC_CCTP_DOMAIN_ID = 26 as const;
