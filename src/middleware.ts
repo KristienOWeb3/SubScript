@@ -73,51 +73,61 @@ export async function middleware(request: NextRequest) {
         /* Read user's IP address */
         const ip = (request as any).ip || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1";
 
-        /* Handle CLI Rate Limits first */
-        if (pathname === "/api/cli/session") {
-            const limiter = request.method === "POST" ? cliSessionCreateLimiter : cliSessionValidateLimiter;
-            const { success } = await limiter.limit(ip);
-            if (!success) {
-                return new NextResponse(
-                    JSON.stringify({ error: "Too Many Requests" }),
-                    { status: 429, headers: { "Content-Type": "application/json" } }
-                );
-            }
-        } else if (pathname === "/api/cli/analytics") {
-            const { success } = await cliTelemetryLimiter.limit(ip);
-            if (!success) {
-                return new NextResponse(
-                    JSON.stringify({ error: "Too Many Requests" }),
-                    { status: 429, headers: { "Content-Type": "application/json" } }
-                );
-            }
-        } else {
-            /* Existing Web/Dashboard API Rate Limiting */
-            const isAuthRoute =
-                pathname === "/api/auth/login" ||
-                pathname === "/api/auth/otp/verify" ||
-                pathname === "/api/auth/verify-signature" ||
-                pathname === "/api/auth/otp/send" ||
-                pathname === "/api/auth/social";
+        /* If Upstash Redis is not configured, bypass rate limiting (fail-open) */
+        const isRedisConfigured = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
 
-            if (isAuthRoute) {
-                /* Execute the authLimiter rate limit check */
-                const { success } = await authLimiter.limit(ip);
-                if (!success) {
-                    return new NextResponse(
-                        JSON.stringify({ error: "Too Many Requests" }),
-                        { status: 429, headers: { "Content-Type": "application/json" } }
-                    );
+        if (isRedisConfigured) {
+            try {
+                /* Handle CLI Rate Limits first */
+                if (pathname === "/api/cli/session") {
+                    const limiter = request.method === "POST" ? cliSessionCreateLimiter : cliSessionValidateLimiter;
+                    const { success } = await limiter.limit(ip);
+                    if (!success) {
+                        return new NextResponse(
+                            JSON.stringify({ error: "Too Many Requests" }),
+                            { status: 429, headers: { "Content-Type": "application/json" } }
+                        );
+                    }
+                } else if (pathname === "/api/cli/analytics") {
+                    const { success } = await cliTelemetryLimiter.limit(ip);
+                    if (!success) {
+                        return new NextResponse(
+                            JSON.stringify({ error: "Too Many Requests" }),
+                            { status: 429, headers: { "Content-Type": "application/json" } }
+                        );
+                    }
+                } else {
+                    /* Existing Web/Dashboard API Rate Limiting */
+                    const isAuthRoute =
+                        pathname === "/api/auth/login" ||
+                        pathname === "/api/auth/otp/verify" ||
+                        pathname === "/api/auth/verify-signature" ||
+                        pathname === "/api/auth/otp/send" ||
+                        pathname === "/api/auth/social";
+
+                    if (isAuthRoute) {
+                        /* Execute the authLimiter rate limit check */
+                        const { success } = await authLimiter.limit(ip);
+                        if (!success) {
+                            return new NextResponse(
+                                JSON.stringify({ error: "Too Many Requests" }),
+                                { status: 429, headers: { "Content-Type": "application/json" } }
+                            );
+                        }
+                    } else {
+                        /* Execute the globalLimiter rate limit check */
+                        const { success } = await globalLimiter.limit(ip);
+                        if (!success) {
+                            return new NextResponse(
+                                JSON.stringify({ error: "Too Many Requests" }),
+                                { status: 429, headers: { "Content-Type": "application/json" } }
+                            );
+                        }
+                    }
                 }
-            } else {
-                /* Execute the globalLimiter rate limit check */
-                const { success } = await globalLimiter.limit(ip);
-                if (!success) {
-                    return new NextResponse(
-                        JSON.stringify({ error: "Too Many Requests" }),
-                        { status: 429, headers: { "Content-Type": "application/json" } }
-                    );
-                }
+            } catch (err) {
+                /* Fail-open on rate limiter error to prevent blocking users */
+                console.error("Rate limiting execution error:", err);
             }
         }
     }
