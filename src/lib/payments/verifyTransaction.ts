@@ -70,7 +70,7 @@ export async function verifyTransaction(
         return { valid: false, error: "Target is not SubScript contract" };
     }
 
-    /* 5. Parse transaction input data to assert it calls createSubscription(TREASURY_ADDRESS, 50 USDC, 30 days) */
+    /* 5. Parse transaction input data to assert it calls createSubscription(TREASURY_ADDRESS, 10 USDC, 30 days) */
     let parsedTx;
     try {
         parsedTx = SUBSCRIPT_INTERFACE.parseTransaction({ data: tx.data, value: tx.value });
@@ -86,8 +86,8 @@ export async function verifyTransaction(
         BigInt(parsedTx.args[1]) !== BigInt(PREMIUM_PRICE) ||
         BigInt(parsedTx.args[2]) !== BigInt(2592000)
     ) {
-        console.error(`[tx_failed_verification] Calldata is not createSubscription to SubScript Treasury address of 50 USDC for 30 days`);
-        return { valid: false, error: "Calldata is not createSubscription to SubScript Treasury address of 50 USDC for 30 days" };
+        console.error(`[tx_failed_verification] Calldata is not createSubscription to SubScript Treasury address of 10 USDC for 30 days`);
+        return { valid: false, error: "Calldata is not createSubscription to SubScript Treasury address of 10 USDC for 30 days" };
     }
 
     /* 6. Verify SubscriptionCreated log in receipt logs */

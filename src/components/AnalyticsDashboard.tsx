@@ -1,7 +1,8 @@
 /* Premium Analytics and Automations Dashboard Component */
 
 import { useMemo, useState, useEffect } from "react";
-import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save } from "lucide-react";
+import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock } from "lucide-react";
+import Link from "next/link";
 
 interface AnalyticsDashboardProps {
     isPremium: boolean;
@@ -467,7 +468,27 @@ export default function AnalyticsDashboard({
                         </div>
                     ) : (
                         /* Automations Tab Content */
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl min-h-[480px] flex flex-col justify-between">
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl min-h-[480px] flex flex-col justify-between relative overflow-hidden">
+                            {!isPremium && (
+                                <div className="absolute inset-0 bg-[#0a0a0c]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6 gap-4 border border-white/5">
+                                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl">
+                                        <Lock className="w-6 h-6" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Privacy Premium Feature</h3>
+                                        <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
+                                            Automated exit surveys and churn recovery templates are exclusive to the Privacy Premium tier. Upgrade your account to unlock automations.
+                                        </p>
+                                    </div>
+                                    <Link
+                                        href="/dashboard/upgrade"
+                                        className="px-6 py-2.5 bg-yellow-300 hover:bg-yellow-200 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-yellow-500/15"
+                                    >
+                                        Upgrade Now
+                                    </Link>
+                                </div>
+                            )}
+
                             {isLoadingTemplate ? (
                                 <div className="flex flex-col items-center justify-center h-80 text-white/40 gap-3">
                                     <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
@@ -487,10 +508,11 @@ export default function AnalyticsDashboard({
                                         </div>
                                         <button
                                             type="button"
+                                            disabled={!isPremium}
                                             onClick={() => setIsActive(!isActive)}
                                             className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                                                 isActive ? "bg-[#00d2b4]" : "bg-white/10"
-                                            }`}
+                                            } ${!isPremium ? "opacity-50 cursor-not-allowed" : ""}`}
                                             aria-label="Toggle exit survey"
                                         >
                                             <span
@@ -509,15 +531,17 @@ export default function AnalyticsDashboard({
                                                     <span className="text-[8px] text-white/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
+                                                        disabled={!isPremium}
                                                         onClick={() => insertVariableToSubject("customer_wallet")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5"
+                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         customer_wallet
                                                     </button>
                                                     <button
                                                         type="button"
+                                                        disabled={!isPremium}
                                                         onClick={() => insertVariableToSubject("subscription_tier")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5"
+                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         subscription_tier
                                                     </button>
@@ -526,10 +550,11 @@ export default function AnalyticsDashboard({
                                             <input
                                                 type="text"
                                                 required
+                                                disabled={!isPremium}
                                                 placeholder="e.g. We want to hear your feedback"
                                                 value={subjectLine}
                                                 onChange={(e) => setSubjectLine(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs"
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                             />
                                         </div>
 
@@ -540,15 +565,17 @@ export default function AnalyticsDashboard({
                                                     <span className="text-[8px] text-white/30 uppercase font-mono">Variables:</span>
                                                     <button
                                                         type="button"
+                                                        disabled={!isPremium}
                                                         onClick={() => insertVariableToBody("customer_wallet")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5"
+                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         customer_wallet
                                                     </button>
                                                     <button
                                                         type="button"
+                                                        disabled={!isPremium}
                                                         onClick={() => insertVariableToBody("subscription_tier")}
-                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5"
+                                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[8px] text-[#00d2b4] hover:text-white transition-all font-mono border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         subscription_tier
                                                     </button>
@@ -557,10 +584,11 @@ export default function AnalyticsDashboard({
                                             <textarea
                                                 required
                                                 rows={8}
+                                                disabled={!isPremium}
                                                 placeholder="Enter exit survey message here..."
                                                 value={bodyContent}
                                                 onChange={(e) => setBodyContent(e.target.value)}
-                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs font-sans whitespace-pre-wrap leading-relaxed"
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors text-xs font-sans whitespace-pre-wrap leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
                                             />
                                         </div>
                                     </div>
@@ -577,7 +605,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                         <button
                                             type="submit"
-                                            disabled={isSavingTemplate}
+                                            disabled={isSavingTemplate || !isPremium}
                                             className="px-6 py-2.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all shrink-0"
                                         >
                                             {isSavingTemplate ? (

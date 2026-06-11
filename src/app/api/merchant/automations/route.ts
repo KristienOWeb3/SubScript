@@ -58,6 +58,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
+        /* Verify merchant tier is PREMIUM */
+        const { data: merchant, error: merchantError } = await supabaseAdmin
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", normalizedUser)
+            .maybeSingle();
+
+        if (merchantError || !merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: Privacy Premium tier required for Automated Churn Recovery" }, { status: 403 });
+        }
+
         const body = await request.json();
         const { isActive, subjectLine, bodyContent } = body;
 

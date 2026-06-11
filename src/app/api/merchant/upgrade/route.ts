@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
         if (
             merchant.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase() ||
-            amount !== BigInt(50000000) ||
+            amount !== BigInt(10000000) ||
             period !== BigInt(2592000)
         ) {
             return NextResponse.json({ error: "Incorrect parameters for premium upgrade subscription" }, { status: 400 });

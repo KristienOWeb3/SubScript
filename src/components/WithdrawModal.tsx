@@ -2,8 +2,9 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2 } from "lucide-react";
+import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2, Lock } from "lucide-react";
 import { ethers } from "ethers";
+import Link from "next/link";
 
 interface WithdrawModalProps {
     isOpen: boolean;
@@ -275,33 +276,31 @@ export default function WithdrawModal({
                             </p>
                         </div>
 
-                        /* Tab Switcher (Premium Merchants only) */
-                        {isPremium && (
-                            <div className="flex bg-white/[0.02] border border-white/5 p-1 rounded-xl mb-6">
-                                <button
-                                    type="button"
-                                    onClick={() => { setPayoutMode("single"); setErrorMsg(null); setBatchSuccessResult(null); }}
-                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                        payoutMode === "single"
-                                            ? "bg-white/5 border border-white/10 text-white shadow-sm"
-                                            : "text-white/40 hover:text-white/70"
-                                    }`}
-                                >
-                                    Single Withdrawal
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setPayoutMode("batch"); setErrorMsg(null); setBatchSuccessResult(null); }}
-                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                        payoutMode === "batch"
-                                            ? "bg-white/5 border border-white/10 text-white shadow-sm"
-                                            : "text-white/40 hover:text-white/70"
-                                    }`}
-                                >
-                                    Batch Payouts (CSV)
-                                </button>
-                            </div>
-                        )}
+                        /* Tab Switcher */
+                        <div className="flex bg-white/[0.02] border border-white/5 p-1 rounded-xl mb-6">
+                            <button
+                                type="button"
+                                onClick={() => { setPayoutMode("single"); setErrorMsg(null); setBatchSuccessResult(null); }}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    payoutMode === "single"
+                                        ? "bg-white/5 border border-white/10 text-white shadow-sm"
+                                        : "text-white/40 hover:text-white/70"
+                                }`}
+                            >
+                                Single Withdrawal
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setPayoutMode("batch"); setErrorMsg(null); setBatchSuccessResult(null); }}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    payoutMode === "batch"
+                                        ? "bg-white/5 border border-white/10 text-white shadow-sm"
+                                        : "text-white/40 hover:text-white/70"
+                                }`}
+                            >
+                                Batch Payouts (CSV)
+                            </button>
+                        </div>
 
                         {payoutMode === "single" ? (
                             /* Single Withdrawal Interface */
@@ -410,101 +409,124 @@ export default function WithdrawModal({
                         ) : (
                             /* Batch Payout Interface */
                             <div>
-                                <div className="space-y-4 mb-5">
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Recipients & Amounts (CSV)</p>
-                                        <button
-                                            type="button"
-                                            onClick={triggerFileSelect}
-                                            className="flex items-center gap-1.5 text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition"
+                                {!isPremium ? (
+                                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl min-h-[300px] flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden bg-[#0a0a0c]/90 backdrop-blur-md z-20">
+                                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl">
+                                            <Lock className="w-6 h-6" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Privacy Premium Feature</h3>
+                                            <p className="text-[10px] text-white/55 max-w-xs leading-relaxed">
+                                                High-throughput Batch Payouts via CSV upload are exclusive to the Privacy Premium tier. Upgrade your account to unlock batch withdrawals.
+                                            </p>
+                                        </div>
+                                        <Link
+                                            href="/dashboard/upgrade"
+                                            onClick={resetStates}
+                                            className="px-6 py-2.5 bg-[#d4a853] hover:brightness-105 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-[#d4a853]/15 text-center"
                                         >
-                                            <Upload className="w-3.5 h-3.5" /> Upload CSV File
-                                        </button>
-                                        <input
-                                            type="file"
-                                            ref={fileInputRef}
-                                            onChange={handleFileUpload}
-                                            accept=".csv,.txt"
-                                            className="hidden"
-                                        />
+                                            Upgrade Now
+                                        </Link>
                                     </div>
+                                ) : (
+                                    <div>
+                                        <div className="space-y-4 mb-5">
+                                            <div className="flex justify-between items-center">
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Recipients & Amounts (CSV)</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={triggerFileSelect}
+                                                    className="flex items-center gap-1.5 text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition"
+                                                >
+                                                    <Upload className="w-3.5 h-3.5" /> Upload CSV File
+                                                </button>
+                                                <input
+                                                    type="file"
+                                                    ref={fileInputRef}
+                                                    onChange={handleFileUpload}
+                                                    accept=".csv,.txt"
+                                                    className="hidden"
+                                                />
+                                            </div>
 
-                                    <textarea
-                                        rows={5}
-                                        placeholder="0xaddress1, 10.50&#10;0xaddress2, 25.00"
-                                        value={batchText}
-                                        onChange={handleTextChange}
-                                        className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-mono text-white placeholder-white/15 focus:outline-none focus:border-red-500 transition-colors"
-                                    />
-                                    <p className="text-[9px] text-white/30 font-mono leading-normal mt-0.5">Format: one entry per line, comma or space separated. Example: 0x71C...8976F, 12.34</p>
-                                </div>
+                                            <textarea
+                                                rows={5}
+                                                placeholder="0xaddress1, 10.50&#10;0xaddress2, 25.00"
+                                                value={batchText}
+                                                onChange={handleTextChange}
+                                                className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-mono text-white placeholder-white/15 focus:outline-none focus:border-red-500 transition-colors"
+                                            />
+                                            <p className="text-[9px] text-white/30 font-mono leading-normal mt-0.5">Format: one entry per line, comma or space separated. Example: 0x71C...8976F, 12.34</p>
+                                        </div>
 
-                                /* Batch Summary Panel */
-                                {batchRecipients.length > 0 && (
-                                    <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 mb-5 space-y-2.5 font-sans text-xs">
-                                        <div className="flex justify-between">
-                                            <span className="text-white/40">Total Recipients:</span>
-                                            <span className="font-bold text-white">{batchRecipients.length}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-white/40">Total Payout Amount:</span>
-                                            <span className="font-bold text-red-400">${batchTotalUsdc.toFixed(2)} USDC</span>
-                                        </div>
-                                        {(invalidRows > 0 || combinedRows > 0) && (
-                                            <div className="pt-2 border-t border-white/5 flex gap-3 text-[9px] font-mono">
-                                                {combinedRows > 0 && (
-                                                    <span className="text-amber-400 font-semibold">{combinedRows} duplicate entries merged</span>
-                                                )}
-                                                {invalidRows > 0 && (
-                                                    <span className="text-red-400 font-semibold">{invalidRows} invalid rows ignored</span>
+                                        {/* Batch Summary Panel */}
+                                        {batchRecipients.length > 0 && (
+                                            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 mb-5 space-y-2.5 font-sans text-xs">
+                                                <div className="flex justify-between">
+                                                    <span className="text-white/40">Total Recipients:</span>
+                                                    <span className="font-bold text-white">{batchRecipients.length}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-white/40">Total Payout Amount:</span>
+                                                    <span className="font-bold text-red-400">${batchTotalUsdc.toFixed(2)} USDC</span>
+                                                </div>
+                                                {(invalidRows > 0 || combinedRows > 0) && (
+                                                    <div className="pt-2 border-t border-white/5 flex gap-3 text-[9px] font-mono">
+                                                        {combinedRows > 0 && (
+                                                            <span className="text-amber-400 font-semibold">{combinedRows} duplicate entries merged</span>
+                                                        )}
+                                                        {invalidRows > 0 && (
+                                                            <span className="text-red-400 font-semibold">{invalidRows} invalid rows ignored</span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
+
+                                        {/* Success Receipt */}
+                                        {batchSuccessResult && (
+                                            <div className="bg-[#10b981]/5 border border-[#10b981]/15 rounded-2xl p-4 mb-5 text-xs text-white/80 space-y-2 flex flex-col items-center">
+                                                <CheckCircle2 className="w-8 h-8 text-[#10b981] mb-1" />
+                                                <p className="font-bold text-[#10b981] text-sm text-center">Batch Payout Executed!</p>
+                                                <div className="w-full space-y-1.5 pt-2 border-t border-[#10b981]/10">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-white/40">Batch Status:</span>
+                                                        <span className="font-bold uppercase text-[#10b981]">{batchSuccessResult.status}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-white/40">Sent:</span>
+                                                        <span>{batchSuccessResult.successfulCount} transfers</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-white/40">Failed:</span>
+                                                        <span>{batchSuccessResult.failedCount} transfers</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {errorMsg && (
+                                            <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
+                                        )}
+
+                                        <button
+                                            type="button"
+                                            onClick={handleBatchConfirm}
+                                            disabled={isBatchExecuting || batchRecipients.length === 0 || batchTotalUsdc > vaultBalance}
+                                            className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+                                        >
+                                            {isBatchExecuting ? (
+                                                <>
+                                                    Processing Batch Transfers...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Confirm Batch Payout <ArrowRight className="w-4 h-4" />
+                                                </>
+                                            )}
+                                        </button>
                                     </div>
                                 )}
-
-                                /* Success Receipt */
-                                {batchSuccessResult && (
-                                    <div className="bg-[#10b981]/5 border border-[#10b981]/15 rounded-2xl p-4 mb-5 text-xs text-white/80 space-y-2 flex flex-col items-center">
-                                        <CheckCircle2 className="w-8 h-8 text-[#10b981] mb-1" />
-                                        <p className="font-bold text-[#10b981] text-sm text-center">Batch Payout Executed!</p>
-                                        <div className="w-full space-y-1.5 pt-2 border-t border-[#10b981]/10">
-                                            <div className="flex justify-between">
-                                                <span className="text-white/40">Batch Status:</span>
-                                                <span className="font-bold uppercase text-[#10b981]">{batchSuccessResult.status}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-white/40">Sent:</span>
-                                                <span>{batchSuccessResult.successfulCount} transfers</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-white/40">Failed:</span>
-                                                <span>{batchSuccessResult.failedCount} transfers</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {errorMsg && (
-                                    <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
-                                )}
-
-                                <button
-                                    type="button"
-                                    onClick={handleBatchConfirm}
-                                    disabled={isBatchExecuting || batchRecipients.length === 0 || batchTotalUsdc > vaultBalance}
-                                    className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
-                                >
-                                    {isBatchExecuting ? (
-                                        <>
-                                            Processing Batch Transfers...
-                                        </>
-                                    ) : (
-                                        <>
-                                            Confirm Batch Payout <ArrowRight className="w-4 h-4" />
-                                        </>
-                                    )}
-                                </button>
                             </div>
                         )}
                     </motion.div>
