@@ -41,7 +41,7 @@ export async function activateSubscription({
         throw fetchError;
     }
 
-    const tierBefore = merchant ? (merchant.tier === "PREMIUM" ? 1 : 0) : 0;
+    const tierBefore = merchant ? (Number(merchant.tier) === 1 ? 1 : 0) : 0;
     const contract = new ethers.Contract(ROUTER_ADDRESS, ROUTER_INTERFACE, adminWallet);
 
     /* 2. On-chain tier check */
@@ -54,7 +54,7 @@ export async function activateSubscription({
 
     let activationTxHash = txHash;
 
-    if (merchant && merchant.tier === "PREMIUM" && currentContractTier >= 1) {
+    if (merchant && Number(merchant.tier) === 1 && currentContractTier >= 1) {
         console.log(`[activation_skipped] Merchant ${normalizedUser} is already premium on-chain and database. requestId: ${requestId}`);
         
         /* Ensure the payment session is marked COMPLETED */

@@ -39,8 +39,8 @@ export async function GET(request: Request) {
             return NextResponse.json({ tier: 0, subscriptionId: null, cancelAtPeriodEnd: false, nextBillingDate: null, status: null, downgradeFailures: 0 }, { status: 200 });
         }
 
-        const dbTierStr = merchantRes.data ? merchantRes.data.tier : "FREE";
-        const tier = dbTierStr === "PREMIUM" ? 1 : 0;
+        const dbTierStr = merchantRes.data ? merchantRes.data.tier : 0;
+        const tier = Number(dbTierStr) === 1 ? 1 : 0;
         
         const subscriptionId = subRes.data ? subRes.data.subscription_id : null;
         const cancelAtPeriodEnd = subRes.data ? !!subRes.data.cancel_at_period_end : false;

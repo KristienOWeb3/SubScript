@@ -18,7 +18,7 @@ export async function GET(request: Request) {
         const { data: premiumMerchants, error: merchantError } = await supabaseAdmin
             .from("merchants")
             .select("wallet_address")
-            .eq("tier", "PREMIUM");
+            .eq("tier", 1);
 
         if (merchantError) {
             console.error("Failed to query premium merchants:", merchantError);
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
                 const { error: updateError } = await supabaseAdmin
                     .from("merchants")
                     .update({
-                        tier: "FREE",
+                        tier: 0,
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", wallet);
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
         }
 
         /* 3. Execute state transitions based on subscription event type */
-        let newTier: "FREE" | "PREMIUM" = "FREE";
+        let newTier: number = 0;
         let actionMessage = "";
 
         if (
@@ -161,14 +161,14 @@ export async function POST(request: Request) {
             event === "payment.executed" || 
             event === "subscription.payment.executed"
         ) {
-            newTier = "PREMIUM";
+            newTier = 1;
             actionMessage = "Upgraded merchant to PREMIUM";
         } else if (
             event === "subscription.cancelled" || 
             event === "subscription.expired" || 
             event === "subscription.payment.failed"
         ) {
-            newTier = "FREE";
+            newTier = 0;
             actionMessage = "Downgraded merchant to FREE";
         } else {
             /* Ignore unhandled events but return 200 */

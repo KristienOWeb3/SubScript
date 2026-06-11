@@ -32,7 +32,7 @@ export async function POST(request: Request) {
             .eq("wallet_address", normalizedUser)
             .maybeSingle();
 
-        if (merchantError || !merchantData || merchantData.tier !== "PREMIUM") {
+        if (merchantError || !merchantData || Number(merchantData.tier) !== 1) {
             return NextResponse.json({ error: "Merchant does not have an active premium tier." }, { status: 400 });
         }
 

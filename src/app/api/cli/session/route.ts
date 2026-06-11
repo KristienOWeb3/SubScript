@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     const tier = merchants.tier;
 
     /* Enforce tier requirements */
-    if (mode === "zk-routed" && tier !== "PREMIUM") {
+    if (mode === "zk-routed" && Number(tier) !== 1) {
       return NextResponse.json(
         { error: "ZK-routed mode requires Tier 1 Premium merchant tier" },
         { status: 403 }

@@ -58,7 +58,7 @@ export async function POST(request: Request) {
             .eq("wallet_address", userWallet)
             .maybeSingle();
 
-        if (merchantData && merchantData.tier === "PREMIUM") {
+        if (merchantData && Number(merchantData.tier) === 1) {
             return NextResponse.json({
                 success: true,
                 message: "Merchant already active premium tier",

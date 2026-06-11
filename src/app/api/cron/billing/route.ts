@@ -80,7 +80,7 @@ export async function POST(request: Request) {
                         .eq("wallet_address", merchantAddress)
                         .maybeSingle();
 
-                    if (mError || !merchant || merchant.tier !== "PREMIUM") {
+                    if (mError || !merchant || Number(merchant.tier) !== 1) {
                         console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not PREMIUM (got ${merchant?.tier}). Skipping downgrade.`);
                         continue;
                     }
@@ -430,7 +430,7 @@ export async function POST(request: Request) {
                 await supabase
                     .from("merchants")
                     .update({
-                        tier: "PREMIUM",
+                        tier: 1,
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", subscriber.toLowerCase());

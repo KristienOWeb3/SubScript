@@ -65,7 +65,7 @@ export async function POST(request: Request) {
             .eq("wallet_address", normalizedUser)
             .maybeSingle();
 
-        if (merchantError || !merchant || merchant.tier !== "PREMIUM") {
+        if (merchantError || !merchant || Number(merchant.tier) !== 1) {
             return NextResponse.json({ error: "Forbidden: Privacy Premium tier required for Automated Churn Recovery" }, { status: 403 });
         }
 
