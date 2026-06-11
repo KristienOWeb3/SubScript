@@ -301,8 +301,6 @@ export default function DashboardPage() {
                 }),
             ]);
 
-            setMerchantTier(Number(tierRaw));
-            setIsPremium(Number(tierRaw) >= 1);
             setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
             setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
             setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));

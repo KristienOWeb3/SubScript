@@ -266,7 +266,7 @@ export async function POST(request: Request) {
                                             parsed &&
                                             parsed.name === "Transfer" &&
                                             parsed.args.from.toLowerCase() === normalizedPayer &&
-                                            parsed.args.to.toLowerCase() === ProtocolConfig.ROUTER_ADDRESS.toLowerCase() &&
+                                            parsed.args.to.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
                                             BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
                                         ) {
                                             logFound = true;

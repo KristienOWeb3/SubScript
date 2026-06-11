@@ -43,7 +43,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
         token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
     });
 
-    const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    const { data: txReceipt, isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
         hash: txHash,
     });
 
@@ -70,12 +70,12 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const arcUsdcBalance = arcBalanceData ? arcBalanceData.value : BigInt(0);
     const invoiceAmount = linkData ? (linkData.amount_usdc ? BigInt(linkData.amount_usdc) : BigInt(linkData.amount || 0)) : BigInt(0);
     const requiredAmount = invoiceAmount;
-    const hasSufficientArcBalance = arcUsdcBalance >= invoiceAmount;
+    const hasSufficientArcBalance = arcBalanceData ? (arcUsdcBalance >= invoiceAmount) : true;
 
-    const cctpOriginChainId = isProd ? 1 : 11155111;
-    const cctpOriginChainName = isProd ? "Ethereum Mainnet" : "Ethereum Sepolia";
+    const cctpOriginChainId = expectedChainId === 5042001 ? 1 : 11155111;
+    const cctpOriginChainName = expectedChainId === 5042001 ? "Ethereum Mainnet" : "Ethereum Sepolia";
 
-    const isCctpMode = !hasSufficientArcBalance;
+    const isCctpMode = isConnected && !hasSufficientArcBalance;
     const isCctpChain = isConnected && chainId === cctpOriginChainId;
 
     const isWrongChain = isConnected && (isCctpMode ? chainId !== cctpOriginChainId : chainId !== expectedChainId);
@@ -232,7 +232,13 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     };
 
     useEffect(() => {
-        if (isConfirmed && txHash && linkData && address && verifiedHash !== txHash) {
+        if (isConfirmed && txReceipt && txHash && linkData && address && verifiedHash !== txHash) {
+            if (txReceipt.status !== "success") {
+                setVerificationError("On-chain transaction reverted or failed.");
+                setIsPaying(false);
+                setIsVerifying(false);
+                return;
+            }
             setVerifiedHash(txHash);
             
             /* Show high-fidelity toast notification */
@@ -262,7 +268,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                     /* Subscribe to real-time status stream via SSE */
                     const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${txHash}`);
                     
-                    eventSource.onmessage = (event) => {
+                    eventSource.addEventListener("status", (event) => {
                         try {
                             const data = JSON.parse(event.data);
                             if (data.status === "PENDING_CONFIRMATIONS") {
@@ -283,7 +289,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                         } catch (e) {
                             console.error("Error parsing event data:", e);
                         }
-                    };
+                    });
 
                     eventSource.onerror = (err) => {
                         console.error("EventSource connection error:", err);
@@ -428,7 +434,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                         <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
                                         {successTxHash && (
                                             <a 
-                                                href={`https://explorer.testnet.arc.network/tx/${successTxHash}`}
+                                                href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1"
