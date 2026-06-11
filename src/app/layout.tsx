@@ -25,7 +25,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-    metadataBase: new URL("https://subscript.network"),
+    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://subscript.network"),
     title: "SubScript | Automated Crypto Subscriptions",
     description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
     alternates: {

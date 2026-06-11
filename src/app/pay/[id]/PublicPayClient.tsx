@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
@@ -30,6 +30,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const { writeContractAsync } = useWriteContract();
     const chainId = useChainId();
     const { switchChainAsync } = useSwitchChain();
+    const publicClient = usePublicClient();
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
@@ -130,6 +131,21 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                     args: [cctpConfig.tokenMessenger, requiredAmount],
                 });
 
+                /* Wait for approval transaction receipt */
+                setVerificationStatus("Waiting for approval transaction confirmation...");
+                if (publicClient) {
+                    const approveReceipt = await publicClient.waitForTransactionReceipt({
+                        hash: approveHash,
+                        timeout: 120_000,
+                    });
+                    if (approveReceipt.status !== "success") {
+                        throw new Error("USDC approval transaction reverted.");
+                    }
+                } else {
+                    /* Fallback: wait 15 seconds if publicClient is unavailable */
+                    await new Promise((resolve) => setTimeout(resolve, 15000));
+                }
+
                 /* Step 2: Call depositForBurn */
                 setVerificationStatus("Initiating cross-chain deposit for burn via CCTP...");
                 const mintRecipientBytes32 = ("0x" + SUBSCRIPT_ROUTER_ADDRESS.slice(2).padStart(64, "0")) as `0x${string}`;
@@ -157,14 +173,8 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                 setTxHash(cctpHash);
                 setSuccessTxHash(cctpHash);
                 setIsVerifying(true);
-                
-                /* Show the toast directly upon transaction submission on the origin chain */
-                setToastMessage("Settled via Malachite");
-                setShowToast(true);
-                setTimeout(() => setShowToast(false), 4000);
-                setVerificationStatus("CCTP transaction submitted successfully!");
+                setVerificationStatus("CCTP transaction submitted. Waiting for confirmation...");
                 setIsPaying(false);
-                setIsVerifying(false);
 
             } catch (err: any) {
                 setVerificationError(err.message || "CCTP payment execution failed");
@@ -203,14 +213,6 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
 
-            if (isCctpChain) {
-                /* CCTP transactions don't require the Arc Network verifyPayment status stream */
-                setVerificationStatus("Payment confirmed and routed via CCTP!");
-                setIsVerifying(false);
-                setIsPaying(false);
-                return;
-            }
-
             const verifyPayment = async () => {
                 try {
                     /* Submit verification job */
@@ -220,7 +222,8 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                         body: JSON.stringify({
                             txHash,
                             paymentLinkId: linkData.id,
-                            payerAddress: address || ""
+                            payerAddress: address || "",
+                            chainId: chainId
                         })
                     });
 
@@ -265,14 +268,14 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
 
                 } catch (err: any) {
                     setVerificationError(err.message || "Payment verification failed");
-                    setIsPaying(false);
                     setIsVerifying(false);
+                    setIsPaying(false);
                 }
             };
 
             verifyPayment();
         }
-    }, [isConfirmed, txHash, linkData, address, verifiedHash]);
+    }, [isConfirmed, txHash, linkData, address, verifiedHash, chainId]);
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-6 relative font-sans">
