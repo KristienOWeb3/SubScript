@@ -3334,7 +3334,7 @@ Responsibilities:
             {/* Dashboard Content */}
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
                 {/* Header Row */}
-                <div className="flex flex-row items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div>
                         <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
                             Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
@@ -3379,9 +3379,9 @@ Responsibilities:
                 ) : isLoading ? (
                     <DashboardSkeleton activeTab={activeTab} />
                 ) : (
-                    <div className="grid grid-cols-4 gap-8 items-start">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="col-span-1 space-y-2">
+                        <div className="lg:col-span-1 space-y-2">
                             {tabs.map((tab) => (
                                 <button
                                     key={tab.id}
@@ -3408,7 +3408,7 @@ Responsibilities:
                         </div>
 
                         {/* View Content */}
-                        <div className="col-span-3 min-h-[500px]">
+                        <div className="lg:col-span-3 min-h-[500px]">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTab}
