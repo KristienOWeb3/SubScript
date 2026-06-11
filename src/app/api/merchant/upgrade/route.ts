@@ -1,15 +1,13 @@
 /* Next.js Server Verifier for Privacy Premium Upgrades */
 import { NextResponse } from "next/server";
 import { createPublicClient, http, decodeFunctionData } from "viem";
-import { PrismaClient } from "@prisma/client";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
     STANDARD_CONTRACT_ADDRESS, 
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS 
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI } from "@/lib/contracts/abis";
-
-const prisma = new PrismaClient();
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
@@ -65,18 +63,25 @@ export async function POST(request: Request) {
         /* 3. Execute the database update */
         const payerAddress = transaction.from;
 
-        await prisma.merchant.upsert({
-            where: { walletAddress: payerAddress },
-            update: { tier: "PREMIUM" },
-            create: {
-                walletAddress: payerAddress,
+        if (!supabaseAdmin) {
+            return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
+        }
+
+        const { error: dbError } = await supabaseAdmin
+            .from("merchants")
+            .upsert({
+                wallet_address: payerAddress.toLowerCase(),
                 tier: "PREMIUM",
-                payoutDestination: payerAddress,
-                availableBalanceUsdc: BigInt(0),
-                reservedBalanceUsdc: BigInt(0),
-                shieldedPayoutsEnabled: false,
-            },
-        });
+                payout_destination: payerAddress.toLowerCase(),
+                available_balance_usdc: 0,
+                reserved_balance_usdc: 0,
+                shielded_payouts_enabled: false,
+            }, { onConflict: "wallet_address" });
+
+        if (dbError) {
+            console.error("Database upsert failed:", dbError);
+            return NextResponse.json({ error: "Database save failure" }, { status: 500 });
+        }
 
         return NextResponse.json({ success: true }, { status: 200 });
     } catch (error: any) {
