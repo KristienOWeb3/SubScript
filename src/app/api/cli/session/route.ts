@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-// Helper to hash token with SHA-256
+/* Helper to hash token with SHA-256 */
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-// GET: Validate and atomically consume onboarding token
+/* GET: Validate and atomically consume onboarding token */
 export async function GET(request: Request) {
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const nowStr = new Date().toISOString();
 
   try {
-    // Atomic update to mark used = true and prevent race conditions (Addition 3)
+    /* Atomic update to mark used = true and prevent race conditions (Addition 3) */
     const { data: sessions, error } = await supabaseAdmin
       .from("cli_sessions")
       .update({ used: true })
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
     const session = sessions[0];
 
-    // Trigger async cleanup of expired sessions (Addition 2)
+    /* Trigger async cleanup of expired sessions (Addition 2) */
     (async () => {
       try {
         await supabaseAdmin
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST: Generate onboarding session token from merchant dashboard
+/* POST: Generate onboarding session token from merchant dashboard */
 export async function POST(request: Request) {
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify merchant and fetch tier
+    /* Verify merchant and fetch tier */
     const { data: merchants, error: merchantErr } = await supabaseAdmin
       .from("merchants")
       .select("wallet_address, tier")
@@ -113,20 +113,20 @@ export async function POST(request: Request) {
 
     const tier = merchants.tier;
 
-    // Enforce tier requirements
-    if (mode === "zk-routed" && tier < 1) {
+    /* Enforce tier requirements */
+    if (mode === "zk-routed" && tier !== "PREMIUM") {
       return NextResponse.json(
         { error: "ZK-routed mode requires Tier 1 Premium merchant tier" },
         { status: 403 }
       );
     }
 
-    // Generate raw secure token
+    /* Generate raw secure token */
     const rawToken = "sub_cli_" + crypto.randomBytes(24).toString("hex");
     const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes (Phase 2)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); /* 15 minutes (Phase 2) */
 
-    // Insert session hash with algorithm metadata (Addition 1)
+    /* Insert session hash with algorithm metadata (Addition 1) */
     const { error: insertErr } = await supabaseAdmin
       .from("cli_sessions")
       .insert({

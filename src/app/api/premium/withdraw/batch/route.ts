@@ -92,13 +92,19 @@ export async function POST(request: Request) {
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
 
-        if (merchError || !merchant || Number(merchant.tier) < 1) {
+        if (merchError || !merchant || merchant.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Forbidden: Premium merchant tier required for batch payouts" }, { status: 403 });
         }
 
         const isShielded = !!merchant.shielded_payouts_enabled;
-        if (isShielded && (!viewKey || typeof viewKey !== "string")) {
-            return NextResponse.json({ error: "Bad Request: viewKey is required for shielded payouts" }, { status: 400 });
+        if (isShielded) {
+            if (!viewKey || typeof viewKey !== "string") {
+                return NextResponse.json({ error: "Bad Request: viewKey is required for shielded payouts" }, { status: 400 });
+            }
+            const calculatedHash = ethers.keccak256(viewKey);
+            if (calculatedHash.toLowerCase() !== merchant.view_key_hash?.toLowerCase()) {
+                return NextResponse.json({ error: "Forbidden: Invalid viewKey provided" }, { status: 403 });
+            }
         }
 
         /* Create idempotency key in processing state */

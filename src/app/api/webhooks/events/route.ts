@@ -18,7 +18,7 @@ async function checkMerchantPremium(supabase: any, walletAddress: string): Promi
         .eq("wallet_address", walletAddress.toLowerCase())
         .maybeSingle();
     if (error || !merchant) return false;
-    return merchant.tier >= 1;
+    return merchant.tier === "PREMIUM";
 }
 
 

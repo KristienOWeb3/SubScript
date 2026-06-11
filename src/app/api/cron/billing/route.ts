@@ -80,8 +80,8 @@ export async function POST(request: Request) {
                         .eq("wallet_address", merchantAddress)
                         .maybeSingle();
 
-                    if (mError || !merchant || merchant.tier !== 1) {
-                        console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not 1 (got ${merchant?.tier}). Skipping downgrade.`);
+                    if (mError || !merchant || merchant.tier !== "PREMIUM") {
+                        console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not PREMIUM (got ${merchant?.tier}). Skipping downgrade.`);
                         continue;
                     }
 
@@ -98,11 +98,11 @@ export async function POST(request: Request) {
                         downgradeTxHash = tx.hash;
                     }
 
-                    /* On-chain success confirmed: update DB to tier = 0 and status = CANCELED (Addition 2) */
+                    /* On-chain success confirmed: update DB to tier = 'FREE' and status = CANCELED (Addition 2) */
                     await supabase
                         .from("merchants")
                         .update({
-                            tier: 0,
+                            tier: "FREE",
                             updated_at: new Date().toISOString()
                         })
                         .eq("wallet_address", merchantAddress);
@@ -262,7 +262,7 @@ export async function POST(request: Request) {
                         await supabase
                             .from("merchants")
                             .update({
-                                tier: 0,
+                                tier: "FREE",
                                 updated_at: new Date().toISOString()
                             })
                             .eq("wallet_address", subscriberAddress.toLowerCase());
@@ -338,7 +338,7 @@ export async function POST(request: Request) {
                     await supabase
                         .from("merchants")
                         .update({
-                            tier: 0,
+                            tier: "FREE",
                             updated_at: new Date().toISOString()
                         })
                         .eq("wallet_address", subscriber.toLowerCase());
@@ -430,7 +430,7 @@ export async function POST(request: Request) {
                 await supabase
                     .from("merchants")
                     .update({
-                        tier: 1,
+                        tier: "PREMIUM",
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", subscriber.toLowerCase());

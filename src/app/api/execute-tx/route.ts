@@ -152,8 +152,8 @@ export async function POST(request: Request) {
             if (merchantErr) {
                 console.error(`[execute-tx] Failed to query merchant: ${merchantErr.message}`);
             }
-            const dbMerchantTier = merchantData ? merchantData.tier : 0;
-            if (dbMerchantTier < 1) {
+            const dbMerchantTier = merchantData ? merchantData.tier : "FREE";
+            if (dbMerchantTier !== "PREMIUM") {
                 console.warn(`[execute-tx] Forbidden: Action ${action} requires active premium tier for merchant ${merchantToCheck}. requestId: ${requestId}`);
                 return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
             }

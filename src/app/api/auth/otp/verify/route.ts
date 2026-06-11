@@ -93,7 +93,7 @@ export async function POST(request: Request) {
                 .from("merchants")
                 .upsert({
                     wallet_address: walletAddress.toLowerCase(),
-                    tier: 0
+                    tier: "FREE"
                 }, { onConflict: "wallet_address" });
         }
 

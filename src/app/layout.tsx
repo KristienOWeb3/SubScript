@@ -24,8 +24,10 @@ export const viewport: Viewport = {
     viewportFit: "cover",
 };
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://subscript.network";
+
 export const metadata: Metadata = {
-    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://subscript.network"),
+    metadataBase: new URL(appUrl),
     title: "SubScript | Automated Crypto Subscriptions",
     description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
     alternates: {
@@ -34,11 +36,11 @@ export const metadata: Metadata = {
     openGraph: {
         title: "SubScript | Automated Crypto Subscriptions",
         description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
-        url: "https://subscript.network",
+        url: appUrl,
         siteName: "SubScript Protocol",
         images: [
             {
-                url: "/subscript-og.png",
+                url: `${appUrl}/subscript-og.png`,
                 width: 1200,
                 height: 630,
                 alt: "SubScript - Automated Crypto Subscriptions",
@@ -51,7 +53,7 @@ export const metadata: Metadata = {
         card: "summary_large_image",
         title: "SubScript | Automated Crypto Subscriptions",
         description: "SubScript is the best platform to automate your crypto life, manage recurring expenses, and handle subscriptions on-chain.",
-        images: ["/subscript-og.png"],
+        images: [`${appUrl}/subscript-og.png`],
     },
     verification: {
         google: "google-site-verification-placeholder",

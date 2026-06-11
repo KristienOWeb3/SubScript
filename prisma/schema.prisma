@@ -109,21 +109,59 @@ model PaymentLinkPayment {
   @@map("payment_link_payments")
 }
 
-model SbtMintJob {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  subscriptionId   BigInt    @unique @map("subscription_id")
-  recipientAddress String    @map("recipient_address")
-  status           String    @default("PENDING") @map("status")
-  attempts         Int       @default(0)
-  lastError        String?   @map("last_error")
-  lockedAt         DateTime? @map("locked_at")
-  lockedBy         String?   @map("locked_by")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @default(now()) @map("updated_at")
+model Merchant {
+  walletAddress          String           @id @map("wallet_address")
+  tier                   String           @default("FREE") @map("tier")
+  payoutDestination      String?          @map("payout_destination")
+  availableBalanceUsdc   BigInt           @default(0) @map("available_balance_usdc")
+  reservedBalanceUsdc    BigInt           @default(0) @map("reserved_balance_usdc")
+  shieldedPayoutsEnabled Boolean          @default(false) @map("shielded_payouts_enabled")
+  viewKeyHash            String?          @map("view_key_hash")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @default(now()) @map("updated_at")
+  subscriptions          Subscription[]
+  paymentSessions        PaymentSession[]
 
-  @@index([subscriptionId])
+  @@map("merchants")
+}
+
+model Subscription {
+  subscriptionId          BigInt    @id @map("subscription_id")
+  merchantAddress         String    @map("merchant_address")
+  merchant                Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
+  currentNonce            Int       @default(0) @map("current_nonce")
+  lastSettlementTimestamp DateTime? @map("last_settlement_timestamp")
+  billingIntervalSeconds  BigInt    @map("billing_interval_seconds")
+  amountCapUsdc           Decimal   @map("amount_cap_usdc")
+  paymentTxHash           String?   @unique @map("payment_tx_hash")
+  status                  String    @default("PENDING") @map("status")
+  tier                    Int       @default(0) @map("tier")
+  subscriber              String?   @map("subscriber")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @default(now()) @map("updated_at")
+
+  @@index([merchantAddress])
+  @@map("subscriptions")
+}
+
+model PaymentSession {
+  sessionId           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("session_id")
+  merchantAddress     String    @map("merchant_address")
+  merchant            Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
+  txHash              String?   @unique @map("tx_hash")
+  amountExpected      BigInt    @default(10000000) @map("amount_expected")
+  chainId             Int       @default(5042002) @map("chain_id")
+  status              String    @default("PENDING") @map("status")
+  processingBy        String?   @map("processing_by")
+  processingStartedAt DateTime? @map("processing_started_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @map("updated_at")
+  expiresAt           DateTime? @map("expires_at")
+
+  @@index([merchantAddress])
+  @@index([txHash])
   @@index([status])
-  @@map("sbt_mint_jobs")
+  @@map("payment_sessions")
 }
 
 model PayoutBatch {

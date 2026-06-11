@@ -34,7 +34,7 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3, Link2, Zap, QrCode
+    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -2416,18 +2416,22 @@ Responsibilities:
                                                     Enable confidential transaction shielding on-chain. When active, batch payout counterparties and individual transfer amounts will be hidden from public event logs.
                                                 </p>
                                             </div>
-                                            <button
-                                                onClick={handleToggleShielded}
-                                                className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
-                                                    shieldedEnabled ? "bg-[#d4a853]" : "bg-white/10"
-                                                }`}
-                                            >
-                                                <div
-                                                    className={`w-4 h-4 rounded-full bg-black transition-all duration-300 transform ${
-                                                        shieldedEnabled ? "translate-x-5" : "translate-x-0"
+                                            <div className="flex items-center gap-3">
+                                                {!isPremium && <Lock className="w-3.5 h-3.5 text-white/40" />}
+                                                <button
+                                                    onClick={handleToggleShielded}
+                                                    disabled={!isPremium}
+                                                    className={`w-11 h-6 rounded-full p-1 transition-all duration-300 ${
+                                                        !isPremium ? "opacity-50 cursor-not-allowed bg-white/5" : (shieldedEnabled ? "bg-[#d4a853]" : "bg-white/10")
                                                     }`}
-                                                />
-                                            </button>
+                                                >
+                                                    <div
+                                                        className={`w-4 h-4 rounded-full bg-black transition-all duration-300 transform ${
+                                                            shieldedEnabled && isPremium ? "translate-x-5" : "translate-x-0"
+                                                        }`}
+                                                    />
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Governed Access panel containing a generation button for the View Key */}
