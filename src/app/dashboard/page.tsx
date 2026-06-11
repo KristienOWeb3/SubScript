@@ -2621,7 +2621,7 @@ Responsibilities:
                                             </div>
                                             <div className="flex justify-between border-b border-white/5 pb-2">
                                                 <span>Price:</span>
-                                                <span>50 USDC / mo</span>
+                                                <span>10 USDC / mo</span>
                                             </div>
                                             {currentPeriodEnd && (
                                                 <div className="flex justify-between border-b border-white/5 pb-2">
@@ -2651,7 +2651,7 @@ Responsibilities:
                                     </div>
 
                                     <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-extrabold text-[#d4a853]">50 USDC</span>
+                                        <span className="text-3xl font-extrabold text-[#d4a853]">10 USDC</span>
                                         <span className="text-xs text-white/40">/ month</span>
                                     </div>
 

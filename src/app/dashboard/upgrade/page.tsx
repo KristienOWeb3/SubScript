@@ -158,8 +158,8 @@ export default function UpgradePage() {
                 throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
             }
 
-            const planPrice = parseUnits("50", Number(tokenDecimals));
-            const approvalAmount = parseUnits("600", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
+            const planPrice = parseUnits("10", Number(tokenDecimals));
+            const approvalAmount = parseUnits("120", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
             const subscriptionPeriod = 2592000; /* 30 Days */
 
             /* 3. Register intent session in database */
@@ -455,7 +455,7 @@ export default function UpgradePage() {
                                         ZK Enterprise
                                     </h2>
                                     <div className="flex items-baseline justify-center gap-1 mt-4">
-                                        <span className="text-5xl font-extrabold text-white tracking-tight">50</span>
+                                        <span className="text-5xl font-extrabold text-white tracking-tight">10</span>
                                         <span className="text-lg font-bold text-white/60 uppercase font-mono">USDC</span>
                                         <span className="text-xs text-white/40 font-mono">/ month</span>
                                     </div>
