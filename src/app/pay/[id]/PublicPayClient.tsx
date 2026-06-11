@@ -6,8 +6,10 @@ import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock, Zap
+    Wallet, ExternalLink, ArrowRight, Lock, Zap, QrCode
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { motion } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
@@ -37,6 +39,14 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [showQrCode, setShowQrCode] = useState(false);
+    const [checkoutUrl, setCheckoutUrl] = useState("");
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            setCheckoutUrl(window.location.href);
+        }
+    }, [id]);
 
     const { data: balanceData } = useBalance({
         address: address,
@@ -505,6 +515,39 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             </div>
                         )}
 
+                        {checkoutUrl && (
+                            <div className="border-t border-white/5 pt-4 space-y-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowQrCode(!showQrCode)}
+                                    className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                >
+                                    <QrCode className="w-3.5 h-3.5 text-[#00d2b4]" />
+                                    {showQrCode ? "Hide QR Code" : "Pay on Mobile (Scan QR)"}
+                                </button>
+
+                                {showQrCode && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="flex flex-col items-center justify-center space-y-3 bg-black/40 border border-white/5 rounded-2xl p-4 font-sans text-center overflow-hidden"
+                                    >
+                                        <p className="text-[10px] text-white/50 max-w-[200px] leading-relaxed">
+                                            Scan this QR code with your mobile wallet's browser to complete the payment on your phone.
+                                        </p>
+                                        <div className="flex justify-center p-3 bg-white rounded-xl">
+                                            <QRCodeSVG
+                                                value={checkoutUrl}
+                                                size={140}
+                                                level="H"
+                                                bgColor="#ffffff"
+                                                fgColor="#000000"
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol

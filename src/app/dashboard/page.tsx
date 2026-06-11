@@ -98,6 +98,7 @@ export default function DashboardPage() {
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
+    const [createdLinkInfo, setCreatedLinkInfo] = useState<{ id: string; title: string } | null>(null);
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
@@ -425,6 +426,7 @@ export default function DashboardPage() {
         e.preventDefault();
         setLinkError(null);
         setLinkSuccess(null);
+        setCreatedLinkInfo(null);
         setIsCreatingLink(true);
 
         try {
@@ -456,6 +458,7 @@ export default function DashboardPage() {
                 throw new Error(data.error || "Failed to create payment link");
             }
 
+            setCreatedLinkInfo({ id: data.link.id, title: data.link.title });
             setLinkSuccess("Payment link created successfully!");
             setToastMessage("Settled via Malachite");
             setShowToast(true);
@@ -1788,7 +1791,39 @@ Responsibilities:
                             <p className="text-red-400 text-[10px] font-mono font-semibold">{linkError}</p>
                         )}
                         {linkSuccess && (
-                            <p className="text-emerald-400 text-[10px] font-mono font-semibold">{linkSuccess}</p>
+                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 space-y-4 font-sans text-left">
+                                <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                                    Payment link created successfully!
+                                </p>
+                                {createdLinkInfo && (
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
+                                        <span className="text-[11px] font-mono text-white/70 truncate flex-1">
+                                            {`${window.location.origin}/pay/${createdLinkInfo.id}`}
+                                        </span>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const url = `${window.location.origin}/pay/${createdLinkInfo.id}`;
+                                                    setActiveQrCodeLink(url);
+                                                    setActiveQrCodeTitle(createdLinkInfo.title);
+                                                }}
+                                                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
+                                                title="Show QR Code"
+                                            >
+                                                <QrCode className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleCopyLink(createdLinkInfo.id)}
+                                                className="px-3 py-1.5 rounded-lg bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider transition-all"
+                                            >
+                                                {linkCopyFeedback[createdLinkInfo.id] ? "Copied!" : "Copy Link"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         <div className="flex justify-end pt-2">
