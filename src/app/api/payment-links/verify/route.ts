@@ -5,7 +5,7 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { sendWebhookRequest } from "@/lib/webhooks";
-import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
 
 const ERC20_INTERFACE = new ethers.Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
@@ -15,12 +15,13 @@ const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
     "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
 ]);
 
-const CCTP_RPCS: Record<number, string[]> = {
-    1: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"],
-    8453: ["https://mainnet.base.org", "https://base-rpc.publicnode.com"],
-    11155111: ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.ankr.com/eth_sepolia"],
-    84532: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"]
-};
+const CCTP_RPCS: Record<number, string[]> = isProd
+    ? {
+        1: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"]
+      }
+    : {
+        11155111: ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.ankr.com/eth_sepolia"]
+      };
 
 async function getTransactionReceiptWithFallback(chainId: number, txHash: string) {
     const urls = CCTP_RPCS[chainId] || [process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network"];
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
 
         const { txHash, paymentLinkId, payerAddress, chainId: bodyChainId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
-        const isCctp = [1, 8453, 11155111, 84532].includes(Number(chainId));
+        const isCctp = Number(chainId) in CCTP_CONFIG;
 
         if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid txHash" }, { status: 400 });

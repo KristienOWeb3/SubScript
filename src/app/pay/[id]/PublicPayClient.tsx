@@ -14,7 +14,8 @@ import {
     USDC_NATIVE_GAS_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     CCTP_CONFIG,
-    ARC_CCTP_DOMAIN_ID
+    ARC_CCTP_DOMAIN_ID,
+    isProd
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
@@ -56,16 +57,37 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
 
-    const requiredAmount = linkData ? BigInt(linkData.amount_usdc) : BigInt(0);
-    const isInsufficientBalance = isConnected && balanceData && balanceData.value < requiredAmount;
+    const defaultArcChainId = isProd ? 5042001 : 5042002;
+    const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
+    const expectedChainName = expectedChainId === 5042001 ? "Arc Mainnet" : expectedChainId === 5042002 ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
-    /* Determine if the connected chain is a supported CCTP origin chain */
-    const isCctpChain = isConnected && chainId ? chainId in CCTP_CONFIG : false;
+    const { data: arcBalanceData } = useBalance({
+        address: address,
+        token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+        chainId: expectedChainId,
+    });
 
-    /* Determine expected chain ID from the payment link record, or default to Arc Testnet */
-    const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : ARC_TESTNET_CHAIN_ID;
-    const isWrongChain = isConnected && chainId !== expectedChainId && !isCctpChain;
-    const expectedChainName = expectedChainId === ARC_TESTNET_CHAIN_ID ? "Arc Testnet" : `Chain ${expectedChainId}`;
+    const arcUsdcBalance = arcBalanceData ? arcBalanceData.value : BigInt(0);
+    const invoiceAmount = linkData ? (linkData.amount_usdc ? BigInt(linkData.amount_usdc) : BigInt(linkData.amount || 0)) : BigInt(0);
+    const requiredAmount = invoiceAmount;
+    const hasSufficientArcBalance = arcUsdcBalance >= invoiceAmount;
+
+    const cctpOriginChainId = isProd ? 1 : 11155111;
+    const cctpOriginChainName = isProd ? "Ethereum Mainnet" : "Ethereum Sepolia";
+
+    const isCctpMode = !hasSufficientArcBalance;
+    const isCctpChain = isConnected && chainId === cctpOriginChainId;
+
+    const isWrongChain = isConnected && (isCctpMode ? chainId !== cctpOriginChainId : chainId !== expectedChainId);
+    const requiredChainId = isCctpMode ? cctpOriginChainId : expectedChainId;
+    const requiredChainName = isCctpMode ? cctpOriginChainName : expectedChainName;
+
+    const isInsufficientBalance = isConnected && (
+        isCctpMode 
+            ? (chainId === cctpOriginChainId && balanceData && balanceData.value < invoiceAmount)
+            : (chainId === expectedChainId && balanceData && balanceData.value < invoiceAmount)
+    );
+
 
     useEffect(() => {
         if (initialLinkData) {
@@ -97,7 +119,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
 
     const handleSwitchChain = async () => {
         try {
-            await switchChainAsync({ chainId: expectedChainId });
+            await switchChainAsync({ chainId: requiredChainId });
         } catch (err: any) {
             setVerificationError(`Failed to switch network: ${err.message || "User rejected the request"}`);
         }
@@ -108,9 +130,14 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
         setVerificationError(null);
         setVerificationStatus(null);
 
-        /* Guard: prevent cross-chain payment mistakes if not using CCTP */
-        if (chainId !== expectedChainId && !isCctpChain) {
-            setVerificationError(`Wrong network detected. Please switch to ${expectedChainName} before paying.`);
+        /* Strict production burn safeguard */
+        if (!isProd && chainId === 1) {
+            throw new Error("Production burn safeguard: Cannot bridge from Ethereum Mainnet in a testnet environment.");
+        }
+
+        /* Guard: prevent network mismatches based on the current mode (CCTP vs Direct) */
+        if (isCctpMode ? !isCctpChain : chainId !== expectedChainId) {
+            setVerificationError(`Wrong network detected. Please switch to ${requiredChainName} before paying.`);
             return;
         }
 
@@ -361,11 +388,19 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                         <button type="button" onClick={() => disconnect()} className="hover:text-white transition-colors uppercase font-bold">Disconnect</button>
                                     </div>
                                     <div className="flex items-center justify-between mt-1 text-white/60">
-                                        <span>Available Balance:</span>
+                                        <span>Arc Network USDC Balance:</span>
                                         <span className="font-bold text-[#00d2b4]">
-                                            {balanceData ? `${parseFloat(balanceData.formatted).toFixed(2)} USDC` : "0.00 USDC"}
+                                            {parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC
                                         </span>
                                     </div>
+                                    {isCctpMode && (
+                                        <div className="flex items-center justify-between mt-1 text-white/60">
+                                            <span>{cctpOriginChainName} USDC Balance:</span>
+                                            <span className="font-bold text-blue-400">
+                                                {balanceData ? `${parseFloat(balanceData.formatted).toFixed(2)} USDC` : "0.00 USDC"}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {isWrongChain ? (
@@ -375,7 +410,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                             <div>
                                                 <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">Wrong Network</p>
                                                 <p className="text-[10px] text-white/50 mt-0.5 leading-relaxed">
-                                                    Your wallet is connected to a different chain. Switch to <span className="font-bold text-white/70">{expectedChainName}</span> to continue.
+                                                    Your wallet is connected to a different chain. Switch to <span className="font-bold text-white/70">{requiredChainName}</span> to continue.
                                                 </p>
                                             </div>
                                         </div>
@@ -384,7 +419,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                             onClick={handleSwitchChain}
                                             className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                         >
-                                            Switch to {expectedChainName}
+                                            Switch to {requiredChainName}
                                         </button>
                                     </div>
                                 ) : verificationStatus ? (
@@ -411,6 +446,23 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                             </div>
                                         )}
                                         
+                                        {isCctpMode && (
+                                            <div className="liquid-glass border border-blue-500/20 bg-blue-500/[0.03] rounded-2xl p-5 space-y-3 shadow-lg">
+                                                <div className="flex items-start gap-3">
+                                                    <Zap className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                                                    <div className="space-y-1">
+                                                        <h3 className="text-xs font-bold text-white uppercase tracking-wide">CCTP Bridge Top-Up Required</h3>
+                                                        <p className="text-[10px] text-white/60 leading-relaxed font-sans">
+                                                            Your Arc Network balance ({parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC) is insufficient for this ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC payment.
+                                                        </p>
+                                                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                                                            We will automatically burn USDC on <span className="text-blue-300 font-semibold">{cctpOriginChainName}</span> and mint it directly on Arc Network using Circle CCTP to complete your order.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {isInsufficientBalance ? (
                                             <button
                                                 type="button"
@@ -433,7 +485,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                                 ) : isCctpChain ? (
                                                     /* Subscribe seamlessly via CCTP */
                                                     <>
-                                                        Subscribe seamlessly via CCTP <ArrowRight className="w-4 h-4" />
+                                                        Bridge via {cctpOriginChainName} <ArrowRight className="w-4 h-4" />
                                                     </>
                                                 ) : (
                                                     <>

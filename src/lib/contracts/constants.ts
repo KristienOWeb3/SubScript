@@ -4,7 +4,7 @@ export const ARC_MAINNET_CHAIN_ID = 5042001 as const;
 export const MERCHANT_ADDRESS = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295" as const;
 export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
 
-const isProd = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_ENVIRONMENT === "production";
+export const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
 
 export const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C" as const;
 export const STANDARD_CONTRACT_ADDRESS = "0x38594705B7feE26B5E05a04069695A907b725b9f" as const;
@@ -59,28 +59,25 @@ export const ARC_MAINNET = {
   },
 } as const;
 
-/* CCTP Configuration mapping chainId -> { tokenMessenger, usdc, name } */
-export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string }> = {
-  1: {
-    tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
-    usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    name: "Ethereum Mainnet",
-  },
-  8453: {
-    tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    name: "Base Mainnet",
-  },
-  11155111: {
-    tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
-    usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-    name: "Ethereum Sepolia",
-  },
-  84532: {
-    tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
-    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    name: "Base Sepolia",
-  },
-} as const;
+/* CCTP Configuration mapping chainId -> { tokenMessenger, usdc, name, domain } */
+export const CCTP_CONFIG: Record<number, { tokenMessenger: `0x${string}`; usdc: `0x${string}`; name: string; domain: number }> = isProd
+  ? {
+      1: {
+        tokenMessenger: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+        usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        name: "Ethereum Mainnet",
+        domain: 0,
+      },
+    }
+  : {
+      11155111: {
+        tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+        usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        name: "Ethereum Sepolia",
+        domain: 7,
+      },
+    };
 
+/* Arc CCTP Domain ID: 26 for Arc Testnet / TBD_MAINNET_DOMAIN (using 26) for Arc Mainnet */
 export const ARC_CCTP_DOMAIN_ID = 26 as const;
+
