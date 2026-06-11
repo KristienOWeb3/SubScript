@@ -1,55 +1,5 @@
 [
-  {
-    "type": "function",
-    "name": "depositAndCommit",
-    "stateMutability": "nonpayable",
-    "inputs": [
-      {
-        "name": "commitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "verifyAndActivate",
-    "stateMutability": "nonpayable",
-    "inputs": [
-      {
-        "name": "proof",
-        "type": "bytes32[]",
-        "internalType": "bytes32[]"
-      },
-      {
-        "name": "nullifierHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "merchant",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "period",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": []
-  },
+
   {
     "type": "function",
     "name": "withdraw",
@@ -215,37 +165,7 @@
       }
     ]
   },
-  {
-    "type": "event",
-    "name": "SubscriptionActivated",
-    "inputs": [
-      {
-        "name": "nullifierHash",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "merchant",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "period",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
+
   {
     "type": "event",
     "name": "MerchantPayoutRerouted",

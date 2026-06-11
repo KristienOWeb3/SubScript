@@ -14,14 +14,8 @@ contract SubScriptHandler is Test {
     address[] public users;
     address[] public merchants;
 
-    /* Track commitments and secrets */
-    bytes32[] public activeCommitments;
-    mapping(bytes32 => uint256) public commitmentAmounts;
-    mapping(bytes32 => bytes32) public commitmentSecrets;
-
     /* Ghost variables for tracking state */
     uint256 public totalMerchantBalances;
-    uint256 public totalFeesCollected;
 
     constructor(SubScriptRouter _router, MockUSDC _usdc) {
         router = _router;
@@ -34,59 +28,6 @@ contract SubScriptHandler is Test {
 
         merchants.push(address(0x4444444444444444444444444444444444444444));
         merchants.push(address(0x5555555555555555555555555555555555555555));
-    }
-
-    function deposit(uint256 userIndex, uint256 amount, bytes32 secret) public {
-        amount = bound(amount, 1, 1_000_000 * 10**6); /* Bound amount between $1 and $1M USDC */
-        address user = users[userIndex % users.length];
-
-        bytes32 commitment = keccak256(abi.encodePacked(secret));
-
-        vm.startPrank(user);
-        usdc.mint(user, amount);
-        usdc.approve(address(router), amount);
-        router.depositAndCommit(commitment, amount);
-        vm.stopPrank();
-
-        activeCommitments.push(commitment);
-        commitmentAmounts[commitment] = amount;
-        commitmentSecrets[commitment] = secret;
-    }
-
-    function verifyAndActivate(
-        uint256 commitmentIndex,
-        uint256 merchantIndex,
-        uint256 period
-    ) public {
-        if (activeCommitments.length == 0) return;
-        bytes32 commitment = activeCommitments[commitmentIndex % activeCommitments.length];
-        uint256 amount = commitmentAmounts[commitment];
-        bytes32 secret = commitmentSecrets[commitment];
-        if (amount == 0) return;
-
-        address merchant = merchants[merchantIndex % merchants.length];
-        period = bound(period, 1, 365 days);
-
-        bytes32[] memory proof = new bytes32[](2);
-        proof[0] = secret;
-        proof[1] = keccak256(abi.encodePacked(merchant, amount, period));
-
-        /* Derive nullifier hash cryptographically from commitment to model 1-to-1 mapping */
-        bytes32 nullifierHash = keccak256(abi.encodePacked(commitment));
-
-        /* Attempt verification and activation */
-        try router.verifyAndActivate(proof, nullifierHash, merchant, amount, period) {
-            uint256 fee = (amount * 100) / 10000;
-            uint256 netAmount = amount - fee;
-
-            totalMerchantBalances += netAmount;
-            totalFeesCollected += fee;
-
-            /* Remove commitment to prevent reuse in the handler */
-            _removeCommitment(commitmentIndex % activeCommitments.length);
-        } catch {
-            /* Revert is fine, fuzzer might input invalid state (e.g. duplicate nullifier) */
-        }
     }
 
     function withdraw(uint256 merchantIndex) public {
@@ -102,11 +43,6 @@ contract SubScriptHandler is Test {
 
     function getMerchants() external view returns (address[] memory) {
         return merchants;
-    }
-
-    function _removeCommitment(uint256 index) internal {
-        activeCommitments[index] = activeCommitments[activeCommitments.length - 1];
-        activeCommitments.pop();
     }
 }
 
@@ -141,7 +77,6 @@ contract SubScriptInvariants is Test {
     /**
      * @notice Strict Protocol Invariant Condition:
      *         The sum of all tracking balances within our internal ledger mapping (merchantBalances)
-     *         plus accumulated unclaimed protocol fees (if treasury is contract itself, otherwise transferred immediately)
      *         MUST ALWAYS be exactly less than or equal to the total native USDC balance held physically by the contract vault.
      */
     function invariant_ledgerBalancesNotExceedVault() public {

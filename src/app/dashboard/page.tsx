@@ -235,6 +235,15 @@ export default function DashboardPage() {
             setIsTestMode(
                 Boolean(window.navigator.webdriver || document.cookie.includes("subscript_e2e_test=true"))
             );
+            /* Check for upgrade success and show toast */
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get("upgradeSuccess") === "true") {
+                setToastMessage("Privacy Premium activated successfully!");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4000);
+                /* Clean up URL parameter to avoid showing the toast again on refresh */
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
         }
     }, [realAddress, realIsConnected]);
 
@@ -260,9 +269,7 @@ export default function DashboardPage() {
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
     const [activeQrCodeTitle, setActiveQrCodeTitle] = useState("");
 
-    useEffect(() => {
-        setPromptFlowMode(isPremium ? "private" : "standard");
-    }, [isPremium]);
+
 
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
@@ -1042,80 +1049,16 @@ export default function DashboardPage() {
     const handleWithdraw = async (targetAddress?: string) => {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
-        let merchantAddr = (address || "") as Hex;
-        let targetPayout = (targetAddress || payoutDestination || "") as string;
-        let nullifierHash = "";
-        let publicInputHash = "";
         try {
-            if (!merchantAddr) {
-                throw new Error("No merchant wallet address available.");
-            }
-
-            if (
-                !targetPayout ||
-                targetPayout === "0x0000000000000000000000000000000000000000" ||
-                !isAddress(targetPayout)
-            ) {
-                throw new Error("Configure a valid payout destination before withdrawing.");
-            }
-
-            /* Generate random 32-byte burner secret hex */
-            const randomBytes = new Uint8Array(32);
-            if (typeof window !== "undefined" && window.crypto) {
-                window.crypto.getRandomValues(randomBytes);
-            } else {
-                for (let i = 0; i < 32; i++) {
-                    randomBytes[i] = Math.floor(Math.random() * 256);
-                }
-            }
-            const burnerSecret = bytesToHex(randomBytes);
-            
-            /* Compute nullifier hash (unique per withdrawal to prevent double-spend) */
-            nullifierHash = keccak256(encodePacked(["bytes32", "address"], [burnerSecret, merchantAddr]));
-            
-            /* Compute public input hash binding merchant and target, matching contract logic:
-               keccak256(abi.encodePacked(merchant, target)) */
-            publicInputHash = keccak256(encodePacked(["address", "address"], [merchantAddr, targetPayout as Hex]));
-            
-            /* Assemble the proof array: [burnerSecret, publicInputHash] */
-            const proof = [burnerSecret, publicInputHash] as readonly `0x${string}`[];
-            
-            console.log("Generating local proof for private routing...");
-            console.log("Merchant Address:", merchantAddr);
-            console.log("Payout Target:", targetPayout);
-            console.log("Nullifier Hash:", nullifierHash);
-            console.log("Public Input Hash:", publicInputHash);
-            console.log("Proof Payload:", proof);
-            console.log("Local private routing proof simulation completed successfully.");
-
             const txHash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
-                functionName: "withdrawWithProof",
-                args: [proof, nullifierHash, merchantAddr, targetPayout as Hex],
+                functionName: "withdraw",
+                args: [],
             });
 
-            /* Post-Execution Client-Side Audit Sync: Register the broadcasted withdrawal hash */
-            try {
-                await fetch("/api/premium/audit-withdrawal", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        merchantAddress: merchantAddr,
-                        destinationAddress: targetPayout,
-                        amount: vaultBalance,
-                        commitmentHash: publicInputHash,
-                        nullifierHash,
-                        txHash,
-                        proofType: "commit_reveal"
-                    })
-                });
-            } catch (auditErr) {
-                console.error("Failed to submit client withdrawal audit:", auditErr);
-            }
-
             setWithdrawSuccess(true);
-            setToastMessage("Settled via Malachite");
+            setToastMessage("Withdrawal transaction submitted");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
             setTimeout(() => setWithdrawSuccess(false), 4000);
@@ -1123,30 +1066,6 @@ export default function DashboardPage() {
             refetchWalletBalance();
         } catch (err: any) {
             console.error("Withdraw failed:", err);
-
-            /* If the parameters were successfully constructed, record the transaction broadcast failure */
-            if (nullifierHash && publicInputHash) {
-                try {
-                    await fetch("/api/premium/audit-withdrawal", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            merchantAddress: merchantAddr,
-                            destinationAddress: targetPayout,
-                            amount: vaultBalance,
-                            commitmentHash: publicInputHash,
-                            nullifierHash,
-                            txHash: null,
-                            status: "FAILED_PERMANENTLY_CONTRACT",
-                            errorMessage: err.message || "Transaction signature or execution failed.",
-                            proofType: "commit_reveal"
-                        })
-                    });
-                } catch (auditErr) {
-                    console.error("Failed to log failed withdrawal audit:", auditErr);
-                }
-            }
-
             throw err;
         } finally {
             setIsWithdrawing(false);
@@ -1358,7 +1277,7 @@ export default function DashboardPage() {
             return;
         }
 
-        if (!confirm("Are you sure you want to cancel your Premium Plan subscription? Your Premium benefits will remain active until the end of your current billing period.")) {
+        if (!confirm("Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period.")) {
             return;
         }
 
@@ -1378,7 +1297,7 @@ export default function DashboardPage() {
             }
 
             const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-            setPremiumStatus(`Your Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
+            setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
             await refetchBalancesAndTier();
             setTimeout(() => setPremiumStatus(null), 8000);
         } catch (err: any) {
@@ -1413,7 +1332,7 @@ export default function DashboardPage() {
                 throw new Error(resumeData.error || "Failed to resume subscription.");
             }
 
-            setPremiumStatus("Premium renewal has been restored. Your subscription will continue normally.");
+            setPremiumStatus("Privacy Premium renewal has been restored. Your subscription will continue normally.");
             await refetchBalancesAndTier();
             setTimeout(() => setPremiumStatus(null), 6000);
         } catch (err: any) {
@@ -1742,9 +1661,9 @@ Responsibilities:
                     <Crown className="w-12 h-12" />
                 </div>
                 <div className="space-y-3 max-w-md">
-                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Premium Feature Locked</h2>
+                    <h2 className="text-xl font-extrabold text-white uppercase tracking-wider">Privacy Premium Feature Locked</h2>
                     <p className="text-xs text-white/60 leading-relaxed font-sans">
-                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
+                        Access to <span className="font-semibold text-white">{tabLabel}</span> requires an active SubScript Privacy Premium subscription. Upgrade to unlock keys, private checkout generation, and webhook event streaming.
                     </p>
                 </div>
                 <button
@@ -1752,7 +1671,7 @@ Responsibilities:
                     className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)]"
                 >
                     <Crown className="w-4 h-4" />
-                    Upgrade to Premium
+                    Upgrade to Privacy Premium
                 </button>
             </div>
         );
@@ -2307,7 +2226,7 @@ Responsibilities:
                                     <p className="text-xs text-white/50 leading-relaxed">
                                         {isPremium 
                                             ? "You have full access to payout rerouting, priority keeper execution, advanced analytics, and multi-wallet support." 
-                                    : "Upgrade to Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
+                                    : "Upgrade to Privacy Premium to unlock payout rerouting, priority execution, advanced analytics, and more."
                                         }
                                     </p>
                                 </div>
@@ -2582,7 +2501,7 @@ Responsibilities:
                                                     className="px-5 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold border border-red-500/30 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isCancellingPremium ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                                                    Cancel Premium
+                                                    Cancel Privacy Premium
                                                 </button>
                                             )}
                                         </div>
@@ -2617,11 +2536,11 @@ Responsibilities:
                                         <div className="space-y-3 font-mono text-[10px] text-white/60">
                                             <div className="flex justify-between border-b border-white/5 pb-2">
                                                 <span>Tier:</span>
-                                                <span className="text-[#d4a853] font-bold">ZK PREMIUM</span>
+                                                <span className="text-[#d4a853] font-bold">PRIVACY PREMIUM</span>
                                             </div>
                                             <div className="flex justify-between border-b border-white/5 pb-2">
                                                 <span>Price:</span>
-                                                <span>10 USDC / mo</span>
+                                                <span>50 USDC / mo</span>
                                             </div>
                                             {currentPeriodEnd && (
                                                 <div className="flex justify-between border-b border-white/5 pb-2">
@@ -2644,14 +2563,14 @@ Responsibilities:
                             <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
-                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to ZK Premium</h3>
+                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Privacy Premium</h3>
                                         <p className="text-xs text-white/50 leading-relaxed">
                                             Unlock zero-knowledge shielded payouts, fund rerouting to cold storage and multisigs, priority keeper execution, and full API/webhook access.
                                         </p>
                                     </div>
 
                                     <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-extrabold text-[#d4a853]">10 USDC</span>
+                                        <span className="text-3xl font-extrabold text-[#d4a853]">50 USDC</span>
                                         <span className="text-xs text-white/40">/ month</span>
                                     </div>
 
@@ -2670,7 +2589,7 @@ Responsibilities:
                                             "Advanced analytics",
                                             "Full API & webhook access",
                                             "Multi-wallet support",
-                                            "Premium merchant badge"
+                                            "Privacy Premium merchant badge"
                                         ].map((f, i) => (
                                             <div key={i} className="flex items-center gap-2 text-xs text-white/60">
                                                 <Check className="w-3.5 h-3.5 text-[#d4a853] flex-shrink-0" /> {f}
@@ -2976,22 +2895,7 @@ Responsibilities:
                                 <p className="text-[10px] text-white/30 mt-0.5">Configure your subscription settings and copy the setup prompt for your AI agent.</p>
                             </div>
                             <div className="p-6 space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-                                        Payment Flow Mode
-                                    </label>
-                                    <select
-                                        value={promptFlowMode}
-                                        disabled={!isPremium}
-                                        onChange={(e) => setPromptFlowMode(e.target.value as "standard" | "private")}
-                                        className="w-full text-xs p-3 bg-white/[0.02] border border-white/5 rounded-xl text-white/80 focus:outline-none focus:border-[#00d2b4]/40 transition-colors font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <option value="standard" className="bg-[#0a0a0c]">Traceable (Standard)</option>
-                                        <option value="private" disabled={!isPremium} className="bg-[#0a0a0c]">
-                                            Private Routing (Premium) {!isPremium && "🔒 (Premium Only)"}
-                                        </option>
-                                    </select>
-                                </div>
+
 
                                 {/* Configuration Status Card */}
                                 <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center">

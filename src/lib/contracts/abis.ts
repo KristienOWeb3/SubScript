@@ -68,44 +68,9 @@ export const USDC_ERC20_ABI = [
 export const SUBSCRIPT_ROUTER_ABI = [
     {
         type: "function",
-        name: "depositAndCommit",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "commitment", type: "bytes32" },
-            { name: "amount", type: "uint256" },
-        ],
-        outputs: [],
-    },
-    {
-        type: "function",
-        name: "verifyAndActivate",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "proof", type: "bytes32[]" },
-            { name: "nullifierHash", type: "bytes32" },
-            { name: "merchant", type: "address" },
-            { name: "amount", type: "uint256" },
-            { name: "period", type: "uint256" },
-        ],
-        outputs: [],
-    },
-    {
-        type: "function",
         name: "withdraw",
         stateMutability: "nonpayable",
         inputs: [],
-        outputs: [],
-    },
-    {
-        type: "function",
-        name: "withdrawWithProof",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "proof", type: "bytes32[]" },
-            { name: "nullifierHash", type: "bytes32" },
-            { name: "merchant", type: "address" },
-            { name: "target", type: "address" },
-        ],
         outputs: [],
     },
     {
@@ -147,26 +112,6 @@ export const SUBSCRIPT_ROUTER_ABI = [
     },
     {
         type: "event",
-        name: "Deposit",
-        inputs: [
-            { name: "commitment", type: "bytes32", indexed: true },
-            { name: "amount", type: "uint256", indexed: false },
-        ],
-        anonymous: false,
-    },
-    {
-        type: "event",
-        name: "SubscriptionActivated",
-        inputs: [
-            { name: "nullifierHash", type: "bytes32", indexed: true },
-            { name: "merchant", type: "address", indexed: true },
-            { name: "amount", type: "uint256", indexed: false },
-            { name: "period", type: "uint256", indexed: false },
-        ],
-        anonymous: false,
-    },
-    {
-        type: "event",
         name: "MerchantPayoutRerouted",
         inputs: [
             { name: "merchant", type: "address", indexed: true },
@@ -184,6 +129,47 @@ export const SUBSCRIPT_ROUTER_ABI = [
             { name: "_tier", type: "uint8" },
         ],
         outputs: [],
+    },
+    {
+        type: "function",
+        name: "executeBatchPayout",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "recipients", type: "address[]" },
+            { name: "amounts", type: "uint256[]" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "event",
+        name: "BatchPayoutExecuted",
+        inputs: [
+            { name: "merchant", type: "address", indexed: true },
+            { name: "totalAmount", type: "uint256", indexed: false },
+            { name: "recipientCount", type: "uint256", indexed: false },
+        ],
+        anonymous: false,
+    },
+    {
+        type: "function",
+        name: "rescueERC20",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "token", type: "address" },
+            { name: "to", type: "address" },
+            { name: "amount", type: "uint256" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "event",
+        name: "ERC20Rescued",
+        inputs: [
+            { name: "token", type: "address", indexed: true },
+            { name: "recipient", type: "address", indexed: true },
+            { name: "amount", type: "uint256", indexed: false },
+        ],
+        anonymous: false,
     },
 ] as const;
 

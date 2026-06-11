@@ -70,19 +70,6 @@ export default function SubScriptCheckout({
     return BigInt(2592000); /* default to monthly (30 days) */
   }, [interval]);
 
-  type PrivateCheckoutProof = {
-    userAddress: `0x${string}`;
-    planId: string;
-    commitment: `0x${string}`;
-    nullifierHash: `0x${string}`;
-    proof: readonly [`0x${string}`, `0x${string}`];
-    paymentRecipient: `0x${string}`;
-    amount: bigint;
-    periodSeconds: bigint;
-  };
-
-  const isBytes32Hex = (value: string): value is `0x${string}` => /^0x[0-9a-fA-F]{64}$/.test(value);
-
   const getCheckoutErrorMessage = (error: any) => {
     const code = error?.code || error?.cause?.code || error?.details?.code;
     const message = error?.shortMessage || error?.reason || error?.details || error?.message;
@@ -101,73 +88,6 @@ export default function SubScriptCheckout({
     return message || "An error occurred during subscription processing.";
   };
 
-  const buildPrivateCheckoutProof = ({
-    userAddress,
-    paymentRecipient,
-    amount,
-    periodSeconds,
-  }: {
-    userAddress: `0x${string}`;
-    paymentRecipient: `0x${string}`;
-    amount: bigint;
-    periodSeconds: bigint;
-  }): PrivateCheckoutProof => {
-    if (typeof crypto === "undefined" || !crypto.getRandomValues) {
-      throw new Error("Secure browser randomness is unavailable.");
-    }
-
-    const secretBytes = new Uint8Array(32);
-    crypto.getRandomValues(secretBytes);
-
-    const secret = bytesToHex(secretBytes);
-    const planId = `${planName}:${amountCap}:${interval}`;
-    const commitment = keccak256(secret);
-    const nullifierHash = keccak256(
-      encodePacked(["bytes32", "address", "string"], [secret, userAddress, planId])
-    );
-    const publicInputHash = keccak256(
-      encodePacked(["address", "uint256", "uint256"], [paymentRecipient, amount, periodSeconds])
-    );
-
-    return {
-      userAddress,
-      planId,
-      commitment,
-      nullifierHash,
-      proof: [secret, publicInputHash],
-      paymentRecipient,
-      amount,
-      periodSeconds,
-    };
-  };
-
-  const validatePrivateCheckoutProof = (payload: PrivateCheckoutProof) => {
-    const failures: string[] = [];
-
-    if (!isAddress(payload.userAddress)) failures.push("Invalid userAddress");
-    if (!payload.planId) failures.push("Invalid planId");
-    if (!isAddress(payload.paymentRecipient)) failures.push("Invalid paymentRecipient");
-    if (payload.amount <= BigInt(0)) failures.push("Invalid amount");
-    if (payload.periodSeconds <= BigInt(0)) failures.push("Invalid period");
-    if (!isBytes32Hex(payload.commitment)) failures.push("Invalid commitment");
-    if (!isBytes32Hex(payload.nullifierHash)) failures.push("Invalid nullifierHash");
-    if (payload.proof.length < 2) failures.push("Invalid proof length");
-    if (!payload.proof.every(isBytes32Hex)) failures.push("Invalid proof item format");
-
-    const expectedPublicInputHash = keccak256(
-      encodePacked(["address", "uint256", "uint256"], [payload.paymentRecipient, payload.amount, payload.periodSeconds])
-    );
-    if (payload.proof[1] !== expectedPublicInputHash) {
-      failures.push("Proof public input hash mismatch");
-    }
-
-    if (failures.length > 0) {
-      console.error("[SubScriptCheckout] Proof validation failure:", failures);
-    }
-
-    return failures;
-  };
-
   const handleCheckout = async () => {
     if (!isConnected || !userWallet) {
       setErrorMessage("Please connect your wallet first.");
@@ -177,6 +97,12 @@ export default function SubScriptCheckout({
 
     if (!merchantAddress || !isAddress(merchantAddress)) {
       setErrorMessage("Invalid merchant payout address configured.");
+      setLoadingState("error");
+      return;
+    }
+
+    if (mode === "private") {
+      setErrorMessage("Privacy Premium routing mode is currently unavailable.");
       setLoadingState("error");
       return;
     }
@@ -194,7 +120,7 @@ export default function SubScriptCheckout({
 
       const userAddress = getAddress(userWallet) as `0x${string}`;
       const paymentRecipient = getAddress(merchantAddress) as `0x${string}`;
-      const spenderAddress = mode === "private" ? SUBSCRIPT_ROUTER_ADDRESS : STANDARD_CONTRACT_ADDRESS;
+      const spenderAddress = STANDARD_CONTRACT_ADDRESS;
       const tokenDecimals = await publicClient.readContract({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: ERC20_ABI,
@@ -220,7 +146,7 @@ export default function SubScriptCheckout({
       if (currentAllowance < amount) {
         setStatusMessage("USDC allowance insufficient. Awaiting wallet approval...");
 
-        const approvalAmount = mode === "private" ? amount : amount * BigInt(12);
+        const approvalAmount = amount * BigInt(12);
 
         await publicClient.simulateContract({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -257,122 +183,6 @@ export default function SubScriptCheckout({
         if (allowanceAfterApproval < amount) {
           throw new Error("USDC approval confirmed but allowance is still insufficient.");
         }
-      }
-
-      if (mode === "private") {
-        setLoadingState("Preparing Secure Payment");
-        setStatusMessage("Preparing Secure Payment");
-
-        const proofPayload = buildPrivateCheckoutProof({
-          userAddress,
-          paymentRecipient,
-          amount,
-          periodSeconds,
-        });
-        const proofFailures = validatePrivateCheckoutProof(proofPayload);
-        if (proofFailures.length > 0) {
-          throw new Error(`Invalid proof payload: ${proofFailures.join(", ")}`);
-        }
-
-        await publicClient.simulateContract({
-          address: SUBSCRIPT_ROUTER_ADDRESS,
-          abi: ROUTER_ABI,
-          functionName: "depositAndCommit",
-          account: userAddress,
-          args: [proofPayload.commitment, proofPayload.amount],
-        });
-
-        setLoadingState("Confirming Subscription");
-        setStatusMessage("Submitting secure payment deposit...");
-        const depositHash = await writeContractAsync({
-          address: SUBSCRIPT_ROUTER_ADDRESS,
-          abi: ROUTER_ABI,
-          functionName: "depositAndCommit",
-          args: [proofPayload.commitment, proofPayload.amount],
-        });
-
-        const depositReceipt = await publicClient.waitForTransactionReceipt({
-          hash: depositHash as `0x${string}`,
-          timeout: 120_000,
-        });
-        if (depositReceipt.status !== "success") {
-          throw new Error("Secure payment deposit reverted on-chain.");
-        }
-
-        const transferLogs = parseEventLogs({
-          abi: ERC20_ABI,
-          logs: depositReceipt.logs,
-        });
-        const transferLog = transferLogs.find(
-          (log) =>
-            log.eventName === "Transfer" &&
-            log.args.from?.toLowerCase() === userAddress.toLowerCase() &&
-            log.args.to?.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
-            log.args.value === proofPayload.amount
-        );
-        if (!transferLog) {
-          throw new Error("USDC payment transfer was not found in the deposit receipt.");
-        }
-
-        await publicClient.simulateContract({
-          address: SUBSCRIPT_ROUTER_ADDRESS,
-          abi: ROUTER_ABI,
-          functionName: "verifyAndActivate",
-          account: userAddress,
-          args: [
-            [...proofPayload.proof],
-            proofPayload.nullifierHash,
-            proofPayload.paymentRecipient,
-            proofPayload.amount,
-            proofPayload.periodSeconds,
-          ],
-        });
-
-        setStatusMessage("Submitting secure proof activation...");
-        const activationHash = await writeContractAsync({
-          address: SUBSCRIPT_ROUTER_ADDRESS,
-          abi: ROUTER_ABI,
-          functionName: "verifyAndActivate",
-          args: [
-            [...proofPayload.proof],
-            proofPayload.nullifierHash,
-            proofPayload.paymentRecipient,
-            proofPayload.amount,
-            proofPayload.periodSeconds,
-          ],
-        });
-
-        const activationReceipt = await publicClient.waitForTransactionReceipt({
-          hash: activationHash as `0x${string}`,
-          timeout: 120_000,
-        });
-        if (activationReceipt.status !== "success") {
-          throw new Error("Secure proof activation reverted on-chain.");
-        }
-
-        const activationLogs = parseEventLogs({
-          abi: ROUTER_ABI,
-          logs: activationReceipt.logs,
-        });
-        const activationLog = activationLogs.find(
-          (log) =>
-            log.eventName === "SubscriptionActivated" &&
-            log.args.nullifierHash === proofPayload.nullifierHash &&
-            log.args.merchant?.toLowerCase() === proofPayload.paymentRecipient.toLowerCase() &&
-            log.args.amount === proofPayload.amount
-        );
-        if (!activationLog) {
-          throw new Error("Secure activation event was not found in the receipt.");
-        }
-
-        setSuccessTxHash(activationHash);
-        setLoadingState("success");
-        setStatusMessage("Secure subscription activated successfully.");
-
-        if (onSuccess) {
-          onSuccess(activationHash);
-        }
-        return;
       }
 
       setLoadingState("Confirming Subscription");

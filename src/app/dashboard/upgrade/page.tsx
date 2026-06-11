@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
+import { useRouter } from "next/navigation";
 import { injected } from "wagmi/connectors";
 import {
     createPublicClient,
@@ -37,12 +38,18 @@ const ERC20_ABI = USDC_ERC20_ABI;
 const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 export default function UpgradePage() {
+    const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
     const { address, isConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const { switchChainAsync } = useSwitchChain();
+
+    const [txHashState, setTxHashState] = useState<`0x${string}` | undefined>(undefined);
+    const { data: txReceipt } = useWaitForTransactionReceipt({
+        hash: txHashState,
+    });
 
     /* Tier & Subscription States */
     const [isPremium, setIsPremium] = useState(false);
@@ -125,6 +132,43 @@ export default function UpgradePage() {
         return message || "An error occurred during subscription processing.";
     };
 
+    const syncAndRedirect = useCallback(async (hash: string) => {
+        setCheckoutStatus("Syncing premium state with server...");
+        try {
+            const upgradeRes = await fetch("/api/merchant/upgrade", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    txHash: hash,
+                }),
+            });
+            const upgradeData = await upgradeRes.json();
+            if (!upgradeRes.ok) {
+                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
+            }
+
+            setSuccessTxHash(hash);
+            setCheckoutState("success");
+            setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
+            router.push("/dashboard?upgradeSuccess=true");
+        } catch (err: any) {
+            console.error("Premium upgrade sync failed:", err);
+            setCheckoutError(err.message || "Failed to sync premium state with server");
+            setCheckoutState("error");
+        }
+    }, [router]);
+
+    useEffect(() => {
+        if (txReceipt) {
+            if (txReceipt.status === "success") {
+                syncAndRedirect(txReceipt.transactionHash);
+            } else {
+                setCheckoutError("Subscription creation transaction reverted on-chain.");
+                setCheckoutState("error");
+            }
+        }
+    }, [txReceipt, syncAndRedirect]);
+
     const handleUpgrade = async () => {
         if (!isConnected || !address) {
             setCheckoutError("Please connect your merchant wallet first.");
@@ -158,8 +202,8 @@ export default function UpgradePage() {
                 throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
             }
 
-            const planPrice = parseUnits("10", Number(tokenDecimals));
-            const approvalAmount = parseUnits("120", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
+            const planPrice = parseUnits("50", Number(tokenDecimals));
+            const approvalAmount = parseUnits("600", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
             const subscriptionPeriod = 2592000; /* 30 Days */
 
             /* 3. Register intent session in database */
@@ -230,51 +274,7 @@ export default function UpgradePage() {
             });
 
             setCheckoutStatus("Confirming subscription on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({
-                hash: txHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (receipt.status !== "success") {
-                throw new Error("Subscription creation transaction reverted on-chain.");
-            }
-
-            const subscriptionLogs = parseEventLogs({
-                abi: STANDARD_ABI,
-                logs: receipt.logs,
-            });
-            const createLog = subscriptionLogs.find(
-                (log) =>
-                    log.eventName === "SubscriptionCreated" &&
-                    log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-            );
-
-            if (!createLog) {
-                throw new Error("SubscriptionCreated event not found in logs.");
-            }
-
-            const subId = Number(createLog.args.subId);
-
-            setCheckoutStatus("Syncing premium state with server...");
-            const upgradeRes = await fetch("/api/premium/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash,
-                    sessionId: checkoutData.sessionId,
-                    subId,
-                }),
-            });
-            const upgradeData = await upgradeRes.json();
-            if (!upgradeRes.ok) {
-                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
-            }
-
-            setSuccessTxHash(txHash);
-            setCheckoutState("success");
-            setCheckoutStatus("Upgrade successful! ZK Premium activated.");
-            await refetchBalancesAndTier();
+            setTxHashState(txHash as `0x${string}`);
         } catch (err: any) {
             console.error("Premium upgrade failed:", err);
             setCheckoutError(getCheckoutErrorMessage(err));
@@ -283,7 +283,7 @@ export default function UpgradePage() {
     };
 
     const handleCancelSubscription = async () => {
-        if (!confirm("Are you sure you want to cancel your Premium Plan? Your ZK Premium benefits will remain active until the end of your current billing period.")) {
+        if (!confirm("Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period.")) {
             return;
         }
 
@@ -334,7 +334,7 @@ export default function UpgradePage() {
 
                     <div className="text-center mb-12">
                         <h1 className="text-4xl font-extrabold text-white uppercase tracking-tight mb-3">
-                            ZK Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
+                            Privacy Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
                         </h1>
                         <p className="text-sm text-white/50 max-w-xl mx-auto leading-relaxed">
                             Upgrade your SubScript merchant node to activate zero-knowledge privacy guards, priority keeper execution, and advanced automation.
@@ -380,7 +380,7 @@ export default function UpgradePage() {
                                             Active Subscriber
                                         </span>
                                         <h3 className="text-xl font-extrabold text-white uppercase tracking-tight mt-1">
-                                            ZK Premium Plan
+                                            Privacy Premium Plan
                                         </h3>
                                     </div>
                                 </div>
@@ -428,7 +428,7 @@ export default function UpgradePage() {
                                             {isCancelling ? (
                                                 <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
                                             ) : (
-                                                <><XCircle className="w-4 h-4" /> Cancel Premium</>
+                                                <><XCircle className="w-4 h-4" /> Cancel Privacy Premium</>
                                             )}
                                         </button>
                                     </div>
@@ -449,13 +449,13 @@ export default function UpgradePage() {
 
                                 <div className="text-center mb-6">
                                     <span className="text-[9px] font-extrabold px-3 py-1 rounded-full bg-[#d4a853]/15 text-[#d4a853] border border-[#d4a853]/30 uppercase tracking-widest font-mono">
-                                        Premium ZK Tier
+                                        Privacy Premium
                                     </span>
                                     <h2 className="text-2xl font-extrabold text-white uppercase tracking-tight mt-4">
-                                        ZK Enterprise
+                                        Privacy Premium
                                     </h2>
                                     <div className="flex items-baseline justify-center gap-1 mt-4">
-                                        <span className="text-5xl font-extrabold text-white tracking-tight">10</span>
+                                        <span className="text-5xl font-extrabold text-white tracking-tight">50</span>
                                         <span className="text-lg font-bold text-white/60 uppercase font-mono">USDC</span>
                                         <span className="text-xs text-white/40 font-mono">/ month</span>
                                     </div>
@@ -487,7 +487,7 @@ export default function UpgradePage() {
                                             className="w-full py-4 bg-gradient-to-r from-[#d4a853] via-[#e2be72] to-[#c49240] text-black font-extrabold rounded-2xl text-xs uppercase tracking-wider hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(212,168,83,0.2)]"
                                         >
                                             <Crown className="w-4 h-4" />
-                                            Activate ZK Premium
+                                            Activate Privacy Premium
                                         </button>
                                     )}
 

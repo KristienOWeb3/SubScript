@@ -22,11 +22,12 @@ contract SubScriptRouterTest is Test {
         address indexed newDestination
     );
 
-    event SubscriptionActivated(
-        bytes32 indexed nullifierHash,
+    event Withdraw(address indexed merchant, uint256 amount);
+
+    event BatchPayoutExecuted(
         address indexed merchant,
-        uint256 amount,
-        uint256 period
+        uint256 totalAmount,
+        uint256 recipientCount
     );
 
     function setUp() public {
@@ -87,89 +88,122 @@ contract SubScriptRouterTest is Test {
         assertEq(router.merchantPayoutDestination(merchant), redirectDestination);
     }
 
-    /* Test: verifyAndActivate under standard (tier 0) flow */
-    function testVerifyAndActivateStandard() public {
-        uint256 amount = 100 * 10**6; /* 100 USDC */
-        uint256 period = 30 days;
-        bytes32 secret = keccak256(abi.encodePacked("commitment_secret"));
-        bytes32 commitment = keccak256(abi.encodePacked(secret));
-        bytes32 nullifierHash = keccak256(abi.encodePacked("nullifier_secret"));
-
-        /* Fund subscriber and deposit commitment */
-        usdc.mint(subscriber, amount);
-        vm.startPrank(subscriber);
-        usdc.approve(address(router), amount);
-        router.depositAndCommit(commitment, amount);
-        vm.stopPrank();
-
-        /* Verify and activate */
-        bytes32[] memory proof = new bytes32[](2);
-        proof[0] = secret;
-        proof[1] = keccak256(abi.encodePacked(merchant, amount, period));
-
-        uint256 initialTreasuryBalance = usdc.balanceOf(treasury);
-
-        router.verifyAndActivate(proof, nullifierHash, merchant, amount, period);
-
-        uint256 expectedFee = (amount * 100) / 10000;
-        uint256 expectedNet = amount - expectedFee;
-
-        /* Treasury fee check */
-        assertEq(usdc.balanceOf(treasury) - initialTreasuryBalance, expectedFee);
-
-        /* Balance credited to standard merchant address */
-        assertEq(router.merchantBalances(merchant), expectedNet);
-        assertEq(router.merchantBalances(redirectDestination), 0);
+    /* Test: Standard withdrawal flow */
+    function testWithdraw() public {
+        /* Merchant with zero balance cannot withdraw */
+        vm.prank(merchant);
+        vm.expectRevert("No balance to withdraw");
+        router.withdraw();
     }
 
-    /* Test: verifyAndActivate under premium tier flow WITH redirection */
-    function testVerifyAndActivatePremiumReroute() public {
-        /* Upgrade merchant to Premium tier */
-        vm.prank(owner);
-        router.setMerchantTier(merchant, 1);
+    /* Test: Setting treasury address */
+    function testSetTreasury() public {
+        address newTreasury = address(0x9999999999999999999999999999999999999999);
 
-        /* Configure custom payout destination */
+        /* Non-owner cannot set treasury */
         vm.prank(merchant);
-        router.configurePayoutDestination(redirectDestination);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, merchant));
+        router.setTreasury(newTreasury);
 
-        uint256 amount = 100 * 10**6; /* 100 USDC */
-        uint256 period = 30 days;
-        bytes32 secret = keccak256(abi.encodePacked("premium_commitment_secret"));
-        bytes32 commitment = keccak256(abi.encodePacked(secret));
-        bytes32 nullifierHash = keccak256(abi.encodePacked("premium_nullifier_secret"));
+        /* Owner can set treasury */
+        vm.prank(owner);
+        router.setTreasury(newTreasury);
+        assertEq(router.treasury(), newTreasury);
 
-        /* Fund subscriber and deposit commitment */
-        usdc.mint(subscriber, amount);
-        vm.startPrank(subscriber);
-        usdc.approve(address(router), amount);
-        router.depositAndCommit(commitment, amount);
+        /* Cannot set to zero address */
+        vm.prank(owner);
+        vm.expectRevert("Invalid new treasury");
+        router.setTreasury(address(0));
+    }
+
+    /* Test: Batch payout execution */
+    function testExecuteBatchPayout() public {
+        uint256 payoutAmount = 100 * 10**6; /* 100 USDC */
+        address recipient1 = address(0x6666666666666666666666666666666666666666);
+        address recipient2 = address(0x7777777777777777777777777777777777777777);
+
+        /* Fund the owner wallet for batch payout */
+        usdc.mint(owner, payoutAmount);
+
+        vm.startPrank(owner);
+        usdc.approve(address(router), payoutAmount);
+
+        address[] memory recipients = new address[](2);
+        recipients[0] = recipient1;
+        recipients[1] = recipient2;
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 60 * 10**6; /* 60 USDC */
+        amounts[1] = 40 * 10**6; /* 40 USDC */
+
+        router.executeBatchPayout(recipients, amounts);
         vm.stopPrank();
 
-        /* Verify and activate */
-        bytes32[] memory proof = new bytes32[](2);
-        proof[0] = secret;
-        proof[1] = keccak256(abi.encodePacked(merchant, amount, period));
+        /* Verify recipient balances */
+        assertEq(usdc.balanceOf(recipient1), 60 * 10**6);
+        assertEq(usdc.balanceOf(recipient2), 40 * 10**6);
 
-        uint256 initialTreasuryBalance = usdc.balanceOf(treasury);
+        /* Router should hold zero USDC after batch payout */
+        assertEq(usdc.balanceOf(address(router)), 0);
+    }
 
-        router.verifyAndActivate(proof, nullifierHash, merchant, amount, period);
+    /* Test: Batch payout array length mismatch */
+    function testExecuteBatchPayoutMismatch() public {
+        address[] memory recipients = new address[](2);
+        recipients[0] = merchant;
+        recipients[1] = redirectDestination;
 
-        uint256 expectedFee = (amount * 100) / 10000;
-        uint256 expectedNet = amount - expectedFee;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 10**6;
 
-        /* Treasury fee check */
-        assertEq(usdc.balanceOf(treasury) - initialTreasuryBalance, expectedFee);
+        vm.prank(owner);
+        vm.expectRevert("Array length mismatch");
+        router.executeBatchPayout(recipients, amounts);
+    }
 
-        /* Balance should be credited to redirectDestination instead of merchant */
-        assertEq(router.merchantBalances(merchant), 0);
-        assertEq(router.merchantBalances(redirectDestination), expectedNet);
+    /* Test: Non-owner cannot execute batch payout */
+    function testExecuteBatchPayoutNonOwner() public {
+        address[] memory recipients = new address[](1);
+        recipients[0] = merchant;
 
-        /* Withdrawal by the redirected address */
-        uint256 initialRedirectBalance = usdc.balanceOf(redirectDestination);
-        vm.prank(redirectDestination);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 10**6;
+
+        vm.prank(merchant);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, merchant));
+        router.executeBatchPayout(recipients, amounts);
+    }
+
+    /* Test: Rescue stuck ERC20 tokens */
+    function testRescueERC20() public {
+        uint256 stuckAmount = 50 * 10**6;
+        usdc.mint(address(router), stuckAmount);
+
+        /* Non-owner cannot rescue */
+        vm.prank(merchant);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, merchant));
+        router.rescueERC20(address(usdc), owner, stuckAmount);
+
+        /* Owner can rescue */
+        vm.prank(owner);
+        router.rescueERC20(address(usdc), owner, stuckAmount);
+        assertEq(usdc.balanceOf(owner), stuckAmount);
+        assertEq(usdc.balanceOf(address(router)), 0);
+    }
+
+    /* Test: Pause and unpause */
+    function testPauseUnpause() public {
+        /* Owner can pause */
+        vm.prank(owner);
+        router.pause();
+
+        /* Withdrawal should revert when paused */
+        vm.prank(merchant);
+        vm.expectRevert();
         router.withdraw();
 
-        assertEq(router.merchantBalances(redirectDestination), 0);
-        assertEq(usdc.balanceOf(redirectDestination) - initialRedirectBalance, expectedNet);
+        /* Owner can unpause */
+        vm.prank(owner);
+        router.unpause();
     }
 }

@@ -12,8 +12,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /**
  * @title SubScriptRouter
  * @author SubScript Protocol
- * @notice Vault router routing recurring ZK burner subscriptions to merchants.
- *         Operates as a stateless transient dispatcher, holding zero USDC across block boundaries.
+ * @notice Vault router for merchant payout distribution and batch settlement.
+ *         Operates as a stateless transient dispatcher with tier-gated payout rerouting.
  */
 contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuard, PausableUpgradeable {
     using SafeERC20 for IERC20;
@@ -29,11 +29,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /* Secure internal pull-payment ledger mapping merchant => USDC balance */
     mapping(address => uint256) public merchantBalances;
 
-    /* Prevention against double-spending of commitments */
-    mapping(bytes32 => bool) public nullifierHashes;
 
-    /* Record of deposited commitment hashes */
-    mapping(bytes32 => bool) public commitments;
 
     /* Subscription tier for merchants (0 = Standard, 1 = Premium) */
     mapping(address => uint8) public merchantTiers;
@@ -42,15 +38,6 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     mapping(address => address) public merchantPayoutDestination;
 
     /* ──────────────────────────── Events ─────────────────────────── */
-
-    event Deposit(bytes32 indexed commitment, uint256 amount);
-
-    event SubscriptionActivated(
-        bytes32 indexed nullifierHash,
-        address indexed merchant,
-        uint256 amount,
-        uint256 period
-    );
 
     event Withdraw(address indexed merchant, uint256 amount);
 
@@ -166,67 +153,6 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
-     * @notice Deposit commitment on-chain.
-     */
-    function depositAndCommit(bytes32 commitment, uint256 amount) external nonReentrant whenNotPaused {
-        require(commitment != bytes32(0), "Invalid commitment");
-        require(amount > 0, "Amount must be greater than zero");
-
-        paymentToken.safeTransferFrom(msg.sender, address(this), amount);
-        commitments[commitment] = true;
-
-        emit Deposit(commitment, amount);
-    }
-
-    /**
-     * @notice Verify burner proof and activate subscription.
-     *         Pulls payment from the subscriber's commitment on-chain or direct allowance.
-     */
-    function verifyAndActivate(
-        bytes32[] calldata proof,
-        bytes32 nullifierHash,
-        address merchant,
-        uint256 amount,
-        uint256 period
-    ) external nonReentrant whenNotPaused {
-        require(proof.length >= 2, "Invalid proof format");
-        require(nullifierHash != bytes32(0), "Invalid nullifier hash");
-        require(merchant != address(0), "Invalid merchant address");
-        require(amount > 0, "Amount must be greater than zero");
-        require(period > 0, "Period must be greater than zero");
-        require(!nullifierHashes[nullifierHash], "Nullifier already used");
-
-        bytes32 expectedPublicInputHash = keccak256(abi.encodePacked(merchant, amount, period));
-        require(proof[1] == expectedPublicInputHash, "Parameter mismatch with ZK public inputs");
-
-        /* Derive and verify the commitment from the proof's secret pre-image */
-        bytes32 commitment = keccak256(abi.encodePacked(proof[0]));
-        require(commitments[commitment], "Commitment not found or already spent");
-
-        /* Burn the commitment to prevent reuse */
-        commitments[commitment] = false;
-
-        /* Calculate 1% fee (100 bps) */
-        uint256 fee = (amount * 100) / 10000;
-        uint256 netAmount = amount - fee;
-
-        /* Mark nullifier hash as spent before transfer (Checks-Effects-Interactions) */
-        nullifierHashes[nullifierHash] = true;
-
-        /* Route the protocol fee to the treasury */
-        paymentToken.safeTransfer(treasury, fee);
-
-        /* Transfer net amount directly to the merchant (stateless router) */
-        address targetPayout = merchant;
-        if (merchantTiers[merchant] >= 1 && merchantPayoutDestination[merchant] != address(0)) {
-            targetPayout = merchantPayoutDestination[merchant];
-        }
-        paymentToken.safeTransfer(targetPayout, netAmount);
-
-        emit SubscriptionActivated(nullifierHash, merchant, amount, period);
-    }
-
-    /**
      * @notice Safe, non-gated withdrawal function.
      *         Reverts since stateless router holds no funds across blocks.
      */
@@ -246,35 +172,6 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         emit Withdraw(targetPayout, balance);
     }
 
-    /**
-     * @notice Gated withdrawal routing using ZK proof.
-     *         Reverts since stateless router holds no funds across blocks.
-     */
-    function withdrawWithProof(
-        bytes32[] calldata proof,
-        bytes32 nullifierHash,
-        address merchant,
-        address target
-    ) external nonReentrant whenNotPaused {
-        require(proof.length >= 2, "Invalid proof format");
-        require(nullifierHash != bytes32(0), "Invalid nullifier hash");
-        require(merchant != address(0), "Invalid merchant address");
-        require(target != address(0), "Invalid target address");
-        require(!nullifierHashes[nullifierHash], "Nullifier already used");
-
-        bytes32 expectedPublicInputHash = keccak256(abi.encodePacked(merchant, target));
-        require(proof[1] == expectedPublicInputHash, "Parameter mismatch with ZK public inputs");
-
-        uint256 balance = merchantBalances[merchant];
-        require(balance > 0, "No balance to withdraw");
-
-        merchantBalances[merchant] = 0;
-        nullifierHashes[nullifierHash] = true;
-
-        paymentToken.safeTransfer(target, balance);
-
-        emit Withdraw(target, balance);
-    }
 
     /**
      * @notice Admin-gated transient batch payout execution.
