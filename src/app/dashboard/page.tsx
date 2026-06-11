@@ -83,10 +83,7 @@ export default function DashboardPage() {
     const { writeContractAsync } = useWriteContract();
     const [isTestMode, setIsTestMode] = useState(false);
 
-    /* Soulbound Access Key (SBT) State */
-    const [sbtTokenId, setSbtTokenId] = useState<string | null>(null);
-    const [sbtMetadata, setSbtMetadata] = useState<any>(null);
-    const [isLoadingSbt, setIsLoadingSbt] = useState(false);
+    /* Soulbound Access Key (SBT) State removed because SBT infrastructure is deleted */
 
     /* Payment Links States */
     const [paymentLinks, setPaymentLinks] = useState<any[]>([]);
@@ -309,7 +306,7 @@ export default function DashboardPage() {
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
-                setSbtTokenId(tierData.sbtTokenId || null);
+                /* SBT state update removed */
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
                 setDbSubscriptionStatus(tierData.status || null);
@@ -349,30 +346,7 @@ export default function DashboardPage() {
         }
     }, [address]);
 
-    useEffect(() => {
-        if (!sbtTokenId) {
-            setSbtMetadata(null);
-            return;
-        }
-        const fetchSbtMetadata = async () => {
-            setIsLoadingSbt(true);
-            try {
-                const res = await fetch(`/api/sbt/${sbtTokenId}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setSbtMetadata(data);
-                } else {
-                    setSbtMetadata(null);
-                }
-            } catch (err) {
-                console.error("Error fetching SBT metadata:", err);
-                setSbtMetadata(null);
-            } finally {
-                setIsLoadingSbt(false);
-            }
-        };
-        fetchSbtMetadata();
-    }, [sbtTokenId]);
+    /* useEffect for SBT metadata fetching removed */
 
 
 
@@ -2633,32 +2607,32 @@ Responsibilities:
                                 </div>
 
                                 <div className="lg:col-span-1 space-y-6">
-                                    {/* SBT Card Display */}
-                                    {isLoadingSbt ? (
-                                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col items-center justify-center py-12 aspect-[2/3]">
-                                            <Loader2 className="w-8 h-8 animate-spin text-[#d4a853]" />
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mt-4">Loading Access Key...</p>
-                                        </div>
-                                    ) : sbtMetadata?.image ? (
-                                        <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4">
-                                            <h4 className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Soulbound Access Key</h4>
-                                            <div className="relative w-full max-w-[260px] aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 shadow-2xl hover:scale-[1.02] transition-transform duration-300">
-                                                <img src={sbtMetadata.image} alt="SBT Access Key Card" className="w-full h-full object-cover" />
+                                    {/* Billing Summary Card */}
+                                    <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 shadow-2xl space-y-4">
+                                        <h4 className="text-[10px] text-white/40 uppercase font-bold tracking-widest text-center">Subscription Billing</h4>
+                                        <div className="space-y-3 font-mono text-[10px] text-white/60">
+                                            <div className="flex justify-between border-b border-white/5 pb-2">
+                                                <span>Tier:</span>
+                                                <span className="text-[#d4a853] font-bold">ZK PREMIUM</span>
                                             </div>
-                                            <div className="w-full text-center space-y-1 font-mono text-[9px]">
-                                                <p className="text-[#d4a853] font-bold">Token ID: #{sbtTokenId}</p>
-                                                <p className="text-white/30">Contract: {process.env.NEXT_PUBLIC_SBT_CONTRACT_ADDRESS || "0x..."}</p>
+                                            <div className="flex justify-between border-b border-white/5 pb-2">
+                                                <span>Price:</span>
+                                                <span>50 USDC / mo</span>
                                             </div>
+                                            {currentPeriodEnd && (
+                                                <div className="flex justify-between border-b border-white/5 pb-2">
+                                                    <span>{cancelAtPeriodEnd ? "Expires:" : "Next Renewal:"}</span>
+                                                    <span>{new Date(currentPeriodEnd).toLocaleDateString()}</span>
+                                                </div>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl text-center py-12 font-sans space-y-3">
-                                            <Crown className="w-8 h-8 text-white/20 mx-auto" />
-                                            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Soulbound Key Pending</h4>
-                                            <p className="text-[10px] text-white/40 leading-relaxed">
-                                                Your Soulbound Access Key is being minted on-chain. This usually takes less than a minute.
-                                            </p>
-                                        </div>
-                                    )}
+                                        <Link
+                                            href="/dashboard/upgrade"
+                                            className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 text-center"
+                                        >
+                                            Manage Subscription
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
                         ) : (
@@ -2666,42 +2640,28 @@ Responsibilities:
                             <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
-                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Premium</h3>
+                                        <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to ZK Premium</h3>
                                         <p className="text-xs text-white/50 leading-relaxed">
-                                            Unlock fund rerouting to cold storage and multisigs, priority keeper execution, advanced analytics, and full API access.
+                                            Unlock zero-knowledge shielded payouts, fund rerouting to cold storage and multisigs, priority keeper execution, and full API/webhook access.
                                         </p>
                                     </div>
 
                                     <div className="flex items-center justify-center gap-2">
-                                        <span className="text-3xl font-extrabold text-[#d4a853]">$10.00</span>
-                                        <span className="text-xs text-white/40">USDC / month</span>
+                                        <span className="text-3xl font-extrabold text-[#d4a853]">50 USDC</span>
+                                        <span className="text-xs text-white/40">/ month</span>
                                     </div>
 
-                                    <button
-                                        onClick={handleUpgrade}
-                                        disabled={isSubscribingPremium}
-                                        className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all disabled:opacity-50 flex items-center gap-2 mx-auto"
+                                    <Link
+                                        href="/dashboard/upgrade"
+                                        className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all flex items-center gap-2 mx-auto w-fit"
                                     >
-                                        {isSubscribingPremium ? (
-                                            <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
-                                        ) : (
-                                            <><Crown className="w-4 h-4" /> Upgrade Now</>
-                                        )}
-                                    </button>
-
-                                    {premiumStatus && (
-                                        <p className="text-xs text-[#d4a853] font-semibold animate-pulse">{premiumStatus}</p>
-                                    )}
-                                    {premiumError && (
-                                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-xs font-mono break-all">
-                                            {premiumError}
-                                        </div>
-                                    )}
+                                        <Crown className="w-4 h-4" /> View Upgrade Options
+                                    </Link>
 
                                     {/* Features list */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-white/5">
                                         {[
-                                            "Fund rerouting to multisig",
+                                            "Opt-In ZK Confidentiality",
                                             "Priority keeper execution",
                                             "Advanced analytics",
                                             "Full API & webhook access",

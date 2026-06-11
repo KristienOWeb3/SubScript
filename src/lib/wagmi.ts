@@ -1,6 +1,7 @@
 import { createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
+import { mainnet, base, sepolia, baseSepolia } from "viem/chains";
 
 export const arcTestnet = defineChain({
     id: 5042002,
@@ -24,10 +25,14 @@ export const arcTestnet = defineChain({
 });
 
 export const config = createConfig({
-    chains: [arcTestnet],
+    chains: [arcTestnet, mainnet, base, sepolia, baseSepolia],
     connectors: [injected()],
     transports: {
         [5042002]: http(),
+        [1]: http(),
+        [8453]: http(),
+        [11155111]: http(),
+        [84532]: http(),
     },
     ssr: true,
 });

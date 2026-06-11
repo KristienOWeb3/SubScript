@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
-import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+import { SUBSCRIPT_ROUTER_ADDRESS, PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { SUBSCRIPT_ROUTER_ABI } from "@/lib/contracts/abis";
 import { triggerExitSurvey } from "@/lib/payments/email";
 
@@ -32,15 +32,15 @@ export async function POST(request: Request) {
             .eq("wallet_address", normalizedUser)
             .maybeSingle();
 
-        if (merchantError || !merchantData || merchantData.tier < 1) {
+        if (merchantError || !merchantData || merchantData.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Merchant does not have an active premium tier." }, { status: 400 });
         }
 
         const { data: subData, error: subError } = await supabase
             .from("subscriptions")
             .select("subscription_id, next_billing_date")
-            .eq("merchant_address", normalizedUser)
-            .eq("tier", 1)
+            .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
+            .eq("subscriber", normalizedUser)
             .in("status", ["ACTIVE", "PAST_DUE"])
             .maybeSingle();
 

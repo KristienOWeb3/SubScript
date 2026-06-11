@@ -5,10 +5,43 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { sendWebhookRequest } from "@/lib/webhooks";
+import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 
 const ERC20_INTERFACE = new ethers.Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
 ]);
+
+const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
+    "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
+]);
+
+const CCTP_RPCS: Record<number, string[]> = {
+    1: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"],
+    8453: ["https://mainnet.base.org", "https://base-rpc.publicnode.com"],
+    11155111: ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.ankr.com/eth_sepolia"],
+    84532: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"]
+};
+
+async function getTransactionReceiptWithFallback(chainId: number, txHash: string) {
+    const urls = CCTP_RPCS[chainId] || [process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network"];
+    let lastError = null;
+    for (const url of urls) {
+        try {
+            const provider = new ethers.JsonRpcProvider(url);
+            const [receipt, currentBlock] = await Promise.all([
+                provider.getTransactionReceipt(txHash),
+                provider.getBlockNumber()
+            ]);
+            if (receipt) {
+                const tx = await provider.getTransaction(txHash);
+                return { receipt, currentBlock, tx };
+            }
+        } catch (err) {
+            lastError = err;
+        }
+    }
+    throw lastError || new Error("Failed to fetch receipt from all RPC endpoints");
+}
 
 async function parseBody(request: Request) {
     try {
@@ -28,7 +61,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress } = body;
+        const { txHash, paymentLinkId, payerAddress, chainId: bodyChainId } = body;
+        const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
+        const isCctp = [1, 8453, 11155111, 84532].includes(Number(chainId));
 
         if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid txHash" }, { status: 400 });
@@ -150,22 +185,33 @@ export async function POST(request: Request) {
                 while (attempts < maxAttempts) {
                     attempts++;
                     try {
-                        const verifyResult = await executeWithRpcFallback(async (provider) => {
-                            const [receipt, currentBlock] = await Promise.all([
-                                provider.getTransactionReceipt(normalizedTx),
-                                provider.getBlockNumber()
-                            ]);
+                        let receipt: any;
+                        let confirmations = 0;
+                        let tx: any;
 
-                            if (!receipt) {
-                                throw new Error("Transaction receipt not found on-chain yet");
-                            }
+                        if (isCctp) {
+                            const result = await getTransactionReceiptWithFallback(Number(chainId), normalizedTx);
+                            receipt = result.receipt;
+                            confirmations = Math.max(0, result.currentBlock - receipt.blockNumber + 1);
+                            tx = result.tx;
+                        } else {
+                            const verifyResult = await executeWithRpcFallback(async (provider) => {
+                                const [rcpt, currentBlock] = await Promise.all([
+                                    provider.getTransactionReceipt(normalizedTx),
+                                    provider.getBlockNumber()
+                                ]);
 
-                            const confs = currentBlock - receipt.blockNumber + 1;
-                            return { receipt, confs };
-                        });
+                                if (!rcpt) {
+                                    throw new Error("Transaction receipt not found on-chain yet");
+                                }
 
-                        const receipt = verifyResult.result.receipt;
-                        confirmations = Math.max(0, verifyResult.result.confs);
+                                const confs = currentBlock - rcpt.blockNumber + 1;
+                                return { receipt: rcpt, confs };
+                            });
+
+                            receipt = verifyResult.result.receipt;
+                            confirmations = Math.max(0, verifyResult.result.confs);
+                        }
 
                         /* Update current confirmations count in DB */
                         await supabase
@@ -184,53 +230,107 @@ export async function POST(request: Request) {
                                 .update({ status: "VERIFYING", updated_at: new Date().toISOString() })
                                 .eq("tx_hash", normalizedTx);
 
-                            /* Validate parameters */
-                            const txDetails = await executeWithRpcFallback(async (provider) => {
-                                return await provider.getTransaction(normalizedTx);
-                            });
+                            if (!isCctp) {
+                                /* Validate parameters */
+                                const txDetails = await executeWithRpcFallback(async (provider) => {
+                                    return await provider.getTransaction(normalizedTx);
+                                });
 
-                            const tx = txDetails.result;
-                            if (!tx) {
-                                throw new Error("Transaction details not found on-chain");
-                            }
-                            if (Number(tx.chainId) !== ProtocolConfig.CHAIN_ID) {
-                                throw new Error(`Chain ID mismatch. Expected ${ProtocolConfig.CHAIN_ID}`);
-                            }
-
-                            if (receipt.status !== 1) {
-                                throw new Error("On-chain transaction reverted");
-                            }
-
-                            if (!tx.to || tx.to.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) {
-                                throw new Error("Target contract is not USDC token");
-                            }
-
-                            /* Verify log event transfer to router address */
-                            let logFound = false;
-                            for (const log of receipt.logs) {
-                                if (log.address.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) continue;
-                                try {
-                                    const parsed = ERC20_INTERFACE.parseLog({
-                                        topics: log.topics,
-                                        data: log.data
-                                    });
-                                    if (
-                                        parsed &&
-                                        parsed.name === "Transfer" &&
-                                        parsed.args.from.toLowerCase() === normalizedPayer &&
-                                        parsed.args.to.toLowerCase() === ProtocolConfig.ROUTER_ADDRESS.toLowerCase() &&
-                                        BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
-                                    ) {
-                                        logFound = true;
-                                        break;
-                                    }
-                                } catch {
-                                    /* ignore */
+                                const nativeTx = txDetails.result;
+                                if (!nativeTx) {
+                                    throw new Error("Transaction details not found on-chain");
                                 }
-                            }
+                                if (Number(nativeTx.chainId) !== ProtocolConfig.CHAIN_ID) {
+                                    throw new Error(`Chain ID mismatch. Expected ${ProtocolConfig.CHAIN_ID}`);
+                                }
 
-                            if (!logFound) {
-                                throw new Error("USDC Transfer event to Router not found");
+                                if (receipt.status !== 1) {
+                                    throw new Error("On-chain transaction reverted");
+                                }
+
+                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) {
+                                    throw new Error("Target contract is not USDC token");
+                                }
+
+                                /* Verify log event transfer to router address */
+                                let logFound = false;
+                                for (const log of receipt.logs) {
+                                    if (log.address.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) continue;
+                                    try {
+                                        const parsed = ERC20_INTERFACE.parseLog({
+                                            topics: log.topics,
+                                            data: log.data
+                                        });
+                                        if (
+                                            parsed &&
+                                            parsed.name === "Transfer" &&
+                                            parsed.args.from.toLowerCase() === normalizedPayer &&
+                                            parsed.args.to.toLowerCase() === ProtocolConfig.ROUTER_ADDRESS.toLowerCase() &&
+                                            BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
+                                        ) {
+                                            logFound = true;
+                                            break;
+                                        }
+                                    } catch {
+                                        /* ignore */
+                                    }
+                                }
+
+                                if (!logFound) {
+                                    throw new Error("USDC Transfer event to Router not found");
+                                }
+                            } else {
+                                /* CCTP Cross-chain transaction verification */
+                                if (!tx) {
+                                    throw new Error("CCTP transaction details not found on-chain");
+                                }
+                                if (Number(tx.chainId) !== Number(chainId)) {
+                                    throw new Error(`Chain ID mismatch. Expected ${chainId}`);
+                                }
+                                if (receipt.status !== 1) {
+                                    throw new Error("On-chain CCTP transaction reverted");
+                                }
+
+                                const cctpConfig = CCTP_CONFIG[Number(chainId)];
+                                if (!cctpConfig) {
+                                    throw new Error(`CCTP config not found for chain ID ${chainId}`);
+                                }
+
+                                if (!tx.to || tx.to.toLowerCase() !== cctpConfig.tokenMessenger.toLowerCase()) {
+                                    throw new Error("Target contract is not CCTP TokenMessenger");
+                                }
+
+                                const mintRecipientBytes32 = ("0x" + SUBSCRIPT_ROUTER_ADDRESS.slice(2).padStart(64, "0")).toLowerCase();
+
+                                /* Verify log event DepositForBurn */
+                                let depositFound = false;
+                                for (const log of receipt.logs) {
+                                    if (log.address.toLowerCase() !== cctpConfig.tokenMessenger.toLowerCase()) continue;
+                                    try {
+                                        const parsed = CCTP_MESSENGER_INTERFACE.parseLog({
+                                            topics: log.topics,
+                                            data: log.data
+                                        });
+                                        if (
+                                            parsed &&
+                                            parsed.name === "DepositForBurn" &&
+                                            parsed.args.burnToken.toLowerCase() === cctpConfig.usdc.toLowerCase() &&
+                                            BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
+                                            parsed.args.depositor.toLowerCase() === normalizedPayer &&
+                                            parsed.args.mintRecipient.toLowerCase() === mintRecipientBytes32 &&
+                                            Number(parsed.args.destinationDomain) === ARC_CCTP_DOMAIN_ID
+                                        ) {
+                                            depositFound = true;
+                                            break;
+                                        }
+                                    } catch {
+                                        /* ignore */
+                                    }
+                                }
+
+                                if (!depositFound) {
+                                    throw new Error("CCTP DepositForBurn event with matching parameters not found");
+                                }
                             }
 
                             /* Verification successful: Transition to Phase 2 (FINALIZED) */
@@ -250,7 +350,7 @@ export async function POST(request: Request) {
                                     credited: true,
                                     credited_at: new Date().toISOString(),
                                     verification_block: receipt.blockNumber.toString(),
-                                    verification_chain_id: ProtocolConfig.CHAIN_ID.toString()
+                                    verification_chain_id: chainId.toString()
                                 })
                                 .select()
                                 .single();

@@ -133,6 +133,7 @@ export async function POST(request: Request) {
                 .upsert({
                     subscription_id: cleanSubId,
                     merchant_address: merchantAddress,
+                    subscriber: data.subscriber ? String(data.subscriber).toLowerCase() : null,
                     current_nonce: data.currentNonce !== undefined ? parseInt(String(data.currentNonce), 10) : 0,
                     last_settlement_timestamp: nextPaymentDate,
                     billing_interval_seconds: period,

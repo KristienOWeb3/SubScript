@@ -62,6 +62,22 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { shieldedPayoutsEnabled, viewKeyHash } = body;
 
+        /* Verify that the merchant's tier equals PREMIUM */
+        const { data: merchantData, error: tierError } = await supabaseAdmin
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", normalizedUser)
+            .maybeSingle();
+
+        if (tierError) {
+            console.error("Database query for tier failed:", tierError);
+            return NextResponse.json({ error: "Database error verifying tier" }, { status: 500 });
+        }
+
+        if (!merchantData || merchantData.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: Premium merchant tier required to modify ZK/Shielded settings" }, { status: 403 });
+        }
+
         if (shieldedPayoutsEnabled === undefined && viewKeyHash === undefined) {
             return NextResponse.json({ error: "Missing fields to update" }, { status: 400 });
         }
