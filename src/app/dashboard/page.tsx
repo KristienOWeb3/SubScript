@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
-import SubScriptCheckout from "@/components/SubScriptCheckout";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
@@ -1492,128 +1491,13 @@ export default function DashboardPage() {
 />`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet, promptFlowMode]);
 
     const agentIntegrationPrompt = useMemo(() => {
-        if (promptFlowMode === "standard") {
-            return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
+        return `I have run the initialization package to bootstrap my SubScript integration:
+npx @subscript-protocol/create
 
-SubScript uses standard transparent on-chain subscriptions on Arc Testnet for standard tier merchants.
+This automatically installed the SDK, configured environment variables, injected the SubScript .cursorrules file into my workspace root, and generated the webhook route boilerplate.
 
-LIVE MERCHANT DEPLOYMENT DETAILS:
-- Merchant Payout Wallet: "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
-- Plan Name: "${subName}"
-- Price per Period: "${subCap}" USDC (6 decimals, formatted as parseUnits('${subCap}', 6))
-- Billing Interval: ${billingPeriodSeconds} seconds
-- SubScript Contract: "${STANDARD_CONTRACT_ADDRESS}"
-- USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
-- Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
-- Routing Metadata: { "routing": "traceable" }
-
-To implement this project, follow this sequential 6-mission roadmap. Each mission must be completed completely with no TODOs or mock interfaces.
-
----
-
-MISSION 1 — DATABASE SCHEMA & RELATIONS
-Responsibilities:
-- Create normalized PostgreSQL schemas (via Prisma) for: users, wallets, subscriptions, entitlements, subscription_events, payment_events, webhook_events, and audit_logs.
-- Implement relational constraints, foreign keys, and indexes supporting lookups (entitlement, subscription, wallet) and webhook idempotency.
-- Enforce unique constraints on webhook events (e.g., event hash/provider ID + destination endpoint) for DB-level deduplication.
-- Design database queries to be row-locking compatible.
-
-MISSION 2 — ENTITLEMENT ENGINE & REDIS CACHE
-Responsibilities:
-- Implement resolveAccess(), grantEntitlement(), and revokeEntitlement() with row-level locks on writes.
-- Cache entitlement results in Redis (TTL = 300 seconds), evicting cached records on grant or revoke.
-- CRITICAL: Entitlements must never rely on background cleanup jobs. resolveAccess() must treat expired records (validUntil <= now()) as revoked even if the database status remains ACTIVE.
-- Derive entitlement duration strictly from database plan definitions (never accept duration from caller inputs).
-
-MISSION 3 — FRONTEND CHECKOUT HOOK
-Responsibilities:
-- Implement a React hook useSubscriptCheckout() using viem.
-- Handle standard transparent checkout flow:
-  1. Approve USDC allowance for the contract: approve(STANDARD_CONTRACT_ADDRESS, parseUnits('${subCap}', 6) * 12).
-  2. Call createSubscription(merchant, parseUnits('${subCap}', 6), periodSeconds) from user's connected wallet.
-- Display transaction states (approving, executing, success, error) with clean, minimal text/loaders.
-
-MISSION 4 — IDEMPOTENT WEBHOOK PROCESSOR
-Responsibilities:
-- Create a POST /api/webhooks route to ingest webhook events.
-- Verify HMAC-SHA256 signature using the configured webhook_secret_key. Reject invalid signatures.
-- Process subscription events: activated, payment.succeeded, payment.failed, cancelled, expired, updating entitlements.
-- CRITICAL: A database unique constraint is required for idempotency. Application-level deduplication (e.g. cache lookups) alone is insufficient.
-
-MISSION 5 — MIDDLEWARE & ACCESS CONTROL
-Responsibilities:
-- Protect all premium routes using Next.js middleware by evaluating entitlement status (Redis first, DB second).
-- CRITICAL: Middleware must not instantiate PrismaClient or open TCP database connections directly. Middleware may only use Redis, an HTTP API route, or an Edge-compatible database endpoint.
-
-MISSION 6 — SYSTEM INTEGRATION VERIFICATION
-Responsibilities:
-- Write comprehensive integration tests to verify: subscription activation, entitlement creation, webhook replay resistance, passive entitlement expiration, middleware route protection, and cache invalidation.
-- Implement concurrency tests and replay attack verification.`;
-        }
-
-        return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
-
-SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
-
-LIVE MERCHANT DEPLOYMENT DETAILS:
-- Merchant Payout Wallet: "${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
-- Plan Name: "${subName}"
-- Price per Period: "${subCap}" USDC (6 decimals, formatted as parseUnits('${subCap}', 6))
-- Billing Interval: ${billingPeriodSeconds} seconds
-- SubScript Router Contract: "${SUBSCRIPT_ROUTER_ADDRESS}"
-- USDC Contract (Native Gas Token): "${USDC_NATIVE_GAS_ADDRESS}"
-- Network: Arc Testnet (Chain ID: ${ARC_TESTNET_CHAIN_ID}, RPC: https://rpc.testnet.arc.network)
-- Routing Metadata: { "routing": "private" }
-
-To implement this project, follow this sequential 7-mission roadmap. Each mission must be completed completely with no TODOs or mock interfaces.
-
----
-
-MISSION 1 — DATABASE SCHEMA & RELATIONS
-Responsibilities:
-- Create normalized PostgreSQL schemas (via Prisma) for: users, wallets, subscriptions, entitlements, subscription_events, payment_events, webhook_events, and audit_logs.
-- Implement relational constraints, foreign keys, and indexes supporting lookups (entitlement, subscription, wallet) and webhook idempotency.
-- Enforce unique constraints on webhook events (e.g., event hash/provider ID + destination endpoint) for DB-level deduplication.
-- Design database queries to be row-locking compatible.
-
-MISSION 2 — ENTITLEMENT ENGINE & REDIS CACHE
-Responsibilities:
-- Implement resolveAccess(), grantEntitlement(), and revokeEntitlement() with row-level locks on writes.
-- Cache entitlement results in Redis (TTL = 300 seconds), evicting cached records on grant or revoke.
-- CRITICAL: Entitlements must never rely on background cleanup jobs. resolveAccess() must treat expired records (validUntil <= now()) as revoked even if the database status remains ACTIVE.
-- Derive entitlement duration strictly from database plan definitions (never accept duration from caller inputs).
-
-MISSION 3 — SERVER RELAYER ENGINE
-Responsibilities:
-- Implement burner activation relay flow using viem on the server to execute verifyAndActivate().
-- Server signs activation transaction; frontend burner wallet never funds gas.
-- CRITICAL: Relayer state must survive process restarts. The nonce source of truth must not be in-memory. Persist nonce coordination using Redis or database locking.
-- Manage tx propagation, handling RPC failures, dropped transactions, replacements (gas speed-up), and chain reorgs.
-
-MISSION 4 — DETERMINISTIC CRYPTOGRAPHY & FRONTEND HOOKS
-Responsibilities:
-- Implement useSubscriptCheckout() to handle ZK Burner private flow (approve router, commit keccak256(secret), depositAndCommit(), sign/verify signature).
-- Derive AES key from deterministic EIP-191 signature. Encrypt secret, store ciphertext only.
-- CRITICAL: The signature itself must never be stored. Only derived key material or ciphertext metadata may persist.
-- Implement wallet reconnect, multi-device, and browser refresh recovery.
-
-MISSION 5 — IDEMPOTENT WEBHOOK PROCESSOR
-Responsibilities:
-- Create a POST /api/webhooks route to ingest webhook events.
-- Verify HMAC-SHA256 signature using the configured webhook_secret_key. Reject invalid signatures.
-- Process subscription events: activated, payment.succeeded, payment.failed, cancelled, expired, updating entitlements.
-- CRITICAL: A database unique constraint is required for idempotency. Application-level deduplication (e.g. cache lookups) alone is insufficient.
-
-MISSION 6 — MIDDLEWARE & ACCESS CONTROL
-Responsibilities:
-- Protect all premium routes using Next.js middleware by evaluating entitlement status (Redis first, DB second).
-- CRITICAL: Middleware must not instantiate PrismaClient or open TCP database connections directly. Middleware may only use Redis, an HTTP API route, or an Edge-compatible database endpoint.
-
-MISSION 7 — SYSTEM INTEGRATION VERIFICATION
-Responsibilities:
-- Write comprehensive integration tests to verify: subscription activation, entitlement creation, relayer execution, webhook replay resistance, entitlement expiration, middleware route protection, cache invalidation, and multi-device recovery.
-- Implement concurrency tests, replay attack tests, and relayer nonce collision tests.`;
-    }, [activeMerchantAddress, merchantWalletAddress, subName, subCap, billingPeriodSeconds, promptFlowMode]);
+Please read the .cursorrules file and .env.local in this workspace root to find my integration settings (including API keys, merchant wallet address, plan parameters, and target framework). Then, locate the scaffolded webhook route file and implement the database order fulfillment and idempotency checks to complete the integration.`;
+    }, []);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
         mcpServers: {
@@ -2968,30 +2852,6 @@ Responsibilities:
                             </div>
                         </div>
 
-                        {/* Live Checkout Preview */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                            <div className="space-y-4">
-                                <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest">
-                                    Interactive Preview
-                                </h3>
-                                <p className="text-xs text-white/50 leading-relaxed font-sans">
-                                    Test the generated checkout flow directly on the Arc Testnet.
-                                    Ensure your wallet is connected, has sufficient USDC, and click the Subscribe button to trigger the approval and subscription flow.
-                                </p>
-                            </div>
-                            <div className="max-w-md w-full mx-auto lg:mx-0">
-                                <SubScriptCheckout
-                                    merchantAddress={activeMerchantAddress}
-                                    planName={subName}
-                                    amountCap={subCap}
-                                    interval={subInterval}
-                                    mode={promptFlowMode}
-                                    onSuccess={(txHash) => {
-                                        console.log("Subscription created:", txHash);
-                                    }}
-                                />
-                            </div>
-                        </div>
 
                         {/* Agent Prompt Block */}
                         <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40">
