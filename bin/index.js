@@ -1,107 +1,131 @@
 #!/usr/bin/env node
-/**
- * generatedBy: "SubScript CLI"
- * entrypoint: "src/cli/index.ts"
- * description: "TypeScript ESM-compatible CLI for scaffolding SubScript protocol integrations."
- */
-import { runInit } from "./commands/init.js";
-import { runAddCheckout } from "./commands/addCheckout.js";
-import { runAddWebhook } from "./commands/addWebhook.js";
-import { runVerify } from "./commands/verify.js";
-import { runDoctor } from "./commands/doctor.js";
-import { runUpdate } from "./commands/update.js";
-const red = "\x1b[31m";
-const green = "\x1b[38;2;0;210;180m";
-const bold = "\x1b[1m";
-const dim = "\x1b[2m";
-const reset = "\x1b[0m";
-function printUsage() {
-    console.log(`
-${green}${bold}   _____       __   _____           _       __ 
-  / ___/__  __/ /_ / ___/__________(_)___  / /_
-  \\__ \\/ / / / __ \\\\__ \\/ ___/ ___/ / __ \\/ __/
- ___/ / /_/ / /_/ /__/ / /__/ /  / / /_/ / /_  
-/____/\\__,_/_.___/____/\\___/_/  /_/ .___/\\__/  
-                                 /_/           ${reset}
-                  ${bold}SubScript CLI${reset} - Production Integration Scaffolder
-
-Usage:
-  npx @subscript/cli <command> [options]
-
-Commands:
-  ${bold}init${reset}          Complete integration bootstrap
-  ${bold}add checkout${reset}  Generate standard or ZK checkout buttons
-  ${bold}add webhook${reset}   Generate signature-verified webhook endpoints
-  ${bold}verify${reset}        Validate local configuration and connection states
-  ${bold}doctor${reset}        Audit repository files and configurations
-  ${bold}update${reset}        Safely upgrade generated files with backups
-
-Options:
-  --session <token>    Onboarding bridge session token (required for init)
-  --mode <mode>        Standard or ZK-routed payment mode ('standard' | 'zk-routed')
-  --no-telemetry       Decline telemetry event logging
-`);
-}
-function parseFlags(argv) {
-    const args = argv.slice(2);
-    const command = args[0] || "";
-    const subCommand = args[1] || "";
-    let session = "";
-    let mode = "";
-    let noTelemetry = false;
-    for (let i = 0; i < args.length; i++) {
-        if (args[i] === "--session" && args[i + 1]) {
-            session = args[i + 1];
-            i++;
-        }
-        else if (args[i] === "--mode" && args[i + 1]) {
-            mode = args[i + 1];
-            i++;
-        }
-        else if (args[i] === "--no-telemetry") {
-            noTelemetry = true;
-        }
-    }
-    return { command, subCommand, session, mode, noTelemetry };
-}
+import { intro, outro, text, select, isCancel, cancel } from "@clack/prompts";
+import { execSync } from "node:child_process";
+import { writeFile, mkdir } from "node:fs/promises";
+import path from "node:path";
 async function main() {
-    const { command, subCommand, session, mode, noTelemetry } = parseFlags(process.argv);
-    if (!command) {
-        printUsage();
+    intro("@subscript-protocol/create");
+    const apiKeyResult = await text({
+        message: "Enter your SubScript Merchant API Key (Used for Webhook Verification):",
+        placeholder: "your_api_key_here",
+        validate(value) {
+            if (!value || value.trim().length === 0) {
+                return "API Key is required.";
+            }
+            return;
+        },
+    });
+    if (isCancel(apiKeyResult)) {
+        cancel("Operation cancelled.");
         process.exit(0);
     }
-    switch (command.toLowerCase()) {
-        case "init":
-            await runInit({ session, mode, noTelemetry });
-            break;
-        case "add":
-            if (subCommand.toLowerCase() === "checkout") {
-                await runAddCheckout({ noTelemetry });
-            }
-            else if (subCommand.toLowerCase() === "webhook") {
-                await runAddWebhook({ noTelemetry });
-            }
-            else {
-                console.error(`\n${red}${bold}Error:${reset} Unknown add target "${subCommand}". Use "checkout" or "webhook".`);
-                process.exit(1);
-            }
-            break;
-        case "verify":
-            await runVerify({ noTelemetry });
-            break;
-        case "doctor":
-            await runDoctor();
-            break;
-        case "update":
-            await runUpdate({ noTelemetry });
-            break;
-        default:
-            console.error(`\n${red}${bold}Error:${reset} Unknown command "${command}".`);
-            printUsage();
-            process.exit(1);
+    const apiKey = apiKeyResult;
+    const frameworkResult = await select({
+        message: "Select your project framework:",
+        options: [
+            { value: "nextjs", label: "Next.js App Router" },
+            { value: "express", label: "Express/Node" },
+        ],
+    });
+    if (isCancel(frameworkResult)) {
+        cancel("Operation cancelled.");
+        process.exit(0);
     }
+    const framework = frameworkResult;
+    /* Install SDK */
+    try {
+        execSync("npm install @subscript-protocol/sdk", { stdio: "inherit" });
+    }
+    catch (err) {
+        /* Ignore error, allow command output to guide user if needed */
+    }
+    /* Phase 2: Environment Scaffold */
+    await writeFile(".env.local", `SUBSCRIPT_API_KEY=${apiKey}\n`, "utf8");
+    await writeFile(".env.example", "SUBSCRIPT_API_KEY=your_api_key_here\n", "utf8");
+    /* Agent Context Injection (.cursorrules) */
+    const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
+You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
+1. THE SDK TRUTH: Always use the \`@subscript-protocol/sdk\` package for integrations.
+   - Use \`subscript.links.create({ amount_usdc, title, merchant_address })\` for checkout URLs.
+   - Use \`subscript.webhooks.verifySignature(rawBody, signature, secret)\` to validate incoming payloads.
+2. NON-CUSTODIAL ROUTING: SubScript is entirely stateless. Never suggest creating ephemeral wallets or storing private keys.
+3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.paymentLinkId\` to check against the local database before crediting users.
+4. SECURITY: Read the API key exclusively from \`process.env.SUBSCRIPT_API_KEY\`. Never hardcode keys.
+`;
+    await writeFile(".cursorrules", cursorrulesContent, "utf8");
+    /* Phase 3: Boilerplate Webhook API Scaffolding */
+    if (framework === "nextjs") {
+        const webhookPath = "src/app/api/webhooks/subscript/route.ts";
+        const webhookDir = path.dirname(webhookPath);
+        await mkdir(webhookDir, { recursive: true });
+        const nextjsBoilerplate = `import { NextResponse } from "next/server";
+import { SubScript } from "@subscript-protocol/sdk";
+
+const subscript = new SubScript({
+  apiKey: process.env.SUBSCRIPT_API_KEY || "",
+});
+
+export async function POST(request: Request) {
+  try {
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-subscript-signature") || "";
+    const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
+
+    const isValid = subscript.webhooks.verifySignature(rawBody, signature, secret);
+
+    if (!isValid) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    /* TODO: Agent - Implement local database order fulfillment and idempotency checks here */
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+`;
+        await writeFile(webhookPath, nextjsBoilerplate, "utf8");
+    }
+    else {
+        const webhookPath = "src/api/webhooks/subscript/route.ts";
+        const webhookDir = path.dirname(webhookPath);
+        await mkdir(webhookDir, { recursive: true });
+        const expressBoilerplate = `import express from "express";
+import { SubScript } from "@subscript-protocol/sdk";
+
+const router = express.Router();
+const subscript = new SubScript({
+  apiKey: process.env.SUBSCRIPT_API_KEY || "",
+});
+
+router.post("/api/webhooks/subscript", express.raw({ type: "application/json" }), async (req, res) => {
+  try {
+    const rawBody = req.body.toString();
+    const signature = (req.headers["x-subscript-signature"] as string) || "";
+    const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
+
+    const isValid = subscript.webhooks.verifySignature(rawBody, signature, secret);
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid signature" });
+    }
+
+    /* TODO: Agent - Implement local database order fulfillment and idempotency checks here */
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
+`;
+        await writeFile(webhookPath, expressBoilerplate, "utf8");
+    }
+    outro("SubScript SDK and Agent Context successfully injected!");
 }
 main().catch((err) => {
-    console.error(`\n${red}${bold}Fatal:${reset} ${err.message || err}`);
+    console.error("Fatal error:", err);
     process.exit(1);
 });
