@@ -10,18 +10,18 @@ const redis = new Redis({
 });
 
 /* Create two separate rate limiters using the Redis client */
-/* authLimiter: 30 requests per 15 minutes (sliding window) */
+/* authLimiter: 20 requests per 1 minute (sliding window) */
 const authLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(30, "15 m"),
+    limiter: Ratelimit.slidingWindow(20, "1 m"),
     analytics: true,
     prefix: "ratelimit:auth",
 });
 
-/* globalLimiter: 500 requests per 15 minutes (sliding window) */
+/* globalLimiter: 150 requests per 1 minute (sliding window) */
 const globalLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(500, "15 m"),
+    limiter: Ratelimit.slidingWindow(150, "1 m"),
     analytics: true,
     prefix: "ratelimit:global",
 });
