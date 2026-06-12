@@ -49,7 +49,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const title = `Pay ${merchantShort} - ${amountFormatted} USDC`;
     const description = link.description || "Secure checkout via SubScript Protocol";
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://subscript.network";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL 
+        ? process.env.NEXT_PUBLIC_APP_URL 
+        : process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}` 
+            : "https://subscript.network";
     return {
         metadataBase: new URL(appUrl),
         title,
