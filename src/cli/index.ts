@@ -142,10 +142,12 @@ SUBSCRIPT_INTERVAL=2592000
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
 1. THE SDK TRUTH: Always use the \`@subscript-protocol/sdk\` package for integrations.
    - Use \`subscript.links.create({ amount_usdc, title, merchant_address })\` for checkout URLs.
-   - Use \`subscript.webhooks.verifySignature(rawBody, signature, secret)\` to validate incoming payloads.
+   - You MUST enforce signature validation routines using \`webhooks.verifySignature\` (e.g. \`subscript.webhooks.verifySignature(rawBody, signature, secret)\`) before handling raw payloads to protect endpoints.
 2. NON-CUSTODIAL ROUTING: SubScript is entirely stateless. Never suggest creating ephemeral wallets or storing private keys.
 3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.paymentLinkId\` to check against the local database before crediting users.
-4. SECURITY: Read the API key exclusively from \`process.env.SUBSCRIPT_API_KEY\`. Never hardcode keys.
+4. SECURITY & SECRETS ISOLATION:
+   - You MUST store all API keys, webhook secrets, and private credentials strictly within \`.env.local\`. Never commit secrets or write them to un-ignored environment configuration files.
+   - Read the API key exclusively from \`process.env.SUBSCRIPT_API_KEY\`. Never hardcode keys.
 
 ## INTEGRATION CONFIGURATION
 - MERCHANT WALLET ADDRESS: ${merchantWalletAddress}

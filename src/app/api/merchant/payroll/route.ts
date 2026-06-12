@@ -14,6 +14,22 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const VALID_ACTIONS = ["PAUSE", "RESUME", "UPDATE_PERMIT"] as const;
 type CampaignAction = typeof VALID_ACTIONS[number];
 
+/* Helper function to check if the merchant is PREMIUM */
+async function verifyPremiumTier(normalizedUser: string): Promise<boolean> {
+    if (!supabaseAdmin) {
+        return false;
+    }
+    const { data, error } = await supabaseAdmin
+        .from("merchants")
+        .select("tier")
+        .eq("wallet_address", normalizedUser)
+        .maybeSingle();
+    if (error || !data) {
+        return false;
+    }
+    return data.tier === "PREMIUM";
+}
+
 /**
  * GET - List all payroll campaigns for the authenticated merchant.
  * Each campaign includes the recipient count and total payroll amount.
@@ -29,6 +45,11 @@ export async function GET(request: Request) {
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
+        }
+
+        const isPremium = await verifyPremiumTier(normalizedUser);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
         }
 
         /* Fetch all campaigns belonging to this merchant */
@@ -115,6 +136,11 @@ export async function POST(request: Request) {
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
+        }
+
+        const isPremium = await verifyPremiumTier(normalizedUser);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
         }
 
         const body = await request.json();
@@ -309,6 +335,11 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
         }
 
+        const isPremium = await verifyPremiumTier(normalizedUser);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
+        }
+
         const body = await request.json();
         const { campaignId, action, permit2Signature, permit2Nonce, permit2Deadline, permit2Expiration } = body;
 
@@ -428,6 +459,11 @@ export async function DELETE(request: Request) {
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available." }, { status: 500 });
+        }
+
+        const isPremium = await verifyPremiumTier(normalizedUser);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: Institutional Payroll requires a PREMIUM tier subscription." }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);

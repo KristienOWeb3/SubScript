@@ -92,7 +92,7 @@ export async function POST(request: Request) {
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
 
-        if (merchError || !merchant || Number(merchant.tier) !== 1) {
+        if (merchError || !merchant || merchant.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Forbidden: Premium merchant tier required for batch payouts" }, { status: 403 });
         }
 

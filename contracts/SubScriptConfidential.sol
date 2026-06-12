@@ -28,6 +28,9 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     /* Mapping from viewKeyHash => merchant address */
     mapping(bytes32 => address) public viewKeyHashes;
 
+    /* CCTP Ethereum Sepolia USDC contract address */
+    address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+
     /* Mapping from merchant => array of batch records */
     mapping(address => BatchRecord[]) private batchHistory;
 
@@ -75,6 +78,7 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     ) external onlyOwner nonReentrant {
         require(recipients.length == amounts.length, "Array length mismatch");
         require(recipients.length > 0, "Empty arrays");
+        require(recipients.length < 255, "Array size exceeds limit");
 
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; i++) {

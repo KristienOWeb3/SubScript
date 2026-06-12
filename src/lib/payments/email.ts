@@ -42,12 +42,16 @@ export async function triggerExitSurvey(
             .maybeSingle();
 
         if (templateError) {
-            console.error("Error fetching exit survey template:", templateError);
-            return;
+            console.error("Error fetching exit survey template, falling back to default:", templateError);
         }
 
-        if (!template || !template.is_active) {
-            return;
+        const adminAddress = (process.env.ADMIN_WALLET_ADDRESS || "").toLowerCase();
+        let subjectTemplate = "We are sorry to see you go";
+        let bodyTemplate = "Hello,\n\nWe noticed that your subscription (Tier: {{subscription_tier}}) was cancelled for wallet {{customer_wallet}}. We would appreciate it if you could share your feedback with us.\n\nBest regards,\nSubScript Team";
+
+        if (template && template.is_active && merchantAddress.toLowerCase() !== adminAddress) {
+            subjectTemplate = template.subject_line;
+            bodyTemplate = template.body_content;
         }
 
         let customerAddress = "";
@@ -104,11 +108,11 @@ export async function triggerExitSurvey(
         const tierStr = String(subscriptionTier);
         const customerWalletStr = customerAddress;
 
-        const subject = template.subject_line
+        const subject = subjectTemplate
             .replace(/\{\{customer_wallet\}\}/g, customerWalletStr)
             .replace(/\{\{subscription_tier\}\}/g, tierStr);
 
-        const body = template.body_content
+        const body = bodyTemplate
             .replace(/\{\{customer_wallet\}\}/g, customerWalletStr)
             .replace(/\{\{subscription_tier\}\}/g, tierStr);
 

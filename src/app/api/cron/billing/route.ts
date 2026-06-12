@@ -80,7 +80,7 @@ export async function POST(request: Request) {
                         .eq("wallet_address", merchantAddress)
                         .maybeSingle();
 
-                    if (mError || !merchant || Number(merchant.tier) !== 1) {
+                    if (mError || !merchant || merchant.tier !== "PREMIUM") {
                         console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not PREMIUM (got ${merchant?.tier}). Skipping downgrade.`);
                         continue;
                     }

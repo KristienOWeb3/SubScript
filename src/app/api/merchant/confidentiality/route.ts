@@ -74,7 +74,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Database error verifying tier" }, { status: 500 });
         }
 
-        if (!merchantData || Number(merchantData.tier) !== 1) {
+        if (!merchantData || merchantData.tier === "FREE") {
             return NextResponse.json({ error: "Forbidden: Premium merchant tier required to modify ZK/Shielded settings" }, { status: 403 });
         }
 

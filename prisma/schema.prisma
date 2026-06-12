@@ -71,17 +71,19 @@ model Session {
 }
 
 model PaymentLink {
-  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  merchantAddress    String               @map("merchant_address")
-  title              String
-  description        String?
-  amountUsdc         BigInt               @map("amount_usdc")
-  active             Boolean              @default(true)
-  expiresAt          DateTime?            @map("expires_at")
-  externalReference  String?              @map("external_reference")
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @default(now()) @map("updated_at")
-  payments           PaymentLinkPayment[]
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress      String               @map("merchant_address")
+  title                String
+  description          String?
+  amountUsdc           BigInt               @map("amount_usdc")
+  active               Boolean              @default(true)
+  expiresAt            DateTime?            @map("expires_at")
+  externalReference    String?              @map("external_reference")
+  idempotencyKey       String?              @unique @map("idempotency_key")
+  merchantNameSnapshot String?              @map("merchant_name_snapshot")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @default(now()) @map("updated_at")
+  payments             PaymentLinkPayment[]
 
   @@index([merchantAddress], map: "payment_links_merchant_idx")
   @@index([active], map: "payment_links_active_idx")

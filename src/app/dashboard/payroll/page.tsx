@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
     ArrowLeft, Plus, Pause, Play, Trash2, Users, Calendar,
     Shield, ShieldOff, Loader2, CheckCircle, AlertTriangle,
-    DollarSign, Clock, Building2
+    DollarSign, Clock, Building2, Lock
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -113,6 +113,10 @@ export default function PayrollPage() {
     const [campaigns, setCampaigns] = useState<PayrollCampaign[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [merchantTier, setMerchantTier] = useState<string | null>(null);
+    const [isLoadingTier, setIsLoadingTier] = useState(true);
+
+    const pageIsLoading = isLoading || isLoadingTier;
 
     /* ----- toast ----- */
     const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
@@ -174,11 +178,32 @@ export default function PayrollPage() {
         }
     }, [address]);
 
+    const fetchTier = useCallback(async () => {
+        if (!address) return;
+        try {
+            setIsLoadingTier(true);
+            const res = await fetch(`/api/merchant/tier?address=${address}`);
+            if (res.ok) {
+                const tierData = await res.json();
+                const tierStr = tierData.tier === 1 ? "PREMIUM" : "FREE";
+                setMerchantTier(tierStr);
+            } else {
+                setMerchantTier("FREE");
+            }
+        } catch (err) {
+            console.error("Failed to fetch merchant tier:", err);
+            setMerchantTier("FREE");
+        } finally {
+            setIsLoadingTier(false);
+        }
+    }, [address]);
+
     useEffect(() => {
         if (isMounted && address) {
             fetchCampaigns();
+            fetchTier();
         }
-    }, [isMounted, address, fetchCampaigns]);
+    }, [isMounted, address, fetchCampaigns, fetchTier]);
 
     /* ------------------------------------------------------------------ */
     /*  Permit2 signing                                                    */
@@ -696,7 +721,74 @@ export default function PayrollPage() {
                     Back to Dashboard
                 </Link>
 
-                {/* Page header */}
+                <div style={{ position: "relative" }}>
+                    {/* Liquid Glass Lock Overlay for Standard/Free Tier */}
+                    {!pageIsLoading && merchantTier === "FREE" && (
+                        <div style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            zIndex: 50,
+                            background: "rgba(10, 10, 15, 0.75)",
+                            backdropFilter: "blur(16px)",
+                            borderRadius: "16px",
+                            border: "1px solid rgba(255, 255, 255, 0.08)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "60px 24px",
+                            textAlign: "center",
+                            minHeight: "400px"
+                        }}>
+                            <div style={{
+                                width: "64px",
+                                height: "64px",
+                                borderRadius: "50%",
+                                background: "rgba(139, 92, 246, 0.15)",
+                                border: "1px solid rgba(139, 92, 246, 0.3)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                marginBottom: "20px"
+                            }}>
+                                <Lock size={28} style={{ color: "#a5b4fc" }} />
+                            </div>
+                            <h2 style={{ fontSize: "22px", fontWeight: 700, marginBottom: "12px", color: "white" }}>
+                                Premium Feature Locked
+                            </h2>
+                            <p style={{
+                                color: "rgba(255,255,255,0.6)",
+                                fontSize: "15px",
+                                maxWidth: "480px",
+                                marginBottom: "28px",
+                                lineHeight: "1.6"
+                            }}>
+                                Institutional Payroll and automated recurring batch payouts are premium features. Upgrade your merchant account to premium to unlock streaming salary payouts to your team.
+                            </p>
+                            <Link
+                                href="/dashboard?upgrade=true"
+                                style={{
+                                    background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+                                    borderRadius: "10px",
+                                    color: "white",
+                                    padding: "12px 28px",
+                                    fontSize: "15px",
+                                    fontWeight: 600,
+                                    textDecoration: "none",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    boxShadow: "0 4px 20px rgba(99, 102, 241, 0.3)",
+                                    transition: "transform 0.2s"
+                                }}
+                            >
+                                Upgrade to Premium
+                            </Link>
+                        </div>
+                    )}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1030,7 +1122,7 @@ export default function PayrollPage() {
                 {/* ============================================================ */}
 
                 {/* Loading skeleton */}
-                {isLoading && (
+                {pageIsLoading && (
                     <div>
                         {[1, 2, 3].map((n) => (
                             <motion.div
@@ -1060,7 +1152,7 @@ export default function PayrollPage() {
                 )}
 
                 {/* Error state */}
-                {!isLoading && loadError && (
+                {!pageIsLoading && loadError && (
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -1088,7 +1180,7 @@ export default function PayrollPage() {
                 )}
 
                 {/* Empty state */}
-                {!isLoading && !loadError && campaigns.length === 0 && (
+                {!pageIsLoading && !loadError && campaigns.length === 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -1118,7 +1210,7 @@ export default function PayrollPage() {
                 )}
 
                 {/* Campaign cards */}
-                {!isLoading && !loadError && campaigns.length > 0 && (
+                {!pageIsLoading && !loadError && campaigns.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -1268,6 +1360,7 @@ export default function PayrollPage() {
                         })}
                     </motion.div>
                 )}
+                </div>
             </div>
 
             {/* Spin keyframe for Loader2 */}

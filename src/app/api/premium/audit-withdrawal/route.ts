@@ -39,7 +39,7 @@ export async function POST(request: Request) {
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
 
-        if (!merchantData || merchantData.tier < 1) {
+        if (!merchantData || merchantData.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Forbidden: Private routing operations require an active premium tier." }, { status: 403 });
         }
 

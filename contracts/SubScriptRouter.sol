@@ -29,7 +29,8 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /* Secure internal pull-payment ledger mapping merchant => USDC balance */
     mapping(address => uint256) public merchantBalances;
 
-
+    /* CCTP Ethereum Sepolia USDC contract address */
+    address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
 
     /* Subscription tier for merchants (0 = Standard, 1 = Premium) */
     mapping(address => uint8) public merchantTiers;
@@ -183,6 +184,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     ) external onlyOwner nonReentrant whenNotPaused {
         require(recipients.length == amounts.length, "Array length mismatch");
         require(recipients.length > 0, "Empty arrays");
+        require(recipients.length < 255, "Array size exceeds limit");
 
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; i++) {

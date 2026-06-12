@@ -214,16 +214,11 @@ export async function POST(request: Request) {
                         await approveTx.wait();
                     }
 
-                    /* Step D: Call executeBatchPayout on SubScriptConfidential */
-                    const viewKeyHashBytes32 = merchant.viewKeyHash
-                        ? ethers.zeroPadValue(merchant.viewKeyHash, 32)
-                        : ethers.ZeroHash;
-
                     const batchTx = await confidentialContract.executeBatchPayout(
                         recipientAddresses,
                         recipientAmounts,
                         campaign.isShielded,
-                        viewKeyHashBytes32
+                        ethers.ZeroHash
                     );
                     
                     const receipt = await batchTx.wait();

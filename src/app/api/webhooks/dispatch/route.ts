@@ -58,8 +58,8 @@ export async function POST(request: Request) {
         if (merchantErr) {
             console.error(`[dispatch] Failed to query merchant: ${merchantErr.message}`);
         }
-        const dbMerchantTier = merchantData ? merchantData.tier : 0;
-        if (dbMerchantTier < 1) {
+        const dbMerchantTier = merchantData ? merchantData.tier : "FREE";
+        if (dbMerchantTier !== "PREMIUM") {
             console.warn(`[dispatch] Skip dispatch: Merchant ${normalizedWallet} is not premium (Tier ${dbMerchantTier}).`);
             return NextResponse.json({ error: "Forbidden: Event dispatching requires an active premium tier." }, { status: 403 });
         }

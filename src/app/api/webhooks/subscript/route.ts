@@ -164,7 +164,7 @@ export async function POST(request: Request) {
 
         if (fetchError) {
             console.warn(`[Webhook Warning] Could not fetch merchant status for ${merchantAddress}:`, fetchError);
-        } else if (merchantInfo && merchantInfo.tier >= 1) {
+        } else if (merchantInfo && merchantInfo.tier === "PREMIUM") {
             console.log(`[Premium Rerouting Active] Payout mapping fetched for ${merchantAddress}:`, {
                 tier: merchantInfo.tier,
                 payoutDestination: merchantInfo.payout_destination || "Default connected address"

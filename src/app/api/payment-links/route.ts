@@ -58,7 +58,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { title, description, amount_usdc, expires_at, external_reference } = body;
+        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name } = body;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -83,6 +83,19 @@ export async function POST(request: Request) {
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        /* Idempotency Check */
+        if (idempotency_key && typeof idempotency_key === "string" && idempotency_key.trim() !== "") {
+            const { data: existingLink } = await supabase
+                .from("payment_links")
+                .select("*")
+                .eq("idempotency_key", idempotency_key)
+                .maybeSingle();
+
+            if (existingLink) {
+                return NextResponse.json({ link: existingLink }, { status: 200 });
+            }
+        }
+
         /* Get merchant's tier and count active links to enforce quotas */
         const [merchantRes, countRes] = await Promise.all([
             supabase
@@ -103,9 +116,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: merchantRes.error.message }, { status: 500 });
         }
 
-        const tier = merchantRes.data ? Number(merchantRes.data.tier) : 0;
+        const tier = merchantRes.data ? merchantRes.data.tier : "FREE";
         const activeCount = countRes.count || 0;
-        const limit = tier === 1 ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
+        const limit = tier === "PREMIUM" ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
 
         if (activeCount >= limit) {
             return NextResponse.json({
@@ -131,7 +144,9 @@ export async function POST(request: Request) {
                         return new Date(expires_at).toISOString();
                     })()
                     : null,
-                external_reference: external_reference || null
+                external_reference: external_reference || null,
+                idempotency_key: idempotency_key || null,
+                merchant_name_snapshot: merchant_name || null
             })
             .select()
             .single();
