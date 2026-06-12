@@ -76,10 +76,11 @@ type TabId = typeof tabs[number]["id"];
 
 export default function DashboardPage() {
     const [isMounted, setIsMounted] = useState(false);
-    const { address: realAddress, isConnected: realIsConnected } = useAccount();
+    const { address: realAddress, isConnected: realIsConnected, chainId } = useAccount();
     const { connect, connectors, error: connectError, isError: isConnectError, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
+    const { switchChain, switchChainAsync } = useSwitchChain();
     const [isTestMode, setIsTestMode] = useState(false);
 
     /* Soulbound Access Key (SBT) State removed because SBT infrastructure is deleted */
@@ -210,6 +211,13 @@ export default function DashboardPage() {
             }
             return data.txHash as string;
         } else {
+            if (chainId !== ARC_TESTNET_CHAIN_ID) {
+                if (switchChainAsync) {
+                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                } else if (switchChain) {
+                    switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+                }
+            }
             return await writeContractAsync({
                 address: contractAddress as `0x${string}`,
                 abi: contractAbi,
@@ -218,9 +226,6 @@ export default function DashboardPage() {
             });
         }
     };
-
-    const { switchChain, switchChainAsync } = useSwitchChain();
-    const { chainId } = useAccount();
 
 
     const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
@@ -1509,8 +1514,8 @@ Here are my project configuration specifications for this integration:
 
 Please complete the following implementation tasks:
 1. Webhook Fulfillment: Locate the generated webhook route (e.g., src/app/api/webhooks/subscript/route.ts or express handler). Implement database order fulfillment and subscription state tracking using the selected database provider (${dbProvider === "none" ? "detected database" : dbProvider}). Ensure webhook signature verification is enabled and write robust idempotency checks using the event's paymentLinkId.
-2. User Authentication & Wallet Session: If the project lacks a Web3 login button, implement the selected wallet connection method (${walletProvider === "none" ? "standard Web3 connection" : walletProvider}) in the client-side UI. Set up session recreation/persistence using the selected session engine (${sessionProvider === "none" ? "standard session mechanism" : sessionProvider}) so that the frontend can dynamically identify if the logged-in user has an active, paid subscription.
-3. Clean Code Practices: Ensure that all code comments use block formatting (/* ... */) exclusively. Never use double-slash comments (//). Do not add emojis in comments or logs.`;
+2. User Authentication & Wallet Session: If the project lacks a Web3 login button, implement the selected wallet connection method (${walletProvider === "none" ? "standard Web3 connection" : walletProvider}) in the client-side UI. Set up session recreation/persistence using the selected session engine (${sessionProvider === "none" ? "standard session mechanism" : sessionProvider}) so that the frontend can dynamically identify if the logged-in user has an active, paid subscription. Ensure that the wallet connection is configured to the Arc Testnet for all payment transactions and contract interactions (Chain ID: 5042002, RPC URL: https://rpc.testnet.arc.network).
+3. Clean Code Practices: Ensure that all code comments use block formatting (/* ... */) exclusively. Never use double-slash comments. Do not add emojis in comments or logs.`;
     }, [walletProvider, dbProvider, sessionProvider]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
