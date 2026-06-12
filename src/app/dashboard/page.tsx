@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
 import posthog from "posthog-js";
 import { ethers } from "ethers";
 import Link from "next/link";
@@ -102,6 +102,7 @@ export default function DashboardPage() {
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
+    const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
     const [showLinkAdvanced, setShowLinkAdvanced] = useState(false);
     const [showCheckoutAdvanced, setShowCheckoutAdvanced] = useState(false);
     const [ledgerPage, setLedgerPage] = useState(0);
@@ -460,7 +461,7 @@ export default function DashboardPage() {
 
             setCreatedLinkInfo({ id: data.link.id, title: data.link.title });
             setLinkSuccess("Payment link created successfully!");
-            setToastMessage("Settled via Malachite");
+            setToastMessage("Link Created Successfully");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
             setLinkTitle("");
@@ -1883,72 +1884,143 @@ Responsibilities:
                                                     : "Active";
 
                                             return (
-                                                <tr key={link.id} className="hover:bg-white/[0.01] transition-colors">
-                                                    <td className="py-4 pr-4">
-                                                        <div className="font-bold text-white">{link.title}</div>
-                                                        {link.description && (
-                                                            <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
-                                                        ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
-                                                    </td>
-                                                    <td className="py-4 px-4 text-white/60 font-mono">
-                                                        {link.external_reference || "-"}
-                                                    </td>
-                                                    <td className="py-4 px-4 text-white/50">
-                                                        {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
-                                                            status === "Active"
-                                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                                                : status === "Expired"
-                                                                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                                                                    : "bg-white/5 border-white/10 text-white/40"
-                                                        }`}>
-                                                            {status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-4 pl-4 text-right">
-                                                        <div className="flex gap-2.5 justify-end items-center font-sans">
-                                                            <button
-                                                                onClick={() => handleCopyLink(link.id)}
-                                                                className="px-4 py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5"
-                                                            >
-                                                                {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const url = `${window.location.origin}/pay/${link.id}`;
-                                                                    setActiveQrCodeLink(url);
-                                                                    setActiveQrCodeTitle(link.title);
-                                                                }}
-                                                                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
-                                                                title="Show QR Code"
-                                                            >
-                                                                <QrCode className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                                className={`px-4 py-2 rounded-xl border text-[10px] font-bold uppercase transition-all ${
-                                                                    link.active
-                                                                        ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
-                                                                        : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
-                                                                }`}
-                                                            >
-                                                                {link.active ? "Deactivate" : "Activate"}
-                                                            </button>
-                                                            <div className="w-[1px] h-4 bg-white/10 mx-1" />
-                                                            <button
-                                                                onClick={() => handleDeleteLink(link.id)}
-                                                                className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
-                                                            >
-                                                                Delete
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
+                                                <Fragment key={link.id}>
+                                                    <tr className="hover:bg-white/[0.01] transition-colors">
+                                                        <td className="py-4 pr-4">
+                                                            <div className="font-bold text-white">{link.title}</div>
+                                                            {link.description && (
+                                                                <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
+                                                            ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                        </td>
+                                                        <td className="py-4 px-4 text-white/60 font-mono">
+                                                            {link.external_reference || "-"}
+                                                        </td>
+                                                        <td className="py-4 px-4 text-white/50">
+                                                            {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
+                                                        </td>
+                                                        <td className="py-4 px-4">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
+                                                                status === "Active"
+                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                                    : status === "Expired"
+                                                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                                                        : "bg-white/5 border-white/10 text-white/40"
+                                                            }`}>
+                                                                {status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-4 pl-4 text-right">
+                                                            <div className="flex gap-2.5 justify-end items-center font-sans">
+                                                                <button
+                                                                    onClick={() => handleCopyLink(link.id)}
+                                                                    className="px-4 py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5"
+                                                                >
+                                                                    {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const url = `${window.location.origin}/pay/${link.id}`;
+                                                                        setActiveQrCodeLink(url);
+                                                                        setActiveQrCodeTitle(link.title);
+                                                                    }}
+                                                                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
+                                                                    title="Show QR Code"
+                                                                >
+                                                                    <QrCode className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setExpandedLinkId(expandedLinkId === link.id ? null : link.id);
+                                                                    }}
+                                                                    className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                                                                        expandedLinkId === link.id
+                                                                            ? "bg-[#00d2b4]/20 border-[#00d2b4]/30 text-[#00d2b4]"
+                                                                            : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white"
+                                                                    }`}
+                                                                    title="Show Payments Stats"
+                                                                >
+                                                                    <BarChart3 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleToggleLinkActive(link.id, link.active)}
+                                                                    className={`px-4 py-2 rounded-xl border text-[10px] font-bold uppercase transition-all ${
+                                                                        link.active
+                                                                            ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
+                                                                            : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
+                                                                    }`}
+                                                                >
+                                                                    {link.active ? "Deactivate" : "Activate"}
+                                                                </button>
+                                                                <div className="w-[1px] h-4 bg-white/10 mx-1" />
+                                                                <button
+                                                                    onClick={() => handleDeleteLink(link.id)}
+                                                                    className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                    {expandedLinkId === link.id && (
+                                                        <tr className="bg-white/[0.01]">
+                                                            <td colSpan={6} className="py-4 px-6 border-l-2 border-[#00d2b4] bg-white/[0.005] rounded-r-2xl">
+                                                                <div className="space-y-3 font-sans">
+                                                                    <div className="flex justify-between items-center">
+                                                                        <span className="text-white font-bold text-xs uppercase tracking-wider">Link Stats & Payments</span>
+                                                                        <span className="text-[10px] text-white/40">Total Payments: {link.payments?.length || 0}</span>
+                                                                    </div>
+                                                                    {!link.payments || link.payments.length === 0 ? (
+                                                                        <div className="py-4 text-center text-[11px] text-white/30 border border-dashed border-white/5 rounded-xl">
+                                                                            No payments recorded for this checkout link yet.
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="overflow-hidden border border-white/5 rounded-xl bg-black/20">
+                                                                            <table className="w-full text-left border-collapse text-[10px]">
+                                                                                <thead>
+                                                                                    <tr className="border-b border-white/5 bg-white/[0.02] text-[8px] uppercase tracking-wider text-white/30 font-bold">
+                                                                                        <th className="py-2.5 px-3">Payer Address</th>
+                                                                                        <th className="py-2.5 px-3">Tx Hash</th>
+                                                                                        <th className="py-2.5 px-3">Date</th>
+                                                                                        <th className="py-2.5 px-3 text-right">Amount</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody className="divide-y divide-white/5 font-mono text-white/60">
+                                                                                    {link.payments.map((p: any) => (
+                                                                                        <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                                                                                            <td className="py-2 px-3 text-[#00d2b4]">
+                                                                                                {p.payer_address ? `${p.payer_address.slice(0, 10)}...${p.payer_address.slice(-8)}` : "-"}
+                                                                                            </td>
+                                                                                            <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
+                                                                                                {p.tx_hash ? (
+                                                                                                    <a 
+                                                                                                        href={`https://explorer.arc.network/tx/${p.tx_hash}`} 
+                                                                                                        target="_blank" 
+                                                                                                        rel="noopener noreferrer"
+                                                                                                    >
+                                                                                                        {p.tx_hash.slice(0, 10)}...{p.tx_hash.slice(-8)}
+                                                                                                    </a>
+                                                                                                ) : "-"}
+                                                                                            </td>
+                                                                                            <td className="py-2 px-3 text-white/40">
+                                                                                                {p.created_at ? new Date(p.created_at).toLocaleString() : "-"}
+                                                                                            </td>
+                                                                                            <td className="py-2 px-3 text-right text-white font-sans font-semibold">
+                                                                                                ${(Number(p.amount_usdc) / 1000000).toFixed(2)} USDC
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </Fragment>
                                             );
                                         });
                                     })()}

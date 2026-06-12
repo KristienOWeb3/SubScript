@@ -252,7 +252,7 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
             setVerifiedHash(txHash);
             
             /* Show high-fidelity toast notification */
-            setToastMessage("Settled via Malachite");
+            setToastMessage("Payment Confirmed");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
 
@@ -556,12 +556,11 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                 )}
             </div>
 
-            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
             {showToast && (
                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
                     <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
                     <span className="text-xs font-bold uppercase tracking-wider text-white">
-                        Settled via Malachite
+                        Payment Confirmed
                     </span>
                 </div>
             )}

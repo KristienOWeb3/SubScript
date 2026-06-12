@@ -296,7 +296,7 @@ export async function POST(request: Request) {
                             const usdcContract = new ethers.Contract(ProtocolConfig.USDC_ADDRESS, USDC_ABI, wallet);
                             
                             const spenderAddress = isShielded 
-                                ? "0x78E91A54b42A0Dcd5aC6153096b72b9a7A2Fbc1E" /* CONFIDENTIAL_CONTRACT_ADDRESS */
+                                ? "0x78E91a54B42A0dCd5Ac6153096B72b9a7A2Fbc1e" /* CONFIDENTIAL_CONTRACT_ADDRESS */
                                 : ProtocolConfig.ROUTER_ADDRESS;
 
                             /* Check and approve USDC allowance if necessary */

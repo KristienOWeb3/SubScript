@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
         const { data: links, error: fetchError } = await supabase
             .from("payment_links")
-            .select("*")
+            .select("*, payments:payment_link_payments(*)")
             .eq("merchant_address", merchantAddress.toLowerCase())
             .order("created_at", { ascending: false });
 
