@@ -10,40 +10,40 @@ const redis = new Redis({
 });
 
 /* Create two separate rate limiters using the Redis client */
-/* authLimiter: 5 requests per 15 minutes (sliding window) */
+/* authLimiter: 30 requests per 15 minutes (sliding window) */
 const authLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(5, "15 m"),
+    limiter: Ratelimit.slidingWindow(30, "15 m"),
     analytics: true,
     prefix: "ratelimit:auth",
 });
 
-/* globalLimiter: 100 requests per 15 minutes (sliding window) */
+/* globalLimiter: 500 requests per 15 minutes (sliding window) */
 const globalLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(100, "15 m"),
+    limiter: Ratelimit.slidingWindow(500, "15 m"),
     analytics: true,
     prefix: "ratelimit:global",
 });
 
-/* CLI-specific rate limiters (Addition 2) */
+/* CLI-specific rate limiters */
 const cliSessionCreateLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(10, "1 m"),
+    limiter: Ratelimit.slidingWindow(60, "1 m"),
     analytics: true,
     prefix: "ratelimit:cli:session:create",
 });
 
 const cliSessionValidateLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(30, "1 m"),
+    limiter: Ratelimit.slidingWindow(180, "1 m"),
     analytics: true,
     prefix: "ratelimit:cli:session:validate",
 });
 
 const cliTelemetryLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(100, "1 m"),
+    limiter: Ratelimit.slidingWindow(600, "1 m"),
     analytics: true,
     prefix: "ratelimit:cli:telemetry",
 });
