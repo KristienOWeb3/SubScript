@@ -104,6 +104,9 @@ export default function DashboardPage() {
     const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
     const [showLinkAdvanced, setShowLinkAdvanced] = useState(false);
     const [showCheckoutAdvanced, setShowCheckoutAdvanced] = useState(false);
+    const [walletProvider, setWalletProvider] = useState("none");
+    const [dbProvider, setDbProvider] = useState("none");
+    const [sessionProvider, setSessionProvider] = useState("none");
     const [ledgerPage, setLedgerPage] = useState(0);
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
@@ -1491,13 +1494,24 @@ export default function DashboardPage() {
 />`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet, promptFlowMode]);
 
     const agentIntegrationPrompt = useMemo(() => {
-        return `I have run the initialization package to bootstrap my SubScript integration:
+        return `I want to integrate the SubScript Protocol into this codebase.
+Please inspect the workspace. If the initialization package has NOT been run yet, please run it in the terminal first:
 npx @subscript-protocol/create
 
-This automatically installed the SDK, configured environment variables, injected the SubScript .cursorrules file into my workspace root, and generated the webhook route boilerplate.
+This initialization tool automatically installs the SubScript SDK, prompts for deployment parameters, sets up environment variables in .env.local, configures .cursorrules, and scaffolds a boilerplate webhook route.
 
-Please read the .cursorrules file and .env.local in this workspace root to find my integration settings (including API keys, merchant wallet address, plan parameters, and target framework). Then, locate the scaffolded webhook route file and implement the database order fulfillment and idempotency checks to complete the integration.`;
-    }, []);
+Once initialized, read .env.local and the .cursorrules file to find the plan parameters (merchant wallet address, plan name, plan cap, interval) and target framework.
+
+Here are my project configuration specifications for this integration:
+- Wallet Connection Provider: ${walletProvider === "none" ? "None / Implement standard wallet connection (e.g. RainbowKit or Privy)" : walletProvider}
+- Backend & Database Provider: ${dbProvider === "none" ? "None / Detect database from project structure or recommend Prisma" : dbProvider}
+- Session Persistence Mechanism: ${sessionProvider === "none" ? "None / Detect session pattern or recommend HTTP secure cookies or JWT" : sessionProvider}
+
+Please complete the following implementation tasks:
+1. Webhook Fulfillment: Locate the generated webhook route (e.g., src/app/api/webhooks/subscript/route.ts or express handler). Implement database order fulfillment and subscription state tracking using the selected database provider (${dbProvider === "none" ? "detected database" : dbProvider}). Ensure webhook signature verification is enabled and write robust idempotency checks using the event's paymentLinkId.
+2. User Authentication & Wallet Session: If the project lacks a Web3 login button, implement the selected wallet connection method (${walletProvider === "none" ? "standard Web3 connection" : walletProvider}) in the client-side UI. Set up session recreation/persistence using the selected session engine (${sessionProvider === "none" ? "standard session mechanism" : sessionProvider}) so that the frontend can dynamically identify if the logged-in user has an active, paid subscription.
+3. Clean Code Practices: Ensure that all code comments use block formatting (/* ... */) exclusively. Never use double-slash comments (//). Do not add emojis in comments or logs.`;
+    }, [walletProvider, dbProvider, sessionProvider]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
         mcpServers: {
@@ -2800,17 +2814,60 @@ Please read the .cursorrules file and .env.local in this workspace root to find 
                                         </div>
 
                                         {showCheckoutAdvanced && (
-                                            <div className="pt-3 border-t border-white/5">
-                                                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
-                                                <select 
-                                                    value={subChain}
-                                                    onChange={(e) => setSubChain(e.target.value)}
-                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
-                                                >
-                                                    <option value="base">Base (CCTP Auto-Routing)</option>
-                                                    <option value="solana">Solana (CCTP Auto-Routing)</option>
-                                                    <option value="arc">Arc Network (Native)</option>
-                                                </select>
+                                            <div className="pt-3 border-t border-white/5 space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
+                                                    <select 
+                                                        value={subChain}
+                                                        onChange={(e) => setSubChain(e.target.value)}
+                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                    >
+                                                        <option value="base">Base (CCTP Auto-Routing)</option>
+                                                        <option value="solana">Solana (CCTP Auto-Routing)</option>
+                                                        <option value="arc">Arc Network (Native)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Wallet Connection Provider</label>
+                                                    <select 
+                                                        value={walletProvider}
+                                                        onChange={(e) => setWalletProvider(e.target.value)}
+                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                    >
+                                                        <option value="none">Not Connected (Agent will configure RainbowKit/wagmi)</option>
+                                                        <option value="privy">Privy Auth (Embedded Wallets + Social Login)</option>
+                                                        <option value="rainbowkit">RainbowKit (Standard Web3 Wallet Modal)</option>
+                                                        <option value="web3onboard">Web3-Onboard (Enterprise Connection Modal)</option>
+                                                        <option value="wagmi">wagmi Connectors (Custom wallet connect buttons)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Backend & Database Provider</label>
+                                                    <select 
+                                                        value={dbProvider}
+                                                        onChange={(e) => setDbProvider(e.target.value)}
+                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                    >
+                                                        <option value="none">No Database (Agent will auto-detect or recommend Prisma)</option>
+                                                        <option value="prisma">Prisma ORM (PostgreSQL/MySQL/SQLite)</option>
+                                                        <option value="supabase">Supabase (PostgreSQL with client SDK)</option>
+                                                        <option value="mongodb">MongoDB / Mongoose (NoSQL)</option>
+                                                        <option value="postgresql">PostgreSQL (Raw pg client pool)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Session Persistence</label>
+                                                    <select 
+                                                        value={sessionProvider}
+                                                        onChange={(e) => setSessionProvider(e.target.value)}
+                                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
+                                                    >
+                                                        <option value="none">No Session Engine (Agent will configure HTTP Cookies/JWT)</option>
+                                                        <option value="cookies">HTTP-Only Secure Cookies (Stateful session)</option>
+                                                        <option value="jwt">JWT Tokens (Stateless Authorization Headers)</option>
+                                                        <option value="privy">Privy User Sessions (Managed JWT / Access Token)</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
