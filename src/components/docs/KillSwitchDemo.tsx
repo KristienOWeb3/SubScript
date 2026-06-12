@@ -30,7 +30,7 @@ export default function KillSwitchDemo() {
 
     const handleRevoke = async () => {
         setState("revoking");
-        // Simulate sub-second finality (Malachite BFT)
+        /* Simulate sub-second finality (Arc Network consensus) */
         await new Promise((resolve) => setTimeout(resolve, 400));
         setSubscription((prev) => ({ ...prev, status: "revoked" }));
         setState("revoked");
@@ -211,7 +211,7 @@ export default function KillSwitchDemo() {
                 <div className="px-6 py-3.5 border-t border-white/5 bg-[#111111]/30">
                     <div className="flex items-center justify-between text-[10px] text-[#9ca3af]">
                         <span>Chain ID: 5042002</span>
-                        <span>Malachite BFT • ~0.4s finality</span>
+                        <span>Arc Network • ~0.4s finality</span>
                     </div>
                 </div>
             </div>

@@ -97,7 +97,7 @@ export const pushVsPullComparison: ComparisonRow[] = [
     {
         feature: "Settlement Timeline",
         legacy: "2-7 days (pending hold)",
-        subscript: "~0.4s Malachite finality",
+        subscript: "~0.4s Arc Network finality",
     },
     {
         feature: "Failed Payments",

@@ -338,5 +338,41 @@ model MerchantEmailTemplate {
   @@map("merchant_email_templates")
 }
 
+enum PayrollStatus {
+  ACTIVE
+  PAUSED
+}
+
+model PayrollCampaign {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationAddress String             @map("organization_address")
+  title               String
+  frequencyDays       Int                @map("frequency_days")
+  nextPayday          DateTime           @map("next_payday")
+  isShielded          Boolean            @map("is_shielded")
+  status              PayrollStatus      @default(ACTIVE)
+  permit2Signature    String?            @map("permit2_signature")
+  permit2Nonce        Int?               @map("permit2_nonce")
+  permit2Deadline     DateTime?          @map("permit2_deadline")
+  permit2Expiration   DateTime?          @map("permit2_expiration")
+  recipients          PayrollRecipient[]
+
+  @@index([organizationAddress])
+  @@index([status])
+  @@map("payroll_campaigns")
+}
+
+model PayrollRecipient {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId       String          @map("campaign_id") @db.Uuid
+  campaign         PayrollCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  employeeWallet   String          @map("employee_wallet")
+  salaryAmountUsdc BigInt          @map("salary_amount_usdc")
+
+  @@index([campaignId])
+  @@map("payroll_recipients")
+}
+
+
 
 

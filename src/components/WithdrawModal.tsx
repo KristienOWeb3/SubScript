@@ -228,7 +228,7 @@ export default function WithdrawModal({
         <AnimatePresence>
             {isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    /* Backdrop */
+                    {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -237,7 +237,7 @@ export default function WithdrawModal({
                         className="fixed inset-0 bg-black/80 backdrop-blur-md"
                     />
 
-                    /* Modal container */
+                    {/* Modal container */}
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -245,10 +245,10 @@ export default function WithdrawModal({
                         transition={{ type: "spring", duration: 0.5 }}
                         className="relative w-full max-w-lg bg-[#0a0a0c] border border-white/5 rounded-[32px] p-6 sm:p-8 shadow-2xl overflow-hidden z-10 text-white"
                     >
-                        /* Background glowing glow */
+                        {/* Background glowing glow */}
                         <div className="absolute -top-24 -right-24 w-48 h-48 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
 
-                        /* Header */
+                        {/* Header */}
                         <div className="flex justify-between items-center mb-6">
                             <div className="flex items-center gap-2.5">
                                 <div className="w-8 h-8 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center">
@@ -267,7 +267,7 @@ export default function WithdrawModal({
                             </button>
                         </div>
 
-                        /* Vault Balance Display */
+                        {/* Vault Balance Display */}
                         <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-5 text-center">
                             <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Claimable Balance</p>
                             <p className="text-2xl font-black text-white leading-none">
@@ -276,7 +276,7 @@ export default function WithdrawModal({
                             </p>
                         </div>
 
-                        /* Tab Switcher */
+                        {/* Tab Switcher */}
                         <div className="flex bg-white/[0.02] border border-white/5 p-1 rounded-xl mb-6">
                             <button
                                 type="button"
@@ -305,7 +305,7 @@ export default function WithdrawModal({
                         {payoutMode === "single" ? (
                             /* Single Withdrawal Interface */
                             <div>
-                                /* Destination Picker */
+                                {/* Destination Picker */}
                                 <div className="space-y-3 mb-6 font-sans text-xs">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1.5">Select Payout Target</p>
                                     

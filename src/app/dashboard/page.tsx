@@ -33,7 +33,7 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock
+    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -67,12 +67,13 @@ const tabs = [
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payment Links", icon: Link2 },
+    { id: "payroll", label: "Payroll", icon: Building2, href: "/dashboard/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
 ] as const;
 
-type TabId = typeof tabs[number]["id"];
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks";
 
 export default function DashboardPage() {
     const [isMounted, setIsMounted] = useState(false);
@@ -3313,29 +3314,55 @@ Please complete the following implementation tasks:
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
                         <div className="lg:col-span-1 space-y-2">
-                            {tabs.map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                                        activeTab === tab.id
-                                            ? tab.id === "premium"
-                                                ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
-                                                : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
-                                            : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
-                                    }`}
-                                >
-                                    <tab.icon className={`w-4 h-4 ${
-                                        activeTab === tab.id 
-                                            ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
-                                            : "text-white/40"
-                                    }`} />
-                                    {tab.label}
-                                    {tab.id === "premium" && isPremium && (
-                                        <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
-                                    )}
-                                </button>
-                            ))}
+                            {tabs.map((tab) => {
+                                const hasHref = "href" in tab;
+                                const isSelected = activeTab === (tab.id as any);
+                                const itemClasses = `w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                                    isSelected
+                                        ? tab.id === "premium"
+                                            ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
+                                            : "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
+                                        : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
+                                }`;
+                                
+                                const iconClasses = `w-4 h-4 ${
+                                    isSelected
+                                        ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
+                                        : "text-white/40"
+                                }`;
+
+                                const content = (
+                                    <>
+                                        <tab.icon className={iconClasses} />
+                                        {tab.label}
+                                        {tab.id === "premium" && isPremium && (
+                                            <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                        )}
+                                    </>
+                                );
+
+                                if (hasHref) {
+                                    return (
+                                        <Link
+                                            key={tab.id}
+                                            href={tab.href!}
+                                            className={itemClasses}
+                                        >
+                                            {content}
+                                        </Link>
+                                    );
+                                }
+
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id as TabId)}
+                                        className={itemClasses}
+                                    >
+                                        {content}
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         {/* View Content */}
@@ -3451,7 +3478,7 @@ Please complete the following implementation tasks:
                     </motion.div>
                 </div>
             )}
-            {/* High-fidelity glassmorphic toast notification for Malachite settlement */}
+            {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
                                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
                                     <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
