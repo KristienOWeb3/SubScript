@@ -71,7 +71,7 @@ export async function POST(request: Request) {
             .from("merchants")
             .upsert({
                 wallet_address: payerAddress.toLowerCase(),
-                tier: 1,
+                tier: "PREMIUM",
                 payout_destination: payerAddress.toLowerCase(),
                 available_balance_usdc: 0,
                 reserved_balance_usdc: 0,

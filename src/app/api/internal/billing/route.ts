@@ -67,7 +67,7 @@ export async function GET(request: Request) {
                 const { error: updateError } = await supabaseAdmin
                     .from("merchants")
                     .update({
-                        tier: 0,
+                        tier: "FREE",
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", wallet);
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
         const { error: updateError } = await supabaseAdmin
             .from("merchants")
             .update({
-                tier: newTier,
+                tier: newTier === 1 ? "PREMIUM" : "FREE",
                 updated_at: new Date().toISOString()
             })
             .eq("wallet_address", subscriber);

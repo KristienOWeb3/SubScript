@@ -430,7 +430,7 @@ export async function POST(request: Request) {
                 await supabase
                     .from("merchants")
                     .update({
-                        tier: 1,
+                        tier: "PREMIUM",
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", subscriber.toLowerCase());

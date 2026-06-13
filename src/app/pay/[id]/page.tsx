@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { headers } from "next/headers";
+import { getCurrencyForCountry } from "@/lib/currencyMap";
+import { fetchExchangeRate } from "@/lib/fx";
 import PublicPayClient from "./PublicPayClient";
 
 /* Define parameters type according to Next.js App Router specs */
@@ -80,10 +83,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
 }
 
-/* Server Component entry point rendering the client component with initial data */
+/* Server Component entry point rendering the client component with initial data and localization payload */
 export default async function PublicPayPage({ params }: PageProps) {
     const { id } = await params;
     const link = await getPaymentLink(id);
 
-    return <PublicPayClient id={id} initialLinkData={link} />;
+    const headersList = await headers();
+    const country = headersList.get("x-user-country") || "US";
+    const displayCurrency = getCurrencyForCountry(country);
+    const exchangeRate = await fetchExchangeRate(displayCurrency);
+    
+    /* amount_usdc is stored in micro-USDC (6 decimals) */
+    const amountUsdcNum = link ? (Number(link.amount_usdc) / 1000000) : 0;
+    const displayAmount = amountUsdcNum * exchangeRate;
+
+    return (
+        <PublicPayClient 
+            id={id} 
+            initialLinkData={link} 
+            displayCurrency={displayCurrency}
+            displayAmount={displayAmount}
+            exchangeRate={exchangeRate}
+        />
+    );
 }

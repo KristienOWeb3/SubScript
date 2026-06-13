@@ -53,6 +53,9 @@ const MAX_PAYLOAD_SIZE = 1048576;
 
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+    const requestHeaders = new Headers(request.headers);
+    const country = (request as any).geo?.country || request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry") || "US";
+    requestHeaders.set("x-user-country", country);
 
     /* Step 3: Payload Size Limitations */
     if (request.method === "POST" || request.method === "PUT") {
@@ -132,7 +135,11 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    return NextResponse.next();
+    return NextResponse.next({
+        request: {
+            headers: requestHeaders,
+        },
+    });
 }
 
 export const config = {

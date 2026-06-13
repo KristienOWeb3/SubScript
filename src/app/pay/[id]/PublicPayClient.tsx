@@ -24,9 +24,29 @@ import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 export interface PublicPayClientProps {
     id: string;
     initialLinkData?: any;
+    displayCurrency?: string;
+    displayAmount?: number;
+    exchangeRate?: number;
 }
 
-export default function PublicPayClient({ id, initialLinkData }: PublicPayClientProps) {
+export default function PublicPayClient({ 
+    id, 
+    initialLinkData,
+    displayCurrency = "USD",
+    displayAmount,
+    exchangeRate = 1.0
+}: PublicPayClientProps) {
+    const getFiatSymbol = (currency: string) => {
+        switch (currency.toUpperCase()) {
+            case "EUR": return "€";
+            case "GBP": return "£";
+            case "JPY": return "¥";
+            case "NGN": return "₦";
+            case "INR": return "₹";
+            default: return "$";
+        }
+    };
+    const fiatSymbol = getFiatSymbol(displayCurrency);
     const { address, isConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
@@ -375,9 +395,15 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
                                 <p className="text-2xl font-extrabold text-[#00d2b4] tracking-tight">
-                                    ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)}
+                                    {displayCurrency && displayAmount !== undefined 
+                                        ? `${fiatSymbol}${displayAmount.toFixed(2)}` 
+                                        : `$${(Number(linkData.amount_usdc) / 1000000).toFixed(2)}`}
                                 </p>
-                                <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">USDC (Arc Network)</p>
+                                <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">
+                                    {displayCurrency && displayCurrency !== "USD" 
+                                        ? `${displayCurrency} Equivalent (Settled in USDC)` 
+                                        : "USDC (Arc Network)"}
+                                </p>
                             </div>
                         </div>
 
@@ -505,7 +531,9 @@ export default function PublicPayClient({ id, initialLinkData }: PublicPayClient
                                                     </>
                                                 ) : (
                                                     <>
-                                                        Pay ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC <ArrowRight className="w-4 h-4" />
+                                                        Pay {displayCurrency && displayAmount !== undefined 
+                                                            ? `${fiatSymbol}${displayAmount.toFixed(2)}` 
+                                                            : `$${(Number(linkData.amount_usdc) / 1000000).toFixed(2)}`}{displayCurrency && displayCurrency !== "USD" ? ` (${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC)` : " USDC"} <ArrowRight className="w-4 h-4" />
                                                     </>
                                                 )}
                                             </button>
