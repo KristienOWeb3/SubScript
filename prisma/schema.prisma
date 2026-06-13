@@ -374,7 +374,12 @@ model PayrollRecipient {
   @@index([campaignId])
   @@map("payroll_recipients")
 }
+model AddressAlias {
+  address     String   @id @map("address")
+  alias       String   @unique @map("alias")
+  isAnonymous Boolean  @default(false) @map("is_anonymous")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-
-
-
+  @@map("address_aliases")
+}

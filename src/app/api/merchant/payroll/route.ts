@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
         const { data: recipients, error: recipientsError } = await supabaseAdmin
             .from("payroll_recipients")
-            .select("campaign_id, salary_amount_usdc")
+            .select("id, campaign_id, employee_wallet, salary_amount_usdc")
             .in("campaign_id", campaignIds);
 
         if (recipientsError) {
@@ -81,19 +81,61 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Database error fetching recipients" }, { status: 500 });
         }
 
-        /* Build a lookup map: campaign_id -> { count, totalAmount } */
-        const recipientStats: Record<string, { count: number; totalAmountUsdc: string }> = {};
+        /* Collect unique employee wallets to fetch aliases */
+        const employeeWallets = new Set<string>();
         for (const r of (recipients || [])) {
-            if (!recipientStats[r.campaign_id]) {
-                recipientStats[r.campaign_id] = { count: 0, totalAmountUsdc: "0" };
+            if (r.employee_wallet) {
+                employeeWallets.add(r.employee_wallet.toLowerCase());
             }
-            recipientStats[r.campaign_id].count += 1;
-            const currentTotal = BigInt(recipientStats[r.campaign_id].totalAmountUsdc);
-            const salary = BigInt(r.salary_amount_usdc);
-            recipientStats[r.campaign_id].totalAmountUsdc = (currentTotal + salary).toString();
         }
 
-        /* Map campaigns to camelCase response with aggregated stats */
+        const aliasMap: Record<string, { alias: string; is_anonymous: boolean }> = {};
+        if (employeeWallets.size > 0) {
+            const { data: aliases } = await supabaseAdmin
+                .from("address_aliases")
+                .select("address, alias, is_anonymous")
+                .in("address", Array.from(employeeWallets));
+
+            if (aliases) {
+                for (const row of aliases) {
+                    aliasMap[row.address.toLowerCase()] = {
+                        alias: row.alias,
+                        is_anonymous: row.is_anonymous
+                    };
+                }
+            }
+        }
+
+        /* Build maps: campaign_id -> recipients list and campaign_id -> aggregate stats */
+        const campaignRecipients: Record<string, any[]> = {};
+        const recipientStats: Record<string, { count: number; totalAmountUsdc: string }> = {};
+
+        for (const r of (recipients || [])) {
+            const campaignId = r.campaign_id;
+            if (!recipientStats[campaignId]) {
+                recipientStats[campaignId] = { count: 0, totalAmountUsdc: "0" };
+            }
+            if (!campaignRecipients[campaignId]) {
+                campaignRecipients[campaignId] = [];
+            }
+
+            recipientStats[campaignId].count += 1;
+            const currentTotal = BigInt(recipientStats[campaignId].totalAmountUsdc);
+            const salary = BigInt(r.salary_amount_usdc);
+            recipientStats[campaignId].totalAmountUsdc = (currentTotal + salary).toString();
+
+            const match = aliasMap[r.employee_wallet.toLowerCase()];
+            campaignRecipients[campaignId].push({
+                id: r.id,
+                campaignId: r.campaign_id,
+                employeeWallet: r.employee_wallet,
+                salaryAmountUsdc: r.salary_amount_usdc,
+                employeeAlias: match ? (match.is_anonymous ? "Anonymous" : match.alias) : null,
+                isEmployeeAnonymous: match ? match.is_anonymous : false
+            });
+        }
+
+        /* Map campaigns to camelCase response with aggregated stats and detailed recipients */
         const result = campaigns.map((c: any) => {
             const stats = recipientStats[c.id] || { count: 0, totalAmountUsdc: "0" };
             return {
@@ -110,6 +152,7 @@ export async function GET(request: Request) {
                 permit2Expiration: c.permit2_expiration,
                 recipientCount: stats.count,
                 totalPayrollUsdc: stats.totalAmountUsdc,
+                recipients: campaignRecipients[c.id] || []
             };
         });
 

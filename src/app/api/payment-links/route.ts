@@ -38,6 +38,56 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: fetchError.message }, { status: 500 });
         }
 
+        /* Resolve payer aliases */
+        const payerAddresses = new Set<string>();
+        if (links) {
+            for (const link of links) {
+                if (link.payments) {
+                    for (const p of link.payments) {
+                        if (p.payer_address) {
+                            payerAddresses.add(p.payer_address.toLowerCase());
+                        }
+                    }
+                }
+            }
+        }
+
+        const aliasMap: Record<string, { alias: string; is_anonymous: boolean }> = {};
+        if (payerAddresses.size > 0) {
+            const { data: aliases } = await supabase
+                .from("address_aliases")
+                .select("address, alias, is_anonymous")
+                .in("address", Array.from(payerAddresses));
+
+            if (aliases) {
+                for (const row of aliases) {
+                    aliasMap[row.address.toLowerCase()] = {
+                        alias: row.alias,
+                        is_anonymous: row.is_anonymous
+                    };
+                }
+            }
+        }
+
+        if (links) {
+            for (const link of links) {
+                if (link.payments) {
+                    for (const p of link.payments) {
+                        if (p.payer_address) {
+                            const match = aliasMap[p.payer_address.toLowerCase()];
+                            if (match) {
+                                p.payer_alias = match.is_anonymous ? "Anonymous" : match.alias;
+                                p.is_payer_anonymous = match.is_anonymous;
+                            } else {
+                                p.payer_alias = null;
+                                p.is_payer_anonymous = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return NextResponse.json({ links }, { status: 200 });
 
     } catch (error: any) {

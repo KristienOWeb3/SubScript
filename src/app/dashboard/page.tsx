@@ -33,7 +33,8 @@ import {
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
-    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2
+    Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
+    Play, Pause, Trash2, Globe
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -282,6 +283,15 @@ export default function DashboardPage() {
     /* QR Code modal states */
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
     const [activeQrCodeTitle, setActiveQrCodeTitle] = useState("");
+
+    /* SubScript Alias DNS states */
+    const [merchantAlias, setMerchantAlias] = useState<string | null>(null);
+    const [merchantAliasIsAnonymous, setMerchantAliasIsAnonymous] = useState(false);
+    const [aliasInput, setAliasInput] = useState("");
+    const [aliasIsAnonymousInput, setAliasIsAnonymousInput] = useState(false);
+    const [isSavingAlias, setIsSavingAlias] = useState(false);
+    const [aliasSuccessMessage, setAliasSuccessMessage] = useState<string | null>(null);
+    const [aliasErrorMessage, setAliasErrorMessage] = useState<string | null>(null);
 
 
 
@@ -752,6 +762,79 @@ export default function DashboardPage() {
     };
 
 
+    const fetchAlias = useCallback(async () => {
+        try {
+            const res = await fetch("/api/merchant/alias");
+            if (res.ok) {
+                const data = await res.json();
+                setMerchantAlias(data.alias);
+                setMerchantAliasIsAnonymous(!!data.is_anonymous);
+                setAliasInput(data.alias || "");
+                setAliasIsAnonymousInput(!!data.is_anonymous);
+            }
+        } catch (err) {
+            console.error("Error fetching merchant alias:", err);
+        }
+    }, []);
+
+    const handleSaveAlias = async () => {
+        setIsSavingAlias(true);
+        setAliasSuccessMessage(null);
+        setAliasErrorMessage(null);
+        try {
+            let finalAlias = aliasInput.trim().toLowerCase();
+            if (finalAlias && !finalAlias.endsWith(".sub")) {
+                finalAlias = finalAlias + ".sub";
+            }
+            const res = await fetch("/api/merchant/alias", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    alias: finalAlias,
+                    isAnonymous: aliasIsAnonymousInput
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Failed to save alias");
+            }
+            setMerchantAlias(data.alias);
+            setMerchantAliasIsAnonymous(data.is_anonymous);
+            setAliasInput(data.alias || "");
+            setAliasSuccessMessage("SubScript alias setting updated successfully!");
+            fetchPaymentLinks();
+        } catch (err: any) {
+            setAliasErrorMessage(err.message || "An error occurred");
+        } finally {
+            setIsSavingAlias(false);
+        }
+    };
+
+    const handleDeleteAlias = async () => {
+        setIsSavingAlias(true);
+        setAliasSuccessMessage(null);
+        setAliasErrorMessage(null);
+        try {
+            const res = await fetch("/api/merchant/alias", {
+                method: "DELETE"
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "Failed to remove alias");
+            }
+            setMerchantAlias(null);
+            setMerchantAliasIsAnonymous(false);
+            setAliasInput("");
+            setAliasIsAnonymousInput(false);
+            setAliasSuccessMessage("SubScript alias removed successfully!");
+            fetchPaymentLinks();
+        } catch (err: any) {
+            setAliasErrorMessage(err.message || "An error occurred");
+        } finally {
+            setIsSavingAlias(false);
+        }
+    };
+
     const loadBackendData = useCallback(async () => {
         if (!sessionWallet) return;
         
@@ -760,8 +843,9 @@ export default function DashboardPage() {
             fetchWebhookEndpoints(),
             fetchWebhookEvents(),
             fetchPaymentLinks(),
+            fetchAlias(),
         ]);
-    }, [sessionWallet]);
+    }, [sessionWallet, fetchAlias]);
 
     useEffect(() => {
         if (sessionWallet) {
@@ -1773,8 +1857,8 @@ Please complete the following implementation tasks:
                                         <tr className="border-b border-white/5 text-[9px] uppercase tracking-wider text-white/40 text-left font-sans">
                                             <th className="pb-3 pr-4 font-bold">Title</th>
                                             <th className="pb-3 px-4 font-bold">Amount</th>
-                                            <th className="pb-3 px-4 font-bold">Reference</th>
-                                            <th className="pb-3 px-4 font-bold">Expiration</th>
+                                            <th className="pb-3 px-4 font-bold hidden md:table-cell">Reference</th>
+                                            <th className="pb-3 px-4 font-bold hidden sm:table-cell">Expiration</th>
                                             <th className="pb-3 px-4 font-bold">Status</th>
                                             <th className="pb-3 pl-4 font-bold text-right">Actions</th>
                                         </tr>
@@ -1803,10 +1887,10 @@ Please complete the following implementation tasks:
                                                         <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
                                                             ${(Number(link.amount_usdc) / 1000000).toFixed(2)} USDC
                                                         </td>
-                                                        <td className="py-4 px-4 text-white/60 font-mono">
+                                                        <td className="py-4 px-4 text-white/60 font-mono hidden md:table-cell">
                                                             {link.external_reference || "-"}
                                                         </td>
-                                                        <td className="py-4 px-4 text-white/50">
+                                                        <td className="py-4 px-4 text-white/50 hidden sm:table-cell">
                                                             {link.expires_at ? new Date(link.expires_at).toLocaleString() : "Never"}
                                                         </td>
                                                         <td className="py-4 px-4">
@@ -1821,12 +1905,14 @@ Please complete the following implementation tasks:
                                                             </span>
                                                         </td>
                                                         <td className="py-4 pl-4 text-right">
-                                                            <div className="flex gap-2.5 justify-end items-center font-sans">
+                                                            <div className="flex gap-2 justify-end items-center font-sans">
                                                                 <button
                                                                     onClick={() => handleCopyLink(link.id)}
-                                                                    className="px-4 py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5 flex items-center gap-1.5"
+                                                                    title={linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                                 >
-                                                                    {linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
+                                                                    {linkCopyFeedback[link.id] ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                                                    <span className="hidden md:inline">{linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}</span>
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
@@ -1854,20 +1940,24 @@ Please complete the following implementation tasks:
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleToggleLinkActive(link.id, link.active)}
-                                                                    className={`px-4 py-2 rounded-xl border text-[10px] font-bold uppercase transition-all ${
+                                                                    className={`p-2 md:px-4 md:py-2 rounded-xl border text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 ${
                                                                         link.active
                                                                             ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-400"
-                                                                            : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400"
+                                                                            : "bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4]"
                                                                     }`}
+                                                                    title={link.active ? "Deactivate" : "Activate"}
                                                                 >
-                                                                    {link.active ? "Deactivate" : "Activate"}
+                                                                    {link.active ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                                                    <span className="hidden md:inline">{link.active ? "Deactivate" : "Activate"}</span>
                                                                 </button>
                                                                 <div className="w-[1px] h-4 bg-white/10 mx-1" />
                                                                 <button
                                                                     onClick={() => handleDeleteLink(link.id)}
-                                                                    className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all"
+                                                                    className="p-2 md:px-4 md:py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                                                                    title="Delete Link"
                                                                 >
-                                                                    Delete
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                    <span className="hidden md:inline">Delete</span>
                                                                 </button>
                                                             </div>
                                                         </td>
@@ -1898,8 +1988,14 @@ Please complete the following implementation tasks:
                                                                                 <tbody className="divide-y divide-white/5 font-mono text-white/60">
                                                                                     {link.payments.map((p: any) => (
                                                                                         <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
-                                                                                            <td className="py-2 px-3 text-[#00d2b4]">
-                                                                                                {p.payer_address ? `${p.payer_address.slice(0, 10)}...${p.payer_address.slice(-8)}` : "-"}
+                                                                                            <td className="py-2 px-3 text-[#00d2b4]" title={p.payer_address || ""}>
+                                                                                                {p.payer_alias ? (
+                                                                                                    <span className="font-sans font-semibold text-white/80 bg-[#00d2b4]/10 border border-[#00d2b4]/25 px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
+                                                                                                        {p.payer_alias}
+                                                                                                    </span>
+                                                                                                ) : (
+                                                                                                    p.payer_address ? `${p.payer_address.slice(0, 10)}...${p.payer_address.slice(-8)}` : "-"
+                                                                                                )}
                                                                                             </td>
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
@@ -2190,6 +2286,157 @@ Please complete the following implementation tasks:
                                     </div>
                                 );
                             })()}
+                        </div>
+
+                        {/* SubScript DNS Domain Registration Card */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                            <div>
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <Globe className={`w-4 h-4 ${primaryColorText}`} />
+                                    SubScript Domain Name System (DNS)
+                                </h2>
+                                <p className="text-xs text-white/50 leading-relaxed">
+                                    Map your EVM wallet address to a readable `.sub` domain. This domain name is displayed in place of your hexadecimal address for transaction statistics, payroll recipient list mapping, and payment receipts.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                                {/* Alias Setup Form */}
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider block">
+                                            Register or Modify Domain Alias
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={aliasInput}
+                                                onChange={(e) => {
+                                                    setAliasInput(e.target.value);
+                                                    setAliasSuccessMessage(null);
+                                                    setAliasErrorMessage(null);
+                                                }}
+                                                placeholder="my-merchant.sub"
+                                                className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-2xl px-4 py-3 text-sm text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
+                                            />
+                                            {aliasInput && !aliasInput.endsWith(".sub") && (
+                                                <span className="absolute right-4 top-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/25">
+                                                    Will auto-append .sub
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[9px] text-white/30 font-sans leading-relaxed">
+                                            Must be 3-15 alphanumeric characters or hyphens.
+                                        </p>
+                                    </div>
+
+                                    {/* Anonymous Toggle */}
+                                    <div className="flex items-center justify-between p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl">
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-bold text-white uppercase tracking-wide">
+                                                Enable Privacy (Anonymous Mode)
+                                            </p>
+                                            <p className="text-[9px] text-white/30 leading-normal">
+                                                If enabled, your alias will be hidden and show as &quot;Anonymous&quot;.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAliasIsAnonymousInput(!aliasIsAnonymousInput);
+                                                setAliasSuccessMessage(null);
+                                                setAliasErrorMessage(null);
+                                            }}
+                                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                aliasIsAnonymousInput ? "bg-[#00d2b4]" : "bg-white/10"
+                                            }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                                                    aliasIsAnonymousInput ? "translate-x-4" : "translate-x-0"
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex flex-wrap gap-3 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveAlias}
+                                            disabled={isSavingAlias}
+                                            className="px-6 py-2.5 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-lg shadow-[#00d2b4]/10"
+                                        >
+                                            {isSavingAlias ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <CheckCircle className="w-3.5 h-3.5" />
+                                            )}
+                                            Save Domain Settings
+                                        </button>
+
+                                        {merchantAlias && (
+                                            <button
+                                                type="button"
+                                                onClick={handleDeleteAlias}
+                                                disabled={isSavingAlias}
+                                                className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                                            >
+                                                {isSavingAlias ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                ) : (
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                )}
+                                                Remove Alias
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Messages */}
+                                    {aliasSuccessMessage && (
+                                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
+                                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                                            {aliasSuccessMessage}
+                                        </div>
+                                    )}
+                                    {aliasErrorMessage && (
+                                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
+                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                            {aliasErrorMessage}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Alias Status Display */}
+                                <div className="liquid-glass bg-white/[0.01] border border-white/5 rounded-2xl p-5 space-y-4">
+                                    <h3 className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                        Current Resolution Status
+                                    </h3>
+                                    <div className="space-y-3.5">
+                                        <div>
+                                            <p className="text-[9px] text-white/30 uppercase font-bold">Connected Address</p>
+                                            <p className="text-xs font-mono text-white/80 break-all">{address}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] text-white/30 uppercase font-bold">Registered SubScript Alias</p>
+                                            {merchantAlias ? (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="font-sans font-bold text-white px-2.5 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/25 rounded-xl text-xs uppercase tracking-wide">
+                                                        {merchantAlias}
+                                                    </span>
+                                                    {merchantAliasIsAnonymous && (
+                                                        <span className="font-sans font-bold text-white/50 px-2 py-0.5 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase">
+                                                            Anonymous Mode Active
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-white/40 italic mt-0.5">No domain alias registered yet</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 );

@@ -67,6 +67,7 @@ export default function UpgradePage() {
     const [checkoutStatus, setCheckoutStatus] = useState<string | null>(null);
     const [checkoutError, setCheckoutError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
+    const [sessionIdState, setSessionIdState] = useState<string | null>(null);
 
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancellationError, setCancellationError] = useState<string | null>(null);
@@ -135,11 +136,12 @@ export default function UpgradePage() {
     const syncAndRedirect = useCallback(async (hash: string) => {
         setCheckoutStatus("Syncing premium state with server...");
         try {
-            const upgradeRes = await fetch("/api/merchant/upgrade", {
+            const upgradeRes = await fetch("/api/premium/upgrade", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     txHash: hash,
+                    sessionId: sessionIdState
                 }),
             });
             const upgradeData = await upgradeRes.json();
@@ -156,7 +158,7 @@ export default function UpgradePage() {
             setCheckoutError(err.message || "Failed to sync premium state with server");
             setCheckoutState("error");
         }
-    }, [router]);
+    }, [router, sessionIdState]);
 
     useEffect(() => {
         if (txReceipt) {
@@ -219,6 +221,8 @@ export default function UpgradePage() {
             if (!checkoutRes.ok) {
                 throw new Error(checkoutData.error || "Failed to initialize premium checkout session");
             }
+
+            setSessionIdState(checkoutData.sessionId);
 
             /* 4. Check Allowance */
             setCheckoutStatus("Checking USDC allowance...");

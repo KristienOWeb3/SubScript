@@ -102,6 +102,7 @@ interface PayrollCampaign {
         id: string;
         employeeWallet: string;
         salaryAmountUsdc: number;
+        employeeAlias?: string | null;
     }>;
 }
 
@@ -1345,7 +1346,7 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                                     className="grid grid-cols-[1fr_120px] gap-2 py-1.5 text-xs"
                                 >
                                     <span className="text-white/60 font-mono truncate">
-                                        {r.employeeWallet}
+                                        {r.employeeAlias || r.employeeWallet}
                                     </span>
                                     <span className="text-white font-medium text-right">
                                         {formatUsdc(r.salaryAmountUsdc)} USDC
