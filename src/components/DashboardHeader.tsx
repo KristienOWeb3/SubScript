@@ -171,13 +171,13 @@ export default function DashboardHeader({
 
     return (
         <>
-            /* Floating Minimal Dashboard Header */
+            {/* Floating Minimal Dashboard Header */}
             <div className="fixed top-5 left-0 right-0 z-40 px-4 sm:px-6 flex justify-center pointer-events-none">
                 <header className={`w-full max-w-5xl liquid-glass rounded-full px-5 sm:px-6 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
                     
-                    /* Mobile Header Layout (Strictly blueprint aligned) */
+                    {/* Mobile Header Layout (Strictly blueprint aligned) */}
                     <div className="flex sm:hidden items-center justify-between w-full">
-                        /* Logo (Left) */
+                        {/* Logo (Left) */}
                         <Link href="/" className="flex items-center flex-shrink-0">
                             <img 
                                 src="/logo.png" 
@@ -186,7 +186,7 @@ export default function DashboardHeader({
                             />
                         </Link>
 
-                        /* Disconnect Wallet Icon (Center) */
+                        {/* Disconnect Wallet Icon (Center) */}
                         {isConnected && (
                             <button
                                 onClick={handleDisconnect}
@@ -197,7 +197,7 @@ export default function DashboardHeader({
                             </button>
                         )}
 
-                        /* Address/Domain Name (Right - Leads to SubScript DNS settings) */
+                        {/* Address/Domain Name (Right - Leads to SubScript DNS settings) */}
                         {isConnected && address ? (
                             <button
                                 onClick={handleDnsClick}
@@ -223,9 +223,9 @@ export default function DashboardHeader({
                         )}
                     </div>
 
-                    /* Desktop Header Layout (Original styles preserved) */
+                    {/* Desktop Header Layout (Original styles preserved) */}
                     <div className="hidden sm:flex items-center justify-between w-full">
-                        /* Logo */
+                        {/* Logo */}
                         <Link href="/" className="flex items-center gap-2.5 group flex-shrink-0">
                             <img 
                                 src="/logo.png" 
@@ -234,11 +234,11 @@ export default function DashboardHeader({
                             />
                         </Link>
 
-                        /* Right Side: Wallet Info + Actions */
+                        {/* Right Side: Wallet Info + Actions */}
                         <div className="flex items-center gap-2 sm:gap-3">
                             {isConnected && address ? (
                                 <>
-                                    /* Wallet Address (copyable) */
+                                    {/* Wallet Address (copyable) */}
                                     <button
                                         onClick={handleCopyAddress}
                                         className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
@@ -257,7 +257,7 @@ export default function DashboardHeader({
                                         )}
                                     </button>
 
-                                    /* Balance */
+                                    {/* Balance */}
                                     <div className="hidden sm:block text-right px-2 sm:px-3">
                                         <p className="text-[9px] text-white/35 uppercase font-bold tracking-widest leading-none mb-0.5">Balance</p>
                                         <p className="text-sm sm:text-base font-bold text-white tracking-tight leading-none">
@@ -266,7 +266,7 @@ export default function DashboardHeader({
                                         </p>
                                     </div>
 
-                                    /* Routed/Vault Balance */
+                                    {/* Routed/Vault Balance */}
                                     {isPremium && promptFlowMode === "private" && (
                                         <div className="hidden sm:block text-right px-2 sm:px-3 border-l border-white/5">
                                             <p className="text-[9px] text-[#00d2b4]/60 uppercase font-bold tracking-widest leading-none mb-0.5">Routed</p>
@@ -277,7 +277,7 @@ export default function DashboardHeader({
                                         </div>
                                     )}
 
-                                    /* Deposit/Withdraw Button */
+                                    {/* Deposit/Withdraw Button */}
                                     {(() => {
                                          if (!isPremium || promptFlowMode !== "private") return null;
                                          const showWithdraw = vaultBalance > 0;

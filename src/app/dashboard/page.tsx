@@ -2215,11 +2215,11 @@ Please complete the following implementation tasks:
             case "overview":
                 return (
                     <>
-                        /* Desktop Overview Layout */
+                        {/* Desktop Overview Layout */}
                         <div className="hidden lg:block space-y-8">
-                            /* Stats Grid */
+                            {/* Stats Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                                /* Wallet Balance */
+                                {/* Wallet Balance */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Wallet Balance</p>
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
@@ -2230,7 +2230,7 @@ Please complete the following implementation tasks:
                                     </p>
                                 </div>
 
-                                /* Vault Balance */
+                                {/* Vault Balance */}
                                 <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Vault Balance</p>
                                     <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
@@ -2256,7 +2256,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
 
-                                /* Active Allowances */
+                                {/* Active Allowances */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Allowances</p>
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
@@ -2268,7 +2268,7 @@ Please complete the following implementation tasks:
                                     </p>
                                 </div>
 
-                                /* 30 Day Settlement */
+                                {/* 30 Day Settlement */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                                     <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
@@ -2278,7 +2278,7 @@ Please complete the following implementation tasks:
                                 </div>
                             </div>
 
-                            /* Tier Badge */
+                            {/* Tier Badge */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className={`p-2 rounded-xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
@@ -2303,7 +2303,7 @@ Please complete the following implementation tasks:
                                 )}
                             </div>
 
-                            /* Customer / Agent Ledger */
+                            {/* Customer / Agent Ledger */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
                                 <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
                                     <Activity className={`w-4 h-4 ${primaryColorText}`} />
@@ -2406,7 +2406,7 @@ Please complete the following implementation tasks:
                                 })()}
                             </div>
 
-                            /* SubScript DNS Domain Registration Card */
+                            {/* SubScript DNS Domain Registration Card */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                                 <div>
                                     <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -2419,7 +2419,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                                    /* Alias Setup Form */
+                                    {/* Alias Setup Form */}
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider block">
@@ -2448,7 +2448,7 @@ Please complete the following implementation tasks:
                                             </p>
                                         </div>
 
-                                        /* Anonymous Toggle */
+                                        {/* Anonymous Toggle */}
                                         <div className="flex items-center justify-between p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl">
                                             <div className="space-y-0.5">
                                                 <p className="text-xs font-bold text-white uppercase tracking-wide">
@@ -2477,7 +2477,7 @@ Please complete the following implementation tasks:
                                             </button>
                                         </div>
 
-                                        /* Action Buttons */
+                                        {/* Action Buttons */}
                                         <div className="flex flex-wrap gap-3 pt-2">
                                             <button
                                                 type="button"
@@ -2510,7 +2510,7 @@ Please complete the following implementation tasks:
                                             )}
                                         </div>
 
-                                        /* Messages */
+                                        {/* Messages */}
                                         {aliasSuccessMessage && (
                                             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
                                                 <CheckCircle className="w-3.5 h-3.5 shrink-0" />
@@ -2525,7 +2525,7 @@ Please complete the following implementation tasks:
                                         )}
                                     </div>
 
-                                    /* Alias Status Display */
+                                    {/* Alias Status Display */}
                                     <div className="liquid-glass bg-white/[0.01] border border-white/5 rounded-2xl p-5 space-y-4">
                                         <h3 className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
                                             Current Resolution Status
@@ -2558,9 +2558,9 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
 
-                        /* Mobile Overview Layout (Strictly blueprint aligned) */
+                        {/* Mobile Overview Layout (Strictly blueprint aligned) */}
                         <div className="block lg:hidden space-y-6 pb-24 font-sans">
-                            /* Vault Balance Card */
+                            {/* Vault Balance Card */}
                             <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
                                 <div className="space-y-1 relative z-10">
                                     <div className="flex items-center gap-2">
@@ -2588,7 +2588,7 @@ Please complete the following implementation tasks:
                                 </div>
                             </div>
 
-                            /* Quick Actions Grid (Circles) */
+                            {/* Quick Actions Grid (Circles) */}
                             <div className="grid grid-cols-4 gap-3 py-2 text-center">
                                 <div>
                                     <button
@@ -2632,7 +2632,7 @@ Please complete the following implementation tasks:
                                 </div>
                             </div>
 
-                            /* Customer / Agent Ledger (Mobile list card) */
+                            {/* Customer / Agent Ledger (Mobile list card) */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
                                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                                     Customer / Agent Ledger
@@ -2722,7 +2722,7 @@ Please complete the following implementation tasks:
                                 })()}
                             </div>
 
-                            /* SubScript DNS Domain Registration Card (Optimized stacked layout) */
+                            {/* SubScript DNS Domain Registration Card (Optimized stacked layout) */}
                             <div id="dns-section" className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-5">
                                 <div>
                                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -2758,7 +2758,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     </div>
 
-                                    /* Anonymous Toggle */
+                                    {/* Anonymous Toggle */}
                                     <div className="flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl">
                                         <div className="space-y-0.5">
                                             <p className="text-[10px] font-bold text-white uppercase">Anonymous Mode</p>
@@ -2783,7 +2783,7 @@ Please complete the following implementation tasks:
                                         </button>
                                     </div>
 
-                                    /* Action Buttons */
+                                    {/* Action Buttons */}
                                     <div className="flex flex-wrap gap-2.5 pt-1">
                                         <button
                                             type="button"
@@ -3910,9 +3910,9 @@ Please complete the following implementation tasks:
                 onDnsClick={handleDnsClick}
             />
 
-            /* Dashboard Content */
+            {/* Dashboard Content */}
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
-                /* Header Row */
+                {/* Header Row */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div>
                         <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
@@ -4135,9 +4135,9 @@ Please complete the following implementation tasks:
                                 </div>
                             )}
 
-                            /* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */
+                            {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
-                                /* Capsule Navigation Menu */
+                                {/* Capsule Navigation Menu */}
                                 <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-2 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
                                     {(() => {
                                         const capsuleTabs = [
@@ -4183,7 +4183,7 @@ Please complete the following implementation tasks:
                                     })()}
                                 </div>
 
-                                /* Separate Circle Button for Checkout Setup */
+                                {/* Separate Circle Button for Checkout Setup */}
                                 {(() => {
                                     const isCheckoutSelected = activeTab === "checkout";
                                     return (
