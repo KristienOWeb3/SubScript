@@ -57,3 +57,4 @@ scratch/
 test-results/
 /subscript/
 snapshot_*.json
+.env*

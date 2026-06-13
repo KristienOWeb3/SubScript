@@ -120,12 +120,10 @@ export async function POST(request: Request) {
             const nextPaymentDate = new Date(Number(nextPayment) * 1000).toISOString();
             
             let status = "ACTIVE";
-            if (
-                event === "subscription.cancelled" || 
-                event === "subscription.expired" || 
-                event === "subscription.payment.failed"
-            ) {
-                status = "EXPIRED";
+            if (event === "subscription.cancelled" || event === "subscription.expired") {
+                status = "CANCELED";
+            } else if (event === "subscription.payment.failed") {
+                status = "FAILED";
             }
 
             const { error: subError } = await supabase
@@ -148,7 +146,7 @@ export async function POST(request: Request) {
                 throw new Error(`Failed to sync subscription details: ${subError.message}`);
             }
 
-            if (status === "EXPIRED") {
+            if (status === "CANCELED" || status === "FAILED") {
                 triggerExitSurvey(merchantAddress, cleanSubId, 0).catch(err => {
                     console.error("Failed to trigger exit survey:", err);
                 });

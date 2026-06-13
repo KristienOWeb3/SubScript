@@ -73,9 +73,6 @@ export async function POST(request: Request) {
                 wallet_address: payerAddress.toLowerCase(),
                 tier: "PREMIUM",
                 payout_destination: payerAddress.toLowerCase(),
-                available_balance_usdc: 0,
-                reserved_balance_usdc: 0,
-                shielded_payouts_enabled: false,
             }, { onConflict: "wallet_address" });
 
         if (dbError) {
