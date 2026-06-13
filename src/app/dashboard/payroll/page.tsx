@@ -738,7 +738,7 @@ export default function PayrollPage() {
                                 Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
                             </h1>
                             <p className="text-xs text-white/50 font-sans">
-                                Sandbox Environment: SubScript is fast, private, and reliable with Arc testnet.
+                                Manage and monitor your institutional payroll streams.
                             </p>
                         </div>
                     </div>

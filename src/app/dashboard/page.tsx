@@ -34,7 +34,7 @@ import {
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -259,9 +259,111 @@ export default function DashboardPage() {
                 /* Clean up URL parameter to avoid showing the toast again on refresh */
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
+            const scrollParam = urlParams.get("scroll");
+            if (scrollParam === "dns") {
+                setActiveTab("overview");
+                setTimeout(() => {
+                    const el = document.getElementById("dns-section");
+                    if (el) {
+                        el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                }, 500);
+            }
         }
     }, [realAddress, realIsConnected]);
 
+    /* Detect browser local currency and fetch real-time exchange rate */
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const detectLocalCurrency = () => {
+            try {
+                const locale = navigator.language || "en-US";
+                const parts = locale.split("-");
+                const country = parts[1] ? parts[1].toUpperCase() : "";
+                
+                const countryToCurrency: Record<string, { code: string; symbol: string }> = {
+                    NG: { code: "NGN", symbol: "₦" },
+                    GB: { code: "GBP", symbol: "£" },
+                    DE: { code: "EUR", symbol: "€" },
+                    FR: { code: "EUR", symbol: "€" },
+                    IT: { code: "EUR", symbol: "€" },
+                    ES: { code: "EUR", symbol: "€" },
+                    NL: { code: "EUR", symbol: "€" },
+                    JP: { code: "JPY", symbol: "¥" },
+                    IN: { code: "INR", symbol: "₹" },
+                    AU: { code: "AUD", symbol: "A$" },
+                    CA: { code: "CAD", symbol: "C$" },
+                    US: { code: "USD", symbol: "$" },
+                    ZA: { code: "ZAR", symbol: "R" },
+                    KE: { code: "KES", symbol: "KSh" },
+                    GH: { code: "GHS", symbol: "GH₵" },
+                };
+                
+                if (country && countryToCurrency[country]) {
+                    return countryToCurrency[country];
+                }
+                
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+                if (tz.includes("Lagos")) return { code: "NGN", symbol: "₦" };
+                if (tz.includes("London")) return { code: "GBP", symbol: "£" };
+                if (tz.includes("Europe")) return { code: "EUR", symbol: "€" };
+                if (tz.includes("Calcutta") || tz.includes("Kolkata")) return { code: "INR", symbol: "₹" };
+                if (tz.includes("Tokyo")) return { code: "JPY", symbol: "¥" };
+                if (tz.includes("Sydney") || tz.includes("Melbourne")) return { code: "AUD", symbol: "A$" };
+                if (tz.includes("Toronto") || tz.includes("Vancouver")) return { code: "CAD", symbol: "C$" };
+                if (tz.includes("Nairobi")) return { code: "KES", symbol: "KSh" };
+                if (tz.includes("Accra")) return { code: "GHS", symbol: "GH₵" };
+                if (tz.includes("Johannesburg")) return { code: "ZAR", symbol: "R" };
+                
+            } catch (e) {
+                console.error("Failed to detect currency from locale/timezone fallback:", e);
+            }
+            return { code: "USD", symbol: "$" };
+        };
+
+        const initialCurrency = detectLocalCurrency();
+        setDetectedCurrency(initialCurrency);
+
+        const fetchGeoCurrencyAndRate = async () => {
+            let activeCurrency = initialCurrency;
+            try {
+                /* First attempt geographical IP currency lookup */
+                const geoRes = await fetch("https://ipapi.co/json/");
+                if (geoRes.ok) {
+                    const geoData = await geoRes.json();
+                    if (geoData.currency) {
+                        const currencySymbols: Record<string, string> = {
+                            NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥", 
+                            INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
+                        };
+                        activeCurrency = {
+                            code: geoData.currency,
+                            symbol: currencySymbols[geoData.currency] || geoData.currency
+                        };
+                        setDetectedCurrency(activeCurrency);
+                    }
+                }
+            } catch (e) {
+                console.log("Geo IP lookup failed, using browser locale fallback:", e);
+            }
+
+            /* Fetch actual exchange rate relative to USD */
+            try {
+                const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
+                if (rateRes.ok) {
+                    const rateData = await rateRes.json();
+                    if (rateData.rates && rateData.rates[activeCurrency.code]) {
+                        setExchangeRate(Number(rateData.rates[activeCurrency.code]));
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch real-time exchange rates:", e);
+            }
+        };
+
+        fetchGeoCurrencyAndRate();
+    }, []);
 
     const [merchantTier, setMerchantTier] = useState(0);
     const [vaultBalance, setVaultBalance] = useState(0);
@@ -270,6 +372,10 @@ export default function DashboardPage() {
     const [isPremium, setIsPremium] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+
+    /* Currency detection and real-time exchange rate states */
+    const [detectedCurrency, setDetectedCurrency] = useState<{ code: string; symbol: string }>({ code: "USD", symbol: "$" });
+    const [exchangeRate, setExchangeRate] = useState<number>(1.0);
 
     /* Confidentiality states */
     const [shieldedEnabled, setShieldedEnabled] = useState(false);
@@ -884,6 +990,16 @@ export default function DashboardPage() {
         } finally {
             setIsLoggingIn(false);
         }
+    };
+
+    const handleDnsClick = () => {
+        setActiveTab("overview");
+        setTimeout(() => {
+            const el = document.getElementById("dns-section");
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+        }, 100);
     };
 
     const handleLogout = async () => {
@@ -2098,214 +2214,529 @@ Please complete the following implementation tasks:
 
             case "overview":
                 return (
-                    <div className="space-y-8">
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                            {/* Wallet Balance */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Wallet Balance</p>
-                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
-                                    ${walletBalance.toFixed(2)}
-                                </p>
-                                <p className="text-[10px] text-white/30 flex items-center gap-1">
-                                    <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
-                                </p>
+                    <>
+                        /* Desktop Overview Layout */
+                        <div className="hidden lg:block space-y-8">
+                            /* Stats Grid */
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                                /* Wallet Balance */
+                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Wallet Balance</p>
+                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                        ${walletBalance.toFixed(2)}
+                                    </p>
+                                    <p className="text-[10px] text-white/30 flex items-center gap-1">
+                                        <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
+                                    </p>
+                                </div>
+
+                                /* Vault Balance */
+                                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Vault Balance</p>
+                                    <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
+                                        ${vaultBalance.toFixed(2)}
+                                    </p>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] text-white/30">Claimable USDC in router</p>
+                                        <button
+                                            onClick={() => handleWithdraw()}
+                                            disabled={vaultBalance <= 0 || isWithdrawing}
+                                            className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                                                vaultBalance > 0 
+                                                    ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10" 
+                                                    : "border-white/5 text-white/20 cursor-not-allowed"
+                                            }`}
+                                        >
+                                            <ArrowDownToLine className="w-2.5 h-2.5" />
+                                            {isWithdrawing ? "Withdrawing..." : "Withdraw"}
+                                        </button>
+                                    </div>
+                                    {withdrawSuccess && (
+                                        <p className="text-[10px] text-emerald-400 mt-2 font-semibold">Withdrawal successful</p>
+                                    )}
+                                </div>
+
+                                /* Active Allowances */
+                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Allowances</p>
+                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                        {isLoadingContract ? "..." : activeAllowances}
+                                    </p>
+                                    <p className="text-[10px] text-white/30 flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                        Active M2M contracts
+                                    </p>
+                                </div>
+
+                                /* 30 Day Settlement */
+                                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
+                                    <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
+                                        {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}
+                                    </p>
+                                    <p className="text-[10px] text-white/30">Estimated monthly volume</p>
+                                </div>
                             </div>
 
-                            {/* Vault Balance */}
-                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Vault Balance</p>
-                                <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
-                                    ${vaultBalance.toFixed(2)}
-                                </p>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[10px] text-white/30">Claimable USDC in router</p>
-                                    <button
-                                        onClick={() => handleWithdraw()}
-                                        disabled={vaultBalance <= 0 || isWithdrawing}
-                                        className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
-                                            vaultBalance > 0 
-                                                ? "border-[#00d2b4]/30 text-[#00d2b4] hover:bg-[#00d2b4]/10" 
-                                                : "border-white/5 text-white/20 cursor-not-allowed"
-                                        }`}
-                                    >
-                                        <ArrowDownToLine className="w-2.5 h-2.5" />
-                                        {isWithdrawing ? "Withdrawing..." : "Withdraw"}
-                                    </button>
+                            /* Tier Badge */
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
+                                        {isPremium ? <Crown className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                            {isPremium ? "Premium Tier" : "Standard Tier"}
+                                        </p>
+                                        <p className="text-[10px] text-white/40">
+                                            {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access — upgrade for premium features"}
+                                        </p>
+                                    </div>
                                 </div>
-                                {withdrawSuccess && (
-                                    <p className="text-[10px] text-emerald-400 mt-2 font-semibold">Withdrawal successful</p>
+                                {!isPremium && (
+                                    <button
+                                        onClick={() => setActiveTab("premium")}
+                                        className="px-4 py-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] text-[10px] font-bold uppercase tracking-wider rounded-full hover:bg-[#d4a853]/20 transition-all"
+                                    >
+                                        Upgrade
+                                    </button>
                                 )}
                             </div>
 
-                            {/* Active Allowances */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Active Allowances</p>
-                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
-                                    {isLoadingContract ? "..." : activeAllowances}
-                                </p>
-                                <p className="text-[10px] text-white/30 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                    Active M2M contracts
-                                </p>
-                            </div>
-
-                            {/* 30 Day Settlement */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">30-Day Projection</p>
-                                <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
-                                    {isLoadingContract ? "..." : `$${projected30DaySettlement.toFixed(2)}`}
-                                </p>
-                                <p className="text-[10px] text-white/30">Estimated monthly volume</p>
-                            </div>
-                        </div>
-
-                        {/* Tier Badge */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
-                                    {isPremium ? <Crown className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+                            /* Customer / Agent Ledger */
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
+                                    <Activity className={`w-4 h-4 ${primaryColorText}`} />
+                                    Customer / Agent Ledger
+                                </h2>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
+                                                <th className="pb-3">ID</th>
+                                                <th className="pb-3">Subscriber</th>
+                                                <th className="pb-3">Allowance</th>
+                                                <th className="pb-3">Next Billing</th>
+                                                <th className="pb-3">Status</th>
+                                                <th className="pb-3 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-xs text-white/70 font-mono">
+                                            {isLoadingContract ? (
+                                                <tr>
+                                                    <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
+                                                        <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
+                                                    </td>
+                                                </tr>
+                                            ) : ledgers.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={6} className="py-8 text-center text-white/30 font-sans">
+                                                        No active recurring allowances detected for this merchant address.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                (() => {
+                                                    const ledgerPageSize = 5;
+                                                    const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
+                                                    return paginatedLedgers.map((item) => (
+                                                        <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
+                                                            <td className="py-4 font-semibold text-white">{item.id}</td>
+                                                            <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
+                                                            <td className="py-4 text-[#d4a853]">{item.limit}</td>
+                                                            <td className="py-4">{item.nextBilling}</td>
+                                                            <td className="py-4">
+                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                                                    item.active 
+                                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                                }`}>
+                                                                    {item.active ? "Active" : "Revoked"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-4 text-right">
+                                                                {item.active ? (
+                                                                    <button 
+                                                                        onClick={() => handleRevokeCustomer(item.rawId)}
+                                                                        className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
+                                                                        title="Revoke Allowance"
+                                                                    >
+                                                                        <ShieldX className="w-4 h-4" />
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ));
+                                                })()
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
+
+                                {(() => {
+                                    const ledgerPageSize = 5;
+                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    if (totalPages <= 1) return null;
+                                    return (
+                                        <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
+                                            <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                                Page {ledgerPage + 1} of {totalPages}
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={ledgerPage === 0}
+                                                    onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+                                                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                >
+                                                    Prev
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={ledgerPage >= totalPages - 1}
+                                                    onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
+                                                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            /* SubScript DNS Domain Registration Card */
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                                 <div>
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
-                                        {isPremium ? "Premium Tier" : "Standard Tier"}
-                                    </p>
-                                    <p className="text-[10px] text-white/40">
-                                        {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access — upgrade for premium features"}
+                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                        <Globe className={`w-4 h-4 ${primaryColorText}`} />
+                                        SubScript Domain Name System (DNS)
+                                    </h2>
+                                    <p className="text-xs text-white/50 leading-relaxed">
+                                        Map your EVM wallet address to a readable `.sub` domain. This domain name is displayed in place of your hexadecimal address for transaction statistics, payroll recipient list mapping, and payment receipts.
                                     </p>
                                 </div>
-                            </div>
-                            {!isPremium && (
-                                <button
-                                    onClick={() => setActiveTab("premium")}
-                                    className="px-4 py-2 bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853] text-[10px] font-bold uppercase tracking-wider rounded-full hover:bg-[#d4a853]/20 transition-all"
-                                >
-                                    Upgrade
-                                </button>
-                            )}
-                        </div>
 
-                        {/* Customer / Agent Ledger */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl">
-                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-5 flex items-center gap-2">
-                                <Activity className={`w-4 h-4 ${primaryColorText}`} />
-                                Customer / Agent Ledger
-                            </h2>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="border-b border-white/5 text-white/40 text-[10px] uppercase font-bold tracking-wider">
-                                            <th className="pb-3">ID</th>
-                                            <th className="pb-3">Subscriber</th>
-                                            <th className="pb-3">Allowance</th>
-                                            <th className="pb-3">Next Billing</th>
-                                            <th className="pb-3">Status</th>
-                                            <th className="pb-3 text-right">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="text-xs text-white/70 font-mono">
-                                        {isLoadingContract ? (
-                                            <tr>
-                                                <td colSpan={6} className="py-8 text-center text-white/40 flex items-center justify-center gap-2">
-                                                    <Loader2 className="w-4 h-4 animate-spin" /> Fetching on-chain state...
-                                                </td>
-                                            </tr>
-                                        ) : ledgers.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={6} className="py-8 text-center text-white/30 font-sans">
-                                                    No active recurring allowances detected for this merchant address.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            (() => {
-                                                const ledgerPageSize = 5;
-                                                const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                                return paginatedLedgers.map((item) => (
-                                                    <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
-                                                        <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                        <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
-                                                        <td className="py-4 text-[#d4a853]">{item.limit}</td>
-                                                        <td className="py-4">{item.nextBilling}</td>
-                                                        <td className="py-4">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                                item.active 
-                                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                            }`}>
-                                                                {item.active ? "Active" : "Revoked"}
-                                                            </span>
-                                                        </td>
-                                                        <td className="py-4 text-right">
-                                                            {item.active ? (
-                                                                <button 
-                                                                    onClick={() => handleRevokeCustomer(item.rawId)}
-                                                                    className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                                    title="Revoke Allowance"
-                                                                >
-                                                                    <ShieldX className="w-4 h-4" />
-                                                                </button>
-                                                            ) : (
-                                                                <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ));
-                                            })()
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                                    /* Alias Setup Form */
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider block">
+                                                Register or Modify Domain Alias
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={aliasInput}
+                                                    onChange={(e) => {
+                                                        setAliasInput(e.target.value);
+                                                        setAliasSuccessMessage(null);
+                                                        setAliasErrorMessage(null);
+                                                    }}
+                                                    placeholder="my-merchant.sub"
+                                                    className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-2xl px-4 py-3 text-sm text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
+                                                />
+                                                {aliasInput && !aliasInput.endsWith(".sub") && (
+                                                    <span className="absolute right-4 top-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/25">
+                                                        Will auto-append .sub
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[9px] text-white/30 font-sans leading-relaxed">
+                                                Must be 3-15 alphanumeric characters or hyphens.
+                                            </p>
+                                        </div>
 
-                            {(() => {
-                                const ledgerPageSize = 5;
-                                const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
-                                if (totalPages <= 1) return null;
-                                return (
-                                    <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
-                                        <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
-                                            Page {ledgerPage + 1} of {totalPages}
-                                        </span>
-                                        <div className="flex gap-2">
+                                        /* Anonymous Toggle */
+                                        <div className="flex items-center justify-between p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl">
+                                            <div className="space-y-0.5">
+                                                <p className="text-xs font-bold text-white uppercase tracking-wide">
+                                                    Enable Privacy (Anonymous Mode)
+                                                </p>
+                                                <p className="text-[9px] text-white/30 leading-normal">
+                                                    If enabled, your alias will be hidden and show as &quot;Anonymous&quot;.
+                                                </p>
+                                            </div>
                                             <button
                                                 type="button"
-                                                disabled={ledgerPage === 0}
-                                                onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
-                                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
+                                                onClick={() => {
+                                                    setAliasIsAnonymousInput(!aliasIsAnonymousInput);
+                                                    setAliasSuccessMessage(null);
+                                                    setAliasErrorMessage(null);
+                                                }}
+                                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                    aliasIsAnonymousInput ? "bg-[#00d2b4]" : "bg-white/10"
+                                                }`}
                                             >
-                                                Prev
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={ledgerPage >= totalPages - 1}
-                                                onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all"
-                                            >
-                                                Next
+                                                <span
+                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                                                        aliasIsAnonymousInput ? "translate-x-4" : "translate-x-0"
+                                                    }`}
+                                                />
                                             </button>
                                         </div>
+
+                                        /* Action Buttons */
+                                        <div className="flex flex-wrap gap-3 pt-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveAlias}
+                                                disabled={isSavingAlias}
+                                                className="px-6 py-2.5 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-lg shadow-[#00d2b4]/10"
+                                            >
+                                                {isSavingAlias ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                ) : (
+                                                    <CheckCircle className="w-3.5 h-3.5" />
+                                                )}
+                                                Save Domain Settings
+                                            </button>
+
+                                            {merchantAlias && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleDeleteAlias}
+                                                    disabled={isSavingAlias}
+                                                    className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                                                >
+                                                    {isSavingAlias ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    )}
+                                                    Remove Alias
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        /* Messages */
+                                        {aliasSuccessMessage && (
+                                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
+                                                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                                                {aliasSuccessMessage}
+                                            </div>
+                                        )}
+                                        {aliasErrorMessage && (
+                                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
+                                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                                {aliasErrorMessage}
+                                            </div>
+                                        )}
                                     </div>
-                                );
-                            })()}
+
+                                    /* Alias Status Display */
+                                    <div className="liquid-glass bg-white/[0.01] border border-white/5 rounded-2xl p-5 space-y-4">
+                                        <h3 className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
+                                            Current Resolution Status
+                                        </h3>
+                                        <div className="space-y-3.5">
+                                            <div>
+                                                <p className="text-[9px] text-white/30 uppercase font-bold">Connected Address</p>
+                                                <p className="text-xs font-mono text-white/80 break-all">{address}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] text-white/30 uppercase font-bold">Registered SubScript Alias</p>
+                                                {merchantAlias ? (
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="font-sans font-bold text-white px-2.5 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/25 rounded-xl text-xs uppercase tracking-wide">
+                                                            {merchantAlias}
+                                                        </span>
+                                                        {merchantAliasIsAnonymous && (
+                                                            <span className="font-sans font-bold text-white/50 px-2 py-0.5 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase">
+                                                                Anonymous Mode Active
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-white/40 italic mt-0.5">No domain alias registered yet</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* SubScript DNS Domain Registration Card */}
-                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                            <div>
-                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                    <Globe className={`w-4 h-4 ${primaryColorText}`} />
-                                    SubScript Domain Name System (DNS)
-                                </h2>
-                                <p className="text-xs text-white/50 leading-relaxed">
-                                    Map your EVM wallet address to a readable `.sub` domain. This domain name is displayed in place of your hexadecimal address for transaction statistics, payroll recipient list mapping, and payment receipts.
-                                </p>
+                        /* Mobile Overview Layout (Strictly blueprint aligned) */
+                        <div className="block lg:hidden space-y-6 pb-24 font-sans">
+                            /* Vault Balance Card */
+                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
+                                <div className="space-y-1 relative z-10">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Vault Balance</span>
+                                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/70">6M</span>
+                                    </div>
+                                    <p className="text-3xl font-extrabold text-[#00d2b4] mt-1.5 tracking-tight leading-none">
+                                        ${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[10px] font-bold text-emerald-400 tracking-wide">+20%</span>
+                                        <span className="text-xs font-semibold text-white/40 font-mono">
+                                            {detectedCurrency.symbol}{(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="relative z-10">
+                                    <button
+                                        onClick={() => setIsWithdrawOpen(true)}
+                                        className="w-12 h-12 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all shadow-lg shadow-[#00d2b4]/5 hover:scale-105 active:scale-95"
+                                        title="Withdraw routed funds"
+                                    >
+                                        <ArrowDown className="w-5 h-5" />
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                                {/* Alias Setup Form */}
+                            /* Quick Actions Grid (Circles) */
+                            <div className="grid grid-cols-4 gap-3 py-2 text-center">
+                                <div>
+                                    <button
+                                        onClick={() => setActiveTab("payment-links")}
+                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
+                                    >
+                                        <ArrowUpRight className="w-5 h-5" />
+                                    </button>
+                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
+                                </div>
+                                <div>
+                                    <button
+                                        onClick={() => setActiveTab("webhooks")}
+                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
+                                    >
+                                        <ArrowUp className="w-5 h-5" />
+                                    </button>
+                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
+                                </div>
+                                <div>
+                                    <Link
+                                        href="/dashboard/payroll"
+                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
+                                    >
+                                        <Building2 className="w-5 h-5" />
+                                    </Link>
+                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payroll</span>
+                                </div>
+                                <div>
+                                    <button
+                                        onClick={() => setActiveTab("premium")}
+                                        className={`mx-auto w-12 h-12 rounded-full border flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95 ${
+                                            isPremium 
+                                                ? "border-[#d4a853]/30 bg-[#d4a853]/10 text-[#d4a853]" 
+                                                : "border-white/10 bg-white/[0.02] text-white/40"
+                                        }`}
+                                    >
+                                        <Crown className="w-5 h-5" />
+                                    </button>
+                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Premium Tier</span>
+                                </div>
+                            </div>
+
+                            /* Customer / Agent Ledger (Mobile list card) */
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
+                                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                                    Customer / Agent Ledger
+                                </h3>
+                                <div className="space-y-3">
+                                    {isLoadingContract ? (
+                                        <div className="py-8 text-center text-white/30 flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" />
+                                            <span className="text-xs">Fetching ledger...</span>
+                                        </div>
+                                    ) : ledgers.length === 0 ? (
+                                        <div className="py-8 text-center text-white/20 text-xs">
+                                            No active allowances detected.
+                                        </div>
+                                    ) : (
+                                        (() => {
+                                            const ledgerPageSize = 5;
+                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
+                                            return paginatedLedgers.map((item) => (
+                                                <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
+                                                    <div className="flex justify-between items-start pr-8">
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-white uppercase tracking-wide">{item.id}</p>
+                                                            <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.shortSubAddress}</p>
+                                                        </div>
+                                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
+                                                            item.active 
+                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                                        }`}>
+                                                            {item.active ? "Active" : "Revoked"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
+                                                        <div>
+                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Allowance</span>
+                                                            <span className="text-white font-semibold block mt-0.5">{item.limit}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Next Billing</span>
+                                                            <span className="text-white/70 block mt-0.5">{item.nextBilling}</span>
+                                                        </div>
+                                                    </div>
+                                                    {item.active && (
+                                                        <button 
+                                                            onClick={() => handleRevokeCustomer(item.rawId)}
+                                                            className="absolute right-3.5 top-3.5 p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
+                                                            title="Revoke Allowance"
+                                                        >
+                                                            <ShieldX className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ));
+                                        })()
+                                    )}
+                                </div>
+                                {(() => {
+                                    const ledgerPageSize = 5;
+                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    if (totalPages <= 1) return null;
+                                    return (
+                                        <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">
+                                            <span className="text-[9px] text-white/30 uppercase font-bold">
+                                                {ledgerPage + 1} / {totalPages}
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={ledgerPage === 0}
+                                                    onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
+                                                >
+                                                    Prev
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={ledgerPage >= totalPages - 1}
+                                                    onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
+                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            /* SubScript DNS Domain Registration Card (Optimized stacked layout) */
+                            <div id="dns-section" className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-5">
+                                <div>
+                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <Globe className={`w-3.5 h-3.5 ${primaryColorText}`} />
+                                        SubScript DNS Domain Setup
+                                    </h3>
+                                    <p className="text-[10px] text-white/45 leading-relaxed mt-1.5">
+                                        Register a custom `.sub` domain alias mapped to your EVM wallet address to resolve readable names instead of hex.
+                                    </p>
+                                </div>
                                 <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider block">
-                                            Register or Modify Domain Alias
+                                        <label className="text-[8px] text-white/30 uppercase font-bold tracking-widest block">
+                                            Alias Name
                                         </label>
                                         <div className="relative">
                                             <input
@@ -2317,28 +2748,21 @@ Please complete the following implementation tasks:
                                                     setAliasErrorMessage(null);
                                                 }}
                                                 placeholder="my-merchant.sub"
-                                                className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-2xl px-4 py-3 text-sm text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
+                                                className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
                                             />
                                             {aliasInput && !aliasInput.endsWith(".sub") && (
-                                                <span className="absolute right-4 top-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/25">
-                                                    Will auto-append .sub
+                                                <span className="absolute right-3 top-2.5 text-[8px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">
+                                                    + .sub
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-[9px] text-white/30 font-sans leading-relaxed">
-                                            Must be 3-15 alphanumeric characters or hyphens.
-                                        </p>
                                     </div>
 
-                                    {/* Anonymous Toggle */}
-                                    <div className="flex items-center justify-between p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl">
+                                    /* Anonymous Toggle */
+                                    <div className="flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl">
                                         <div className="space-y-0.5">
-                                            <p className="text-xs font-bold text-white uppercase tracking-wide">
-                                                Enable Privacy (Anonymous Mode)
-                                            </p>
-                                            <p className="text-[9px] text-white/30 leading-normal">
-                                                If enabled, your alias will be hidden and show as &quot;Anonymous&quot;.
-                                            </p>
+                                            <p className="text-[10px] font-bold text-white uppercase">Anonymous Mode</p>
+                                            <p className="text-[8px] text-white/30">Hide alias from public transaction receipts.</p>
                                         </div>
                                         <button
                                             type="button"
@@ -2347,32 +2771,32 @@ Please complete the following implementation tasks:
                                                 setAliasSuccessMessage(null);
                                                 setAliasErrorMessage(null);
                                             }}
-                                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                                                 aliasIsAnonymousInput ? "bg-[#00d2b4]" : "bg-white/10"
                                             }`}
                                         >
                                             <span
-                                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                                                    aliasIsAnonymousInput ? "translate-x-4" : "translate-x-0"
+                                                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                                                    aliasIsAnonymousInput ? "translate-x-3.5" : "translate-x-0"
                                                 }`}
                                             />
                                         </button>
                                     </div>
 
-                                    {/* Action Buttons */}
-                                    <div className="flex flex-wrap gap-3 pt-2">
+                                    /* Action Buttons */
+                                    <div className="flex flex-wrap gap-2.5 pt-1">
                                         <button
                                             type="button"
                                             onClick={handleSaveAlias}
                                             disabled={isSavingAlias}
-                                            className="px-6 py-2.5 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-lg shadow-[#00d2b4]/10"
+                                            className="px-4 py-2 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-xl text-[9px] font-extrabold uppercase tracking-widest transition-all flex items-center gap-1 shadow-lg"
                                         >
                                             {isSavingAlias ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                             ) : (
                                                 <CheckCircle className="w-3.5 h-3.5" />
                                             )}
-                                            Save Domain Settings
+                                            Save Alias
                                         </button>
 
                                         {merchantAlias && (
@@ -2380,65 +2804,35 @@ Please complete the following implementation tasks:
                                                 type="button"
                                                 onClick={handleDeleteAlias}
                                                 disabled={isSavingAlias}
-                                                className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                                                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-xl text-[9px] font-extrabold uppercase tracking-widest transition-all flex items-center gap-1"
                                             >
                                                 {isSavingAlias ? (
                                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                 ) : (
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 )}
-                                                Remove Alias
+                                                Remove
                                             </button>
                                         )}
                                     </div>
 
-                                    {/* Messages */}
+                                    /* Messages */
                                     {aliasSuccessMessage && (
-                                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
-                                            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                                        <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[9px] font-bold flex items-center gap-1">
+                                            <CheckCircle className="w-3 h-3 shrink-0" />
                                             {aliasSuccessMessage}
                                         </div>
                                     )}
                                     {aliasErrorMessage && (
-                                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
-                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                        <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[9px] font-bold flex items-center gap-1">
+                                            <AlertTriangle className="w-3 h-3 shrink-0" />
                                             {aliasErrorMessage}
                                         </div>
                                     )}
                                 </div>
-
-                                {/* Alias Status Display */}
-                                <div className="liquid-glass bg-white/[0.01] border border-white/5 rounded-2xl p-5 space-y-4">
-                                    <h3 className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
-                                        Current Resolution Status
-                                    </h3>
-                                    <div className="space-y-3.5">
-                                        <div>
-                                            <p className="text-[9px] text-white/30 uppercase font-bold">Connected Address</p>
-                                            <p className="text-xs font-mono text-white/80 break-all">{address}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[9px] text-white/30 uppercase font-bold">Registered SubScript Alias</p>
-                                            {merchantAlias ? (
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className="font-sans font-bold text-white px-2.5 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/25 rounded-xl text-xs uppercase tracking-wide">
-                                                        {merchantAlias}
-                                                    </span>
-                                                    {merchantAliasIsAnonymous && (
-                                                        <span className="font-sans font-bold text-white/50 px-2 py-0.5 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase">
-                                                            Anonymous Mode Active
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <p className="text-xs text-white/40 italic mt-0.5">No domain alias registered yet</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
-                    </div>
+                    </>
                 );
 
             case "premium":
@@ -3512,18 +3906,20 @@ Please complete the following implementation tasks:
                 isPremium={isPremium}
                 promptFlowMode={promptFlowMode}
                 onDeposit={() => setIsDepositOpen(true)}
+                merchantAlias={merchantAlias}
+                onDnsClick={handleDnsClick}
             />
 
-            {/* Dashboard Content */}
+            /* Dashboard Content */
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
-                {/* Header Row */}
+                /* Header Row */
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div>
                         <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
                             Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
                         </h1>
                         <p className="text-xs text-white/50 font-sans">
-                            Sandbox Environment: SubScript is fast, private, and reliable with Arc testnet.
+                            Manage your premium subscriptions, payments, allowances, and billing analytics.
                         </p>
                     </div>
                 </div>
@@ -3564,7 +3960,7 @@ Please complete the following implementation tasks:
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="lg:col-span-1 space-y-2">
+                        <div className="hidden lg:block lg:col-span-1 space-y-2">
                             {tabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);
@@ -3731,13 +4127,85 @@ Please complete the following implementation tasks:
             )}
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (
-                                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
+                                <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
                                     <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-white">
                                         {toastMessage}
                                     </span>
                                 </div>
                             )}
+
+                            /* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */
+                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
+                                /* Capsule Navigation Menu */
+                                <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-2 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
+                                    {(() => {
+                                        const capsuleTabs = [
+                                            { id: "overview", label: "Home", icon: Activity },
+                                            { id: "analytics", label: "Analytics", icon: BarChart3 },
+                                            { id: "apikeys", label: "API Keys", icon: Key },
+                                        ];
+                                        
+                                        /* If current active tab is not in the default capsule tabs and not checkout, dynamically show it in Slot 1 */
+                                        if (!["overview", "analytics", "apikeys", "checkout"].includes(activeTab)) {
+                                            const activeTabInfo = tabs.find(t => t.id === activeTab);
+                                            if (activeTabInfo) {
+                                                capsuleTabs[0] = {
+                                                    id: activeTabInfo.id,
+                                                    label: activeTabInfo.label === "Payment Links" ? "Payments" : activeTabInfo.label,
+                                                    icon: activeTabInfo.icon
+                                                };
+                                            }
+                                        }
+
+                                        return capsuleTabs.map((tab) => {
+                                            const isSelected = activeTab === tab.id;
+                                            const Icon = tab.icon;
+                                            return (
+                                                <button
+                                                    key={tab.id}
+                                                    onClick={() => setActiveTab(tab.id as TabId)}
+                                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 ${
+                                                        isSelected 
+                                                            ? "bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white" 
+                                                            : "text-white/40 hover:text-white"
+                                                    }`}
+                                                >
+                                                    <Icon className={`w-4 h-4 ${isSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
+                                                    {isSelected && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                                            {tab.label}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+
+                                /* Separate Circle Button for Checkout Setup */
+                                {(() => {
+                                    const isCheckoutSelected = activeTab === "checkout";
+                                    return (
+                                        <button
+                                            onClick={() => setActiveTab("checkout")}
+                                            className={`h-11 flex items-center justify-center gap-2 rounded-full transition-all duration-300 border shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl ${
+                                                isCheckoutSelected
+                                                    ? "w-auto px-4 bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white"
+                                                    : "w-11 bg-white/[0.02] border-white/5 text-white/40 hover:text-white hover:bg-white/[0.05]"
+                                            }`}
+                                            title="Checkout Setup"
+                                        >
+                                            <Code2 className={`w-4 h-4 ${isCheckoutSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
+                                            {isCheckoutSelected && (
+                                                <span className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                                    Checkout
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })()}
+                            </div>
                         </div>
                     );
                 }
