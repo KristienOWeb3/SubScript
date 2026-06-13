@@ -247,6 +247,10 @@ export default function DashboardPage() {
             );
             /* Check for upgrade success and show toast */
             const urlParams = new URLSearchParams(window.location.search);
+            const tabParam = urlParams.get("tab");
+            if (tabParam && tabs.some(t => t.id === tabParam && t.id !== "payroll")) {
+                setActiveTab(tabParam as TabId);
+            }
             if (urlParams.get("upgradeSuccess") === "true") {
                 setToastMessage("Privacy Premium activated successfully!");
                 setShowToast(true);
