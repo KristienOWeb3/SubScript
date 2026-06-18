@@ -14,6 +14,7 @@ export const PREMIUM_PLAN_ID = "premium-monthly" as const;
 export const PREMIUM_PLAN_PRICE_USDC = "10" as const;
 
 export const USDC_NATIVE_GAS_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
+export const ARC_MEMO_CONTRACT_ADDRESS = "0x5294E9927c3306DcBaDb03fe70b92e01cCede505" as const;
 
 export const ARC_TESTNET = {
   id: ARC_TESTNET_CHAIN_ID,

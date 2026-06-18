@@ -7,13 +7,12 @@ import { useAccount, useConnect, useSignMessage } from "wagmi";
 import { 
   Loader2, 
   Mail, 
-  Chrome, 
   Wallet, 
   CheckCircle, 
   AlertCircle, 
-  ArrowRight, 
-  Lock 
+  ArrowRight
 } from "lucide-react";
+import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -105,48 +104,6 @@ export default function SignupPage() {
     } finally {
       setOtpLoading(false);
     }
-  };
-
-  const handleSocialLogin = () => {
-    const width = 550;
-    const height = 650;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-
-    const popup = window.open(
-      "/auth/popup?provider=google",
-      "SubScript - Continue with Google",
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
-
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === "social-login-success") {
-        const socialEmail = event.data.email;
-        setOtpLoading(true);
-        setOtpError(null);
-        try {
-          const res = await fetch("/api/auth/social", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: socialEmail, provider: "google", rememberMe: true }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            handleLoginSuccess(data);
-          } else {
-            setOtpError(data.error || "Google login failed.");
-          }
-        } catch (err) {
-          setOtpError("Network error verifying social session.");
-        } finally {
-          setOtpLoading(false);
-        }
-        window.removeEventListener("message", handleMessage);
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
   };
 
   const handleConnectWallet = () => {
@@ -335,21 +292,9 @@ export default function SignupPage() {
               Continue with Email
             </button>
 
-            <button
-              onClick={() => {
-                posthog.capture("signup_method_selected", { method: "google" });
-                handleSocialLogin();
-              }}
-              disabled={otpLoading}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
-            >
-              {otpLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Chrome className="w-4 h-4 text-[#ccff00]" />
-              )}
-              Continue with Google
-            </button>
+            <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+              <CircleGoogleWalletButton />
+            </div>
 
             <div className="relative py-2 flex items-center justify-center">
               <div className="absolute inset-0 flex items-center">

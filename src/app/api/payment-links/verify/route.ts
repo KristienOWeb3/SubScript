@@ -5,7 +5,8 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { sendWebhookRequest } from "@/lib/webhooks";
-import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
+import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, ARC_MEMO_CONTRACT_ADDRESS, isProd } from "@/lib/contracts/constants";
+import { ARC_MEMO_INTERFACE, USDC_TRANSFER_FROM_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 const ERC20_INTERFACE = new ethers.Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress, chainId: bodyChainId } = body;
+        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
         const isCctp = Number(chainId) in CCTP_CONFIG;
 
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
 
         if (!payerAddress || typeof payerAddress !== "string" || !ethers.isAddress(payerAddress)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid payerAddress" }, { status: 400 });
+        }
+        if (!isCctp && !isReceiptId(receiptId)) {
+            return NextResponse.json({ error: "Bad Request: Missing or invalid receiptId" }, { status: 400 });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -249,8 +253,34 @@ export async function POST(request: Request) {
                                     throw new Error("On-chain transaction reverted");
                                 }
 
-                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) {
-                                    throw new Error("Target contract is not USDC token");
+                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== ARC_MEMO_CONTRACT_ADDRESS.toLowerCase()) {
+                                    throw new Error("Target contract is not Arc Memo contract");
+                                }
+
+                                const parsedMemoCall = ARC_MEMO_INTERFACE.parseTransaction({
+                                    data: nativeTx.data,
+                                    value: nativeTx.value
+                                });
+                                if (
+                                    !parsedMemoCall ||
+                                    parsedMemoCall.name !== "executeWithMemo" ||
+                                    parsedMemoCall.args[0].toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase() ||
+                                    parsedMemoCall.args[2] !== receiptId
+                                ) {
+                                    throw new Error("Arc Memo call does not contain the expected receipt memo");
+                                }
+
+                                const parsedUsdcCall = USDC_TRANSFER_FROM_INTERFACE.parseTransaction({
+                                    data: parsedMemoCall.args[1]
+                                });
+                                if (
+                                    !parsedUsdcCall ||
+                                    parsedUsdcCall.name !== "transferFrom" ||
+                                    parsedUsdcCall.args[0].toLowerCase() !== normalizedPayer ||
+                                    parsedUsdcCall.args[1].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
+                                    BigInt(parsedUsdcCall.args[2]) !== BigInt(paymentLink.amount_usdc)
+                                ) {
+                                    throw new Error("Memo payload is not the expected USDC transferFrom payment");
                                 }
 
                                 /* Verify log event transfer to router address */
@@ -395,6 +425,30 @@ export async function POST(request: Request) {
 
                             /* Complete idempotency key */
                             const successPayload = { success: true, message: "Payment verified and settled", paymentId: newPayment.id };
+                            if (!isCctp && isReceiptId(receiptId)) {
+                                const shareUrl = receiptUrl(receiptId, request.headers.get("origin"));
+                                await supabase
+                                    .from("receipts")
+                                    .upsert({
+                                        receipt_id: receiptId,
+                                        payment_link_id: paymentLink.id,
+                                        payment_link_payment_id: newPayment.id,
+                                        tx_hash: normalizedTx,
+                                        chain_id: Number(chainId),
+                                        memo_contract: ARC_MEMO_CONTRACT_ADDRESS.toLowerCase(),
+                                        payer_address: normalizedPayer,
+                                        merchant_address: paymentLink.merchant_address.toLowerCase(),
+                                        amount_usdc: paymentLink.amount_usdc.toString(),
+                                        memo_note: receiptId,
+                                        share_url: shareUrl,
+                                        status: "CONFIRMED",
+                                        block_number: receipt.blockNumber.toString(),
+                                        confirmed_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString()
+                                    }, { onConflict: "receipt_id" });
+
+                                Object.assign(successPayload, { receiptId, shareUrl });
+                            }
                             await supabase
                                 .from("idempotency_keys")
                                 .update({

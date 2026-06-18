@@ -336,6 +336,48 @@ model Customer {
   @@map("customers")
 }
 
+model UserEmbeddedWallet {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String   @unique
+  walletAddress       String   @unique @map("wallet_address")
+  encryptedPrivateKey String?  @map("encrypted_private_key")
+  provider            String   @default("circle_google")
+  circleWalletId      String?  @unique @map("circle_wallet_id")
+  circleUserId        String?  @map("circle_user_id")
+  circleBlockchain    String?  @map("circle_blockchain")
+  googleSubject       String?  @map("google_subject")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("user_embedded_wallets")
+}
+
+model Receipt {
+  receiptId            String    @id @map("receipt_id")
+  paymentLinkId        String?   @map("payment_link_id") @db.Uuid
+  paymentLinkPaymentId String?   @map("payment_link_payment_id") @db.Uuid
+  txHash               String    @unique @map("tx_hash")
+  chainId              Int       @map("chain_id")
+  memoContract         String    @map("memo_contract")
+  payerAddress         String    @map("payer_address")
+  merchantAddress      String    @map("merchant_address")
+  amountUsdc           BigInt    @map("amount_usdc")
+  memoNote             String?   @map("memo_note")
+  shareUrl             String    @map("share_url")
+  status               String    @default("PENDING")
+  blockNumber          BigInt?   @map("block_number")
+  logIndex             Int?      @map("log_index")
+  confirmedAt          DateTime? @map("confirmed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([payerAddress])
+  @@index([merchantAddress])
+  @@index([status])
+  @@index([paymentLinkId])
+  @@map("receipts")
+}
+
 model MerchantEmailTemplate {
   merchantAddress String  @id @map("merchant_address")
   isActive        Boolean @default(false) @map("is_active")

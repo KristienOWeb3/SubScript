@@ -14,12 +14,14 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS,
+    ARC_MEMO_CONTRACT_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     CCTP_CONFIG,
     ARC_CCTP_DOMAIN_ID,
     isProd
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
+import { ARC_MEMO_ABI, buildMemoWrappedUsdcTransferFrom, generateReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 export interface PublicPayClientProps {
     id: string;
@@ -90,6 +92,8 @@ export default function PublicPayClient({
     const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
+    const [receiptId, setReceiptId] = useState<string | null>(null);
+    const [shareableReceiptUrl, setShareableReceiptUrl] = useState<string | null>(null);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -255,15 +259,56 @@ export default function PublicPayClient({
         } else {
             /* Native Arc Network Payment Flow */
             try {
+                const nextReceiptId = receiptId || generateReceiptId(linkData.title || "SubScript Receipt");
+                setReceiptId(nextReceiptId);
+
+                const currentAllowance = publicClient
+                    ? await publicClient.readContract({
+                        address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+                        abi: USDC_ERC20_ABI,
+                        functionName: "allowance",
+                        args: [address as `0x${string}`, ARC_MEMO_CONTRACT_ADDRESS],
+                    })
+                    : BigInt(0);
+
+                if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
+                    setVerificationStatus("Approving SubScript receipt memo routing...");
+                    const approvalHash = await writeContractAsync({
+                        address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+                        abi: USDC_ERC20_ABI,
+                        functionName: "approve",
+                        args: [ARC_MEMO_CONTRACT_ADDRESS, BigInt(linkData.amount_usdc)],
+                    });
+
+                    if (publicClient) {
+                        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                            hash: approvalHash,
+                            timeout: 120_000,
+                        });
+                        if (approvalReceipt.status !== "success") {
+                            throw new Error("USDC approval for receipt memo routing reverted.");
+                        }
+                    }
+                }
+
+                const memoTransfer = buildMemoWrappedUsdcTransferFrom({
+                    payer: address as `0x${string}`,
+                    merchant: linkData.merchant_address as `0x${string}`,
+                    amountUsdc: BigInt(linkData.amount_usdc),
+                    receiptId: nextReceiptId,
+                });
+
+                setVerificationStatus("Attaching human-readable receipt memo...");
                 const hash = await writeContractAsync({
-                    address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-                    abi: USDC_ERC20_ABI,
-                    functionName: "transfer",
-                    args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
+                    address: memoTransfer.to,
+                    abi: ARC_MEMO_ABI,
+                    functionName: "executeWithMemo",
+                    args: [memoTransfer.target, memoTransfer.transferFromData, nextReceiptId],
                 });
 
                 setTxHash(hash);
                 setSuccessTxHash(hash);
+                setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                 setIsVerifying(true);
                 setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
 
@@ -300,6 +345,7 @@ export default function PublicPayClient({
                             txHash,
                             paymentLinkId: linkData.id,
                             payerAddress: address || "",
+                            receiptId,
                             chainId: chainId
                         })
                     });
@@ -352,7 +398,7 @@ export default function PublicPayClient({
 
             verifyPayment();
         }
-    }, [isConfirmed, txHash, linkData, address, verifiedHash, chainId]);
+    }, [isConfirmed, txHash, linkData, address, verifiedHash, chainId, receiptId]);
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-6 relative font-sans">
@@ -520,6 +566,16 @@ export default function PublicPayClient({
                                     <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                         <CheckCircle className="w-8 h-8 text-emerald-400" />
                                         <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
+                                        {shareableReceiptUrl && (
+                                            <a
+                                                href={shareableReceiptUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1"
+                                            >
+                                                Share receipt <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        )}
                                         {successTxHash && (
                                             <a 
                                                 href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`}
