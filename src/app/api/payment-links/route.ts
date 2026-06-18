@@ -108,7 +108,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name } = body;
+        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name, max_uses } = body;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -123,6 +123,15 @@ export async function POST(request: Request) {
             }
         } catch {
             return NextResponse.json({ error: "Bad Request: Invalid amount_usdc" }, { status: 400 });
+        }
+
+        let maxUses: number | null = null;
+        if (max_uses !== undefined && max_uses !== null && max_uses !== "") {
+            const parsedMaxUses = Number(max_uses);
+            if (!Number.isInteger(parsedMaxUses) || parsedMaxUses <= 0 || parsedMaxUses > 10_000) {
+                return NextResponse.json({ error: "Bad Request: max_uses must be a positive integer" }, { status: 400 });
+            }
+            maxUses = parsedMaxUses;
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -196,7 +205,8 @@ export async function POST(request: Request) {
                     : null,
                 external_reference: external_reference || null,
                 idempotency_key: idempotency_key || null,
-                merchant_name_snapshot: merchant_name || null
+                merchant_name_snapshot: merchant_name || null,
+                max_uses: maxUses
             })
             .select()
             .single();

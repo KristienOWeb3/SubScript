@@ -3,10 +3,27 @@
 import { intro, outro, text, select, isCancel, cancel } from "@clack/prompts";
 import { execSync } from "node:child_process";
 import { writeFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
+
+import { detectFramework, type Framework } from "./utils/framework.js";
+import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "./utils/config.js";
+import { generateConfigTemplate } from "./templates/configTemplate.js";
+import { generateProviderTemplate } from "./templates/SubScriptProvider.js";
+import { generateCheckoutButtonTemplate } from "./templates/CheckoutButton.js";
+import { generateEscrowStatusTemplate } from "./templates/EscrowStatus.js";
+import { generateWebhookTemplate } from "./templates/webhookTemplate.js";
+
+function detectPackageManager(): string {
+  if (existsSync(path.join(process.cwd(), "pnpm-lock.yaml"))) return "pnpm";
+  if (existsSync(path.join(process.cwd(), "yarn.lock"))) return "yarn";
+  if (existsSync(path.join(process.cwd(), "bun.lockb"))) return "bun";
+  return "npm";
+}
 
 async function main() {
-  intro("@subscript-protocol/create");
+  intro("@subscript-protocol/integration-wizard");
 
   const apiKeyResult = await text({
     message: "Enter your SubScript Merchant API Key (Used for Webhook Verification):",
@@ -95,27 +112,101 @@ async function main() {
 
   const planInterval = (planIntervalResult as string) || "2592000";
 
-  const frameworkResult = await select({
-    message: "Select your project framework:",
-    options: [
-      { value: "nextjs", label: "Next.js App Router" },
-      { value: "express", label: "Express/Node" },
-    ],
-  });
+  // Auto-detect project framework
+  let framework: Framework | "express" = await detectFramework(process.cwd());
+  if (framework === "unsupported") {
+    const frameworkChoice = await select({
+      message: "Select your project framework (auto-detect failed):",
+      options: [
+        { value: "next-app", label: "Next.js App Router" },
+        { value: "next-pages", label: "Next.js Pages Router" },
+        { value: "react-spa", label: "React SPA (Vite / CRA)" },
+        { value: "express", label: "Express / Node backend" },
+      ],
+    });
 
-  if (isCancel(frameworkResult)) {
-    cancel("Operation cancelled.");
-    process.exit(0);
+    if (isCancel(frameworkChoice)) {
+      cancel("Operation cancelled.");
+      process.exit(0);
+    }
+    framework = frameworkChoice as any;
+  } else {
+    console.log(`[INFO] Auto-detected framework: ${framework}`);
   }
 
-  const framework = frameworkResult as string;
+  // Ask if they want to integrate Frontend React Components
+  let scaffoldFrontend = false;
+  let mode: "standard" | "zk-routed" = "standard";
 
-  /* Install SDK */
+  if (framework !== "express") {
+    const frontendChoice = await select({
+      message: "Do you want to scaffold Frontend React Components (Checkout Button & Provider)?",
+      options: [
+        { value: "yes", label: "Yes, integrate checkout UI components" },
+        { value: "no", label: "No, backend API integration only" },
+      ],
+    });
+
+    if (isCancel(frontendChoice)) {
+      cancel("Operation cancelled.");
+      process.exit(0);
+    }
+
+    scaffoldFrontend = frontendChoice === "yes";
+
+    if (scaffoldFrontend) {
+      const modeChoice = await select({
+        message: "Select SubScript routing mode:",
+        options: [
+          { value: "standard", label: "Standard (Direct transparent payments on-chain)" },
+          { value: "zk-routed", label: "Privacy Premium (ZK-routed two-phase escrow)" },
+        ],
+      });
+
+      if (isCancel(modeChoice)) {
+        cancel("Operation cancelled.");
+        process.exit(0);
+      }
+
+      mode = modeChoice as "standard" | "zk-routed";
+    }
+  }
+
+  /* Install SubScript SDK */
+  const pm = detectPackageManager();
+  console.log(`[INFO] Installing @subscript-protocol/sdk via ${pm}...`);
   try {
-    execSync("npm install @subscript-protocol/sdk", { stdio: "inherit" });
+    const installCmd = pm === "pnpm" 
+      ? "pnpm add @subscript-protocol/sdk" 
+      : pm === "yarn" 
+        ? "yarn add @subscript-protocol/sdk" 
+        : pm === "bun" 
+          ? "bun add @subscript-protocol/sdk" 
+          : "npm install @subscript-protocol/sdk";
+    execSync(installCmd, { stdio: "inherit" });
   } catch (err: any) {
-    /* Ignore error, allow command output to guide user if needed */
+    console.warn(`[WARNING] Failed to install SDK automatically. Please install manually.`);
   }
+
+  /* Install peer dependencies if scaffolding frontend */
+  if (scaffoldFrontend) {
+    console.log(`[INFO] Installing frontend peer dependencies (viem, wagmi, @tanstack/react-query) via ${pm}...`);
+    try {
+      const installDepsCmd = pm === "pnpm" 
+        ? "pnpm add viem wagmi @tanstack/react-query" 
+        : pm === "yarn" 
+          ? "yarn add viem wagmi @tanstack/react-query" 
+          : pm === "bun" 
+            ? "bun add viem wagmi @tanstack/react-query" 
+            : "npm install viem wagmi @tanstack/react-query";
+      execSync(installDepsCmd, { stdio: "inherit" });
+    } catch (err: any) {
+      console.warn(`[WARNING] Peer dependencies installation failed. Please install manually.`);
+    }
+  }
+
+  const requestId = crypto.randomUUID();
+  const generationTimestamp = new Date().toISOString();
 
   /* Phase 2: Environment Scaffold */
   const envContent = `SUBSCRIPT_API_KEY=${apiKey}
@@ -135,7 +226,9 @@ SUBSCRIPT_INTERVAL=2592000
 `;
 
   await writeFile(".env.local", envContent, "utf8");
-  await writeFile(".env.example", envExampleContent, "utf8");
+  if (!existsSync(".env.example")) {
+    await writeFile(".env.example", envExampleContent, "utf8");
+  }
 
   /* Agent Context Injection (.cursorrules) */
   const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
@@ -155,51 +248,100 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
 - PLAN AMOUNT CAP: ${planCap} USDC
 - PLAN INTERVAL: ${planInterval} seconds
 - TARGET FRAMEWORK: ${framework}
+- ROUTING MODE: ${mode}
 `;
 
   await writeFile(".cursorrules", cursorrulesContent, "utf8");
 
-  /* Phase 3: Boilerplate Webhook API Scaffolding */
-  if (framework === "nextjs") {
-    const webhookPath = "src/app/api/webhooks/subscript/route.ts";
-    const webhookDir = path.dirname(webhookPath);
-    await mkdir(webhookDir, { recursive: true });
+  // Get project paths
+  const paths = getProjectPaths(process.cwd(), framework);
+  const hasSrc = existsSync(path.join(process.cwd(), "src"));
 
-    const nextjsBoilerplate = `import { NextResponse } from "next/server";
-import { SubScript } from "@subscript-protocol/sdk";
+  // Scaffold frontend components
+  if (scaffoldFrontend) {
+    await mkdir(paths.componentsDir, { recursive: true });
 
-const subscript = new SubScript({
-  apiKey: process.env.SUBSCRIPT_API_KEY || "",
-});
+    // 1. subscript.config.ts
+    const configOpts = {
+      merchantAddress: merchantWalletAddress,
+      mode,
+      tier: mode === "zk-routed" ? 1 : 0,
+      chainId: 5042002, // Arc Testnet
+      routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
+      standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
+      usdcAddress: "0x3600000000000000000000000000000000000000",
+      feeBps: 100,
+      cliVersion: CLI_VERSION,
+      templateVersion: TEMPLATE_VERSION,
+      requestId,
+      generationTimestamp
+    };
 
-export async function POST(request: Request) {
-  try {
-    const rawBody = await request.text();
-    const signature = request.headers.get("x-subscript-signature") || "";
-    const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
+    const configContent = generateConfigTemplate(configOpts);
+    await writeFile(paths.configPath, configContent, "utf8");
+    console.log(`[SUCCESS] Generated config: ${path.relative(process.cwd(), paths.configPath)}`);
 
-    const isValid = subscript.webhooks.verifySignature(rawBody, signature, secret);
+    // 2. SubScriptProvider.tsx
+    const providerContent = generateProviderTemplate({
+      cliVersion: CLI_VERSION,
+      templateVersion: TEMPLATE_VERSION,
+      requestId,
+      generationTimestamp
+    });
+    const providerPath = path.join(paths.componentsDir, "SubScriptProvider.tsx");
+    await writeFile(providerPath, providerContent, "utf8");
+    console.log(`[SUCCESS] Generated provider: ${path.relative(process.cwd(), providerPath)}`);
 
-    if (!isValid) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    // 3. SubScriptCheckoutButton.tsx
+    const checkoutContent = generateCheckoutButtonTemplate({
+      cliVersion: CLI_VERSION,
+      templateVersion: TEMPLATE_VERSION,
+      requestId,
+      generationTimestamp,
+      mode
+    });
+    const checkoutBtnPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
+    await writeFile(checkoutBtnPath, checkoutContent, "utf8");
+    console.log(`[SUCCESS] Generated checkout button: ${path.relative(process.cwd(), checkoutBtnPath)}`);
+
+    // 4. EscrowStatusTracker.tsx (if ZK mode)
+    if (mode === "zk-routed") {
+      const escrowContent = generateEscrowStatusTemplate({
+        cliVersion: CLI_VERSION,
+        templateVersion: TEMPLATE_VERSION,
+        requestId,
+        generationTimestamp
+      });
+      const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
+      await writeFile(escrowPath, escrowContent, "utf8");
+      console.log(`[SUCCESS] Generated ZK Escrow status tracker: ${path.relative(process.cwd(), escrowPath)}`);
     }
-
-    /* TODO: Agent - Implement local database order fulfillment and idempotency checks here */
-
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
-`;
 
-    await writeFile(webhookPath, nextjsBoilerplate, "utf8");
-  } else {
-    const webhookPath = "src/api/webhooks/subscript/route.ts";
-    const webhookDir = path.dirname(webhookPath);
+  // Scaffold webhook route
+  if (paths.hasBackend) {
+    const webhookDir = path.dirname(paths.webhookPath);
     await mkdir(webhookDir, { recursive: true });
 
-    const expressBoilerplate = `import express from "express";
+    if (framework === "next-app" || framework === "next-pages") {
+      const nextjsWebhook = generateWebhookTemplate({
+        cliVersion: CLI_VERSION,
+        templateVersion: TEMPLATE_VERSION,
+        requestId,
+        generationTimestamp
+      });
+      await writeFile(paths.webhookPath, nextjsWebhook, "utf8");
+      console.log(`[SUCCESS] Webhook endpoint generated: ${path.relative(process.cwd(), paths.webhookPath)}`);
+    } else if (framework === "express") {
+      const expressBoilerplate = `/**
+ * generatedBy: "SubScript CLI"
+ * cliVersion: "${CLI_VERSION}"
+ * templateVersion: "${TEMPLATE_VERSION}"
+ * requestId: "${requestId}"
+ * generationTimestamp: "${generationTimestamp}"
+ */
+
+import express from "express";
 import { SubScript } from "@subscript-protocol/sdk";
 
 const router = express.Router();
@@ -219,7 +361,10 @@ router.post("/api/webhooks/subscript", express.raw({ type: "application/json" })
       return res.status(401).json({ error: "Invalid signature" });
     }
 
-    /* TODO: Agent - Implement local database order fulfillment and idempotency checks here */
+    const { event, data } = JSON.parse(rawBody);
+
+    // TODO: Process subscription events in your database
+    console.log("[INFO] Received validated SubScript event:", event, data);
 
     return res.json({ success: true });
   } catch (err: any) {
@@ -229,11 +374,29 @@ router.post("/api/webhooks/subscript", express.raw({ type: "application/json" })
 
 export default router;
 `;
-
-    await writeFile(webhookPath, expressBoilerplate, "utf8");
+      await writeFile(paths.webhookPath, expressBoilerplate, "utf8");
+      console.log(`[SUCCESS] Webhook router generated: ${path.relative(process.cwd(), paths.webhookPath)}`);
+    }
   }
 
-  outro("SubScript SDK and Agent Context successfully injected!");
+  outro("SubScript Integration successfully completed!");
+  
+  console.log("\n==================================================");
+  console.log("   Next Steps to complete integration:             ");
+  console.log("==================================================");
+  if (scaffoldFrontend) {
+    const importBase = hasSrc ? "@/components/subscript" : "../components/subscript";
+    console.log(`1. Wrap your root layout or app with <SubScriptProvider>:`);
+    console.log(`   import { SubScriptProvider } from "${importBase}/SubScriptProvider";`);
+    console.log(`\n2. Add the Checkout Button component to your pricing page:`);
+    console.log(`   import { SubScriptCheckoutButton } from "${importBase}/SubScriptCheckoutButton";`);
+    console.log(`   `);
+    console.log(`   <SubScriptCheckoutButton amountUsdc="${planCap}" intervalSeconds={${planInterval}n} planName="${planName}" />`);
+  }
+  if (paths.hasBackend) {
+    console.log(`\n3. Configure SUBSCRIPT_WEBHOOK_SECRET in your .env.local to secure webhooks.`);
+  }
+  console.log("==================================================\n");
 }
 
 main().catch((err) => {

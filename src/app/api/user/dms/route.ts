@@ -84,7 +84,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid status" }, { status: 400 });
         }
 
-        /* Verify the DM exists and belongs to the user (either sender or receiver) */
+        /* Verify the DM exists and belongs to the user. Mutating actions are receiver-only. */
         const existingDm = await prisma.subscriptDm.findUnique({
             where: { id: dmId }
         });
@@ -93,11 +93,21 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "DM not found" }, { status: 404 });
         }
 
-        if (
-            existingDm.receiverAddress.toLowerCase() !== wallet.toLowerCase() &&
-            existingDm.senderAddress.toLowerCase() !== wallet.toLowerCase()
-        ) {
+        const normalizedWallet = wallet.toLowerCase();
+        const isReceiver = existingDm.receiverAddress.toLowerCase() === normalizedWallet;
+        const isSender = existingDm.senderAddress.toLowerCase() === normalizedWallet;
+
+        if (!isReceiver && !isSender) {
             return NextResponse.json({ error: "Unauthorized access to DM" }, { status: 403 });
+        }
+        if (!isReceiver) {
+            return NextResponse.json({ error: "Only the receiving account can confirm, decline, or dismiss this system DM" }, { status: 403 });
+        }
+        if (existingDm.status !== "PENDING") {
+            return NextResponse.json({ error: "This DM has already been handled" }, { status: 409 });
+        }
+        if (status === "PENDING") {
+            return NextResponse.json({ error: "Cannot reset a system DM to pending" }, { status: 400 });
         }
 
         const updatedDm = await prisma.subscriptDm.update({

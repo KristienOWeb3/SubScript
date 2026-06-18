@@ -185,3 +185,85 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   animation: liquid-glass-shimmer 2.5s infinite linear, liquid-pulse 3s infinite ease-in-out;
 }
+
+.subscript-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.85rem 1rem;
+  color: #fff;
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.subscript-input:focus {
+  border-color: rgba(204, 255, 0, 0.42);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.subscript-input::placeholder {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.subscript-primary-button,
+.dm-quick-button {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  transition: transform 160ms ease, filter 160ms ease, background-color 160ms ease;
+}
+
+.subscript-primary-button {
+  width: 100%;
+  border-radius: 1rem;
+  background: #ccff00;
+  padding: 0.9rem 1rem;
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dm-quick-button {
+  min-width: 6rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.16);
+  padding: 0.75rem 1rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.subscript-primary-button:active,
+.dm-quick-button:active {
+  transform: scale(0.97);
+}
+
+.quick-action-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 48%,
+    transparent 100%
+  );
+  animation: subscript-action-shimmer 700ms ease-out;
+}
+
+@keyframes subscript-action-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

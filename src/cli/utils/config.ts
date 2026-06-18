@@ -35,6 +35,9 @@ export function getProjectPaths(cwd: string, framework: Framework): PathMap {
       : path.join(baseDir, "pages");
     webhookPath = path.join(pagesBase, "api", "webhooks", "subscript.ts");
     hasBackend = true;
+  } else if (framework === "express") {
+    webhookPath = path.join(baseDir, "api", "webhooks", "subscript", "route.ts");
+    hasBackend = true;
   }
 
   return {

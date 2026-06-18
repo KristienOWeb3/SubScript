@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
+import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
@@ -34,7 +35,7 @@ import {
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -76,6 +77,15 @@ const tabs = [
 
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks";
 
+const vaultTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
+
+const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Activity }> = [
+    { id: "overview", label: "Home", icon: Activity },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "apikeys", label: "API Keys", icon: Key },
+    { id: "checkout", label: "Checkout", icon: Code2 },
+];
+
 export default function DashboardPage() {
     const [isMounted, setIsMounted] = useState(false);
     const { address: realAddress, isConnected: realIsConnected, chainId } = useAccount();
@@ -97,6 +107,7 @@ export default function DashboardPage() {
     const [linkAmountUsdc, setLinkAmountUsdc] = useState("");
     const [linkDurationMinutes, setLinkDurationMinutes] = useState(1440); /* Default to 24 hours (1440 mins) */
     const [linkExternalReference, setLinkExternalReference] = useState("");
+    const [linkMaxUses, setLinkMaxUses] = useState("1");
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
@@ -386,6 +397,8 @@ export default function DashboardPage() {
     const [isSavingConfidentiality, setIsSavingConfidentiality] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
     const [vaultTimeframe, setVaultTimeframe] = useState<string>('6M');
+    const [balanceVisible, setBalanceVisible] = useState(true);
+    const [timeframeOpen, setTimeframeOpen] = useState(false);
 
     /* QR Code modal states */
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
@@ -506,7 +519,7 @@ export default function DashboardPage() {
     const [initialEventsFetched, setInitialEventsFetched] = useState(false);
     const [initialContractFetched, setInitialContractFetched] = useState(false);
 
-    const isLoading = isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched || !initialLinksFetched));
+    const isLoading = !isMounted || isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched || !initialLinksFetched));
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { signMessageAsync } = useSignMessage();
 
@@ -579,7 +592,8 @@ export default function DashboardPage() {
                     description: linkDescription || null,
                     amount_usdc: rawAmount,
                     expires_at: linkDurationMinutes > 0 ? expiresTimestamp : null,
-                    external_reference: linkExternalReference || null
+                    external_reference: linkExternalReference || null,
+                    max_uses: linkMaxUses ? Number(linkMaxUses) : null
                 })
             });
 
@@ -597,6 +611,7 @@ export default function DashboardPage() {
             setLinkDescription("");
             setLinkAmountUsdc("");
             setLinkDurationMinutes(1440);
+            setLinkMaxUses("1");
             setLinkExternalReference("");
             await fetchPaymentLinks();
         } catch (err: any) {
@@ -1894,6 +1909,20 @@ Please complete the following implementation tasks:
                                         className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
                                     />
                                 </div>
+
+                                <div className="space-y-1 col-span-2">
+                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Maximum Uses</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        placeholder="1"
+                                        value={linkMaxUses}
+                                        onChange={(e) => setLinkMaxUses(e.target.value)}
+                                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                    />
+                                    <p className="text-[10px] text-white/35">Use 1 for one-time checkout links. Increase only for reusable campaigns.</p>
+                                </div>
                             </div>
                         )}
 
@@ -1986,8 +2015,11 @@ Please complete the following implementation tasks:
                                         const paginatedLinks = paymentLinks.slice(linksPage * linksPageSize, (linksPage + 1) * linksPageSize);
                                         return paginatedLinks.map((link) => {
                                             const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+                                            const isExhausted = link.max_uses != null && Number(link.use_count || 0) >= Number(link.max_uses);
                                             const status = !link.active 
                                                 ? "Inactive" 
+                                                : isExhausted
+                                                    ? "Exhausted"
                                                 : isExpired 
                                                     ? "Expired" 
                                                     : "Active";
@@ -1999,6 +2031,11 @@ Please complete the following implementation tasks:
                                                             <div className="font-bold text-white">{link.title}</div>
                                                             {link.description && (
                                                                 <div className="text-[10px] text-white/40 line-clamp-1">{link.description}</div>
+                                                            )}
+                                                            {link.max_uses != null && (
+                                                                <div className="text-[9px] text-white/30 font-mono mt-1">
+                                                                    Uses: {link.use_count || 0}/{link.max_uses}
+                                                                </div>
                                                             )}
                                                         </td>
                                                         <td className="py-4 px-4 font-mono font-semibold text-[#00d2b4]">
@@ -2222,9 +2259,14 @@ Please complete the following implementation tasks:
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                                 {/* Wallet Balance */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Wallet Balance</p>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Wallet Balance</p>
+                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
+                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                        </button>
+                                    </div>
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
-                                        ${walletBalance.toFixed(2)}
+                                        {balanceVisible ? `$${walletBalance.toFixed(2)}` : '•••••'}
                                     </p>
                                     <p className="text-[10px] text-white/30 flex items-center gap-1">
                                         <Wallet className="w-3 h-3 text-[#00d2b4]" /> USDC in connected wallet
@@ -2233,9 +2275,14 @@ Please complete the following implementation tasks:
 
                                 {/* Vault Balance */}
                                 <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-2">Vault Balance</p>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Vault Balance</p>
+                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
+                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                        </button>
+                                    </div>
                                     <p className={`text-3xl font-extrabold ${primaryColorText} mb-1 tracking-tight`}>
-                                        ${vaultBalance.toFixed(2)}
+                                        {balanceVisible ? `$${vaultBalance.toFixed(2)}` : '•••••'}
                                     </p>
                                     <div className="flex items-center justify-between">
                                         <p className="text-[10px] text-white/30">Claimable USDC in router</p>
@@ -2560,16 +2607,21 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Mobile Overview Layout (Strictly blueprint aligned) */}
-                        <div className="block lg:hidden space-y-6 pb-24 font-sans">
+                        <div className="lg:hidden space-y-6 pb-24 font-sans">
                             {/* Wallet Balance Card */}
                             <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
                                 <div className="space-y-1 relative z-10">
-                                    <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
+                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
+                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                        </button>
+                                    </div>
                                     <p className="text-3xl font-extrabold text-white mt-1.5 tracking-tight leading-none">
-                                        ${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {balanceVisible ? `$${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
                                     </p>
                                     <span className="text-xs font-semibold text-white/40 font-mono">
-                                        {detectedCurrency.symbol}{(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {balanceVisible ? `${detectedCurrency.symbol}${(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
                                     </span>
                                 </div>
                                 <div className="relative z-10">
@@ -2584,46 +2636,81 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Vault Balance Card */}
-                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
-                                <div className="space-y-1 relative z-10">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Vault Balance</span>
-                                        <div className="flex items-center gap-1">
-                                            {['24H', '1W', '1M', '3M', '6M', '1Y'].map((tf) => (
-                                                <button
-                                                    key={tf}
-                                                    onClick={() => setVaultTimeframe(tf)}
-                                                    className={`text-[7px] font-bold px-1.5 py-0.5 rounded transition-all duration-200 ${
-                                                        vaultTimeframe === tf
-                                                            ? 'bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30'
-                                                            : 'bg-white/5 text-white/40 hover:text-white/60 hover:bg-white/10'
-                                                    }`}
-                                                >
-                                                    {tf}
-                                                </button>
-                                            ))}
+                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-black/35 backdrop-blur-xl">
+                                <div className="relative z-10 space-y-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Vault Balance</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setBalanceVisible(!balanceVisible)}
+                                                className="text-white/30 hover:text-white/60 transition-colors p-0.5"
+                                                aria-label={balanceVisible ? "Hide balances" : "Show balances"}
+                                            >
+                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                            </button>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTimeframeOpen((open) => !open)}
+                                            className="flex items-center gap-1 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/15 px-2.5 py-1 text-[8px] font-bold text-[#00d2b4] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:bg-[#00d2b4]/25 active:scale-95"
+                                            aria-expanded={timeframeOpen}
+                                            aria-label="Select vault timeframe"
+                                        >
+                                            <span>{vaultTimeframe}</span>
+                                            <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${timeframeOpen ? "rotate-180" : "rotate-0"}`} />
+                                        </button>
                                     </div>
-                                    <p className="text-3xl font-extrabold text-[#00d2b4] mt-1.5 tracking-tight leading-none">
-                                        ${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                            {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
-                                        </span>
-                                        <span className="text-xs font-semibold text-white/40 font-mono">
-                                            {detectedCurrency.symbol}{(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </span>
+                                    <AnimatePresence initial={false}>
+                                        {timeframeOpen && (
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0, y: -4 }}
+                                                animate={{ opacity: 1, height: "auto", y: 0 }}
+                                                exit={{ opacity: 0, height: 0, y: -4 }}
+                                                transition={{ type: "spring", stiffness: 340, damping: 22, bounce: 0.22 }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
+                                                    {vaultTimeframes.map((tf) => (
+                                                        <button
+                                                            key={tf}
+                                                            type="button"
+                                                            onClick={() => { setVaultTimeframe(tf); setTimeframeOpen(false); }}
+                                                            className={`rounded-full px-2 py-1.5 text-center text-[8px] font-bold transition-all duration-200 active:scale-95 ${
+                                                                vaultTimeframe === tf
+                                                                    ? "bg-[#00d2b4]/15 text-[#00d2b4] ring-1 ring-[#00d2b4]/30"
+                                                                    : "text-white/50 hover:bg-white/5 hover:text-white"
+                                                            }`}
+                                                        >
+                                                            {tf}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                    <div className="flex items-end justify-between gap-4">
+                                        <div className="space-y-1">
+                                            <p className="text-3xl font-extrabold text-[#00d2b4] tracking-tight leading-none">
+                                                {balanceVisible ? `$${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
+                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
+                                                    {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
+                                                </span>
+                                                <span className="text-xs font-semibold text-white/40 font-mono">
+                                                    {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setIsWithdrawOpen(true)}
+                                            className="w-12 h-12 shrink-0 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-lg shadow-[#00d2b4]/5 hover:scale-105 active:scale-95"
+                                            title="Withdraw routed funds"
+                                        >
+                                            <ArrowDown className="w-5 h-5" />
+                                        </button>
                                     </div>
-                                </div>
-                                <div className="relative z-10">
-                                    <button
-                                        onClick={() => setIsWithdrawOpen(true)}
-                                        className="w-12 h-12 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all shadow-lg shadow-[#00d2b4]/5 hover:scale-105 active:scale-95"
-                                        title="Withdraw routed funds"
-                                    >
-                                        <ArrowDown className="w-5 h-5" />
-                                    </button>
                                 </div>
                             </div>
 
@@ -3947,6 +4034,8 @@ Please complete the following implementation tasks:
                 onDeposit={() => setIsDepositOpen(true)}
                 merchantAlias={merchantAlias}
                 onDnsClick={handleDnsClick}
+                activeTab={activeTab}
+                onBackToOverview={() => setActiveTab('overview')}
             />
 
             {/* Dashboard Content */}
@@ -3963,7 +4052,9 @@ Please complete the following implementation tasks:
                     </div>
                 </div>
 
-                {!isConnected ? (
+                {isLoading ? (
+                    <DashboardSkeleton activeTab={activeTab} />
+                ) : !isConnected ? (
                     <div className="space-y-8">
                         <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
@@ -3994,8 +4085,6 @@ Please complete the following implementation tasks:
                             )}
                         </div>
                     </div>
-                ) : isLoading ? (
-                    <DashboardSkeleton activeTab={activeTab} />
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                         {/* Sidebar Navigation */}
@@ -4056,10 +4145,10 @@ Please complete the following implementation tasks:
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTab}
-                                    initial={{ opacity: 0, y: 15 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -15 }}
-                                    transition={{ duration: 0.25 }}
+                                    initial={{ opacity: 0, y: 15, scale: 0.985 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -15, scale: 0.985 }}
+                                    transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
                                 >
                                     {renderView()}
                                 </motion.div>
@@ -4175,99 +4264,22 @@ Please complete the following implementation tasks:
                             )}
 
                             {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
-                            {isConnected && !['premium', 'webhooks', 'checkout', 'dns', 'payment-links'].includes(activeTab) && (
+                            {isConnected && mobileBottomTabs.some((tab) => tab.id === activeTab) && (
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
-                                    {(() => {
-                                        const capsuleTabs = [
-                                            { id: "overview", label: "Home", icon: Activity },
-                                            { id: "analytics", label: "Analytics", icon: BarChart3 },
-                                            { id: "apikeys", label: "API Keys", icon: Key },
-                                        ];
-                                        
-                                        /* If current active tab is not in the default capsule tabs and not checkout, dynamically show it in Slot 1 */
-                                        if (!["overview", "analytics", "apikeys", "checkout"].includes(activeTab)) {
-                                            const activeTabInfo = tabs.find(t => t.id === activeTab);
-                                            if (activeTabInfo) {
-                                                capsuleTabs[0] = {
-                                                    id: activeTabInfo.id,
-                                                    label: activeTabInfo.label === "Payment Links" ? "Payments" : activeTabInfo.label,
-                                                    icon: activeTabInfo.icon
-                                                };
-                                            }
-                                        }
-
-                                        return capsuleTabs.map((tab) => {
-                                            const isSelected = activeTab === tab.id;
-                                            const Icon = tab.icon;
-                                            return (
-                                                <motion.button
-                                                    key={tab.id}
-                                                    layoutId={`bottom-nav-${tab.id}`}
-                                                    onClick={() => setActiveTab(tab.id as TabId)}
-                                                    whileTap={{ scale: 0.92 }}
-                                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full transition-colors duration-300 ${
-                                                        isSelected 
-                                                            ? "bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white" 
-                                                            : "text-white/40 hover:text-white"
-                                                    }`}
-                                                >
-                                                    <Icon className={`w-5 h-5 ${isSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
-                                                    <AnimatePresence mode="wait">
-                                                        {isSelected && (
-                                                            <motion.span
-                                                                key={`label-${tab.id}`}
-                                                                initial={{ opacity: 0, width: 0 }}
-                                                                animate={{ opacity: 1, width: 'auto' }}
-                                                                exit={{ opacity: 0, width: 0 }}
-                                                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                                                className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap overflow-hidden"
-                                                            >
-                                                                {tab.label}
-                                                            </motion.span>
-                                                        )}
-                                                    </AnimatePresence>
-                                                </motion.button>
-                                            );
-                                        });
-                                    })()}
+                                    {mobileBottomTabs.map((tab) => (
+                                        <AnimatedBottomNavButton
+                                            key={tab.id}
+                                            label={tab.label}
+                                            icon={tab.icon}
+                                            active={activeTab === tab.id}
+                                            onClick={() => setActiveTab(tab.id)}
+                                        />
+                                    ))}
                                 </div>
 
-                                {/* Separate Circle Button for Checkout Setup */}
-                                {(() => {
-                                    const isCheckoutSelected = activeTab === "checkout";
-                                    return (
-                                        <motion.button
-                                            onClick={() => setActiveTab("checkout")}
-                                            whileTap={{ scale: 0.92 }}
-                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                            className={`h-11 flex items-center justify-center gap-2 rounded-full transition-all duration-300 border shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl ${
-                                                isCheckoutSelected
-                                                    ? "w-auto px-4 bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white"
-                                                    : "w-11 bg-white/[0.02] border-white/5 text-white/40 hover:text-white hover:bg-white/[0.05]"
-                                            }`}
-                                            title="Checkout Setup"
-                                        >
-                                            <Code2 className={`w-5 h-5 ${isCheckoutSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
-                                            <AnimatePresence mode="wait">
-                                                {isCheckoutSelected && (
-                                                    <motion.span
-                                                        key="checkout-label"
-                                                        initial={{ opacity: 0, width: 0 }}
-                                                        animate={{ opacity: 1, width: 'auto' }}
-                                                        exit={{ opacity: 0, width: 0 }}
-                                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                                        className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap overflow-hidden"
-                                                    >
-                                                        Checkout
-                                                    </motion.span>
-                                                )}
-                                            </AnimatePresence>
-                                        </motion.button>
-                                    );
-                                })()}
+
                             </div>
                             )}
                         </div>

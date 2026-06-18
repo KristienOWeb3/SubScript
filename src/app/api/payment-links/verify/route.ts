@@ -449,6 +449,26 @@ export async function POST(request: Request) {
 
                                 Object.assign(successPayload, { receiptId, shareUrl });
                             }
+
+                            await supabase
+                                .from("subscript_dms")
+                                .insert({
+                                    sender_address: paymentLink.merchant_address.toLowerCase(),
+                                    receiver_address: normalizedPayer,
+                                    message_type: "DEBIT_SUCCESS",
+                                    status: "PENDING",
+                                    amount_usdc: paymentLink.amount_usdc.toString(),
+                                    title: `Receipt: ${paymentLink.title}`,
+                                    description: [
+                                        `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
+                                        `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
+                                        `Transaction: ${normalizedTx}`,
+                                        !isCctp && isReceiptId(receiptId) ? `Receipt: ${receiptUrl(receiptId, request.headers.get("origin"))}` : null,
+                                    ].filter(Boolean).join("\n"),
+                                    tx_hash: normalizedTx,
+                                    payment_link_id: paymentLink.id,
+                                });
+
                             await supabase
                                 .from("idempotency_keys")
                                 .update({

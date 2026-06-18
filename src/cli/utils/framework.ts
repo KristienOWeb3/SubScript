@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-export type Framework = "next-app" | "next-pages" | "react-spa" | "unsupported";
+export type Framework = "next-app" | "next-pages" | "react-spa" | "express" | "unsupported";
 
 export async function detectFramework(cwd: string): Promise<Framework> {
   const pkgJsonPath = path.join(cwd, "package.json");

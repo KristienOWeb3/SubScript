@@ -1,0 +1,124 @@
+import { prisma } from "@/lib/prisma";
+
+const USDC_DECIMALS = 1_000_000;
+
+export type SystemDmStatus = "PENDING" | "APPROVED" | "DECLINED" | "DISMISSED";
+
+export function formatUsdcFromMicros(amount: bigint | number | string | null | undefined) {
+    if (amount === null || amount === undefined) return "0.00";
+    const numeric = typeof amount === "bigint" ? Number(amount) : Number(amount);
+    if (!Number.isFinite(numeric)) return "0.00";
+    return (numeric / USDC_DECIMALS).toFixed(2);
+}
+
+export function parseUsdcToMicros(value: unknown) {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number") {
+        if (!Number.isFinite(value) || value <= 0) throw new Error("Amount must be greater than 0");
+        return BigInt(Math.round(value * USDC_DECIMALS));
+    }
+    if (typeof value !== "string" || value.trim() === "") {
+        throw new Error("Amount is required");
+    }
+
+    const trimmed = value.trim();
+    if (/^\d+$/.test(trimmed)) {
+        const whole = BigInt(trimmed);
+        return whole > BigInt(100_000) ? whole : whole * BigInt(USDC_DECIMALS);
+    }
+
+    if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) {
+        throw new Error("Amount must be a USDC value with up to 6 decimals");
+    }
+
+    const [whole, fraction = ""] = trimmed.split(".");
+    const paddedFraction = fraction.padEnd(6, "0");
+    return BigInt(whole) * BigInt(USDC_DECIMALS) + BigInt(paddedFraction);
+}
+
+export function isPaymentLinkUnavailable(link: {
+    active: boolean;
+    expiresAt: Date | null;
+    maxUses: number | null;
+    useCount: number;
+}) {
+    if (!link.active) return "inactive";
+    if (link.expiresAt && link.expiresAt < new Date()) return "expired";
+    if (link.maxUses !== null && link.useCount >= link.maxUses) return "exhausted";
+    return null;
+}
+
+export async function createPaymentRequestDm({
+    paymentLinkId,
+    receiverAddress,
+}: {
+    paymentLinkId: string;
+    receiverAddress: string;
+}) {
+    const normalizedReceiver = receiverAddress.toLowerCase();
+    const link = await prisma.paymentLink.findUnique({
+        where: { id: paymentLinkId },
+    });
+
+    if (!link) {
+        throw new Error("Payment link not found");
+    }
+
+    const unavailableReason = isPaymentLinkUnavailable(link);
+    if (unavailableReason) {
+        throw new Error(`Payment link is ${unavailableReason}`);
+    }
+
+    const merchantAddress = link.merchantAddress.toLowerCase();
+    if (merchantAddress === normalizedReceiver) {
+        throw new Error("Merchants cannot send their own checkout to their user inbox");
+    }
+
+    const existing = await prisma.subscriptDm.findFirst({
+        where: {
+            receiverAddress: normalizedReceiver,
+            paymentLinkId: link.id,
+            messageType: "PAYMENT_REQUEST",
+            status: "PENDING",
+        },
+        orderBy: { createdAt: "desc" },
+    });
+    if (existing) return { dm: existing, created: false, link };
+
+    const merchant = await prisma.merchant.findUnique({
+        where: { walletAddress: merchantAddress },
+        select: { verified: true, profilePic: true },
+    });
+    const merchantAlias = await prisma.addressAlias.findUnique({
+        where: { address: merchantAddress },
+    });
+
+    const merchantName = link.merchantNameSnapshot || merchantAlias?.alias || `${merchantAddress.slice(0, 6)}...${merchantAddress.slice(-4)}`;
+    const amount = formatUsdcFromMicros(link.amountUsdc);
+    const issuedAt = new Date().toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    });
+
+    const dm = await prisma.subscriptDm.create({
+        data: {
+            senderAddress: merchantAddress,
+            receiverAddress: normalizedReceiver,
+            messageType: "PAYMENT_REQUEST",
+            status: "PENDING",
+            amountUsdc: link.amountUsdc,
+            title: `${merchantName} requested ${amount} USDC`,
+            description: [
+                `Payment for: ${link.title}`,
+                link.description ? `Details: ${link.description}` : null,
+                `Amount: ${amount} USDC`,
+                `Merchant: ${merchantName}${merchant?.verified ? " (verified)" : " (unverified)"}`,
+                `Issued: ${issuedAt}`,
+                link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
+            ].filter(Boolean).join("\n"),
+            paymentLinkId: link.id,
+        },
+    });
+
+    return { dm, created: true, link };
+}

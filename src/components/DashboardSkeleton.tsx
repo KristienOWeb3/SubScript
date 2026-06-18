@@ -3,7 +3,7 @@
 import React from "react";
 import Skeleton from "./ui/Skeleton";
 import { 
-    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3
+    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3, Link2
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
@@ -15,6 +15,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
         { id: "overview", label: "Overview", icon: Activity },
         { id: "premium", label: "Premium", icon: Crown },
         { id: "analytics", label: "Analytics", icon: BarChart3 },
+        { id: "payment-links", label: "Payment Links", icon: Link2 },
         { id: "apikeys", label: "API Keys", icon: Key },
         { id: "checkout", label: "Checkout Setup", icon: Code2 },
         { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -339,7 +340,56 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+        <>
+        <div className="lg:hidden space-y-6 pb-24 font-sans">
+            <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl bg-black/35 backdrop-blur-xl">
+                <div className="space-y-3">
+                    <Skeleton className="h-2.5 w-24 rounded-full" />
+                    <Skeleton className="h-8 w-36 rounded-xl" />
+                    <Skeleton className="h-2.5 w-20 rounded-full" />
+                </div>
+            </div>
+            <div className="liquid-glass border border-[#00d2b4]/10 rounded-3xl p-6 shadow-xl bg-black/35 backdrop-blur-xl">
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <Skeleton className="h-2.5 w-20 rounded-full" />
+                        <Skeleton className="h-5 w-10 rounded-full" />
+                    </div>
+                    <Skeleton className="h-8 w-32 rounded-xl" />
+                    <div className="flex gap-2">
+                        <Skeleton className="h-2.5 w-10 rounded-full" />
+                        <Skeleton className="h-2.5 w-16 rounded-full" />
+                    </div>
+                </div>
+            </div>
+            <div className="grid grid-cols-4 gap-3 py-2">
+                {[1, 2, 3, 4].map((item) => (
+                    <div key={item} className="flex flex-col items-center gap-2">
+                        <Skeleton circle className="h-12 w-12" />
+                        <Skeleton className="h-2 w-12 rounded-full" />
+                    </div>
+                ))}
+            </div>
+            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
+                <Skeleton className="h-3 w-36 rounded-full" />
+                {[1, 2, 3].map((item) => (
+                    <div key={item} className="flex justify-between items-center py-3 border-b border-white/5">
+                        <div className="space-y-1.5">
+                            <Skeleton className="h-3 w-24 rounded-full" />
+                            <Skeleton className="h-2 w-16 rounded-full" />
+                        </div>
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                ))}
+            </div>
+            <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                {[1, 2, 3, 4].map((item) => (
+                    <Skeleton key={item} circle className="h-11 w-11" />
+                ))}
+            </div>
+        </div>
+
+        <div className="hidden lg:grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
             {/* Sidebar Navigation skeleton */}
             <div className="lg:col-span-1 space-y-2">
                 {tabs.map((tab) => {
@@ -374,5 +424,6 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                 {renderContentSkeleton()}
             </div>
         </div>
+        </>
     );
 }

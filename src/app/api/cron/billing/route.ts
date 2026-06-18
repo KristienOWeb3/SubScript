@@ -19,6 +19,39 @@ const ROUTER_ABI = [
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 
+async function createBillingDm({
+    supabase,
+    senderAddress,
+    receiverAddress,
+    messageType,
+    amountUsdc,
+    title,
+    description,
+    txHash,
+}: {
+    supabase: any;
+    senderAddress: string;
+    receiverAddress: string;
+    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING";
+    amountUsdc: bigint | string | number;
+    title: string;
+    description: string;
+    txHash?: string | null;
+}) {
+    await supabase
+        .from("subscript_dms")
+        .insert({
+            sender_address: senderAddress.toLowerCase(),
+            receiver_address: receiverAddress.toLowerCase(),
+            message_type: messageType,
+            status: "PENDING",
+            amount_usdc: amountUsdc.toString(),
+            title,
+            description,
+            tx_hash: txHash || null,
+        });
+}
+
 export async function POST(request: Request) {
     const requestId = crypto.randomUUID();
     try {
@@ -194,6 +227,19 @@ export async function POST(request: Request) {
             const handlePaymentFailure = async (subscriberAddress: string, failureReason: string) => {
                 const currentFailures = Number(sub.downgrade_failures || 0);
                 const previousStatus = sub.status;
+                await createBillingDm({
+                    supabase,
+                    senderAddress: sub.merchant_address,
+                    receiverAddress: subscriberAddress,
+                    messageType: "EXPIRY_WARNING",
+                    amountUsdc: sub.amount_cap_usdc || 0,
+                    title: "Subscription renewal needs attention",
+                    description: [
+                        "SubScript could not complete this subscription renewal.",
+                        `Reason: ${failureReason}`,
+                        "Choose resubscribe after adding USDC, or cancel the premium plan from your dashboard.",
+                    ].join("\n"),
+                }).catch((dmErr: any) => console.error("Failed to create renewal warning DM:", dmErr));
 
                 if (previousStatus === "ACTIVE") {
                     console.log(`[Premium Entered Past Due] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}`);
@@ -414,6 +460,21 @@ export async function POST(request: Request) {
                 if (sub.status === "PAST_DUE") {
                     console.log(`[Premium Past Due Recovery] requestId: ${requestId}, merchantAddress: ${subscriber}, subscriptionId: ${subId}, txHash: ${tx.hash}`);
                 }
+
+                await createBillingDm({
+                    supabase,
+                    senderAddress: sub.merchant_address,
+                    receiverAddress: subscriber,
+                    messageType: "DEBIT_SUCCESS",
+                    amountUsdc: requiredAmount,
+                    title: "Subscription renewed",
+                    description: [
+                        "SubScript successfully renewed your subscription.",
+                        `Amount debited: ${Number(requiredAmount) / 1_000_000} USDC`,
+                        `Subscription ID: ${subId}`,
+                    ].join("\n"),
+                    txHash: tx.hash,
+                }).catch((dmErr: any) => console.error("Failed to create renewal receipt DM:", dmErr));
 
                 /* Update database to ACTIVE and tier 1 */
                 await supabase

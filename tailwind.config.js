@@ -14,7 +14,7 @@ module.exports = {
                 'muted-gray': '#a1a1aa',
             },
             fontFamily: {
-                sans: ['Inter', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                sans: ['var(--font-sukar)', 'Sukar', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
             },
             animation: {
                 'float': 'float 6s ease-in-out infinite',

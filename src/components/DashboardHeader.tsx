@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap, Loader2, Shield } from "lucide-react";
+import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff } from "lucide-react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits } from "viem";
@@ -67,6 +67,7 @@ export default function DashboardHeader({
     const [scrolled, setScrolled] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
+    const [balancesVisible, setBalancesVisible] = useState(true);
 
     useEffect(() => {
         if (propMerchantAlias !== undefined) {
@@ -139,6 +140,8 @@ export default function DashboardHeader({
 
     const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
     const depositAddress = address || WALLET_PLACEHOLDER;
+    const bottomBarTabs = ["overview", "analytics", "apikeys", "checkout"];
+    const showMobileBack = activeTab && !bottomBarTabs.includes(activeTab) && onBackToOverview;
 
     const handleConnect = () => {
         const connector = connectors.find((c) => c.id === "injected") || connectors[0];
@@ -185,7 +188,7 @@ export default function DashboardHeader({
                     <div className="flex sm:hidden items-center justify-between w-full">
                         {/* Back Button + Logo (Left) */}
                         <div className="flex items-center flex-shrink-0">
-                            {activeTab && !['overview', 'analytics', 'apikeys'].includes(activeTab) && onBackToOverview && (
+                            {showMobileBack && (
                                 <button
                                     onClick={onBackToOverview}
                                     className="p-2 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all mr-1"
@@ -194,7 +197,7 @@ export default function DashboardHeader({
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                                 </button>
                             )}
-                            {(!activeTab || ['overview', 'analytics', 'apikeys'].includes(activeTab) || !onBackToOverview) && (
+                            {!showMobileBack && (
                                 <Link href="/" className="flex items-center">
                                     <img 
                                         src="/logo.png" 
@@ -284,9 +287,19 @@ export default function DashboardHeader({
 
                                     {/* Balance */}
                                     <div className="hidden sm:block text-right px-2 sm:px-3">
-                                        <p className="text-[9px] text-white/35 uppercase font-bold tracking-widest leading-none mb-0.5">Balance</p>
+                                        <div className="mb-0.5 flex items-center justify-end gap-1.5">
+                                            <p className="text-[9px] text-white/35 uppercase font-bold tracking-widest leading-none">Balance</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setBalancesVisible((visible) => !visible)}
+                                                className="text-white/30 hover:text-white/60 transition-colors"
+                                                aria-label={balancesVisible ? "Hide balances" : "Show balances"}
+                                            >
+                                                {balancesVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                            </button>
+                                        </div>
                                         <p className="text-sm sm:text-base font-bold text-white tracking-tight leading-none">
-                                            ${usdcBalance}
+                                            {balancesVisible ? `$${usdcBalance}` : "•••••"}
                                             <span className="text-[10px] text-white/50 font-normal ml-1">USDC</span>
                                         </p>
                                     </div>
@@ -296,7 +309,7 @@ export default function DashboardHeader({
                                         <div className="hidden sm:block text-right px-2 sm:px-3 border-l border-white/5">
                                             <p className="text-[9px] text-[#00d2b4]/60 uppercase font-bold tracking-widest leading-none mb-0.5">Routed</p>
                                             <p className="text-sm sm:text-base font-bold text-[#00d2b4] tracking-tight leading-none">
-                                                ${vaultBalance.toFixed(2)}
+                                                {balancesVisible ? `$${vaultBalance.toFixed(2)}` : "•••••"}
                                                 <span className="text-[10px] text-[#00d2b4]/50 font-normal ml-1">USDC</span>
                                             </p>
                                         </div>

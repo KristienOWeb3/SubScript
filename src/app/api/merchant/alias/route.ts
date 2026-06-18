@@ -3,9 +3,25 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { prisma } from "@/lib/prisma";
 
-/* Normalizes alias name to lowercase, check characters (alphanumeric and hyphens, ending in .sub) */
-const ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
+/* Users receive .sub names; enterprises receive business namespaces. */
+const USER_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
+const ENTERPRISE_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.(hq|biz)$/;
+const MAX_PROFILE_PIC_BYTES = 2 * 1024 * 1024;
+
+function getDataUrlByteLength(value: string) {
+    const base64 = value.split(",")[1] || "";
+    return Math.floor((base64.length * 3) / 4);
+}
+
+async function getAccountRole(address: string) {
+    const roleRecord = await prisma.accountRole.findUnique({
+        where: { address },
+        select: { role: true },
+    }).catch(() => null);
+    return roleRecord?.role === "ENTERPRISE" ? "ENTERPRISE" : "USER";
+}
 
 export async function GET(request: Request) {
     try {
@@ -15,6 +31,7 @@ export async function GET(request: Request) {
         }
 
         const normalizedUser = walletAddress.toLowerCase();
+        const role = await getAccountRole(normalizedUser);
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
@@ -31,18 +48,30 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
+        const profile = role === "ENTERPRISE"
+            ? await prisma.merchant.findUnique({ where: { walletAddress: normalizedUser }, select: { profilePic: true, verified: true } }).catch(() => null)
+            : await prisma.customer.findUnique({ where: { walletAddress: normalizedUser }, select: { profilePic: true } }).catch(() => null);
+
         if (!data) {
             return NextResponse.json({
+                success: true,
                 address: normalizedUser,
                 alias: null,
-                is_anonymous: false
+                is_anonymous: false,
+                role,
+                profile_pic: profile?.profilePic || null,
+                verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
             }, { status: 200 });
         }
 
         return NextResponse.json({
+            success: true,
             address: data.address,
             alias: data.alias,
-            is_anonymous: data.is_anonymous
+            is_anonymous: data.is_anonymous,
+            role,
+            profile_pic: profile?.profilePic || null,
+            verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
         }, { status: 200 });
 
     } catch (err: any) {
@@ -67,13 +96,51 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { alias, isAnonymous } = body;
+        const { alias, isAnonymous, profilePic } = body;
+        const role = await getAccountRole(normalizedUser);
+
+        if (typeof profilePic === "string") {
+            if (!profilePic.startsWith("data:image/") || getDataUrlByteLength(profilePic) > MAX_PROFILE_PIC_BYTES) {
+                return NextResponse.json({ error: "Profile image must be an image data URL smaller than 2MB" }, { status: 400 });
+            }
+
+            if (role === "ENTERPRISE") {
+                await prisma.merchant.upsert({
+                    where: { walletAddress: normalizedUser },
+                    update: { profilePic, updatedAt: new Date() },
+                    create: {
+                        walletAddress: normalizedUser,
+                        profilePic,
+                        tier: "FREE",
+                        availableBalanceUsdc: BigInt(0),
+                        reservedBalanceUsdc: BigInt(0),
+                    },
+                });
+            } else {
+                await prisma.customer.upsert({
+                    where: { walletAddress: normalizedUser },
+                    update: { profilePic },
+                    create: { walletAddress: normalizedUser, profilePic },
+                });
+            }
+
+            return NextResponse.json({
+                success: true,
+                address: normalizedUser,
+                profile_pic: profilePic,
+            }, { status: 200 });
+        }
 
         if (alias !== null && alias !== undefined && alias !== "") {
             const normalizedAlias = String(alias).toLowerCase().trim();
-            if (!ALIAS_REGEX.test(normalizedAlias)) {
-                return NextResponse.json({ 
-                    error: "Bad Request: Alias must be 3-15 alphanumeric characters/hyphens and end with '.sub'" 
+            const allowed = role === "ENTERPRISE"
+                ? ENTERPRISE_ALIAS_REGEX.test(normalizedAlias)
+                : USER_ALIAS_REGEX.test(normalizedAlias);
+            if (!allowed) {
+                return NextResponse.json({
+                    error: role === "ENTERPRISE"
+                        ? "Bad Request: Enterprise DNS names must be 3-15 characters and end with '.hq' or '.biz'"
+                        : "Bad Request: User DNS names must be 3-15 characters and end with '.sub'"
                 }, { status: 400 });
             }
 
@@ -117,7 +184,8 @@ export async function POST(request: Request) {
                 success: true,
                 address: data.address,
                 alias: data.alias,
-                is_anonymous: data.is_anonymous
+                is_anonymous: data.is_anonymous,
+                role
             }, { status: 200 });
         } else {
             /* If alias is empty, it means we are clearing the alias */

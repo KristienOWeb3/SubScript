@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useSignTypedData, useConnect, useDisconnect, useWriteContract, useSwitchChain, useSignMessage } from "wagmi";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
     ArrowLeft, Plus, Pause, Play, Trash2, Users, Calendar,
     Shield, ShieldOff, Loader2, CheckCircle, AlertTriangle,
@@ -136,6 +137,8 @@ function frequencyLabel(days: number): string {
 /* ------------------------------------------------------------------ */
 
 export default function PayrollPage() {
+    const router = useRouter();
+
     /* ----- wallet state ----- */
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { signTypedDataAsync } = useSignTypedData();
@@ -727,6 +730,8 @@ export default function PayrollPage() {
                     isPremium={isPremium}
                     promptFlowMode={promptFlowMode}
                     onDeposit={() => setIsDepositOpen(true)}
+                    activeTab="payroll"
+                    onBackToOverview={() => router.push("/dashboard")}
                 />
 
                 {/* Main Content Layout */}

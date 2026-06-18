@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
@@ -38,6 +39,8 @@ export default function PublicPayClient({
     displayAmount,
     exchangeRate = 1.0
 }: PublicPayClientProps) {
+    const router = useRouter();
+    const routedIntentRef = useRef<string | null>(null);
     const getFiatSymbol = (currency: string) => {
         switch (currency.toUpperCase()) {
             case "EUR": return "€";
@@ -142,16 +145,6 @@ export default function PublicPayClient({
                     throw new Error(data.error || "Failed to load payment link");
                 }
                 setLinkData(data.link);
-                /* Check merchant verification status */
-                if (data.link?.merchant_address) {
-                    try {
-                        const mRes = await fetch(`/api/merchant/profile?address=${data.link.merchant_address}`);
-                        if (mRes.ok) {
-                            const mData = await mRes.json();
-                            setMerchantVerified(mData.verified === true);
-                        }
-                    } catch { /* silently ignore verification check failures */ }
-                }
             } catch (err: any) {
                 setError(err.message || "Something went wrong");
             } finally {
@@ -160,6 +153,52 @@ export default function PublicPayClient({
         };
         fetchLinkDetails();
     }, [id, initialLinkData]);
+
+    useEffect(() => {
+        if (!linkData?.merchant_address) return;
+
+        const fetchMerchantVerification = async () => {
+            try {
+                const mRes = await fetch(`/api/merchant/profile?address=${linkData.merchant_address}`);
+                if (mRes.ok) {
+                    const mData = await mRes.json();
+                    setMerchantVerified(mData.verified === true);
+                }
+            } catch {
+                /* Verification badges are advisory; payment validation remains server-side. */
+            }
+        };
+
+        fetchMerchantVerification();
+    }, [linkData?.merchant_address]);
+
+    useEffect(() => {
+        if (!linkData?.id || routedIntentRef.current === linkData.id) return;
+
+        const routeExistingUserToDm = async () => {
+            try {
+                const sessionRes = await fetch("/api/auth/session");
+                const session = await sessionRes.json();
+                if (!session?.loggedIn || !session.wallet) return;
+
+                const sessionWallet = String(session.wallet).toLowerCase();
+                const merchantWallet = String(linkData.merchant_address || "").toLowerCase();
+                if (!sessionWallet || sessionWallet === merchantWallet || session.role === "ENTERPRISE") return;
+
+                routedIntentRef.current = linkData.id;
+                const dmRes = await fetch(`/api/payment-links/${linkData.id}/dm`, { method: "POST" });
+                const dmData = await dmRes.json().catch(() => ({}));
+                if (!dmRes.ok) {
+                    throw new Error(dmData.error || "Could not create SubScript DM");
+                }
+                router.replace(dmData.dashboardUrl || `/dashboard/user?tab=inbox&intent=${linkData.id}`);
+            } catch (err) {
+                console.warn("SubScript DM routing unavailable; keeping public checkout open.", err);
+            }
+        };
+
+        routeExistingUserToDm();
+    }, [linkData?.id, linkData?.merchant_address, router]);
 
     const handleConnect = () => {
         connect({ connector: injected() });
