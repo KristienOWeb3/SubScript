@@ -45,7 +45,16 @@ export async function GET(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
 
-        /* Check authorization: if not owner, check active and expiration constraints */
+        /* Fetch merchant verified status */
+        const { data: merchant } = await supabase
+            .from("merchants")
+            .select("verified")
+            .eq("wallet_address", link.merchant_address.toLowerCase())
+            .maybeSingle();
+
+        const merchantVerified = merchant ? !!merchant.verified : false;
+
+        /* Check authorization: if not owner, check active, expiration, and usage constraints */
         const walletAddress = await getSessionWallet(request.headers);
         const isOwner = walletAddress && walletAddress.toLowerCase() === link.merchant_address.toLowerCase();
 
@@ -54,15 +63,27 @@ export async function GET(request: Request, { params }: RouteContext) {
             if (!link.active || isExpired) {
                 return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
             }
+
+            const maxUses = link.max_uses;
+            const useCount = link.use_count || 0;
+            if (maxUses !== null && maxUses !== undefined && useCount >= maxUses) {
+                return NextResponse.json({ error: "Payment Link has reached its maximum usage limit" }, { status: 410 });
+            }
         }
 
-        return NextResponse.json({ link }, { status: 200 });
+        return NextResponse.json({ 
+            link: {
+                ...link,
+                merchant_verified: merchantVerified
+            } 
+        }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment link GET error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
+
 
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {

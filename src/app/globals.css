@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Sukar';
+  src: url('/fonts/SukarRegular.otf') format('opentype'),
+       url('/fonts/Sukar Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sukar';
+  src: url('/fonts/SukarBold.otf') format('opentype'),
+       url('/fonts/Sukar Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sukar';
+  src: url('/fonts/SukarBlack.otf') format('opentype'),
+       url('/fonts/Sukar Black.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+}
+
 :root {
   --background-start: #111111;
   --background-end: #1a1b1e;
@@ -9,6 +33,7 @@
   --accent-teal: #00d2b4;
   --card-bg: #27272a;
   --text-secondary: #9ca3af;
+  --font-sukar: 'Sukar', 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 html,

@@ -81,6 +81,8 @@ model PaymentLink {
   externalReference    String?              @map("external_reference")
   idempotencyKey       String?              @unique @map("idempotency_key")
   merchantNameSnapshot String?              @map("merchant_name_snapshot")
+  maxUses              Int?                 @map("max_uses")
+  useCount             Int                  @default(0) @map("use_count")
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @default(now()) @map("updated_at")
   payments             PaymentLinkPayment[]
@@ -119,6 +121,8 @@ model Merchant {
   reservedBalanceUsdc    BigInt           @default(0) @map("reserved_balance_usdc")
   shieldedPayoutsEnabled Boolean          @default(false) @map("shielded_payouts_enabled")
   viewKeyHash            String?          @map("view_key_hash")
+  verified               Boolean          @default(false) @map("verified")
+  profilePic             String?          @map("profile_pic")
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @default(now()) @map("updated_at")
   subscriptions          Subscription[]
@@ -326,6 +330,7 @@ model AuditEvent {
 model Customer {
   walletAddress String   @id @map("wallet_address")
   email         String?
+  profilePic    String?  @map("profile_pic")
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("customers")
@@ -382,4 +387,32 @@ model AddressAlias {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("address_aliases")
+}
+
+model AccountRole {
+  address   String   @id @map("address")
+  role      String   // "USER" or "ENTERPRISE"
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("account_roles")
+}
+
+model SubscriptDm {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderAddress   String   @map("sender_address")
+  receiverAddress String   @map("receiver_address")
+  messageType     String   @map("message_type") // "PAYMENT_REQUEST", "DEBIT_SUCCESS", "EXPIRY_WARNING", "PEER_REQUEST"
+  status          String   @default("PENDING")  // "PENDING", "APPROVED", "DECLINED", "DISMISSED"
+  amountUsdc      BigInt?  @map("amount_usdc")
+  title           String?
+  description     String?
+  txHash          String?  @map("tx_hash")
+  paymentLinkId   String?  @map("payment_link_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([senderAddress])
+  @@index([receiverAddress])
+  @@map("subscript_dms")
 }

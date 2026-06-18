@@ -339,6 +339,14 @@ export async function POST(request: Request) {
                                 p_wallet_address: paymentLink.merchant_address.toLowerCase()
                             });
 
+                            /* Increment payment link use count */
+                            await supabase
+                                .from("payment_links")
+                                .update({
+                                    use_count: (paymentLink.use_count || 0) + 1
+                                })
+                                .eq("id", paymentLink.id);
+
                             /* Create payment_link_payments record */
                             const { data: newPayment } = await supabase
                                 .from("payment_link_payments")

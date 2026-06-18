@@ -21,7 +21,7 @@ const config: Config = {
                 'accent-blue': '#3b82f6',
             },
             fontFamily: {
-                sans: ['var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],
+                sans: ['var(--font-sukar)', 'system-ui', 'sans-serif'],
                 serif: ['var(--font-instrument)', 'Georgia', 'serif'],
             },
             boxShadow: {

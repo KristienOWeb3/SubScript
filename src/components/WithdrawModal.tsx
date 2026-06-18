@@ -32,6 +32,10 @@ export default function WithdrawModal({
     const [customAddress, setCustomAddress] = useState("");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+    /* Manual entry state for batch mode */
+    const [batchInputMode, setBatchInputMode] = useState<'csv' | 'manual'>('csv');
+    const [manualRows, setManualRows] = useState<{address: string; amount: string}[]>([{address: '', amount: ''}, {address: '', amount: ''}]);
+
     /* Batch payout state */
     const [batchText, setBatchText] = useState("");
     const [batchRecipients, setBatchRecipients] = useState<{ address: string; amount: string }[]>([]);
@@ -430,34 +434,119 @@ export default function WithdrawModal({
                                     </div>
                                 ) : (
                                     <div>
-                                        <div className="space-y-4 mb-5">
-                                            <div className="flex justify-between items-center">
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Recipients & Amounts (CSV)</p>
-                                                <button
-                                                    type="button"
-                                                    onClick={triggerFileSelect}
-                                                    className="flex items-center gap-1.5 text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition"
-                                                >
-                                                    <Upload className="w-3.5 h-3.5" /> Upload CSV File
-                                                </button>
-                                                <input
-                                                    type="file"
-                                                    ref={fileInputRef}
-                                                    onChange={handleFileUpload}
-                                                    accept=".csv,.txt"
-                                                    className="hidden"
-                                                />
-                                            </div>
-
-                                            <textarea
-                                                rows={5}
-                                                placeholder="0xaddress1, 10.50&#10;0xaddress2, 25.00"
-                                                value={batchText}
-                                                onChange={handleTextChange}
-                                                className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-mono text-white placeholder-white/15 focus:outline-none focus:border-red-500 transition-colors"
-                                            />
-                                            <p className="text-[9px] text-white/30 font-mono leading-normal mt-0.5">Format: one entry per line, comma or space separated. Example: 0x71C...8976F, 12.34</p>
+                                        {/* Batch Input Mode Toggle */}
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <button
+                                                onClick={() => setBatchInputMode('csv')}
+                                                className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${
+                                                    batchInputMode === 'csv'
+                                                        ? 'bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]'
+                                                        : 'bg-white/[0.02] border-white/5 text-white/40 hover:text-white/60'
+                                                }`}
+                                            >
+                                                CSV Upload
+                                            </button>
+                                            <button
+                                                onClick={() => setBatchInputMode('manual')}
+                                                className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${
+                                                    batchInputMode === 'manual'
+                                                        ? 'bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]'
+                                                        : 'bg-white/[0.02] border-white/5 text-white/40 hover:text-white/60'
+                                                }`}
+                                            >
+                                                Manual Entry
+                                            </button>
                                         </div>
+
+                                        {batchInputMode === 'manual' ? (
+                                            <div className="space-y-3 mb-5">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Recipients ({manualRows.length})</span>
+                                                    <button
+                                                        onClick={() => setManualRows(prev => [...prev, {address: '', amount: ''}])}
+                                                        className="text-[10px] text-[#00d2b4] font-bold hover:text-[#00d2b4]/80 transition-colors"
+                                                    >
+                                                        + Add Row
+                                                    </button>
+                                                </div>
+                                                {manualRows.map((row, idx) => (
+                                                    <div key={idx} className="flex gap-2 items-center">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="0x... recipient address"
+                                                            value={row.address}
+                                                            onChange={(e) => {
+                                                                const updated = [...manualRows];
+                                                                updated[idx].address = e.target.value;
+                                                                setManualRows(updated);
+                                                            }}
+                                                            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4]/30 font-mono"
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Amount (USDC)"
+                                                            value={row.amount}
+                                                            onChange={(e) => {
+                                                                const updated = [...manualRows];
+                                                                updated[idx].amount = e.target.value;
+                                                                setManualRows(updated);
+                                                            }}
+                                                            className="w-28 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4]/30"
+                                                        />
+                                                        {manualRows.length > 1 && (
+                                                            <button
+                                                                onClick={() => setManualRows(prev => prev.filter((_, i) => i !== idx))}
+                                                                className="text-white/20 hover:text-red-400 transition-colors p-1"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                                <button
+                                                    onClick={() => {
+                                                        const text = manualRows
+                                                            .filter(r => r.address && r.amount)
+                                                            .map(r => `${r.address},${r.amount}`)
+                                                            .join('\n');
+                                                        setBatchText(text);
+                                                        processBatchText(text);
+                                                    }}
+                                                    className="w-full py-2.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider rounded-xl hover:bg-[#00d2b4]/20 transition-all"
+                                                >
+                                                    Process Recipients
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4 mb-5">
+                                                <div className="flex justify-between items-center">
+                                                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Recipients & Amounts (CSV)</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={triggerFileSelect}
+                                                        className="flex items-center gap-1.5 text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition"
+                                                    >
+                                                        <Upload className="w-3.5 h-3.5" /> Upload CSV File
+                                                    </button>
+                                                    <input
+                                                        type="file"
+                                                        ref={fileInputRef}
+                                                        onChange={handleFileUpload}
+                                                        accept=".csv,.txt"
+                                                        className="hidden"
+                                                    />
+                                                </div>
+
+                                                <textarea
+                                                    rows={5}
+                                                    placeholder={"0xaddress1, 10.50\n0xaddress2, 25.00"}
+                                                    value={batchText}
+                                                    onChange={handleTextChange}
+                                                    className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-mono text-white placeholder-white/15 focus:outline-none focus:border-red-500 transition-colors"
+                                                />
+                                                <p className="text-[9px] text-white/30 font-mono leading-normal mt-0.5">Format: one entry per line, comma or space separated. Example: 0x71C...8976F, 12.34</p>
+                                            </div>
+                                        )}
 
                                         {/* Batch Summary Panel */}
                                         {batchRecipients.length > 0 && (

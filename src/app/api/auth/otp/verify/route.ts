@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
@@ -111,11 +112,25 @@ export async function POST(request: Request) {
             .setExpirationTime(sessionDurationStr)
             .sign(secret);
 
+        let role: string | null = null;
+        try {
+            const roleRecord = await prisma.accountRole.findUnique({
+                where: { address: walletAddress.toLowerCase() }
+            });
+            if (roleRecord) {
+                role = roleRecord.role;
+            }
+        } catch (e) {
+            console.warn("Could not query role:", e);
+        }
+
         const response = NextResponse.json({ 
             success: true, 
             wallet: walletAddress,
-            email: emailVal
+            email: emailVal,
+            role
         });
+
         
         response.cookies.set("subscript_session_token", jwt, {
             httpOnly: true,

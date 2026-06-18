@@ -385,6 +385,7 @@ export default function DashboardPage() {
     const [copiedViewKey, setCopiedViewKey] = useState(false);
     const [isSavingConfidentiality, setIsSavingConfidentiality] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
+    const [vaultTimeframe, setVaultTimeframe] = useState<string>('6M');
 
     /* QR Code modal states */
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
@@ -2560,18 +2561,56 @@ Please complete the following implementation tasks:
 
                         {/* Mobile Overview Layout (Strictly blueprint aligned) */}
                         <div className="block lg:hidden space-y-6 pb-24 font-sans">
+                            {/* Wallet Balance Card */}
+                            <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
+                                <div className="space-y-1 relative z-10">
+                                    <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
+                                    <p className="text-3xl font-extrabold text-white mt-1.5 tracking-tight leading-none">
+                                        ${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <span className="text-xs font-semibold text-white/40 font-mono">
+                                        {detectedCurrency.symbol}{(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                                <div className="relative z-10">
+                                    <button
+                                        onClick={() => setIsDepositOpen(true)}
+                                        className="w-12 h-12 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
+                                        title="Deposit funds"
+                                    >
+                                        <ArrowDown className="w-5 h-5 rotate-180" />
+                                    </button>
+                                </div>
+                            </div>
+
                             {/* Vault Balance Card */}
                             <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
                                 <div className="space-y-1 relative z-10">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Vault Balance</span>
-                                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/70">6M</span>
+                                        <div className="flex items-center gap-1">
+                                            {['24H', '1W', '1M', '3M', '6M', '1Y'].map((tf) => (
+                                                <button
+                                                    key={tf}
+                                                    onClick={() => setVaultTimeframe(tf)}
+                                                    className={`text-[7px] font-bold px-1.5 py-0.5 rounded transition-all duration-200 ${
+                                                        vaultTimeframe === tf
+                                                            ? 'bg-[#00d2b4]/20 text-[#00d2b4] border border-[#00d2b4]/30'
+                                                            : 'bg-white/5 text-white/40 hover:text-white/60 hover:bg-white/10'
+                                                    }`}
+                                                >
+                                                    {tf}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                     <p className="text-3xl font-extrabold text-[#00d2b4] mt-1.5 tracking-tight leading-none">
                                         ${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-[10px] font-bold text-emerald-400 tracking-wide">+20%</span>
+                                        <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
+                                            {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
+                                        </span>
                                         <span className="text-xs font-semibold text-white/40 font-mono">
                                             {detectedCurrency.symbol}{(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
@@ -4136,9 +4175,10 @@ Please complete the following implementation tasks:
                             )}
 
                             {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
+                            {isConnected && !['premium', 'webhooks', 'checkout', 'dns', 'payment-links'].includes(activeTab) && (
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
                                 {/* Capsule Navigation Menu */}
-                                <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-2 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
+                                <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
                                     {(() => {
                                         const capsuleTabs = [
                                             { id: "overview", label: "Home", icon: Activity },
@@ -4162,22 +4202,34 @@ Please complete the following implementation tasks:
                                             const isSelected = activeTab === tab.id;
                                             const Icon = tab.icon;
                                             return (
-                                                <button
+                                                <motion.button
                                                     key={tab.id}
+                                                    layoutId={`bottom-nav-${tab.id}`}
                                                     onClick={() => setActiveTab(tab.id as TabId)}
-                                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 ${
+                                                    whileTap={{ scale: 0.92 }}
+                                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full transition-colors duration-300 ${
                                                         isSelected 
                                                             ? "bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white" 
                                                             : "text-white/40 hover:text-white"
                                                     }`}
                                                 >
-                                                    <Icon className={`w-4 h-4 ${isSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
-                                                    {isSelected && (
-                                                        <span className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
-                                                            {tab.label}
-                                                        </span>
-                                                    )}
-                                                </button>
+                                                    <Icon className={`w-5 h-5 ${isSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
+                                                    <AnimatePresence mode="wait">
+                                                        {isSelected && (
+                                                            <motion.span
+                                                                key={`label-${tab.id}`}
+                                                                initial={{ opacity: 0, width: 0 }}
+                                                                animate={{ opacity: 1, width: 'auto' }}
+                                                                exit={{ opacity: 0, width: 0 }}
+                                                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                                className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap overflow-hidden"
+                                                            >
+                                                                {tab.label}
+                                                            </motion.span>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </motion.button>
                                             );
                                         });
                                     })()}
@@ -4187,8 +4239,10 @@ Please complete the following implementation tasks:
                                 {(() => {
                                     const isCheckoutSelected = activeTab === "checkout";
                                     return (
-                                        <button
+                                        <motion.button
                                             onClick={() => setActiveTab("checkout")}
+                                            whileTap={{ scale: 0.92 }}
+                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                                             className={`h-11 flex items-center justify-center gap-2 rounded-full transition-all duration-300 border shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl ${
                                                 isCheckoutSelected
                                                     ? "w-auto px-4 bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white"
@@ -4196,16 +4250,26 @@ Please complete the following implementation tasks:
                                             }`}
                                             title="Checkout Setup"
                                         >
-                                            <Code2 className={`w-4 h-4 ${isCheckoutSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
-                                            {isCheckoutSelected && (
-                                                <span className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
-                                                    Checkout
-                                                </span>
-                                            )}
-                                        </button>
+                                            <Code2 className={`w-5 h-5 ${isCheckoutSelected ? "text-[#00d2b4]" : "text-white/40"}`} />
+                                            <AnimatePresence mode="wait">
+                                                {isCheckoutSelected && (
+                                                    <motion.span
+                                                        key="checkout-label"
+                                                        initial={{ opacity: 0, width: 0 }}
+                                                        animate={{ opacity: 1, width: 'auto' }}
+                                                        exit={{ opacity: 0, width: 0 }}
+                                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                        className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap overflow-hidden"
+                                                    >
+                                                        Checkout
+                                                    </motion.span>
+                                                )}
+                                            </AnimatePresence>
+                                        </motion.button>
                                     );
                                 })()}
                             </div>
+                            )}
                         </div>
                     );
                 }

@@ -38,6 +38,9 @@ interface DashboardHeaderProps {
     onDeposit?: () => void;
     merchantAlias?: string | null;
     onDnsClick?: () => void;
+    activeTab?: string;
+    onBackToOverview?: () => void;
+    isVerified?: boolean;
 }
 
 export default function DashboardHeader({
@@ -52,6 +55,9 @@ export default function DashboardHeader({
     onDeposit,
     merchantAlias: propMerchantAlias,
     onDnsClick,
+    activeTab,
+    onBackToOverview,
+    isVerified,
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
@@ -177,40 +183,56 @@ export default function DashboardHeader({
                     
                     {/* Mobile Header Layout (Strictly blueprint aligned) */}
                     <div className="flex sm:hidden items-center justify-between w-full">
-                        {/* Logo (Left) */}
-                        <Link href="/" className="flex items-center flex-shrink-0">
-                            <img 
-                                src="/logo.png" 
-                                alt="SubScript Logo" 
-                                className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
-                            />
-                        </Link>
+                        {/* Back Button + Logo (Left) */}
+                        <div className="flex items-center flex-shrink-0">
+                            {activeTab && !['overview', 'analytics', 'apikeys'].includes(activeTab) && onBackToOverview && (
+                                <button
+                                    onClick={onBackToOverview}
+                                    className="p-2 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all mr-1"
+                                    title="Back to Overview"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                                </button>
+                            )}
+                            {(!activeTab || ['overview', 'analytics', 'apikeys'].includes(activeTab) || !onBackToOverview) && (
+                                <Link href="/" className="flex items-center">
+                                    <img 
+                                        src="/logo.png" 
+                                        alt="SubScript Logo" 
+                                        className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
+                                    />
+                                </Link>
+                            )}
+                        </div>
 
-                        {/* Disconnect Wallet Icon (Center) */}
-                        {isConnected && (
-                            <button
-                                onClick={handleDisconnect}
-                                className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
-                                title="Disconnect wallet"
-                            >
-                                <PlugZap className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-
-                        {/* Address/Domain Name (Right - Leads to SubScript DNS settings) */}
+                        {/* Disconnect + Address/Domain Name (Right) */}
                         {isConnected && address ? (
-                            <button
-                                onClick={handleDnsClick}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
-                                title="Click to manage domain alias"
-                            >
-                                <div className="w-4 h-4 bg-[#00d2b4]/10 rounded-full flex items-center justify-center">
-                                    <Wallet className="w-2 h-2 text-[#00d2b4]" />
-                                </div>
-                                <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
-                                    {merchantAlias || shortAddress}
-                                </span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                {/* Disconnect Wallet Icon */}
+                                <button
+                                    onClick={handleDisconnect}
+                                    className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
+                                    title="Disconnect wallet"
+                                >
+                                    <PlugZap className="w-3.5 h-3.5" />
+                                </button>
+                                {/* Address/Domain pill */}
+                                <button
+                                    onClick={handleDnsClick}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
+                                    title="Click to manage domain alias"
+                                >
+                                    <div className="w-4 h-4 bg-[#00d2b4]/10 rounded-full flex items-center justify-center">
+                                        <Wallet className="w-2 h-2 text-[#00d2b4]" />
+                                    </div>
+                                    <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
+                                        {merchantAlias || shortAddress}
+                                    </span>
+                                    {isVerified && (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#00d2b4" className="flex-shrink-0"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    )}
+                                </button>
+                            </div>
                         ) : (
                             /* Connect button for mobile */
                             <button
@@ -250,6 +272,9 @@ export default function DashboardHeader({
                                         <span className="text-[11px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors">
                                             {merchantAlias || shortAddress}
                                         </span>
+                                        {isVerified && (
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#00d2b4" className="flex-shrink-0"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        )}
                                         {copiedAddress ? (
                                             <Check className="w-3 h-3 text-[#00d2b4]" />
                                         ) : (

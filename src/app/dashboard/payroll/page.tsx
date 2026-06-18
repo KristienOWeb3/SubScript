@@ -770,7 +770,7 @@ export default function PayrollPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                             
                             {/* Left Column: Sidebar Navigation */}
-                            <div className="lg:col-span-1 space-y-2">
+                            <div className="hidden lg:block lg:col-span-1 space-y-2">
                                 {tabs.map((tab) => {
                                     const isSelected = tab.id === "payroll";
                                     const tabHref = tab.id === "payroll" ? "/dashboard/payroll" : `/dashboard?tab=${tab.id}`;
@@ -802,7 +802,17 @@ export default function PayrollPage() {
                             </div>
 
                             {/* Right Column: Active Tab Content */}
-                            <div className="lg:col-span-3 min-h-[500px]">
+                            <div className="col-span-1 lg:col-span-3 min-h-[500px]">
+                                {/* Mobile back button */}
+                                <div className="lg:hidden mb-6">
+                                    <Link
+                                        href="/dashboard"
+                                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-all font-sans"
+                                    >
+                                        <ArrowLeft className="w-4 h-4" />
+                                        Back to Dashboard
+                                    </Link>
+                                </div>
                                 
                                 {/* Session check: Verify wallet ownership */}
                                 {isConnected && address && !sessionWallet && !embeddedWallet ? (

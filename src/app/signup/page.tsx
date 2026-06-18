@@ -32,6 +32,21 @@ export default function SignupPage() {
   const [siweLoading, setSiweLoading] = useState(false);
   const [siweError, setSiweError] = useState<string | null>(null);
 
+  /* Role selection states */
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE" | null>(null);
+  const [roleLoading, setRoleLoading] = useState(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
+
+  const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
+    setActiveMerchantAddress(data.wallet);
+    if (data.role) {
+      router.push(data.role === "USER" ? "/dashboard/user" : "/dashboard");
+    } else {
+      setShowRoleSelector(true);
+    }
+  }, [router]);
+
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !email.includes("@")) {
@@ -81,8 +96,7 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setActiveMerchantAddress(data.wallet);
-        router.push("/dashboard");
+        handleLoginSuccess(data);
       } else {
         setOtpError(data.error || "Invalid verification code.");
       }
@@ -94,7 +108,7 @@ export default function SignupPage() {
   };
 
   const handleSocialLogin = () => {
-    const width = 500;
+    const width = 550;
     const height = 650;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
@@ -119,8 +133,7 @@ export default function SignupPage() {
           });
           const data = await res.json();
           if (data.success) {
-            setActiveMerchantAddress(data.wallet);
-            router.push("/dashboard");
+            handleLoginSuccess(data);
           } else {
             setOtpError(data.error || "Google login failed.");
           }
@@ -169,8 +182,7 @@ export default function SignupPage() {
       });
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
-        setActiveMerchantAddress(address);
-        router.push("/dashboard");
+        handleLoginSuccess(verifyData);
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
       }
@@ -179,13 +191,99 @@ export default function SignupPage() {
     } finally {
       setSiweLoading(false);
     }
-  }, [isConnected, address, signMessageAsync, router]);
+  }, [isConnected, address, signMessageAsync, handleLoginSuccess]);
+
+  const handleRoleSelection = async () => {
+    if (!selectedRole) return;
+    setRoleLoading(true);
+    setRoleError(null);
+    try {
+      const res = await fetch("/api/auth/register-role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: selectedRole }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        router.push(selectedRole === "USER" ? "/dashboard/user" : "/dashboard");
+      } else {
+        setRoleError(data.error || "Failed to register account type.");
+      }
+    } catch (err) {
+      setRoleError("Network error registering account type.");
+    } finally {
+      setRoleLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isConnected && address) {
       performSiwe();
     }
   }, [isConnected, address, performSiwe]);
+
+  if (showRoleSelector) {
+    return (
+      <div className="flex min-h-screen bg-[#060608] text-white justify-center items-center p-6">
+        <div className="w-full max-w-md bg-[#0c0c0e] border border-white/5 rounded-[32px] p-8 space-y-6">
+          <div className="text-center space-y-2">
+            <h1 className="text-2xl font-black tracking-tight uppercase">Select Account Type</h1>
+            <p className="text-xs text-white/50">Are you using SubScript as a user or an enterprise merchant?</p>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              onClick={() => setSelectedRole("USER")}
+              className={`w-full p-5 border rounded-2xl text-left transition ${
+                selectedRole === "USER"
+                  ? "border-[#ccff00] bg-[#ccff00]/5"
+                  : "border-white/5 bg-white/[0.01] hover:border-white/10 hover:bg-white/[0.02]"
+              }`}
+            >
+              <h3 className={`font-bold text-sm uppercase tracking-wider ${selectedRole === "USER" ? "text-[#ccff00]" : "text-white"}`}>
+                Individual User
+              </h3>
+              <p className="text-xs text-white/50 mt-1">
+                Subscribe to your favorite services, manage active memberships, and chat with merchants.
+              </p>
+            </button>
+
+            <button
+              onClick={() => setSelectedRole("ENTERPRISE")}
+              className={`w-full p-5 border rounded-2xl text-left transition ${
+                selectedRole === "ENTERPRISE"
+                  ? "border-[#ccff00] bg-[#ccff00]/5"
+                  : "border-white/5 bg-white/[0.01] hover:border-white/10 hover:bg-white/[0.02]"
+              }`}
+            >
+              <h3 className={`font-bold text-sm uppercase tracking-wider ${selectedRole === "ENTERPRISE" ? "text-[#ccff00]" : "text-white"}`}>
+                Enterprise / Merchant
+              </h3>
+              <p className="text-xs text-white/50 mt-1">
+                Generate payment links, set up recurring billing tiers, process payroll, and accept stablecoins.
+              </p>
+            </button>
+          </div>
+
+          {roleError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{roleError}</span>
+            </div>
+          )}
+
+          <button
+            onClick={handleRoleSelection}
+            disabled={!selectedRole || roleLoading}
+            className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl flex items-center justify-center gap-2 transition font-bold text-xs uppercase tracking-wider text-black"
+          >
+            {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
+            {!roleLoading && <ArrowRight className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-[#060608] text-white justify-center items-center p-6">

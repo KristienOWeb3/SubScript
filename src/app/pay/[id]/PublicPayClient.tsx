@@ -6,7 +6,7 @@ import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock, Zap, QrCode
+    Wallet, ExternalLink, ArrowRight, Lock, Zap, QrCode, Shield, ShieldAlert
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion } from "framer-motion";
@@ -61,6 +61,9 @@ export default function PublicPayClient({
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [showQrCode, setShowQrCode] = useState(false);
     const [checkoutUrl, setCheckoutUrl] = useState("");
+    const [merchantVerified, setMerchantVerified] = useState<boolean | null>(null);
+    const [showUnverifiedWarning, setShowUnverifiedWarning] = useState(false);
+    const [unverifiedAccepted, setUnverifiedAccepted] = useState(false);
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -80,6 +83,7 @@ export default function PublicPayClient({
     const [linkData, setLinkData] = useState<any>(initialLinkData);
     const [isLoading, setIsLoading] = useState(!initialLinkData);
     const [error, setError] = useState<string | null>(null);
+    const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
 
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
@@ -134,6 +138,16 @@ export default function PublicPayClient({
                     throw new Error(data.error || "Failed to load payment link");
                 }
                 setLinkData(data.link);
+                /* Check merchant verification status */
+                if (data.link?.merchant_address) {
+                    try {
+                        const mRes = await fetch(`/api/merchant/profile?address=${data.link.merchant_address}`);
+                        if (mRes.ok) {
+                            const mData = await mRes.json();
+                            setMerchantVerified(mData.verified === true);
+                        }
+                    } catch { /* silently ignore verification check failures */ }
+                }
             } catch (err: any) {
                 setError(err.message || "Something went wrong");
             } finally {
@@ -373,6 +387,44 @@ export default function PublicPayClient({
                 ) : (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
 
+                        {/* Unverified Merchant Warning Banner */}
+                        {merchantVerified === false && !unverifiedAccepted && (
+                            <div className="bg-amber-500/[0.06] border border-amber-500/25 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-start gap-3">
+                                    <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">Unverified Merchant</p>
+                                        <p className="text-[10px] text-white/50 leading-relaxed">
+                                            This merchant has not been verified by SubScript. Proceed with caution and ensure you trust the payment recipient.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setUnverifiedAccepted(true)}
+                                    className="w-full py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 text-amber-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                                >
+                                    I understand the risk, continue
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Verified Merchant Badge */}
+                        {merchantVerified === true && (
+                            <div className="flex items-center gap-2 bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl px-3 py-2">
+                                <Shield className="w-4 h-4 text-emerald-400" />
+                                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">SubScript Verified Merchant</span>
+                            </div>
+                        )}
+
+                        {/* Payment Link Exhausted */}
+                        {isLinkExhausted && (
+                            <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
+                                <AlertTriangle className="w-8 h-8 text-red-400" />
+                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">Payment Link Exhausted</p>
+                                <p className="text-[10px] text-white/40 leading-relaxed">This payment link has reached its maximum number of uses and is no longer accepting payments.</p>
+                            </div>
+                        )}
+
                         {linkData.expires_at && (
                             <div className="flex justify-end">
                                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
@@ -505,7 +557,23 @@ export default function PublicPayClient({
                                             </div>
                                         )}
 
-                                        {isInsufficientBalance ? (
+                                        {isLinkExhausted ? (
+                                            <button
+                                                type="button"
+                                                disabled={true}
+                                                className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                            >
+                                                Payment Link Exhausted
+                                            </button>
+                                        ) : (merchantVerified === false && !unverifiedAccepted) ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowUnverifiedWarning(true)}
+                                                className="w-full py-4 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                            >
+                                                <ShieldAlert className="w-4 h-4" /> Review Unverified Merchant Warning
+                                            </button>
+                                        ) : isInsufficientBalance ? (
                                             <button
                                                 type="button"
                                                 disabled={true}
