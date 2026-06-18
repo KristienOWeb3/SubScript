@@ -248,7 +248,7 @@ export default function UserDashboard() {
     if (!dm.paymentLinkId) return;
     await runAction(`pay-${dm.id}`, async () => {
       await handleUpdateDmStatus(dm.id, "APPROVED");
-      router.push(`/pay/${dm.paymentLinkId}`);
+      router.push(`/pay/${dm.paymentLinkId}?direct=true`);
     });
   };
 

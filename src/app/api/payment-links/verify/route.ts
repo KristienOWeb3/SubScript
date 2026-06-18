@@ -425,6 +425,33 @@ export async function POST(request: Request) {
                                 );
                             }
 
+                            /* Auto-create SubScript account if it does not exist (flowchart requirement) */
+                            try {
+                                const { data: existingRole, error: roleQueryErr } = await supabase
+                                    .from("account_roles")
+                                    .select("role")
+                                    .eq("address", normalizedPayer)
+                                    .maybeSingle();
+
+                                if (!roleQueryErr && !existingRole) {
+                                    console.log(`[verify] Payer ${normalizedPayer} has no account. Auto-creating SubScript Account.`);
+                                    await supabase
+                                        .from("account_roles")
+                                        .insert({
+                                            address: normalizedPayer,
+                                            role: "USER"
+                                        });
+
+                                    await supabase
+                                        .from("customers")
+                                        .insert({
+                                            wallet_address: normalizedPayer
+                                        });
+                                }
+                            } catch (accErr) {
+                                console.error("[verify] Failed to auto-create subscript account for payer:", accErr);
+                            }
+
                             /* Update payment link status, record details, and increment use count */
                             await supabase
                                 .from("payment_links")

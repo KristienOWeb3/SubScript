@@ -175,6 +175,14 @@ export default function PublicPayClient({
     useEffect(() => {
         if (!linkData?.id || routedIntentRef.current === linkData.id) return;
 
+        // Skip DM routing if user clicked "Confirm" from their inbox and was directed here
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("direct") === "true") {
+                return;
+            }
+        }
+
         const routeExistingUserToDm = async () => {
             try {
                 const sessionRes = await fetch("/api/auth/session");
