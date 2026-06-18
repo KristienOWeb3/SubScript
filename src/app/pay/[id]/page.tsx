@@ -66,7 +66,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
             description,
             images: [
                 {
-                    url: "/subscript-og.png",
+                    url: "/og.png",
                     width: 1200,
                     height: 630,
                     alt: title,
@@ -78,7 +78,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
             card: "summary_large_image",
             title,
             description,
-            images: ["/subscript-og.png"],
+            images: ["/og.png"],
         },
     };
 }
