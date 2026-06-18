@@ -202,14 +202,14 @@ export default function Navbar() {
                             Sign In
                         </Link>
                         <Link 
-                            href="/#waitlist"
+                            href="/signup"
                             className="liquid-glass rounded-full px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/5 transition-all duration-200"
                         >
                             Sign Up
                         </Link>
                     </div>
 
-                    {/* Mobile Menu Button */}
+                    {/* Mobile Menu Button & Sign Up */}
                     <div className="md:hidden flex items-center gap-3">
                         {wrongNetwork && walletConnected && (
                             <button
@@ -219,6 +219,12 @@ export default function Navbar() {
                                 Switch Chain
                             </button>
                         )}
+                        <Link 
+                            href="/signup"
+                            className="bg-[#00d2b4] text-[#111111] text-[10px] font-bold uppercase tracking-widest px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
+                        >
+                            Sign Up
+                        </Link>
                         <button
                             onClick={() => setMobileMenuOpen(true)}
                             className="p-1.5 text-white/70 hover:text-white transition-colors"
@@ -280,6 +286,21 @@ export default function Navbar() {
                                     </Link>
                                 </motion.div>
                             ))}
+                            {/* Sign Up Link inside Mobile Overlay */}
+                            <motion.div
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: navLinks.length * 0.05 }}
+                                className="pt-4 border-t border-white/5"
+                            >
+                                <Link
+                                    href="/signup"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    className="block text-2xl font-black text-[#00d2b4] py-2 uppercase tracking-wide"
+                                >
+                                    Sign Up
+                                </Link>
+                            </motion.div>
                         </div>
 
                         {/* Social Icons inside Mobile Menu */}
