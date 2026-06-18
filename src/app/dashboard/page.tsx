@@ -83,7 +83,6 @@ const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof A
     { id: "overview", label: "Home", icon: Activity },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "apikeys", label: "API Keys", icon: Key },
-    { id: "checkout", label: "Checkout", icon: Code2 },
 ];
 
 export default function DashboardPage() {
@@ -4043,7 +4042,7 @@ Please complete the following implementation tasks:
                 {/* Header Row */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
                     <div className="flex items-center gap-3">
-                        {activeTab !== "overview" && (
+                        {!["overview", "analytics", "apikeys", "checkout"].includes(activeTab) && (
                             <button
                                 onClick={() => setActiveTab("overview")}
                                 className="md:hidden p-2.5 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all"

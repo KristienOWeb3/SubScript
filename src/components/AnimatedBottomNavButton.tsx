@@ -45,20 +45,20 @@ export default function AnimatedBottomNavButton({
                     : "border-transparent bg-transparent text-white/40 hover:bg-white/[0.03] hover:text-white"
             }`}
         >
-            <span
-                className={`absolute right-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
-                    expanded ? "-translate-x-1 opacity-100" : "translate-x-4 opacity-0"
-                }`}
-            >
-                {label}
-            </span>
-            <span className={`absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${expanded ? "scale-105" : "scale-100"}`}>
+            <span className={`absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${expanded ? "scale-105" : "scale-100"}`}>
                 <Icon className={`h-5 w-5 transition-colors duration-300 ${active ? accentClassName : "text-white/40"}`} />
                 {badgeCount > 0 && (
                     <span className="absolute right-0 top-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-black bg-red-500 px-0.5 text-[7px] font-bold leading-none text-white">
                         {badgeCount > 9 ? "9+" : badgeCount}
                     </span>
                 )}
+            </span>
+            <span
+                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                    expanded ? "translate-x-1 opacity-100" : "-translate-x-4 opacity-0"
+                }`}
+            >
+                {label}
             </span>
         </button>
     );
