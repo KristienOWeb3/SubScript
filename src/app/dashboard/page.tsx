@@ -4042,13 +4042,24 @@ Please complete the following implementation tasks:
             <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
                 {/* Header Row */}
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
-                    <div>
-                        <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                            Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
-                        </h1>
-                        <p className="text-xs text-white/50 font-sans">
-                            Manage your premium subscriptions, payments, allowances, and billing analytics.
-                        </p>
+                    <div className="flex items-center gap-3">
+                        {activeTab !== "overview" && (
+                            <button
+                                onClick={() => setActiveTab("overview")}
+                                className="md:hidden p-2.5 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all"
+                                title="Back to Overview"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                            </button>
+                        )}
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
+                                Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                            </h1>
+                            <p className="text-xs text-white/50 font-sans">
+                                Manage your premium subscriptions, payments, allowances, and billing analytics.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
@@ -4264,7 +4275,7 @@ Please complete the following implementation tasks:
                             )}
 
                             {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
-                            {isConnected && mobileBottomTabs.some((tab) => tab.id === activeTab) && (
+                            {isConnected && (mobileBottomTabs.some((tab) => tab.id === activeTab) || activeTab === "checkout") && (
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
@@ -4279,7 +4290,18 @@ Please complete the following implementation tasks:
                                     ))}
                                 </div>
 
-
+                                {/* Checkout Icon Outside Bottom Bar Capsule */}
+                                <button
+                                    onClick={() => setActiveTab("checkout")}
+                                    className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl ${
+                                        activeTab === "checkout"
+                                            ? "bg-[#00d2b4] border-[#00d2b4]/30 text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] scale-105"
+                                            : "bg-black/60 border-white/5 text-white/50 hover:text-white"
+                                    }`}
+                                    title="Checkout Setup"
+                                >
+                                    <Code2 className="w-5 h-5" />
+                                </button>
                             </div>
                             )}
                         </div>

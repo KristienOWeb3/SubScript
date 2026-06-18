@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff } from "lucide-react";
+import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "lucide-react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits } from "viem";
@@ -186,29 +186,18 @@ export default function DashboardHeader({
                     
                     {/* Mobile Header Layout (Strictly blueprint aligned) */}
                     <div className="flex sm:hidden items-center justify-between w-full">
-                        {/* Back Button + Logo (Left) */}
+                        {/* Logo (Left - Always visible on mobile) */}
                         <div className="flex items-center flex-shrink-0">
-                            {showMobileBack && (
-                                <button
-                                    onClick={onBackToOverview}
-                                    className="p-2 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all mr-1"
-                                    title="Back to Overview"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                                </button>
-                            )}
-                            {!showMobileBack && (
-                                <Link href="/" className="flex items-center">
-                                    <img 
-                                        src="/logo.png" 
-                                        alt="SubScript Logo" 
-                                        className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
-                                    />
-                                </Link>
-                            )}
+                            <Link href="/" className="flex items-center">
+                                <img 
+                                    src="/logo.png" 
+                                    alt="SubScript Logo" 
+                                    className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
+                                />
+                            </Link>
                         </div>
 
-                        {/* Disconnect + Address/Domain Name (Right) */}
+                        {/* Disconnect + Address/Domain Name + PFP (Right) */}
                         {isConnected && address ? (
                             <div className="flex items-center gap-1.5">
                                 {/* Disconnect Wallet Icon */}
@@ -235,16 +224,26 @@ export default function DashboardHeader({
                                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#00d2b4" className="flex-shrink-0"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                                     )}
                                 </button>
+                                {/* PFP Icon */}
+                                <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_8px_rgba(0,210,180,0.15)]">
+                                    <User className="w-3.5 h-3.5 text-[#00d2b4]" />
+                                </div>
                             </div>
                         ) : (
-                            /* Connect button for mobile */
-                            <button
-                                onClick={handleConnect}
-                                className="px-4 py-2 bg-[#00d2b4] text-[#111111] text-[10px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200 flex items-center gap-1.5"
-                            >
-                                <PlugZap className="w-3 h-3" />
-                                <span>Connect</span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                {/* Connect button for mobile */}
+                                <button
+                                    onClick={handleConnect}
+                                    className="px-4 py-2 bg-[#00d2b4] text-[#111111] text-[10px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_12px_rgba(0,210,180,0.25)] transition-all duration-200 flex items-center gap-1.5"
+                                >
+                                    <PlugZap className="w-3 h-3" />
+                                    <span>Connect</span>
+                                </button>
+                                {/* PFP Icon (Placeholder) */}
+                                <div className="w-7 h-7 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1">
+                                    <User className="w-3.5 h-3.5" />
+                                </div>
+                            </div>
                         )}
                     </div>
 
@@ -352,16 +351,28 @@ export default function DashboardHeader({
                                     >
                                         <PlugZap className="w-3.5 h-3.5" />
                                     </button>
+
+                                    {/* PFP Icon */}
+                                    <div className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_10px_rgba(0,210,180,0.15)]">
+                                        <User className="w-4 h-4 text-[#00d2b4]" />
+                                    </div>
                                 </>
                             ) : (
-                                /* Not connected — show connect button */
-                                <button
-                                    onClick={handleConnect}
-                                    className="px-5 sm:px-6 py-2.5 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_15px_rgba(0,210,180,0.3)] transition-all duration-200 flex items-center gap-2"
-                                >
-                                    <PlugZap className="w-3.5 h-3.5" />
-                                    {isConnecting ? "Connecting..." : "Connect Wallet"}
-                                </button>
+                                <div className="flex items-center gap-2.5">
+                                    {/* Not connected — show connect button */}
+                                    <button
+                                        onClick={handleConnect}
+                                        className="px-5 sm:px-6 py-2.5 bg-[#00d2b4] text-[#111111] text-[11px] font-bold uppercase tracking-wider rounded-full hover:brightness-110 shadow-[0_0_15px_rgba(0,210,180,0.3)] transition-all duration-200 flex items-center gap-2"
+                                    >
+                                        <PlugZap className="w-3.5 h-3.5" />
+                                        {isConnecting ? "Connecting..." : "Connect Wallet"}
+                                    </button>
+
+                                    {/* PFP Icon (Placeholder) */}
+                                    <div className="w-8 h-8 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1">
+                                        <User className="w-4 h-4" />
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>

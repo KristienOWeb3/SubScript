@@ -738,13 +738,22 @@ export default function PayrollPage() {
                 <main className="max-w-7xl mx-auto px-6 pt-28 pb-12">
                     {/* Header Row */}
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
-                        <div>
-                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                                Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
-                            </h1>
-                            <p className="text-xs text-white/50 font-sans">
-                                Manage and monitor your institutional payroll streams.
-                            </p>
+                        <div className="flex items-center gap-3">
+                            <Link
+                                href="/dashboard"
+                                className="md:hidden p-2.5 text-white/60 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-full transition-all"
+                                title="Back to Dashboard"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                            </Link>
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
+                                    Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                                </h1>
+                                <p className="text-xs text-white/50 font-sans">
+                                    Manage and monitor your institutional payroll streams.
+                                </p>
+                            </div>
                         </div>
                     </div>
 
