@@ -1,6 +1,6 @@
 {
     "name": "@subscript-protocol/cli",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "private": false,
     "bin": {
         "subscript": "bin/index.js"

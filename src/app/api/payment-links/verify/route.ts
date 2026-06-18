@@ -1,6 +1,51 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { decryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
+
+async function sweepEphemeralWallet(receiverPrivateKeyEncrypted: string, merchantAddress: string) {
+    try {
+        const privateKey = decryptPrivateKey(receiverPrivateKeyEncrypted);
+        const rpcUrl = process.env.ARC_RPC_PRIMARY || "https://rpc.testnet.arc.network";
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const wallet = new ethers.Wallet(privateKey, provider);
+
+        const balance = await provider.getBalance(wallet.address);
+        if (balance === BigInt(0)) {
+            console.log(`[sweep] No balance to sweep from ephemeral wallet ${wallet.address}`);
+            return null;
+        }
+
+        const feeData = await provider.getFeeData();
+        const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
+        const gasLimit = BigInt(21000); // Standard native transfer gas limit
+        const fee = gasPrice * gasLimit;
+
+        if (balance <= fee) {
+            console.warn(`[sweep] Ephemeral wallet balance (${balance.toString()}) is too low to pay gas fee (${fee.toString()})`);
+            return null;
+        }
+
+        const sweepAmount = balance - fee;
+        console.log(`[sweep] Sweeping ${sweepAmount.toString()} USDC (native) from ${wallet.address} to merchant ${merchantAddress}`);
+
+        const tx = await wallet.sendTransaction({
+            to: merchantAddress,
+            value: sweepAmount,
+            gasLimit,
+            gasPrice
+        });
+
+        console.log(`[sweep] Sweep transaction submitted: ${tx.hash}`);
+        await tx.wait();
+        console.log(`[sweep] Sweep transaction confirmed: ${tx.hash}`);
+        return tx.hash;
+    } catch (err: any) {
+        console.error("[sweep] Sweep execution failed:", err);
+        return null;
+    }
+}
+
 import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
@@ -270,6 +315,7 @@ export async function POST(request: Request) {
                                     throw new Error("Arc Memo call does not contain the expected receipt memo");
                                 }
 
+                                const expectedReceiver = (paymentLink.receiver_address || paymentLink.merchant_address).toLowerCase();
                                 const parsedUsdcCall = USDC_TRANSFER_FROM_INTERFACE.parseTransaction({
                                     data: parsedMemoCall.args[1]
                                 });
@@ -277,13 +323,13 @@ export async function POST(request: Request) {
                                     !parsedUsdcCall ||
                                     parsedUsdcCall.name !== "transferFrom" ||
                                     parsedUsdcCall.args[0].toLowerCase() !== normalizedPayer ||
-                                    parsedUsdcCall.args[1].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
+                                    parsedUsdcCall.args[1].toLowerCase() !== expectedReceiver ||
                                     BigInt(parsedUsdcCall.args[2]) !== BigInt(paymentLink.amount_usdc)
                                 ) {
                                     throw new Error("Memo payload is not the expected USDC transferFrom payment");
                                 }
 
-                                /* Verify log event transfer to router address */
+                                /* Verify log event transfer to expected receiver address */
                                 let logFound = false;
                                 for (const log of receipt.logs) {
                                     if (log.address.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) continue;
@@ -296,7 +342,7 @@ export async function POST(request: Request) {
                                             parsed &&
                                             parsed.name === "Transfer" &&
                                             parsed.args.from.toLowerCase() === normalizedPayer &&
-                                            parsed.args.to.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
+                                            parsed.args.to.toLowerCase() === expectedReceiver &&
                                             BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
                                         ) {
                                             logFound = true;
@@ -308,7 +354,7 @@ export async function POST(request: Request) {
                                 }
 
                                 if (!logFound) {
-                                    throw new Error("USDC Transfer event to Router not found");
+                                    throw new Error("USDC Transfer event to expected receiver not found");
                                 }
                             } else {
                                 /* CCTP Cross-chain transaction verification */
@@ -369,11 +415,25 @@ export async function POST(request: Request) {
                                 p_wallet_address: paymentLink.merchant_address.toLowerCase()
                             });
 
-                            /* Increment payment link use count */
+                            /* Sweep funds if using ephemeral wallet */
+                            let sweepTxHash: string | null = null;
+                            if (paymentLink.receiver_address && paymentLink.receiver_private_key) {
+                                console.log(`[verify] Running sweep for ephemeral wallet: ${paymentLink.receiver_address}`);
+                                sweepTxHash = await sweepEphemeralWallet(
+                                    paymentLink.receiver_private_key,
+                                    paymentLink.merchant_address
+                                );
+                            }
+
+                            /* Update payment link status, record details, and increment use count */
                             await supabase
                                 .from("payment_links")
                                 .update({
-                                    use_count: (paymentLink.use_count || 0) + 1
+                                    use_count: (paymentLink.use_count || 0) + 1,
+                                    status: "PAID",
+                                    paid_at: new Date().toISOString(),
+                                    verified_tx_hash: normalizedTx,
+                                    settlement_reference: sweepTxHash
                                 })
                                 .eq("id", paymentLink.id);
 

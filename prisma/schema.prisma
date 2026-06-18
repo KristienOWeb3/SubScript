@@ -83,6 +83,13 @@ model PaymentLink {
   merchantNameSnapshot String?              @map("merchant_name_snapshot")
   maxUses              Int?                 @map("max_uses")
   useCount             Int                  @default(0) @map("use_count")
+  receiverAddress      String?              @map("receiver_address")
+  receiverPrivateKey   String?              @map("receiver_private_key")
+  status               String               @default("PENDING") @map("status")
+  paidAt               DateTime?            @map("paid_at")
+  verifiedTxHash       String?              @map("verified_tx_hash")
+  settlementReference  String?              @map("settlement_reference")
+  stateSnapshot        Json?                @map("state_snapshot")
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @default(now()) @map("updated_at")
   payments             PaymentLinkPayment[]
