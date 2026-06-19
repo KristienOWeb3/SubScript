@@ -2740,6 +2740,26 @@ Please complete the following implementation tasks:
     };
 
     const renderView = () => {
+        if (isConnected && address && !sessionWallet && !embeddedWallet) {
+            return (
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
+                    <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
+                    <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
+                    <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
+                        To protect your account configurations, stats, and settings, please sign a secure message using your connected wallet.
+                    </p>
+                    <button
+                        onClick={handleBackendLogin}
+                        disabled={isLoggingIn}
+                        className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                    >
+                        {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Shield className="w-4 h-4" />}
+                        Authenticate Developer Portal
+                    </button>
+                </div>
+            );
+        }
+
         if (!isPremium && ["apikeys", "checkout", "webhooks"].includes(activeTab)) {
             const labelMap = {
                 apikeys: "API Keys Management",
