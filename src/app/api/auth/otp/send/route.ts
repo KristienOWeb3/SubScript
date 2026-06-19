@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { sanitizeInput } from "@/utils/security";
 
+import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
+
 const resend = new Resend(process.env.RESEND_API_KEY || "re_build_placeholder");
 
 export async function POST(request: Request) {
@@ -27,22 +29,40 @@ export async function POST(request: Request) {
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
-            return NextResponse.json({ error: "Server Configuration Error: Supabase client not initialized." }, { status: 500 });
-        }
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+            // Fallback immediately if config is missing
+            console.warn("⚠️ Supabase config missing. Storing OTP code in offlineDb.");
+            saveOfflineOtpCode(emailLower, code, expiresAt);
+        } else {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { error } = await supabase
+                    .from("otp_codes")
+                    .upsert({
+                        email: emailLower,
+                        code,
+                        expires_at: expiresAt.toISOString()
+                    }, { onConflict: "email" });
 
-        const { error } = await supabase
-            .from("otp_codes")
-            .upsert({
-                email: emailLower,
-                code,
-                expires_at: expiresAt.toISOString()
-            }, { onConflict: "email" });
-
-        if (error) {
-            console.error("Failed to store OTP code:", error);
-            return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
+                if (error) {
+                    if (isConnectionError(error)) {
+                        console.warn("⚠️ Supabase is offline (API error). Storing OTP code in offlineDb.");
+                        saveOfflineOtpCode(emailLower, code, expiresAt);
+                    } else {
+                        console.error("Failed to store OTP code in Supabase:", error);
+                        return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
+                    }
+                }
+            } catch (err: any) {
+                if (isConnectionError(err)) {
+                    console.warn("⚠️ Supabase is offline (Exception). Storing OTP code in offlineDb.");
+                    saveOfflineOtpCode(emailLower, code, expiresAt);
+                } else {
+                    console.error("Failed to store OTP code (catch):", err);
+                    return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
+                }
+            }
         }
+
 
         try {
             await resend.emails.send({

@@ -5,6 +5,12 @@ import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
+import { 
+    isConnectionError, 
+    getOfflineUserEmbeddedWallet, 
+    saveOfflineUserEmbeddedWallet, 
+    upsertOfflineMerchant 
+} from "@/lib/offlineDb";
 
 export async function POST(request: Request) {
     try {
@@ -31,18 +37,44 @@ export async function POST(request: Request) {
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        if (!supabaseUrl || !supabaseServiceKey) {
-            return NextResponse.json({ error: "Server Configuration Error: Supabase client not initialized." }, { status: 500 });
-        }
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
+        
         let walletAddress = "";
+        let walletRecord = null;
+        let isOfflineMode = false;
 
-        const { data: walletRecord, error: walletError } = await supabase
-            .from("user_embedded_wallets")
-            .select("wallet_address")
-            .eq("email", emailVal)
-            .maybeSingle();
+        if (!supabaseUrl || !supabaseServiceKey) {
+            isOfflineMode = true;
+        } else {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { data, error } = await supabase
+                    .from("user_embedded_wallets")
+                    .select("wallet_address")
+                    .eq("email", emailVal)
+                    .maybeSingle();
+
+                if (error) {
+                    if (isConnectionError(error)) {
+                        isOfflineMode = true;
+                    } else {
+                        return NextResponse.json({ error: error.message || "Failed to query wallet." }, { status: 500 });
+                    }
+                } else {
+                    walletRecord = data;
+                }
+            } catch (err: any) {
+                if (isConnectionError(err)) {
+                    isOfflineMode = true;
+                } else {
+                    return NextResponse.json({ error: err.message || "Failed to query wallet." }, { status: 500 });
+                }
+            }
+        }
+
+        if (isOfflineMode) {
+            console.warn("⚠️ Supabase is offline. Querying wallet via offlineDb.");
+            walletRecord = getOfflineUserEmbeddedWallet(emailVal);
+        }
 
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
@@ -52,25 +84,48 @@ export async function POST(request: Request) {
             
             const encryptedKey = encryptPrivateKey(newWallet.privateKey);
 
-            const { error: insertError } = await supabase
-                .from("user_embedded_wallets")
-                .insert({
-                    email: emailVal,
-                    wallet_address: walletAddress.toLowerCase(),
-                    encrypted_private_key: encryptedKey
-                });
+            if (isOfflineMode) {
+                saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                upsertOfflineMerchant(walletAddress.toLowerCase());
+            } else {
+                try {
+                    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                    const { error: insertError } = await supabase
+                        .from("user_embedded_wallets")
+                        .insert({
+                            email: emailVal,
+                            wallet_address: walletAddress.toLowerCase(),
+                            encrypted_private_key: encryptedKey
+                        });
 
-            if (insertError) {
-                console.error("Failed to store generated social embedded wallet:", insertError);
-                return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                    if (insertError) {
+                        if (isConnectionError(insertError)) {
+                            console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
+                            saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                            upsertOfflineMerchant(walletAddress.toLowerCase());
+                        } else {
+                            console.error("Failed to store generated social embedded wallet:", insertError);
+                            return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                        }
+                    } else {
+                        await supabase
+                            .from("merchants")
+                            .upsert({
+                                wallet_address: walletAddress.toLowerCase(),
+                                tier: "FREE"
+                            }, { onConflict: "wallet_address" });
+                    }
+                } catch (err: any) {
+                    if (isConnectionError(err)) {
+                        console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
+                        saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                        upsertOfflineMerchant(walletAddress.toLowerCase());
+                    } else {
+                        console.error("Failed to store generated social embedded wallet (catch):", err);
+                        return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                    }
+                }
             }
-
-            await supabase
-                .from("merchants")
-                .upsert({
-                    wallet_address: walletAddress.toLowerCase(),
-                    tier: "FREE"
-                }, { onConflict: "wallet_address" });
         }
 
         const secretStr = process.env.JWT_SECRET;

@@ -50,8 +50,8 @@ export async function GET(request: Request) {
             return NextResponse.json({ events: [] }, { status: 200 });
         }
 
-        const endpointIds = endpoints.map((e) => e.id);
-        const urlMap = new Map(endpoints.map((e) => [e.id, e.url]));
+        const endpointIds = endpoints.map((e: any) => e.id);
+        const urlMap = new Map(endpoints.map((e: any) => [e.id, e.url]));
 
         const { data: events, error: eventError } = await supabase
             .from("webhook_events")

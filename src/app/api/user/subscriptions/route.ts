@@ -23,17 +23,17 @@ export async function GET(request: Request) {
         });
 
         /* Fetch aliases for the merchant addresses to display friendly names */
-        const merchantAddresses = subscriptions.map(s => s.merchantAddress.toLowerCase());
+        const merchantAddresses = subscriptions.map((s: any) => s.merchantAddress.toLowerCase());
         const aliases = await prisma.addressAlias.findMany({
             where: {
                 address: { in: merchantAddresses }
             }
         });
 
-        const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a]));
+        const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a]));
 
-        const formatted = subscriptions.map(sub => {
-            const aliasInfo = aliasMap.get(sub.merchantAddress.toLowerCase());
+        const formatted = subscriptions.map((sub: any) => {
+            const aliasInfo: any = aliasMap.get(sub.merchantAddress.toLowerCase());
             return {
                 subscriptionId: sub.subscriptionId.toString(),
                 merchantAddress: sub.merchantAddress,

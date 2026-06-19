@@ -220,7 +220,7 @@ export async function POST(request: Request) {
         await repairMerchantBalance(supabase, merchantAddress.toLowerCase());
 
         /* Insert payout batch items in PENDING state */
-        const batchItemsToInsert = validatedRecipients.map(item => ({
+        const batchItemsToInsert = validatedRecipients.map((item: any) => ({
             batch_id: batch.id,
             recipient_address: item.address,
             amount_usdc: item.amount.toString(),

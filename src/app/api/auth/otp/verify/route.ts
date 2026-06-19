@@ -5,6 +5,14 @@ import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
+import { 
+    isConnectionError, 
+    getOfflineOtpCode, 
+    deleteOfflineOtpCode, 
+    getOfflineUserEmbeddedWallet, 
+    saveOfflineUserEmbeddedWallet, 
+    upsertOfflineMerchant 
+} from "@/lib/offlineDb";
 
 export async function POST(request: Request) {
     try {
@@ -25,49 +33,115 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Malformed payload parameters" }, { status: 400 });
         }
 
-        const emailLower = email.toLowerCase();
+        const emailVal = email.toLowerCase();
         const codeTrimmed = code.trim();
         const rememberMeBool = Boolean(rememberMe);
 
-        const emailVal = emailLower;
-        const codeVal = codeTrimmed;
+        const emailLower = emailVal;
         const rememberMeVal = rememberMeBool;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        
+        let record = null;
+        let isOfflineMode = false;
+
         if (!supabaseUrl || !supabaseServiceKey) {
-            return NextResponse.json({ error: "Server Configuration Error: Supabase client not initialized." }, { status: 500 });
+            isOfflineMode = true;
+        } else {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { data, error } = await supabase
+                    .from("otp_codes")
+                    .select("code, expires_at")
+                    .eq("email", emailVal)
+                    .maybeSingle();
+
+                if (error) {
+                    if (isConnectionError(error)) {
+                        isOfflineMode = true;
+                    } else {
+                        return NextResponse.json({ error: error.message || "Failed to query verification code." }, { status: 500 });
+                    }
+                } else {
+                    record = data;
+                }
+            } catch (err: any) {
+                if (isConnectionError(err)) {
+                    isOfflineMode = true;
+                } else {
+                    return NextResponse.json({ error: err.message || "Failed to query verification code." }, { status: 500 });
+                }
+            }
         }
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        const { data: record, error: fetchError } = await supabase
-            .from("otp_codes")
-            .select("code, expires_at")
-            .eq("email", emailVal)
-            .maybeSingle();
+        if (isOfflineMode) {
+            console.warn("⚠️ Supabase is offline. Verifying OTP via offlineDb.");
+            record = getOfflineOtpCode(emailVal);
+        }
 
-        if (fetchError || !record) {
+        if (!record) {
             return NextResponse.json({ error: "Verification code expired or not found. Please request a new one." }, { status: 400 });
         }
 
-        if (record.code !== code) {
+        if (record.code !== codeTrimmed) {
             return NextResponse.json({ error: "Invalid verification code. Please check and try again." }, { status: 400 });
         }
 
         if (new Date() > new Date(record.expires_at)) {
-            await supabase.from("otp_codes").delete().eq("email", emailVal);
+            if (isOfflineMode) {
+                deleteOfflineOtpCode(emailVal);
+            } else {
+                try {
+                    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                    await supabase.from("otp_codes").delete().eq("email", emailVal);
+                } catch (e) {}
+            }
             return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
         }
 
-        await supabase.from("otp_codes").delete().eq("email", emailVal);
+        if (isOfflineMode) {
+            deleteOfflineOtpCode(emailVal);
+        } else {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                await supabase.from("otp_codes").delete().eq("email", emailVal);
+            } catch (e) {}
+        }
 
         let walletAddress = "";
+        let walletRecord = null;
 
-        const { data: walletRecord, error: walletError } = await supabase
-            .from("user_embedded_wallets")
-            .select("wallet_address")
-            .eq("email", emailVal)
-            .maybeSingle();
+        if (!isOfflineMode) {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { data, error } = await supabase
+                    .from("user_embedded_wallets")
+                    .select("wallet_address")
+                    .eq("email", emailVal)
+                    .maybeSingle();
+
+                if (error) {
+                    if (isConnectionError(error)) {
+                        isOfflineMode = true;
+                    } else {
+                        return NextResponse.json({ error: error.message || "Failed to check wallet." }, { status: 500 });
+                    }
+                } else {
+                    walletRecord = data;
+                }
+            } catch (err: any) {
+                if (isConnectionError(err)) {
+                    isOfflineMode = true;
+                } else {
+                    return NextResponse.json({ error: err.message || "Failed to check wallet." }, { status: 500 });
+                }
+            }
+        }
+
+        if (isOfflineMode) {
+            walletRecord = getOfflineUserEmbeddedWallet(emailVal);
+        }
 
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
@@ -77,25 +151,48 @@ export async function POST(request: Request) {
             
             const encryptedKey = encryptPrivateKey(newWallet.privateKey);
 
-            const { error: insertError } = await supabase
-                .from("user_embedded_wallets")
-                .insert({
-                    email: emailVal,
-                    wallet_address: walletAddress.toLowerCase(),
-                    encrypted_private_key: encryptedKey
-                });
+            if (isOfflineMode) {
+                saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                upsertOfflineMerchant(walletAddress.toLowerCase());
+            } else {
+                try {
+                    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                    const { error: insertError } = await supabase
+                        .from("user_embedded_wallets")
+                        .insert({
+                            email: emailVal,
+                            wallet_address: walletAddress.toLowerCase(),
+                            encrypted_private_key: encryptedKey
+                        });
 
-            if (insertError) {
-                console.error("Failed to store generated embedded wallet:", insertError);
-                return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                    if (insertError) {
+                        if (isConnectionError(insertError)) {
+                            console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
+                            saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                            upsertOfflineMerchant(walletAddress.toLowerCase());
+                        } else {
+                            console.error("Failed to store generated embedded wallet:", insertError);
+                            return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                        }
+                    } else {
+                        await supabase
+                            .from("merchants")
+                            .upsert({
+                                wallet_address: walletAddress.toLowerCase(),
+                                tier: "FREE"
+                            }, { onConflict: "wallet_address" });
+                    }
+                } catch (err: any) {
+                    if (isConnectionError(err)) {
+                        console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
+                        saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                        upsertOfflineMerchant(walletAddress.toLowerCase());
+                    } else {
+                        console.error("Failed to store generated embedded wallet (catch):", err);
+                        return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                    }
+                }
             }
-
-            await supabase
-                .from("merchants")
-                .upsert({
-                    wallet_address: walletAddress.toLowerCase(),
-                    tier: "FREE"
-                }, { onConflict: "wallet_address" });
         }
 
         const secretStr = process.env.JWT_SECRET;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
+import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
 
 export async function GET(request: Request) {
     try {
@@ -12,19 +13,45 @@ export async function GET(request: Request) {
         }
 
         let email: string | null = null;
+        let isOfflineMode = false;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        if (supabaseUrl && supabaseServiceKey) {
-            const supabase = createClient(supabaseUrl, supabaseServiceKey);
-            const { data } = await supabase
-                .from("user_embedded_wallets")
-                .select("email")
-                .eq("wallet_address", wallet.toLowerCase())
-                .maybeSingle();
+        
+        if (!supabaseUrl || !supabaseServiceKey) {
+            isOfflineMode = true;
+        } else {
+            try {
+                const supabase = createClient(supabaseUrl, supabaseServiceKey);
+                const { data, error } = await supabase
+                    .from("user_embedded_wallets")
+                    .select("email")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
 
-            if (data) {
-                email = data.email;
+                if (error) {
+                    if (isConnectionError(error)) {
+                        isOfflineMode = true;
+                    } else {
+                        console.error("Session Supabase check API error:", error);
+                    }
+                } else if (data) {
+                    email = data.email;
+                }
+            } catch (err: any) {
+                if (isConnectionError(err)) {
+                    isOfflineMode = true;
+                } else {
+                    console.error("Session Supabase check catch error:", err);
+                }
+            }
+        }
+
+        if (isOfflineMode) {
+            console.warn("⚠️ Supabase is offline. Retrieving user email via offlineDb.");
+            const walletRecord = getOfflineUserEmbeddedWalletByAddress(wallet.toLowerCase());
+            if (walletRecord) {
+                email = walletRecord.email;
             }
         }
 

@@ -118,7 +118,7 @@ export async function GET(request: Request) {
             take: 50,
         }).catch(() => []);
 
-        const formattedReceipts = receipts.map((r) => ({
+        const formattedReceipts = receipts.map((r: any) => ({
             receiptId: r.receiptId,
             txHash: r.txHash,
             chainId: r.chainId,

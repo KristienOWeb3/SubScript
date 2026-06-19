@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
         /* Collect unique addresses to fetch aliases */
         const uniqueAddresses = new Set<string>();
-        dms.forEach(d => {
+        dms.forEach((d: any) => {
             uniqueAddresses.add(d.senderAddress.toLowerCase());
             uniqueAddresses.add(d.receiverAddress.toLowerCase());
         });
@@ -36,9 +36,9 @@ export async function GET(request: Request) {
             }
         });
 
-        const aliasMap = new Map(aliases.map(a => [a.address.toLowerCase(), a.alias]));
+        const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a.alias]));
 
-        const formatted = dms.map(dm => ({
+        const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
             senderName: aliasMap.get(dm.senderAddress.toLowerCase()) || dm.senderAddress,
