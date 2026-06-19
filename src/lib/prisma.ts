@@ -16,7 +16,7 @@ const rawPrisma =
     new PrismaClient({
         datasources: {
             db: {
-                url: getDatabaseUrl(),
+                url: getDatabaseUrl({ allowBuildTimeFallback: true }),
             },
         },
         log: ["query"],
