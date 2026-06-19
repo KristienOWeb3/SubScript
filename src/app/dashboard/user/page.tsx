@@ -3,12 +3,26 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { useDisconnect, useBalance } from "wagmi";
-import { formatUnits } from "viem";
+import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { 
+  formatUnits, 
+  createPublicClient, 
+  http, 
+  keccak256, 
+  parseEventLogs, 
+  parseUnits 
+} from "viem";
+import { sepolia } from "viem/chains";
+import { arcTestnet } from "@/lib/wagmi";
+import { 
+  ARC_TESTNET_CHAIN_ID, 
+  CCTP_CONFIG 
+} from "@/lib/contracts/constants";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import {
+  AlertCircle,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -36,6 +50,16 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+
+const publicClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(),
+});
+
+const sepoliaClient = createPublicClient({
+  chain: sepolia,
+  transport: http("https://rpc.ankr.com/eth_sepolia"),
+});
 
 interface Subscription {
   subscriptionId: string;
@@ -211,10 +235,30 @@ export default function UserDashboard() {
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
-  const { data: usdcBalance } = useBalance({
+  const { address: accountAddress, chainId } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const { writeContractAsync } = useWriteContract();
+
+  const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
     address: userWallet as `0x${string}` | undefined,
     token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
   });
+
+  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useBalance({
+    address: userWallet as `0x${string}` | undefined,
+    token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+    chainId: 11155111,
+  });
+
+  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useBalance({
+    address: userWallet as `0x${string}` | undefined,
+    token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+    chainId: 1,
+  });
+
+  const sepoliaUsdc = sepoliaUsdcBalance ? Number(formatUnits(sepoliaUsdcBalance.value, 6)) : 0;
+  const mainnetUsdc = mainnetUsdcBalance ? Number(formatUnits(mainnetUsdcBalance.value, 6)) : 0;
+  const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
 
   const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
   const localFiatBalance = walletBalance * 1250;
@@ -273,6 +317,14 @@ export default function UserDashboard() {
   useEffect(() => {
     verifySession();
   }, [verifySession]);
+
+  useEffect(() => {
+    if (receiveOpen && userWallet) {
+      refetchSepolia().catch(console.error);
+      refetchMainnet().catch(console.error);
+      refetchUsdc().catch(console.error);
+    }
+  }, [receiveOpen, userWallet, refetchSepolia, refetchMainnet, refetchUsdc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -500,7 +552,7 @@ export default function UserDashboard() {
                   </button>
 
                   <div className="flex flex-col gap-5">
-                    <RoundAction icon={ArrowDown} label="Receive" onClick={() => setReceiveOpen(true)} />
+                    <RoundAction icon={ArrowDown} label="Deposit" onClick={() => setReceiveOpen(true)} />
                     <RoundAction icon={QrCode} label="Scan QR" onClick={() => setScannerOpen(true)} />
                   </div>
                 </div>
@@ -925,7 +977,24 @@ export default function UserDashboard() {
         </nav>
       )}
 
-      <ReceiveModal open={receiveOpen} userWallet={userWallet} copied={copiedAddress} onCopy={copyAddress} onClose={() => setReceiveOpen(false)} />
+      <DepositModal 
+        open={receiveOpen} 
+        userWallet={userWallet} 
+        copied={copiedAddress} 
+        onCopy={copyAddress} 
+        onClose={() => setReceiveOpen(false)} 
+        sepoliaUsdc={sepoliaUsdc}
+        mainnetUsdc={mainnetUsdc}
+        hasExternalUsdc={hasExternalUsdc}
+        chainId={chainId}
+        switchChainAsync={switchChainAsync}
+        writeContractAsync={writeContractAsync}
+        refetchBalances={() => {
+          refetchUsdc().catch(console.error);
+          refetchSepolia().catch(console.error);
+          refetchMainnet().catch(console.error);
+        }}
+      />
       <ScannerModal open={scannerOpen} value={scanValue} onChange={setScanValue} onSubmit={handleScanSubmit} onClose={() => setScannerOpen(false)} />
     </div>
   );
@@ -1117,34 +1186,535 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ReceiveModal({
+function DepositModal({
   open,
   userWallet,
   copied,
   onCopy,
   onClose,
+  sepoliaUsdc,
+  mainnetUsdc,
+  hasExternalUsdc,
+  chainId,
+  switchChainAsync,
+  writeContractAsync,
+  refetchBalances,
 }: {
   open: boolean;
   userWallet: string | null;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
+  sepoliaUsdc: number;
+  mainnetUsdc: number;
+  hasExternalUsdc: boolean;
+  chainId: number | undefined;
+  switchChainAsync: any;
+  writeContractAsync: any;
+  refetchBalances: () => void;
 }) {
+  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp" | "fiat">("menu");
+
+  // Reset sub-mode when modal opens
+  useEffect(() => {
+    if (open) {
+      if (hasExternalUsdc) {
+        setActiveSubMode("menu");
+      } else {
+        setActiveSubMode("direct");
+      }
+    }
+  }, [open, hasExternalUsdc]);
+
+  // CCTP State
+  const [cctpAmount, setCctpAmount] = useState("");
+  const [cctpStatus, setCctpStatus] = useState<"idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "success" | "error">("idle");
+  const [cctpMessage, setCctpMessage] = useState<string | null>(null);
+  const [cctpError, setCctpError] = useState<string | null>(null);
+
+  // Fiat On-ramp State
+  const [fiatAmount, setFiatAmount] = useState("50");
+  const [fiatCurrency, setFiatCurrency] = useState("USD");
+  const [fiatProvider, setFiatProvider] = useState<"moonpay" | "transak" | "stripe">("moonpay");
+  const [fiatStatus, setFiatStatus] = useState<"idle" | "connecting" | "authorizing" | "minting" | "success">("idle");
+  const [fiatMessage, setFiatMessage] = useState<string | null>(null);
+
+  const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
+
+  const handleStartCctp = async (bridgeAmountStr: string) => {
+    setCctpError(null);
+    if (!bridgeAmountStr || isNaN(Number(bridgeAmountStr)) || Number(bridgeAmountStr) <= 0) {
+      setCctpError("Please enter a valid amount to bridge.");
+      return;
+    }
+    if (Number(bridgeAmountStr) > totalExternalUsdc) {
+      setCctpError("Insufficient external USDC balance.");
+      return;
+    }
+
+    try {
+      const requiredAmount = parseUnits(bridgeAmountStr, 6);
+      const sepoliaConfig = CCTP_CONFIG[11155111] || {
+        tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as `0x${string}`,
+        usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`,
+      };
+
+      // Step 1: Switch Network to Sepolia
+      setCctpStatus("switching");
+      setCctpMessage("Switching network to Ethereum Sepolia...");
+      if (chainId !== 11155111) {
+        await switchChainAsync({ chainId: 11155111 });
+      }
+
+      // Step 2: Approve Sepolia TokenMessenger
+      setCctpStatus("approving");
+      setCctpMessage("Approving USDC spend on Sepolia...");
+      const approveHash = await writeContractAsync({
+        address: sepoliaConfig.usdc,
+        abi: [
+          {
+            type: "function",
+            name: "approve",
+            stateMutability: "nonpayable",
+            inputs: [
+              { name: "spender", type: "address" },
+              { name: "value", type: "uint256" },
+            ],
+            outputs: [{ name: "success", type: "bool" }],
+          },
+        ],
+        functionName: "approve",
+        args: [sepoliaConfig.tokenMessenger, requiredAmount],
+      });
+
+      setCctpMessage("Waiting for Sepolia approval confirmation...");
+      const approveReceipt = await sepoliaClient.waitForTransactionReceipt({
+        hash: approveHash,
+        timeout: 120_000,
+      });
+      if (approveReceipt.status !== "success") {
+        throw new Error("Sepolia USDC approval failed.");
+      }
+
+      // Step 3: Burn USDC on Sepolia
+      setCctpStatus("burning");
+      setCctpMessage("Initiating CCTP burn on Sepolia...");
+      const mintRecipientBytes32 = ("0x" + userWallet!.slice(2).padStart(64, "0")) as `0x${string}`;
+
+      const burnHash = await writeContractAsync({
+        address: sepoliaConfig.tokenMessenger,
+        abi: [
+          {
+            type: "function",
+            name: "depositForBurn",
+            stateMutability: "nonpayable",
+            inputs: [
+              { name: "amount", type: "uint256" },
+              { name: "destinationDomain", type: "uint32" },
+              { name: "mintRecipient", type: "bytes32" },
+              { name: "burnToken", type: "address" },
+            ],
+            outputs: [{ name: "nonce", type: "uint64" }],
+          },
+        ],
+        functionName: "depositForBurn",
+        args: [requiredAmount, 26, mintRecipientBytes32, sepoliaConfig.usdc],
+      });
+
+      setCctpMessage("Waiting for CCTP burn confirmation...");
+      const burnReceipt = await sepoliaClient.waitForTransactionReceipt({
+        hash: burnHash,
+        timeout: 120_000,
+      });
+      if (burnReceipt.status !== "success") {
+        throw new Error("Sepolia CCTP burn failed.");
+      }
+
+      // Step 4: Fetch Attestation from Circle
+      setCctpStatus("attesting");
+      setCctpMessage("Circle attestation in progress. Fetching signature...");
+      const logs = parseEventLogs({
+        abi: [{ type: "event", name: "MessageSent", inputs: [{ type: "bytes", name: "message", indexed: false }] }],
+        logs: burnReceipt.logs,
+      });
+      if (logs.length === 0) {
+        throw new Error("MessageSent event not found.");
+      }
+      const messageBytes = (logs[0].args as any).message;
+      const messageHash = keccak256(messageBytes);
+
+      let attestation: `0x${string}` | null = null;
+      let attempts = 0;
+      while (attempts < 60) {
+        attempts++;
+        try {
+          const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`);
+          const data = await res.json();
+          if (data.status === "complete") {
+            const rawHex = data.attestation;
+            attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
+            break;
+          }
+        } catch (e) {
+          console.warn("Attestation fetch retry:", e);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+
+      if (!attestation) {
+        throw new Error("Timeout waiting for attestation signature.");
+      }
+
+      // Step 5: Switch back to Arc Testnet
+      setCctpStatus("claiming");
+      setCctpMessage("Switching back to Arc Testnet...");
+      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+
+      // Step 6: Mint USDC on Arc
+      setCctpMessage("Minting USDC on Arc Network...");
+      const mintHash = await writeContractAsync({
+        address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275", // Arc MessageTransmitter
+        abi: [
+          {
+            type: "function",
+            name: "receiveMessage",
+            stateMutability: "nonpayable",
+            inputs: [
+              { name: "message", type: "bytes" },
+              { name: "attestation", type: "bytes" },
+            ],
+            outputs: [{ name: "success", type: "bool" }],
+          },
+        ],
+        functionName: "receiveMessage",
+        args: [messageBytes, attestation],
+      });
+
+      setCctpMessage("Waiting for Arc mint confirmation...");
+      const mintReceipt = await publicClient.waitForTransactionReceipt({
+        hash: mintHash,
+        timeout: 120_000,
+      });
+      if (mintReceipt.status !== "success") {
+        throw new Error("USDC minting transaction failed on Arc.");
+      }
+
+      setCctpStatus("success");
+      setCctpMessage("USDC successfully bridged to your Arc wallet!");
+      refetchBalances();
+    } catch (err: any) {
+      console.error(err);
+      setCctpStatus("error");
+      setCctpError(err.message || "Failed to bridge USDC.");
+    }
+  };
+
+  const handleStartFiatOnramp = () => {
+    if (!fiatAmount || isNaN(Number(fiatAmount)) || Number(fiatAmount) <= 0) {
+      return;
+    }
+    setFiatStatus("connecting");
+    setFiatMessage(`Establishing secure connection with ${fiatProvider.toUpperCase()}...`);
+    setTimeout(() => {
+      setFiatStatus("authorizing");
+      setFiatMessage("Awaiting bank/card 3DS authorization...");
+      setTimeout(() => {
+        setFiatStatus("minting");
+        setFiatMessage(`Payment authorized. Minting ${Number(fiatAmount).toFixed(2)} USDC to your connected Arc address...`);
+        setTimeout(() => {
+          setFiatStatus("success");
+          setFiatMessage(`Success! Simulated deposit of ${Number(fiatAmount).toFixed(2)} USDC completed.`);
+          refetchBalances();
+        }, 2000);
+      }, 2000);
+    }, 1500);
+  };
+
   return (
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm rounded-[36px] border border-white/10 bg-[#0b0b0d] p-6 text-center shadow-2xl">
-            <button type="button" onClick={onClose} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60"><X className="h-4 w-4" /></button>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
-            <h2 className="text-xl font-black uppercase text-white">Receive USDC</h2>
-            <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
-            <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
-              <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/logo.png", height: 34, width: 34, excavate: true }} />
-            </div>
-            <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
-              <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}
-            </button>
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm rounded-[36px] border border-white/10 bg-[#0b0b0d] p-6 shadow-2xl">
+            <button type="button" onClick={onClose} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all mb-4"><X className="h-4 w-4" /></button>
+            
+            {/* Tabs for non-menu active modes */}
+            {activeSubMode !== "menu" && (
+              <div className="mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+                {(["direct", "fiat", "cctp"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => {
+                      setActiveSubMode(tab);
+                      setCctpStatus("idle");
+                      setFiatStatus("idle");
+                    }}
+                    className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all ${
+                      activeSubMode === tab
+                        ? "bg-[#ccff00] text-black shadow-md"
+                        : "text-white/50 hover:text-white/85"
+                    }`}
+                  >
+                    {tab === "direct" ? "Direct" : tab === "fiat" ? "On-Ramp" : "Bridge"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeSubMode === "menu" && (
+              <div className="space-y-5">
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <h2 className="text-xl font-black uppercase text-white tracking-tight">Deposit USDC</h2>
+                <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
+                  <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
+                    We found <strong>{(sepoliaUsdc || mainnetUsdc).toFixed(2)} USDC</strong> on Sepolia/Mainnet. How would you like to proceed?
+                  </p>
+                </div>
+                <div className="space-y-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubMode("cctp")}
+                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
+                      <Globe className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Circle CCTP Bridge</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Import your Sepolia USDC directly to Arc.</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubMode("fiat")}
+                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Fiat On-Ramp</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Buy USDC with credit card or bank transfer.</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubMode("direct")}
+                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
+                      <Wallet className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Direct Deposit</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Show QR code & address to send USDC directly.</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeSubMode === "direct" && (
+              <div className="text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <h2 className="text-xl font-black uppercase text-white">Direct Deposit</h2>
+                <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
+                <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
+                  <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/logo.png", height: 34, width: 34, excavate: true }} />
+                </div>
+                <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
+                  <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}
+                </button>
+              </div>
+            )}
+
+            {activeSubMode === "fiat" && (
+              <div className="space-y-4 text-left">
+                <h3 className="text-sm font-black uppercase tracking-wider text-white">Fiat On-Ramp</h3>
+                <p className="text-[10px] text-white/45 leading-relaxed">Simulated fiat-to-cryptocurrency purchase. (Testnet Mode)</p>
+                
+                {fiatStatus === "idle" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (USD)</span>
+                      <input
+                        type="number"
+                        value={fiatAmount}
+                        onChange={(e) => setFiatAmount(e.target.value)}
+                        className="subscript-input"
+                        placeholder="50"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Provider</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(["moonpay", "transak", "stripe"] as const).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setFiatProvider(p)}
+                            className={`py-2 px-3 border rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
+                              fiatProvider === p
+                                ? "border-[#ccff00] bg-[#ccff00]/10 text-[#ccff00]"
+                                : "border-white/10 bg-white/[0.02] text-white/60 hover:border-white/20"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
+                      <span className="text-white/40">You will receive approx:</span>
+                      <span className="font-black text-[#ccff00]">${(Number(fiatAmount) || 0).toFixed(2)} USDC</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleStartFiatOnramp}
+                      className="subscript-primary-button mt-2"
+                    >
+                      Buy USDC
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-5 py-6 text-center">
+                    {fiatStatus !== "success" ? (
+                      <div className="flex flex-col items-center gap-4">
+                        <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
+                        <p className="text-xs text-white/70 leading-normal">{fiatMessage}</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-4">
+                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
+                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Purchase Successful</h4>
+                        <p className="text-xs text-white/50 leading-normal">{fiatMessage}</p>
+                        <button
+                          type="button"
+                          onClick={() => setFiatStatus("idle")}
+                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                        >
+                          Buy More
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSubMode === "cctp" && (
+              <div className="space-y-4 text-left">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Circle CCTP</h3>
+                  <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
+                    Sepolia: {totalExternalUsdc.toFixed(2)} USDC
+                  </span>
+                </div>
+                
+                {cctpStatus === "idle" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Bridge (USDC)</span>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={cctpAmount}
+                          onChange={(e) => setCctpAmount(e.target.value)}
+                          className="subscript-input pr-16"
+                          placeholder="0.00"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCctpAmount(totalExternalUsdc.toString())}
+                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
+                        >
+                          Max
+                        </button>
+                      </div>
+                    </div>
+
+                    {cctpError && <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
+
+                    <button
+                      type="button"
+                      onClick={() => handleStartCctp(cctpAmount)}
+                      className="subscript-primary-button mt-2"
+                    >
+                      Bridge USDC
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-5 py-4">
+                    {cctpStatus === "success" ? (
+                      <div className="flex flex-col items-center gap-4 text-center">
+                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
+                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Successful</h4>
+                        <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
+                        <button
+                          type="button"
+                          onClick={() => setCctpStatus("idle")}
+                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    ) : cctpStatus === "error" ? (
+                      <div className="flex flex-col items-center gap-4 text-center">
+                        <AlertCircle className="h-12 w-12 text-red-400" />
+                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Failed</h4>
+                        <p className="text-xs text-red-300 px-4 leading-normal">{cctpError}</p>
+                        <button
+                          type="button"
+                          onClick={() => setCctpStatus("idle")}
+                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-4 bg-black/30 border border-white/5 rounded-2xl p-4">
+                          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00] shrink-0" />
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-white uppercase tracking-wider">CCTP Bridge Progress</p>
+                            <p className="text-[10px] text-white/50 leading-normal">{cctpMessage}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 border-t border-white/5 pt-4 text-[10px] font-bold text-white/40">
+                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#ccff00]" : ""}`}>
+                            <span>1. Network Switch</span>
+                            <span>{cctpStatus === "switching" ? "In Progress" : ""}</span>
+                          </div>
+                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#ccff00]" : ""}`}>
+                            <span>2. Approve TokenMessenger</span>
+                            <span>{cctpStatus === "approving" ? "In Progress" : ""}</span>
+                          </div>
+                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#ccff00]" : ""}`}>
+                            <span>3. Burn USDC on Sepolia</span>
+                            <span>{cctpStatus === "burning" ? "In Progress" : ""}</span>
+                          </div>
+                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#ccff00]" : ""}`}>
+                            <span>4. Fetch Circle Attestation</span>
+                            <span>{cctpStatus === "attesting" ? "In Progress" : ""}</span>
+                          </div>
+                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#ccff00]" : ""}`}>
+                            <span>5. Mint USDC on Arc Testnet</span>
+                            <span>{cctpStatus === "claiming" ? "In Progress" : ""}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}
