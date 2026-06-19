@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { getDatabaseUrl } from "@/lib/databaseUrl";
 import { 
     isConnectionError, 
     getOfflineAccountRole, 
@@ -13,6 +14,11 @@ const globalForPrisma = global as unknown as { prisma: PrismaClient };
 const rawPrisma =
     globalForPrisma.prisma ||
     new PrismaClient({
+        datasources: {
+            db: {
+                url: getDatabaseUrl(),
+            },
+        },
         log: ["query"],
     });
 

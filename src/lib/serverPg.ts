@@ -1,18 +1,11 @@
 const { Client } = require("pg") as any;
+import { getDatabaseUrl } from "@/lib/databaseUrl";
 
 type PgClient = any;
 
-function getConnectionString() {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-        throw new Error("DATABASE_URL is not configured");
-    }
-    return connectionString;
-}
-
 export async function withPgClient<T>(callback: (client: PgClient) => Promise<T>) {
     const client = new Client({
-        connectionString: getConnectionString(),
+        connectionString: getDatabaseUrl(),
         ssl: { rejectUnauthorized: false },
     });
 
