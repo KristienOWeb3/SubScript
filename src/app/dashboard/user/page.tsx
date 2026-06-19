@@ -30,6 +30,9 @@ import {
   Users,
   Wallet,
   X,
+  Activity,
+  Sliders,
+  Lock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -116,6 +119,92 @@ export default function UserDashboard() {
   const [uploadingPic, setUploadingPic] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const [userSettings, setUserSettings] = useState<any>(null);
+  const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+  const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+
+  const [dailyLimitInput, setDailyLimitInput] = useState("");
+  const [weeklyLimitInput, setWeeklyLimitInput] = useState("");
+  const [monthlyLimitInput, setMonthlyLimitInput] = useState("");
+
+  useEffect(() => {
+    if (userSettings) {
+      setDailyLimitInput(userSettings.spendingLimitDaily ? (Number(userSettings.spendingLimitDaily) / 1_000_000).toString() : "");
+      setWeeklyLimitInput(userSettings.spendingLimitWeekly ? (Number(userSettings.spendingLimitWeekly) / 1_000_000).toString() : "");
+      setMonthlyLimitInput(userSettings.spendingLimitMonthly ? (Number(userSettings.spendingLimitMonthly) / 1_000_000).toString() : "");
+    }
+  }, [userSettings]);
+
+  const loadUserSettings = async () => {
+    setIsSettingsLoading(true);
+    try {
+      const res = await fetch("/api/user/settings");
+      const data = await res.json();
+      if (data.success) {
+        setUserSettings(data.settings);
+        setSettingsTransactions(data.receipts);
+        if (data.settings.profilePic) setProfilePic(data.settings.profilePic);
+        if (data.settings.alias) setRegisteredDomain(data.settings.alias);
+      }
+    } catch (err) {
+      console.error("Failed to load user settings:", err);
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  };
+
+  const handleToggleSetting = async (field: string, currentValue: boolean) => {
+    setSavingSettingsField(field);
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: !currentValue }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
+      }
+    } catch (err) {
+      console.error(`Error saving user setting ${field}:`, err);
+    } finally {
+      setSavingSettingsField(null);
+    }
+  };
+
+  const handleSaveSpendingLimits = async (daily: string, weekly: string, monthly: string) => {
+    setSavingSettingsField("spendingLimits");
+    try {
+      const dailyVal = daily ? (Number(daily) * 1_000_000).toString() : null;
+      const weeklyVal = weekly ? (Number(weekly) * 1_000_000).toString() : null;
+      const monthlyVal = monthly ? (Number(monthly) * 1_000_000).toString() : null;
+
+      const res = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spendingLimitDaily: dailyVal,
+          spendingLimitWeekly: weeklyVal,
+          spendingLimitMonthly: monthlyVal,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUserSettings((prev: any) => ({
+          ...prev,
+          spendingLimitDaily: dailyVal,
+          spendingLimitWeekly: weeklyVal,
+          spendingLimitMonthly: monthlyVal,
+        }));
+      }
+    } catch (err) {
+      console.error("Error saving spending limits:", err);
+    } finally {
+      setSavingSettingsField(null);
+    }
+  };
+
   const [requestReceiver, setRequestReceiver] = useState("");
   const [requestAmount, setRequestAmount] = useState("");
   const [requestNote, setRequestNote] = useState("");
@@ -172,7 +261,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
-      await Promise.all([loadSubscriptions(), loadDms(), loadRegisteredDns(data.wallet)]);
+      await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings()]);
     } catch (e) {
       console.error("Session verification error:", e);
       router.push("/signup");
@@ -537,14 +626,19 @@ export default function UserDashboard() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              className="space-y-5"
+              className="space-y-6 pb-20"
             >
-              <SectionTitle title="DNS & Profile" subtitle="Manage your .sub identity and profile photo." />
-              <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 space-y-5">
-                <div className="flex items-center gap-4">
+              <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
+              
+              {/* Profile & DNS Registration */}
+              <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-6">
+                <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                  <User className="h-4 w-4 text-[#ccff00]" /> Profile & Identity
+                </h3>
+                <div className="flex items-center gap-4 pb-4 border-b border-white/5">
                   <Avatar profilePic={profilePic} size="lg" />
                   <div className="space-y-2">
-                    <label className="inline-block rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/75">
+                    <label className="inline-block rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/75 cursor-pointer hover:bg-white/[0.08] transition-all">
                       Choose Image
                       <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                     </label>
@@ -554,9 +648,33 @@ export default function UserDashboard() {
                 {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
 
                 {registeredDomain ? (
-                  <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
-                    <h3 className="mt-2 font-mono text-xl font-black text-[#ccff00]">{registeredDomain}</h3>
+                  <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
+                      <h3 className="mt-1 font-mono text-lg font-black text-[#ccff00]">{registeredDomain}</h3>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setDnsLoading(true);
+                        try {
+                          const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                          if (res.ok) {
+                            setRegisteredDomain(null);
+                            setProfilePic(null);
+                            setDnsDomain("");
+                            setDnsSuccess("Alias removed successfully");
+                            setTimeout(() => setDnsSuccess(null), 3000);
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setDnsLoading(false);
+                        }
+                      }}
+                      className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all"
+                    >
+                      {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
+                    </button>
                   </div>
                 ) : (
                   <form onSubmit={handleRegisterDns} className="space-y-3">
@@ -573,6 +691,218 @@ export default function UserDashboard() {
                     </button>
                   </form>
                 )}
+              </div>
+
+              {/* Spending Limits Form */}
+              {userSettings && (
+                <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-[#ccff00]" /> Spending Limits
+                  </h3>
+                  <p className="text-[10px] text-white/40 leading-relaxed">
+                    Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
+                    }}
+                    className="space-y-4"
+                  >
+                    <Field label="Daily Limit (USDC)">
+                      <input
+                        type="number"
+                        value={dailyLimitInput}
+                        onChange={(e) => setDailyLimitInput(e.target.value)}
+                        placeholder="e.g. 50"
+                        className="subscript-input"
+                      />
+                    </Field>
+                    <Field label="Weekly Limit (USDC)">
+                      <input
+                        type="number"
+                        value={weeklyLimitInput}
+                        onChange={(e) => setWeeklyLimitInput(e.target.value)}
+                        placeholder="e.g. 200"
+                        className="subscript-input"
+                      />
+                    </Field>
+                    <Field label="Monthly Limit (USDC)">
+                      <input
+                        type="number"
+                        value={monthlyLimitInput}
+                        onChange={(e) => setMonthlyLimitInput(e.target.value)}
+                        placeholder="e.g. 500"
+                        className="subscript-input"
+                      />
+                    </Field>
+                    <button
+                      type="submit"
+                      disabled={savingSettingsField === "spendingLimits"}
+                      className="subscript-primary-button"
+                    >
+                      {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* Notification Toggles */}
+              {userSettings && (
+                <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                    <Sliders className="h-4 w-4 text-[#ccff00]" /> Notifications
+                  </h3>
+                  <div className="space-y-4 font-sans text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Push Notifications</p>
+                        <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
+                        disabled={savingSettingsField === "pushEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Email Alerts</p>
+                        <p className="text-[9px] text-white/40">Receive transaction details via email</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled)}
+                        disabled={savingSettingsField === "emailEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Debit Success</p>
+                        <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
+                        disabled={savingSettingsField === "debitSuccessEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Expiry Warnings</p>
+                        <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
+                        disabled={savingSettingsField === "expiryWarningEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Security Preferences */}
+              {userSettings && (
+                <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-[#ccff00]" /> Security Settings
+                  </h3>
+                  <div className="space-y-4 font-sans text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Security Shield</p>
+                        <p className="text-[9px] text-white/40">Enable confidential routing on the Arc network</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("securityShieldEnabled", userSettings.securityShieldEnabled)}
+                        disabled={savingSettingsField === "securityShieldEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityShieldEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityShieldEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-white font-bold">Multi-Sig Verification</p>
+                        <p className="text-[9px] text-white/40">Prompt for secondary wallet confirmations during debit limits updates</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleSetting("securityMultiSigEnabled", userSettings.securityMultiSigEnabled)}
+                        disabled={savingSettingsField === "securityMultiSigEnabled"}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityMultiSigEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityMultiSigEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Transactions History */}
+              <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-sans text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                        <th className="pb-3">Receipt ID</th>
+                        <th className="pb-3">Date</th>
+                        <th className="pb-3">Amount</th>
+                        <th className="pb-3">Status</th>
+                        <th className="pb-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settingsTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-6 text-white/30">
+                            No recent transaction logs.
+                          </td>
+                        </tr>
+                      ) : (
+                        settingsTransactions.map((tx) => (
+                          <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                            <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                            <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                            <td className="py-4 font-mono font-bold text-white">
+                              ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                            </td>
+                            <td className="py-4">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                {tx.status}
+                              </span>
+                            </td>
+                            <td className="py-4 text-right">
+                              <a
+                                href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                              >
+                                Tx <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </motion.section>
           )}

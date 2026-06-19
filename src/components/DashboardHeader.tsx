@@ -41,6 +41,8 @@ interface DashboardHeaderProps {
     activeTab?: string;
     onBackToOverview?: () => void;
     isVerified?: boolean;
+    onProfileClick?: () => void;
+    profilePic?: string | null;
 }
 
 export default function DashboardHeader({
@@ -58,6 +60,8 @@ export default function DashboardHeader({
     activeTab,
     onBackToOverview,
     isVerified,
+    onProfileClick,
+    profilePic,
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
@@ -225,9 +229,16 @@ export default function DashboardHeader({
                                     )}
                                 </button>
                                 {/* PFP Icon */}
-                                <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_8px_rgba(0,210,180,0.15)]">
-                                    <User className="w-3.5 h-3.5 text-[#00d2b4]" />
-                                </div>
+                                <button
+                                    onClick={onProfileClick}
+                                    className="w-7 h-7 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_8px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                >
+                                    {profilePic ? (
+                                        <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <User className="w-3.5 h-3.5 text-[#00d2b4]" />
+                                    )}
+                                </button>
                             </div>
                         ) : (
                             <div className="flex items-center gap-1.5">
@@ -240,9 +251,12 @@ export default function DashboardHeader({
                                     <span>Connect</span>
                                 </button>
                                 {/* PFP Icon (Placeholder) */}
-                                <div className="w-7 h-7 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1">
+                                <button
+                                    onClick={onProfileClick}
+                                    className="w-7 h-7 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1 hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                >
                                     <User className="w-3.5 h-3.5" />
-                                </div>
+                                </button>
                             </div>
                         )}
                     </div>
@@ -353,9 +367,16 @@ export default function DashboardHeader({
                                     </button>
 
                                     {/* PFP Icon */}
-                                    <div className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_10px_rgba(0,210,180,0.15)]">
-                                        <User className="w-4 h-4 text-[#00d2b4]" />
-                                    </div>
+                                    <button
+                                        onClick={onProfileClick}
+                                        className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shrink-0 ml-1 shadow-[0_0_10px_rgba(0,210,180,0.15)] hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                    >
+                                        {profilePic ? (
+                                            <img src={profilePic} alt="PFP" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <User className="w-4 h-4 text-[#00d2b4]" />
+                                        )}
+                                    </button>
                                 </>
                             ) : (
                                 <div className="flex items-center gap-2.5">
@@ -369,9 +390,12 @@ export default function DashboardHeader({
                                     </button>
 
                                     {/* PFP Icon (Placeholder) */}
-                                    <div className="w-8 h-8 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1">
+                                    <button
+                                        onClick={onProfileClick}
+                                        className="w-8 h-8 rounded-full border border-white/5 bg-white/[0.02] flex items-center justify-center text-white/30 shrink-0 ml-1 hover:scale-105 active:scale-95 transition-all focus:outline-none"
+                                    >
                                         <User className="w-4 h-4" />
-                                    </div>
+                                    </button>
                                 </div>
                             )}
                         </div>

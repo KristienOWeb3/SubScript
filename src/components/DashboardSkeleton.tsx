@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "settings";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
@@ -23,6 +23,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
 
     const renderContentSkeleton = () => {
         switch (activeTab) {
+            case "settings":
             case "analytics":
             case "overview":
                 return (

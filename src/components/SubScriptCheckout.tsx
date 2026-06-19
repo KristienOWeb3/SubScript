@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import {
   bytesToHex,
   createPublicClient,
   encodePacked,
+  formatUnits,
   getAddress,
   http,
   isAddress,
@@ -18,15 +19,23 @@ import {
   ARC_TESTNET_CHAIN_ID,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
-  USDC_NATIVE_GAS_ADDRESS 
+  USDC_NATIVE_GAS_ADDRESS,
+  CCTP_CONFIG
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "lucide-react";
+import { sepolia } from "viem/chains";
 
 /* Initialize standard viem public client targeting Arc Testnet */
 const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(),
+});
+
+/* Initialize public client for Ethereum Sepolia */
+const sepoliaClient = createPublicClient({
+  chain: sepolia,
+  transport: http("https://rpc.ankr.com/eth_sepolia"),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;
@@ -62,6 +71,201 @@ export default function SubScriptCheckout({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
+
+  const [arcBalance, setArcBalance] = useState<number>(0);
+  const [sepoliaBalance, setSepoliaBalance] = useState<number>(0);
+  const [showCctpOption, setShowCctpOption] = useState(false);
+  const [useCctp, setUseCctp] = useState(false);
+
+  const checkBalances = async () => {
+    if (!userWallet) return;
+    try {
+      const arcBalRaw = await publicClient.readContract({
+        address: USDC_NATIVE_GAS_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [userWallet as `0x${string}`],
+      });
+      const arcBal = Number(formatUnits(arcBalRaw, 6));
+      setArcBalance(arcBal);
+
+      const required = Number(amountCap);
+      if (arcBal < required) {
+        const sepoliaUSDC = CCTP_CONFIG[11155111].usdc;
+        const sepoliaBalRaw = await sepoliaClient.readContract({
+          address: sepoliaUSDC,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [userWallet as `0x${string}`],
+        });
+        const sepoliaBal = Number(formatUnits(sepoliaBalRaw, 6));
+        setSepoliaBalance(sepoliaBal);
+
+        if (arcBal + sepoliaBal >= required) {
+          setShowCctpOption(true);
+        } else {
+          setShowCctpOption(false);
+        }
+      } else {
+        setShowCctpOption(false);
+      }
+    } catch (err) {
+      console.error("Error checking balances:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isConnected && userWallet) {
+      checkBalances();
+    }
+  }, [isConnected, userWallet, amountCap]);
+
+  const handleCctpBridge = async () => {
+    if (!userWallet) {
+      setErrorMessage("Wallet not connected.");
+      setLoadingState("error");
+      return;
+    }
+    setErrorMessage(null);
+    setLoadingState("Preparing Secure Payment");
+    try {
+      const requiredAmount = parseUnits((Number(amountCap) - arcBalance).toString(), 6);
+      const sepoliaConfig = CCTP_CONFIG[11155111];
+
+      // Step 1: Switch to Sepolia
+      setStatusMessage("Switching network to Ethereum Sepolia...");
+      if (chainId !== 11155111) {
+        await switchChainAsync({ chainId: 11155111 });
+      }
+
+      // Step 2: Approve Sepolia TokenMessenger
+      setStatusMessage("Approving USDC spend on Sepolia...");
+      const approveHash = await writeContractAsync({
+        address: sepoliaConfig.usdc,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [sepoliaConfig.tokenMessenger, requiredAmount],
+      });
+
+      setStatusMessage("Waiting for Sepolia approval transaction confirmation...");
+      const approveReceipt = await sepoliaClient.waitForTransactionReceipt({
+        hash: approveHash,
+        timeout: 120_000,
+      });
+      if (approveReceipt.status !== "success") {
+        throw new Error("Sepolia USDC approval failed.");
+      }
+
+      // Step 3: Burn on Sepolia
+      setStatusMessage("Initiating CCTP burn on Sepolia...");
+      const mintRecipientBytes32 = ("0x" + userWallet.slice(2).padStart(64, "0")) as `0x${string}`;
+      
+      const burnHash = await writeContractAsync({
+        address: sepoliaConfig.tokenMessenger,
+        abi: [
+          {
+            type: "function",
+            name: "depositForBurn",
+            stateMutability: "nonpayable",
+            inputs: [
+              { name: "amount", type: "uint256" },
+              { name: "destinationDomain", type: "uint32" },
+              { name: "mintRecipient", type: "bytes32" },
+              { name: "burnToken", type: "address" },
+            ],
+            outputs: [{ name: "nonce", type: "uint64" }],
+          },
+        ],
+        functionName: "depositForBurn",
+        args: [requiredAmount, 26, mintRecipientBytes32, sepoliaConfig.usdc],
+      });
+
+      setStatusMessage("Waiting for CCTP burn transaction confirmation...");
+      const burnReceipt = await sepoliaClient.waitForTransactionReceipt({
+        hash: burnHash,
+        timeout: 120_000,
+      });
+      if (burnReceipt.status !== "success") {
+        throw new Error("Sepolia CCTP burn transaction failed.");
+      }
+
+      // Step 4: Fetch Attestation from Circle
+      setStatusMessage("Circle attestation in progress. Fetching signature...");
+      const logs = parseEventLogs({
+        abi: [{ type: "event", name: "MessageSent", inputs: [{ type: "bytes", name: "message", indexed: false }] }],
+        logs: burnReceipt.logs,
+      });
+      if (logs.length === 0) {
+        throw new Error("MessageSent event not found in transaction receipt.");
+      }
+      const messageBytes = (logs[0].args as any).message;
+      const messageHash = keccak256(messageBytes);
+
+      let attestation: `0x${string}` | null = null;
+      let attempts = 0;
+      while (attempts < 60) {
+        attempts++;
+        try {
+          const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`);
+          const data = await res.json();
+          if (data.status === "complete") {
+            const rawHex = data.attestation;
+            attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
+            break;
+          }
+        } catch (e) {
+          console.warn("Attestation fetch retry:", e);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+
+      if (!attestation) {
+        throw new Error("Timeout waiting for Circle attestation signature.");
+      }
+
+      // Step 5: Switch back to Arc Testnet
+      setStatusMessage("Switching network back to Arc Testnet...");
+      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+
+      // Step 6: Mint USDC on Arc
+      setStatusMessage("Minting USDC on Arc Network...");
+      const mintHash = await writeContractAsync({
+        address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275", // Arc MessageTransmitter
+        abi: [
+          {
+            type: "function",
+            name: "receiveMessage",
+            stateMutability: "nonpayable",
+            inputs: [
+              { name: "message", type: "bytes" },
+              { name: "attestation", type: "bytes" },
+            ],
+            outputs: [{ name: "success", type: "bool" }],
+          },
+        ],
+        functionName: "receiveMessage",
+        args: [messageBytes, attestation],
+      });
+
+      setStatusMessage("Waiting for Arc mint confirmation...");
+      const mintReceipt = await publicClient.waitForTransactionReceipt({
+        hash: mintHash,
+        timeout: 120_000,
+      });
+      if (mintReceipt.status !== "success") {
+        throw new Error("USDC minting transaction failed on Arc.");
+      }
+
+      // Step 7: Proceed to Checkout
+      setStatusMessage("USDC successfully bridged! Finalizing checkout...");
+      await checkBalances();
+      await handleCheckout();
+
+    } catch (err: any) {
+      setErrorMessage(getCheckoutErrorMessage(err));
+      setLoadingState("error");
+    }
+  };
 
   /* Calculate billing period in seconds */
   const periodSeconds = useMemo(() => {
@@ -269,14 +473,31 @@ export default function SubScriptCheckout({
       </div>
 
       <div className="mt-8 space-y-4">
+        {showCctpOption && loadingState === "idle" && (
+          <div className="bg-[#ccff00]/5 border border-[#ccff00]/20 rounded-2xl p-4 space-y-3 font-sans text-xs mb-2">
+            <p className="text-white/80 leading-relaxed">
+              Your Arc USDC balance is insufficient (<strong>${arcBalance.toFixed(2)}</strong>). You have <strong>${sepoliaBalance.toFixed(2)} USDC</strong> on Sepolia.
+            </p>
+            <label className="flex items-center gap-2.5 cursor-pointer text-white/90">
+              <input
+                type="checkbox"
+                checked={useCctp}
+                onChange={(e) => setUseCctp(e.target.checked)}
+                className="w-4 h-4 rounded border-white/10 bg-white/[0.02] text-[#ccff00] focus:ring-0 cursor-pointer"
+              />
+              <span>Top-up via Circle CCTP Bridge</span>
+            </label>
+          </div>
+        )}
+
         {loadingState === "idle" && (
           <button
-            onClick={handleCheckout}
+            onClick={useCctp ? handleCctpBridge : handleCheckout}
             disabled={!isConnected || !merchantAddress}
             className="w-full py-4 bg-[#00d2b4] text-[#111111] hover:brightness-110 transition-all font-bold rounded-2xl text-xs uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <ShoppingBag className="w-4 h-4 stroke-[2.5]" />
-            Subscribe
+            {useCctp ? "Bridge & Subscribe" : "Subscribe"}
           </button>
         )}
 

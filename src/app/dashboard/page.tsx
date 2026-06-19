@@ -35,7 +35,7 @@ import {
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -75,7 +75,7 @@ const tabs = [
     { id: "webhooks", label: "Webhooks", icon: Webhook },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const vaultTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
@@ -505,6 +505,161 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+    const [userSettings, setUserSettings] = useState<any>(null);
+    const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
+    const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+    const [dnsDomain, setDnsDomain] = useState("");
+    const [dnsSuffix, setDnsSuffix] = useState(".hq");
+    const [dnsLoading, setDnsLoading] = useState(false);
+    const [dnsSuccess, setDnsSuccess] = useState<string | null>(null);
+    const [dnsError, setDnsError] = useState<string | null>(null);
+    const [uploadingPic, setUploadingPic] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+
+    const fetchSettings = useCallback(async () => {
+        if (!address) return;
+        setIsSettingsLoading(true);
+        try {
+            const res = await fetch("/api/user/settings");
+            const data = await res.json();
+            if (data.success) {
+                setUserSettings(data.settings);
+                setSettingsTransactions(data.receipts);
+                if (data.settings.alias) {
+                    const aliasParts = data.settings.alias.split(".");
+                    setDnsDomain(aliasParts[0]);
+                    setDnsSuffix("." + (aliasParts[1] || "hq"));
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching settings:", err);
+        } finally {
+            setIsSettingsLoading(false);
+        }
+    }, [address]);
+
+    useEffect(() => {
+        if (address) {
+            fetchSettings();
+        }
+    }, [address, fetchSettings]);
+
+    const handleToggleSetting = async (field: string, currentValue: boolean) => {
+        setSavingSettingsField(field);
+        try {
+            const res = await fetch("/api/user/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ [field]: !currentValue })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setUserSettings((prev: any) => ({ ...prev, [field]: !currentValue }));
+            }
+        } catch (err) {
+            console.error(`Error saving setting ${field}:`, err);
+        } finally {
+            setSavingSettingsField(null);
+        }
+    };
+
+    const handleUpdatePayoutDestination = async (destination: string) => {
+        setSavingSettingsField("payoutDestination");
+        try {
+            const res = await fetch("/api/user/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ payoutDestination: destination })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setUserSettings((prev: any) => ({ ...prev, payoutDestination: destination }));
+                setToastMessage("Payout destination updated");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 3000);
+            }
+        } catch (err) {
+            console.error("Error updating payout destination:", err);
+        } finally {
+            setSavingSettingsField(null);
+        }
+    };
+
+    const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) {
+            setUploadError("Image size must be smaller than 2MB");
+            return;
+        }
+
+        setUploadingPic(true);
+        setUploadError(null);
+
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            try {
+                const res = await fetch("/api/user/settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ profilePic: reader.result })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setUserSettings((prev: any) => ({ ...prev, profilePic: reader.result as string }));
+                } else {
+                    setUploadError(data.error || "Upload failed");
+                }
+            } catch (err) {
+                console.error("Error uploading profile pic:", err);
+                setUploadError("Upload failed");
+            } finally {
+                setUploadingPic(false);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRegisterDns = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setDnsLoading(true);
+        setDnsError(null);
+        setDnsSuccess(null);
+
+        const prefix = dnsDomain.trim().toLowerCase();
+        if (!prefix) {
+            setDnsError("DNS alias cannot be empty");
+            setDnsLoading(false);
+            return;
+        }
+
+        const cleanPrefix = prefix.split(".")[0];
+        const fullAlias = `${cleanPrefix}${dnsSuffix}`;
+
+        try {
+            const res = await fetch("/api/merchant/alias", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ alias: fullAlias })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setDnsSuccess(`DNS Registered: ${fullAlias}`);
+                setUserSettings((prev: any) => ({ ...prev, alias: fullAlias }));
+                setMerchantAlias(fullAlias);
+            } else {
+                setDnsError(data.error || "Registration failed");
+            }
+        } catch (err) {
+            console.error("Error registering DNS:", err);
+            setDnsError("Registration failed");
+        } finally {
+            setDnsLoading(false);
+        }
+    };
 
 
     const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -2222,6 +2377,345 @@ Please complete the following implementation tasks:
         );
     };
 
+    const renderSettingsTab = () => {
+        if (!userSettings) {
+            return (
+                <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-8 max-w-4xl mx-auto">
+                {/* Profile & Identity Section */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <User className="w-4 h-4 text-[#00d2b4]" />
+                            Profile & Identity
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Manage your merchant identity, custom alias, and branding.
+                        </p>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-white/5">
+                        <div className="relative group shrink-0">
+                            <div className="w-20 h-20 rounded-full border-2 border-white/10 overflow-hidden bg-gradient-to-tr from-[#00d2b4]/20 to-purple-500/20 flex items-center justify-center text-[#00d2b4] shadow-lg relative">
+                                {userSettings.profilePic ? (
+                                    <img src={userSettings.profilePic} alt="Merchant Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <User className="w-8 h-8 text-[#00d2b4]" />
+                                )}
+                                {uploadingPic && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                        <Loader2 className="w-5 h-5 animate-spin text-[#00d2b4]" />
+                                    </div>
+                                )}
+                            </div>
+                            <label className="absolute -bottom-1 -right-1 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black p-1.5 rounded-full cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
+                            </label>
+                        </div>
+
+                        <div className="flex-1 space-y-1">
+                            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Merchant Profile Photo</h3>
+                            <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                                Upload a brand logo or profile picture. JPG/PNG, maximum 2MB size limit.
+                            </p>
+                            {uploadError && <p className="text-[10px] text-red-400 mt-1 font-sans">{uploadError}</p>}
+                        </div>
+                    </div>
+
+                    {/* DNS / Alias Section */}
+                    <div className="space-y-4">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
+                        {userSettings.alias ? (
+                            <div className="p-4 rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 flex items-center justify-between">
+                                <div>
+                                    <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
+                                    <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        setDnsLoading(true);
+                                        try {
+                                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                                            if (res.ok) {
+                                                setUserSettings((prev: any) => ({ ...prev, alias: null }));
+                                                setMerchantAlias(null);
+                                                setDnsDomain("");
+                                                setDnsSuccess("Alias removed successfully");
+                                                setTimeout(() => setDnsSuccess(null), 3000);
+                                            }
+                                        } catch (err) {
+                                            console.error(err);
+                                        } finally {
+                                            setDnsLoading(false);
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
+                                >
+                                    {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
+                                </button>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
+                                <div className="space-y-1">
+                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Domain Alias</label>
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <input
+                                                type="text"
+                                                value={dnsDomain}
+                                                onChange={(e) => setDnsDomain(e.target.value)}
+                                                placeholder="my-company"
+                                                className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
+                                                required
+                                            />
+                                            <div className="absolute right-3 top-2.5 flex gap-1">
+                                                <select
+                                                    value={dnsSuffix}
+                                                    onChange={(e) => setDnsSuffix(e.target.value)}
+                                                    className="bg-transparent text-white/50 text-xs font-bold border-none focus:outline-none cursor-pointer"
+                                                >
+                                                    <option value=".hq" className="bg-[#111111] text-white">.hq</option>
+                                                    <option value=".biz" className="bg-[#111111] text-white">.biz</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            disabled={dnsLoading}
+                                            className="px-6 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold uppercase tracking-wider rounded-xl transition-all"
+                                        >
+                                            {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
+                                        </button>
+                                    </div>
+                                    <p className="text-[9px] text-white/35">
+                                        Enterprise custom namespaces allow customers to identify your business link securely.
+                                    </p>
+                                </div>
+                                {dnsError && <p className="text-[10px] text-red-400">{dnsError}</p>}
+                                {dnsSuccess && <p className="text-[10px] text-emerald-400">{dnsSuccess}</p>}
+                            </form>
+                        )}
+                    </div>
+                </div>
+
+                {/* Payout & Settlement Wallet Section */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <Wallet className="w-4 h-4 text-[#00d2b4]" />
+                            Payout Destination
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Set up the target wallet where settled funds will be automatically swept.
+                        </p>
+                    </div>
+
+                    <div className="space-y-4 font-sans text-xs">
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Payout Destination Address</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    defaultValue={userSettings.payoutDestination || ""}
+                                    placeholder="0x..."
+                                    onBlur={(e) => {
+                                        if (e.target.value !== (userSettings.payoutDestination || "")) {
+                                            handleUpdatePayoutDestination(e.target.value);
+                                        }
+                                    }}
+                                    className="flex-1 bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
+                                />
+                            </div>
+                            <p className="text-[9px] text-white/35">
+                                Enter a valid EVM address. This is the address that receives all direct payments and payroll settlements.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Preferences Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Notification Preferences */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div>
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Sliders className="w-4 h-4 text-[#00d2b4]" />
+                                Notifications
+                            </h2>
+                            <p className="text-[11px] text-white/40 font-sans">
+                                Set up real-time alert preferences.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4 font-sans text-xs">
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-white font-bold">Push Notifications</p>
+                                    <p className="text-[9px] text-white/40">Enable notifications inside the browser portal</p>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
+                                    disabled={savingSettingsField === "pushEnabled"}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-white font-bold">Email Alerts</p>
+                                    <p className="text-[9px] text-white/40">Receive settlement summaries via email</p>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled)}
+                                    disabled={savingSettingsField === "emailEnabled"}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-white font-bold">Payout Settlements</p>
+                                    <p className="text-[9px] text-white/40">Notify on auto-sweeps and withdraw activities</p>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleSetting("payoutSettlementEnabled", userSettings.payoutSettlementEnabled)}
+                                    disabled={savingSettingsField === "payoutSettlementEnabled"}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.payoutSettlementEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.payoutSettlementEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-white font-bold">Client Disputes</p>
+                                    <p className="text-[9px] text-white/40">Receive immediate alerts on cancel or payment failure events</p>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleSetting("disputeAlertsEnabled", userSettings.disputeAlertsEnabled)}
+                                    disabled={savingSettingsField === "disputeAlertsEnabled"}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.disputeAlertsEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.disputeAlertsEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Security Toggles */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div>
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-[#00d2b4]" />
+                                Security Settings
+                            </h2>
+                            <p className="text-[11px] text-white/40 font-sans">
+                                Configure merchant authorization preferences.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4 font-sans text-xs">
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-white font-bold">Multi-Sig Payout Verification</p>
+                                    <p className="text-[9px] text-white/40">Require secondary signature verification for payouts</p>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleSetting("securityMultiSigEnabled", userSettings.securityMultiSigEnabled)}
+                                    disabled={savingSettingsField === "securityMultiSigEnabled"}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityMultiSigEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityMultiSigEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Transaction History Receipt Logs */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-[#00d2b4]" />
+                            Transaction History Logs
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Review recent transactions and payments.
+                        </p>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-xs">
+                            <thead>
+                                <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                                    <th className="pb-3">Receipt ID</th>
+                                    <th className="pb-3">Date</th>
+                                    <th className="pb-3">Type</th>
+                                    <th className="pb-3">Amount</th>
+                                    <th className="pb-3">Status</th>
+                                    <th className="pb-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {settingsTransactions.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="text-center py-6 text-white/30">
+                                            No transaction logs found.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    settingsTransactions.map((tx) => {
+                                        const isOutgoing = tx.payerAddress.toLowerCase() === address.toLowerCase();
+                                        return (
+                                            <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                                                <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                <td className="py-4">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
+                                                        {isOutgoing ? "Debit" : "Credit"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 font-mono font-bold text-white">
+                                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                </td>
+                                                <td className="py-4">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                                        {tx.status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 text-right">
+                                                    <a
+                                                        href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
+                                                    >
+                                                        Tx <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderView = () => {
         if (!isPremium && ["apikeys", "checkout", "webhooks"].includes(activeTab)) {
             const labelMap = {
@@ -2233,6 +2727,9 @@ Please complete the following implementation tasks:
         }
 
         switch (activeTab) {
+            case "settings":
+                return renderSettingsTab();
+
             case "payment-links":
                 return renderPaymentLinksTab();
 
@@ -4035,6 +4532,8 @@ Please complete the following implementation tasks:
                 onDnsClick={handleDnsClick}
                 activeTab={activeTab}
                 onBackToOverview={() => setActiveTab('overview')}
+                onProfileClick={() => setActiveTab('settings')}
+                profilePic={userSettings?.profilePic || null}
             />
 
             {/* Dashboard Content */}
@@ -4292,14 +4791,19 @@ Please complete the following implementation tasks:
                                 {/* Checkout Icon Outside Bottom Bar Capsule */}
                                 <button
                                     onClick={() => setActiveTab("checkout")}
-                                    className={`w-12 h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl ${
+                                    className={`h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl gap-2 px-3 overflow-hidden ${
                                         activeTab === "checkout"
-                                            ? "bg-[#00d2b4] border-[#00d2b4]/30 text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] scale-105"
-                                            : "bg-black/60 border-white/5 text-white/50 hover:text-white"
+                                            ? "bg-[#00d2b4] border-[#00d2b4]/30 text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] scale-105 w-[124px]"
+                                            : "bg-black/60 border-white/5 text-white/50 hover:text-white w-12"
                                     }`}
                                     title="Checkout Setup"
                                 >
-                                    <Code2 className="w-5 h-5" />
+                                    <Code2 className="w-5 h-5 shrink-0" />
+                                    {activeTab === "checkout" && (
+                                        <span className="text-[10px] font-bold uppercase tracking-wider shrink-0 transition-opacity duration-300">
+                                            Checkout
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                             )}
