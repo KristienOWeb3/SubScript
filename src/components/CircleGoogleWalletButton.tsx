@@ -42,10 +42,17 @@ export default function CircleGoogleWalletButton() {
                     const challengeRes = await fetch("/api/auth/circle/wallet", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ circleAuth: result }),
+                        body: JSON.stringify({
+                            circleAuth: result,
+                            authIntent: window.location.pathname.includes("/signin") ? "signin" : "signup",
+                        }),
                     });
                     const challenge = await challengeRes.json();
                     if (!challengeRes.ok) {
+                        if (challenge.redirectTo) {
+                            router.push(challenge.redirectTo);
+                            return;
+                        }
                         throw new Error(challenge.error || "Could not create your Arc wallet.");
                     }
 

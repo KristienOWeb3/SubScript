@@ -42,6 +42,14 @@ export default function SignupPage() {
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const initialEmail = new URLSearchParams(window.location.search).get("email");
+    if (initialEmail) {
+      setEmail(initialEmail);
+      setAuthMethod("email");
+    }
+  }, []);
+
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
     setActiveMerchantAddress(data.wallet);
     if (data.role) {

@@ -39,6 +39,16 @@ async function createBillingDm({
     description: string;
     txHash?: string | null;
 }) {
+    const { data: customerSettings } = await supabase
+        .from("customers")
+        .select("push_enabled, debit_success_enabled, expiry_warning_enabled")
+        .eq("wallet_address", receiverAddress.toLowerCase())
+        .maybeSingle();
+
+    if (customerSettings?.push_enabled === false) return;
+    if (messageType === "DEBIT_SUCCESS" && customerSettings?.debit_success_enabled === false) return;
+    if (messageType === "EXPIRY_WARNING" && customerSettings?.expiry_warning_enabled === false) return;
+
     await supabase
         .from("subscript_dms")
         .insert({

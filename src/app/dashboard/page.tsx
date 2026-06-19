@@ -86,7 +86,13 @@ const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof A
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
-const comingSoonMerchantSettings = new Set(["emailEnabled", "disputeAlertsEnabled", "securityMultiSigEnabled"]);
+const comingSoonMerchantSettings = new Set([
+    "pushEnabled",
+    "emailEnabled",
+    "payoutSettlementEnabled",
+    "disputeAlertsEnabled",
+    "securityMultiSigEnabled",
+]);
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -2561,17 +2567,17 @@ Please complete the following implementation tasks:
                         </div>
 
                         <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold">Push Notifications</p>
-                                    <p className="text-[9px] text-white/40">Enable notifications inside the browser portal</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Push Notifications <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
+                                    <p className="text-[9px] text-white/40">Merchant inbox alerts are not live yet</p>
                                 </div>
                                 <button
-                                    onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
-                                    disabled={savingSettingsField === "pushEnabled"}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                    onClick={() => {}}
+                                    disabled={true}
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
-                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                                 </button>
                             </div>
 
@@ -2589,17 +2595,17 @@ Please complete the following implementation tasks:
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold">Payout Settlements</p>
-                                    <p className="text-[9px] text-white/40">Notify on auto-sweeps and withdraw activities</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Payout Settlements <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
+                                    <p className="text-[9px] text-white/40">Settlement alerts will arrive in the merchant inbox when live</p>
                                 </div>
                                 <button
-                                    onClick={() => handleToggleSetting("payoutSettlementEnabled", userSettings.payoutSettlementEnabled)}
-                                    disabled={savingSettingsField === "payoutSettlementEnabled"}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.payoutSettlementEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                    onClick={() => {}}
+                                    disabled={true}
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
-                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.payoutSettlementEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                                 </button>
                             </div>
 

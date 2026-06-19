@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
-import { ARC_MEMO_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
-import { ARC_MEMO_INTERFACE, USDC_TRANSFER_FROM_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 function parseBlock(value: unknown, fallback: number | "latest") {
@@ -27,45 +27,24 @@ export async function POST(request: Request) {
         const toBlock = parseBlock(body.toBlock, "latest");
 
         const logs = await provider.getLogs({
-            address: ARC_MEMO_CONTRACT_ADDRESS,
+            address: SUBSCRIPT_ROUTER_ADDRESS,
             fromBlock,
             toBlock,
-            topics: [ARC_MEMO_INTERFACE.getEvent("Memo")!.topicHash],
+            topics: [ROUTER_DEPOSIT_INTERFACE.getEvent("DepositWithMemo")!.topicHash],
         });
 
         let indexed = 0;
         for (const log of logs) {
-            const parsedMemo = ARC_MEMO_INTERFACE.parseLog({
+            const parsedDeposit = ROUTER_DEPOSIT_INTERFACE.parseLog({
                 topics: log.topics as string[],
                 data: log.data,
             });
-            const receiptId = parsedMemo?.args.memo;
+            if (!parsedDeposit || parsedDeposit.name !== "DepositWithMemo") continue;
+            const receiptId = parsedDeposit?.args.memo;
             if (!isReceiptId(receiptId)) continue;
 
             const txReceipt = await provider.getTransactionReceipt(log.transactionHash);
             if (!txReceipt || txReceipt.status !== 1) continue;
-
-            let paymentTransfer: { payer: string; merchant: string; amount: bigint } | null = null;
-            for (const receiptLog of txReceipt.logs) {
-                if (receiptLog.address.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) continue;
-                try {
-                    const parsedTransfer = USDC_TRANSFER_FROM_INTERFACE.parseLog({
-                        topics: receiptLog.topics as string[],
-                        data: receiptLog.data,
-                    });
-                    if (parsedTransfer?.name === "Transfer") {
-                        paymentTransfer = {
-                            payer: parsedTransfer.args.from.toLowerCase(),
-                            merchant: parsedTransfer.args.to.toLowerCase(),
-                            amount: BigInt(parsedTransfer.args.value),
-                        };
-                        break;
-                    }
-                } catch {
-                    /* Ignore non-Transfer logs from the token contract. */
-                }
-            }
-            if (!paymentTransfer) continue;
 
             await supabaseAdmin
                 .from("receipts")
@@ -73,10 +52,10 @@ export async function POST(request: Request) {
                     receipt_id: receiptId,
                     tx_hash: log.transactionHash.toLowerCase(),
                     chain_id: Number((await provider.getNetwork()).chainId),
-                    memo_contract: ARC_MEMO_CONTRACT_ADDRESS.toLowerCase(),
-                    payer_address: paymentTransfer.payer,
-                    merchant_address: paymentTransfer.merchant,
-                    amount_usdc: paymentTransfer.amount.toString(),
+                    memo_contract: SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+                    payer_address: parsedDeposit.args.payer.toLowerCase(),
+                    merchant_address: parsedDeposit.args.merchant.toLowerCase(),
+                    amount_usdc: BigInt(parsedDeposit.args.amount).toString(),
                     memo_note: receiptId,
                     share_url: receiptUrl(receiptId, request.headers.get("origin")),
                     status: "CONFIRMED",

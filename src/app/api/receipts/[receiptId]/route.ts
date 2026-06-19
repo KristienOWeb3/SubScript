@@ -19,6 +19,7 @@ export async function GET(request: Request, { params }: RouteContext) {
     if (!viewerWallet) {
         return NextResponse.json({ error: "Private Receipt: Connect your wallet to authenticate." }, { status: 401 });
     }
+    const normalizedViewerWallet = viewerWallet.toLowerCase();
 
     try {
         const receipt = await prisma.receipt.findUnique({
@@ -39,10 +40,10 @@ export async function GET(request: Request, { params }: RouteContext) {
             .filter(Boolean);
 
         const isAuthorized = 
-            viewerWallet === payer ||
-            viewerWallet === merchant ||
-            viewerWallet === subscriptTreasury ||
-            invitedList.includes(viewerWallet);
+            normalizedViewerWallet === payer ||
+            normalizedViewerWallet === merchant ||
+            normalizedViewerWallet === subscriptTreasury ||
+            invitedList.includes(normalizedViewerWallet);
 
         if (!isAuthorized) {
             return NextResponse.json({ error: "Private Receipt: Unauthorized viewer." }, { status: 403 });
@@ -76,4 +77,3 @@ export async function GET(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
-

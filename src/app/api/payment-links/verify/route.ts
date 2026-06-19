@@ -50,12 +50,8 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { sendWebhookRequest } from "@/lib/webhooks";
-import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, ARC_MEMO_CONTRACT_ADDRESS, isProd } from "@/lib/contracts/constants";
-import { ARC_MEMO_INTERFACE, USDC_TRANSFER_FROM_INTERFACE, ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
-
-const ERC20_INTERFACE = new ethers.Interface([
-    "event Transfer(address indexed from, address indexed to, uint256 value)"
-]);
+import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
+import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
     "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
@@ -525,24 +521,32 @@ export async function POST(request: Request) {
                                 Object.assign(successPayload, { receiptId, shareUrl });
                             }
 
-                            await supabase
-                                .from("subscript_dms")
-                                .insert({
-                                    sender_address: paymentLink.merchant_address.toLowerCase(),
-                                    receiver_address: normalizedPayer,
-                                    message_type: "DEBIT_SUCCESS",
-                                    status: "PENDING",
-                                    amount_usdc: paymentLink.amount_usdc.toString(),
-                                    title: `Receipt: ${paymentLink.title}`,
-                                    description: [
-                                        `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
-                                        `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
-                                        `Transaction: ${normalizedTx}`,
-                                        !isCctp && isReceiptId(receiptId) ? `Receipt: ${receiptUrl(receiptId, request.headers.get("origin"))}` : null,
-                                    ].filter(Boolean).join("\n"),
-                                    tx_hash: normalizedTx,
-                                    payment_link_id: paymentLink.id,
-                                });
+                            const { data: payerSettings } = await supabase
+                                .from("customers")
+                                .select("push_enabled, debit_success_enabled")
+                                .eq("wallet_address", normalizedPayer)
+                                .maybeSingle();
+
+                            if (payerSettings?.push_enabled !== false && payerSettings?.debit_success_enabled !== false) {
+                                await supabase
+                                    .from("subscript_dms")
+                                    .insert({
+                                        sender_address: paymentLink.merchant_address.toLowerCase(),
+                                        receiver_address: normalizedPayer,
+                                        message_type: "DEBIT_SUCCESS",
+                                        status: "PENDING",
+                                        amount_usdc: paymentLink.amount_usdc.toString(),
+                                        title: `Receipt: ${paymentLink.title}`,
+                                        description: [
+                                            `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
+                                            `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
+                                            `Transaction: ${normalizedTx}`,
+                                            !isCctp && isReceiptId(receiptId) ? `Receipt: ${receiptUrl(receiptId, request.headers.get("origin"))}` : null,
+                                        ].filter(Boolean).join("\n"),
+                                        tx_hash: normalizedTx,
+                                        payment_link_id: paymentLink.id,
+                                    });
+                            }
 
                             await supabase
                                 .from("idempotency_keys")

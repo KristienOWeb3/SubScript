@@ -1,7 +1,6 @@
 import { Interface } from "ethers";
 import { encodeFunctionData, type Hex } from "viem";
-import { ARC_MEMO_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
-import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 
 export const ARC_MEMO_ABI = [
     {
@@ -68,6 +67,7 @@ export const ROUTER_DEPOSIT_ABI = [
 
 export const ROUTER_DEPOSIT_INTERFACE = new Interface([
     "function depositForMerchant(address _merchant, uint256 _amount, string _memo)",
+    "event DepositWithMemo(address indexed payer, address indexed merchant, uint256 amount, string memo)",
 ]);
 
 export function buildVaultDepositTx(args: {

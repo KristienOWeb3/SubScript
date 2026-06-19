@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCircleArcWalletChallenge, getCircleEmail, type CircleSocialAuth } from "@/lib/circle/client";
+import { prisma } from "@/lib/prisma";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -11,6 +12,7 @@ export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
         const circleAuth = body?.circleAuth;
+        const authIntent = body?.authIntent === "signin" ? "signin" : "signup";
         if (!isCircleSocialAuth(circleAuth)) {
             return NextResponse.json({ error: "Invalid Circle social auth payload" }, { status: 400 });
         }
@@ -18,6 +20,31 @@ export async function POST(request: Request) {
         const email = getCircleEmail(circleAuth);
         if (!email) {
             return NextResponse.json({ error: "Circle Google login did not return an email" }, { status: 400 });
+        }
+
+        const existingWallet = await prisma.userEmbeddedWallet.findUnique({
+            where: { email: email.toLowerCase() },
+            select: { walletAddress: true },
+        }).catch(() => null);
+        const existingRole = existingWallet
+            ? await prisma.accountRole.findUnique({
+                where: { address: existingWallet.walletAddress.toLowerCase() },
+                select: { role: true },
+            }).catch(() => null)
+            : null;
+
+        if (authIntent === "signup" && existingRole) {
+            return NextResponse.json({
+                error: "An account with this Google email already exists. Continue from Sign In.",
+                redirectTo: `/signin?email=${encodeURIComponent(email)}`,
+            }, { status: 409 });
+        }
+
+        if (authIntent === "signin" && !existingRole) {
+            return NextResponse.json({
+                error: "No SubScript account exists for this Google email yet. Create one from Sign Up.",
+                redirectTo: `/signup?email=${encodeURIComponent(email)}`,
+            }, { status: 404 });
         }
 
         const challenge = await createCircleArcWalletChallenge(circleAuth.userToken);

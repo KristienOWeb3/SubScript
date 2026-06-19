@@ -10,6 +10,27 @@ async function getAccountRole(address: string) {
     return roleRecord?.role === "ENTERPRISE" ? "ENTERPRISE" : "USER";
 }
 
+const unsupportedUserSettings = new Set([
+    "emailEnabled",
+    "securityShieldEnabled",
+    "securityMultiSigEnabled",
+]);
+
+const unsupportedMerchantSettings = new Set([
+    "pushEnabled",
+    "emailEnabled",
+    "payoutSettlementEnabled",
+    "disputeAlertsEnabled",
+    "securityMultiSigEnabled",
+]);
+
+function getUnsupportedSetting(body: Record<string, unknown>, unsupported: Set<string>) {
+    for (const field of unsupported) {
+        if (body[field] === true) return field;
+    }
+    return null;
+}
+
 export async function GET(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
@@ -42,9 +63,9 @@ export async function GET(request: Request) {
                         availableBalanceUsdc: BigInt(0),
                         reservedBalanceUsdc: BigInt(0),
                         pushEnabled: true,
-                        emailEnabled: true,
-                        payoutSettlementEnabled: true,
-                        disputeAlertsEnabled: true,
+                        emailEnabled: false,
+                        payoutSettlementEnabled: false,
+                        disputeAlertsEnabled: false,
                         securityMultiSigEnabled: false,
                     },
                 }).catch(() => null);
@@ -76,7 +97,7 @@ export async function GET(request: Request) {
                     data: {
                         walletAddress: normalizedUser,
                         pushEnabled: true,
-                        emailEnabled: true,
+                        emailEnabled: false,
                         debitSuccessEnabled: true,
                         expiryWarningEnabled: true,
                         securityShieldEnabled: false,
@@ -176,13 +197,18 @@ export async function POST(request: Request) {
         } = body;
 
         if (role === "ENTERPRISE") {
+            const unsupportedField = getUnsupportedSetting(body, unsupportedMerchantSettings);
+            if (unsupportedField) {
+                return NextResponse.json({ error: `${unsupportedField} is coming soon and cannot be enabled yet.` }, { status: 400 });
+            }
+
             const updateData: any = {};
             if (profilePic !== undefined) updateData.profilePic = profilePic;
-            if (pushEnabled !== undefined) updateData.pushEnabled = !!pushEnabled;
-            if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
-            if (payoutSettlementEnabled !== undefined) updateData.payoutSettlementEnabled = !!payoutSettlementEnabled;
-            if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = !!disputeAlertsEnabled;
-            if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = !!securityMultiSigEnabled;
+            if (pushEnabled !== undefined) updateData.pushEnabled = false;
+            if (emailEnabled !== undefined) updateData.emailEnabled = false;
+            if (payoutSettlementEnabled !== undefined) updateData.payoutSettlementEnabled = false;
+            if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = false;
+            if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
             if (payoutDestination !== undefined) updateData.payoutDestination = payoutDestination;
 
             await prisma.merchant.upsert({
@@ -193,24 +219,29 @@ export async function POST(request: Request) {
                     tier: "FREE",
                     availableBalanceUsdc: BigInt(0),
                     reservedBalanceUsdc: BigInt(0),
-                    pushEnabled: pushEnabled !== undefined ? !!pushEnabled : true,
-                    emailEnabled: emailEnabled !== undefined ? !!emailEnabled : true,
-                    payoutSettlementEnabled: payoutSettlementEnabled !== undefined ? !!payoutSettlementEnabled : true,
-                    disputeAlertsEnabled: disputeAlertsEnabled !== undefined ? !!disputeAlertsEnabled : true,
-                    securityMultiSigEnabled: securityMultiSigEnabled !== undefined ? !!securityMultiSigEnabled : false,
+                    pushEnabled: false,
+                    emailEnabled: false,
+                    payoutSettlementEnabled: false,
+                    disputeAlertsEnabled: false,
+                    securityMultiSigEnabled: false,
                     payoutDestination: payoutDestination || null,
                     profilePic: profilePic || null,
                 },
             });
         } else {
+            const unsupportedField = getUnsupportedSetting(body, unsupportedUserSettings);
+            if (unsupportedField) {
+                return NextResponse.json({ error: `${unsupportedField} is coming soon and cannot be enabled yet.` }, { status: 400 });
+            }
+
             const updateData: any = {};
             if (profilePic !== undefined) updateData.profilePic = profilePic;
             if (pushEnabled !== undefined) updateData.pushEnabled = !!pushEnabled;
-            if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
+            if (emailEnabled !== undefined) updateData.emailEnabled = false;
             if (debitSuccessEnabled !== undefined) updateData.debitSuccessEnabled = !!debitSuccessEnabled;
             if (expiryWarningEnabled !== undefined) updateData.expiryWarningEnabled = !!expiryWarningEnabled;
-            if (securityShieldEnabled !== undefined) updateData.securityShieldEnabled = !!securityShieldEnabled;
-            if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = !!securityMultiSigEnabled;
+            if (securityShieldEnabled !== undefined) updateData.securityShieldEnabled = false;
+            if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
 
             if (spendingLimitDaily !== undefined) {
                 updateData.spendingLimitDaily = spendingLimitDaily ? BigInt(spendingLimitDaily) : null;
@@ -229,11 +260,11 @@ export async function POST(request: Request) {
                     walletAddress: normalizedUser,
                     profilePic: profilePic || null,
                     pushEnabled: pushEnabled !== undefined ? !!pushEnabled : true,
-                    emailEnabled: emailEnabled !== undefined ? !!emailEnabled : true,
+                    emailEnabled: false,
                     debitSuccessEnabled: debitSuccessEnabled !== undefined ? !!debitSuccessEnabled : true,
                     expiryWarningEnabled: expiryWarningEnabled !== undefined ? !!expiryWarningEnabled : true,
-                    securityShieldEnabled: securityShieldEnabled !== undefined ? !!securityShieldEnabled : false,
-                    securityMultiSigEnabled: securityMultiSigEnabled !== undefined ? !!securityMultiSigEnabled : false,
+                    securityShieldEnabled: false,
+                    securityMultiSigEnabled: false,
                     spendingLimitDaily: spendingLimitDaily ? BigInt(spendingLimitDaily) : null,
                     spendingLimitWeekly: spendingLimitWeekly ? BigInt(spendingLimitWeekly) : null,
                     spendingLimitMonthly: spendingLimitMonthly ? BigInt(spendingLimitMonthly) : null,

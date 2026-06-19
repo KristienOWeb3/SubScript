@@ -15,7 +15,6 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS,
-    ARC_MEMO_CONTRACT_ADDRESS,
     ARC_TESTNET_CHAIN_ID,
     CCTP_CONFIG,
     ARC_CCTP_DOMAIN_ID,
