@@ -53,6 +53,59 @@ const MAX_PAYLOAD_SIZE = 1048576;
 
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+    const host = request.headers.get("host") || "";
+    const isProductionDomain = host.includes("subscriptonarc.com") || host.includes("subscriptonarc");
+
+    if (isProductionDomain) {
+        // 1. Redirect dashboard paths on the main landing domain to the dashboard subdomain
+        if (host === "subscriptonarc.com" || host === "www.subscriptonarc.com") {
+            if (pathname.startsWith("/dashboard")) {
+                const subUrl = request.nextUrl.clone();
+                subUrl.host = "dashboard.subscriptonarc.com";
+                if (pathname === "/dashboard") {
+                    subUrl.pathname = "/merchant";
+                } else if (pathname.startsWith("/dashboard/user")) {
+                    subUrl.pathname = pathname.replace(/^\/dashboard\/user/, "/user");
+                }
+                return NextResponse.redirect(subUrl);
+            }
+        }
+
+        // 2. Manage dashboard subdomain routing
+        if (host === "dashboard.subscriptonarc.com") {
+            const token = request.cookies.get("subscript_session_token")?.value;
+
+            // If not logged in, redirect to landing sign-in page
+            if (!token && pathname !== "/signin" && pathname !== "/signup") {
+                return NextResponse.redirect("https://subscriptonarc.com/signin");
+            }
+
+            if (pathname === "/") {
+                const userUrl = request.nextUrl.clone();
+                userUrl.pathname = "/user";
+                return NextResponse.redirect(userUrl);
+            }
+
+            if (pathname === "/signin" || pathname === "/signup") {
+                return NextResponse.redirect(`https://subscriptonarc.com${pathname}`);
+            }
+
+            // Rewrite /user paths to /dashboard/user internally
+            if (pathname.startsWith("/user")) {
+                const rewriteUrl = request.nextUrl.clone();
+                rewriteUrl.pathname = pathname.replace(/^\/user/, "/dashboard/user");
+                return NextResponse.rewrite(rewriteUrl);
+            }
+
+            // Rewrite /merchant paths to /dashboard internally
+            if (pathname.startsWith("/merchant")) {
+                const rewriteUrl = request.nextUrl.clone();
+                rewriteUrl.pathname = pathname.replace(/^\/merchant/, "/dashboard");
+                return NextResponse.rewrite(rewriteUrl);
+            }
+        }
+    }
+
     const requestHeaders = new Headers(request.headers);
     const country = (request as any).geo?.country || request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry") || "US";
     requestHeaders.set("x-user-country", country);

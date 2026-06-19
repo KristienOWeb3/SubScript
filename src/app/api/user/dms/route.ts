@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { parseUsdcToMicros } from "@/lib/dms/system";
 
 export async function GET(request: Request) {
     try {
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
             }
         });
 
-        /* Collect unique addresses to fetch aliases */
+        /* Collect unique addresses to fetch aliases and profile pics */
         const uniqueAddresses = new Set<string>();
         dms.forEach((d: any) => {
             uniqueAddresses.add(d.senderAddress.toLowerCase());
@@ -41,14 +42,29 @@ export async function GET(request: Request) {
             }
         });
 
+        const customers = await prisma.customer.findMany({
+            where: { walletAddress: { in: Array.from(uniqueAddresses) } },
+            select: { walletAddress: true, profilePic: true }
+        });
+
+        const merchants = await prisma.merchant.findMany({
+            where: { walletAddress: { in: Array.from(uniqueAddresses) } },
+            select: { walletAddress: true, profilePic: true }
+        });
+
         const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a.alias]));
+        const profilePicMap = new Map<string, string | null>();
+        customers.forEach((c: any) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
+        merchants.forEach((m: any) => profilePicMap.set(m.walletAddress.toLowerCase(), m.profilePic));
 
         const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
             senderName: aliasMap.get(dm.senderAddress.toLowerCase()) || dm.senderAddress,
+            senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
             receiverAddress: dm.receiverAddress,
             receiverName: aliasMap.get(dm.receiverAddress.toLowerCase()) || dm.receiverAddress,
+            receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,
             messageType: dm.messageType,
             status: dm.status,
             amountUsdc: dm.amountUsdc ? dm.amountUsdc.toString() : null,
@@ -83,6 +99,49 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
+        const { action } = sanitizedBody;
+
+        if (action === "log-transfer") {
+            const { receiverAddress, amountUsdc, txHash, title, description } = sanitizedBody;
+            if (typeof receiverAddress !== "string" || !receiverAddress.startsWith("0x") || receiverAddress.length !== 42) {
+                return NextResponse.json({ error: "Invalid receiver address" }, { status: 400 });
+            }
+            if (!amountUsdc || isNaN(Number(amountUsdc)) || Number(amountUsdc) <= 0) {
+                return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+            }
+            if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
+                return NextResponse.json({ error: "Invalid transaction hash" }, { status: 400 });
+            }
+
+            const amountMicros = parseUsdcToMicros(amountUsdc);
+
+            await prisma.customer.upsert({
+                where: { walletAddress: wallet.toLowerCase() },
+                update: {},
+                create: { walletAddress: wallet.toLowerCase() },
+            });
+            await prisma.customer.upsert({
+                where: { walletAddress: receiverAddress.toLowerCase() },
+                update: {},
+                create: { walletAddress: receiverAddress.toLowerCase() },
+            });
+
+            const dm = await prisma.subscriptDm.create({
+                data: {
+                    senderAddress: wallet.toLowerCase(),
+                    receiverAddress: receiverAddress.toLowerCase(),
+                    messageType: "PEER_TRANSFER",
+                    status: "APPROVED",
+                    amountUsdc: amountMicros,
+                    txHash,
+                    title: title || `${amountUsdc} USDC Sent`,
+                    description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
+                }
+            });
+
+            return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
+        }
+
         const { dmId, status } = sanitizedBody;
 
         if (typeof dmId !== "string" || !status) {

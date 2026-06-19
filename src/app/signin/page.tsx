@@ -13,6 +13,7 @@ import {
   Lock,
   MailCheck
 } from "lucide-react";
+import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
@@ -45,12 +46,12 @@ function SignInContent() {
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
     if (data.role) {
-      router.push(data.role === "USER" ? "/dashboard/user" : "/dashboard");
+      window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
       // If signed in but somehow role is missing, go to onboarding (signup role selector)
-      router.push("/signup");
+      window.location.href = getDashboardUrl("USER", "/signup");
     }
-  }, [router]);
+  }, []);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();

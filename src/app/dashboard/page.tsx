@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
+import { getDashboardUrl } from "@/utils/navigation";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
@@ -865,12 +866,12 @@ export default function DashboardPage() {
                 if (data.loggedIn && data.wallet) {
                     if (!data.role) {
                         console.warn("Missing account role, redirecting to signup");
-                        router.push("/signup");
+                        window.location.href = getDashboardUrl("USER", "/signup");
                         return;
                     }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        router.push("/dashboard/user");
+                        window.location.href = getDashboardUrl("USER", "/dashboard/user");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -911,12 +912,12 @@ export default function DashboardPage() {
                 if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
                     if (!data.role) {
                         console.warn("Missing account role, redirecting to signup");
-                        router.push("/signup");
+                        window.location.href = getDashboardUrl("USER", "/signup");
                         return;
                     }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        router.push("/dashboard/user");
+                        window.location.href = getDashboardUrl("USER", "/dashboard/user");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());

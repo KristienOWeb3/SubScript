@@ -18,22 +18,66 @@ function getDataUrlByteLength(value: string) {
 
 export async function GET(request: Request) {
     try {
-        const walletAddress = await getSessionWallet(request.headers);
-        if (!walletAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect wallet first" }, { status: 401 });
-        }
-
-        const normalizedUser = walletAddress.toLowerCase();
-        const role = await getAccountRole(normalizedUser) || "USER";
+        const { searchParams } = new URL(request.url);
+        const queryAddress = searchParams.get("address");
+        const queryAlias = searchParams.get("alias");
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
         }
 
+        // 1. Resolve alias to address
+        if (queryAlias) {
+            const normalizedAlias = queryAlias.toLowerCase().trim();
+            const { data, error } = await supabaseAdmin
+                .from("address_aliases")
+                .select("address, alias, is_anonymous")
+                .eq("alias", normalizedAlias)
+                .maybeSingle();
+
+            if (error) {
+                console.error("Error looking up alias:", error.message);
+                return NextResponse.json({ error: error.message }, { status: 500 });
+            }
+
+            if (!data) {
+                return NextResponse.json({ success: true, address: null, alias: normalizedAlias });
+            }
+
+            // Fetch profile picture for resolved address
+            const role = await getAccountRole(data.address) || "USER";
+            const profile = role === "ENTERPRISE"
+                ? await prisma.merchant.findUnique({ where: { walletAddress: data.address }, select: { profilePic: true, verified: true } }).catch(() => null)
+                : await prisma.customer.findUnique({ where: { walletAddress: data.address }, select: { profilePic: true } }).catch(() => null);
+
+            return NextResponse.json({
+                success: true,
+                address: data.address,
+                alias: data.alias,
+                is_anonymous: data.is_anonymous,
+                profile_pic: profile?.profilePic || null,
+                verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
+            });
+        }
+
+        // 2. Resolve address to alias
+        let targetAddress = queryAddress ? queryAddress.toLowerCase() : null;
+
+        // If no query parameters, fallback to session wallet
+        if (!targetAddress) {
+            const sessionWallet = await getSessionWallet(request.headers);
+            if (!sessionWallet) {
+                return NextResponse.json({ error: "Unauthorized: Connect wallet first" }, { status: 401 });
+            }
+            targetAddress = sessionWallet.toLowerCase();
+        }
+
+        const role = await getAccountRole(targetAddress) || "USER";
+
         const { data, error } = await supabaseAdmin
             .from("address_aliases")
             .select("address, alias, is_anonymous")
-            .eq("address", normalizedUser)
+            .eq("address", targetAddress)
             .maybeSingle();
 
         if (error) {
@@ -42,26 +86,14 @@ export async function GET(request: Request) {
         }
 
         const profile = role === "ENTERPRISE"
-            ? await prisma.merchant.findUnique({ where: { walletAddress: normalizedUser }, select: { profilePic: true, verified: true } }).catch(() => null)
-            : await prisma.customer.findUnique({ where: { walletAddress: normalizedUser }, select: { profilePic: true } }).catch(() => null);
-
-        if (!data) {
-            return NextResponse.json({
-                success: true,
-                address: normalizedUser,
-                alias: null,
-                is_anonymous: false,
-                role,
-                profile_pic: profile?.profilePic || null,
-                verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
-            }, { status: 200 });
-        }
+            ? await prisma.merchant.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true, verified: true } }).catch(() => null)
+            : await prisma.customer.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true } }).catch(() => null);
 
         return NextResponse.json({
             success: true,
-            address: data.address,
-            alias: data.alias,
-            is_anonymous: data.is_anonymous,
+            address: targetAddress,
+            alias: data?.alias || null,
+            is_anonymous: data?.is_anonymous || false,
             role,
             profile_pic: profile?.profilePic || null,
             verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,

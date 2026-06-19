@@ -4,6 +4,7 @@ import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
 import { getCookieValue } from "@/lib/auth";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { verifyCaptchaToken } from "@/lib/captcha";
 
 export async function POST(request: Request) {
     try {
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { address, signature, nonce } = sanitizedBody;
+        const { address, signature, nonce, captchaCode, captchaToken } = sanitizedBody;
         if (
             typeof address !== "string" ||
             !/^0x[a-fA-F0-9]{40}$/.test(address) ||
@@ -43,6 +44,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
         }
 
+        const role = await getAccountRole(address);
+
+        if (!role) {
+            // New wallet signup requires CAPTCHA validation
+            if (!verifyCaptchaToken(captchaToken, captchaCode)) {
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+            }
+        }
+
         const secretStr = process.env.JWT_SECRET;
         if (!secretStr) {
             return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
@@ -56,10 +66,7 @@ export async function POST(request: Request) {
             .setExpirationTime("30d")
             .sign(secret);
 
-        const role = await getAccountRole(address);
-
         const response = NextResponse.json({ success: true, wallet: address, role });
-
         
         response.cookies.set("subscript_session_token", jwt, {
             httpOnly: true,

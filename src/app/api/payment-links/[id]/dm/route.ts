@@ -28,6 +28,14 @@ export async function POST(request: Request, { params }: RouteContext) {
             receiverAddress: wallet,
         });
 
+        const host = request.headers.get("host") || "";
+        const isProduction = host.includes("subscriptonarc.com") || host.includes("subscriptonarc");
+        const protocol = request.headers.get("x-forwarded-proto") || "https";
+
+        const dashboardUrl = isProduction
+            ? `${protocol}://dashboard.subscriptonarc.com/user?tab=inbox&intent=${encodeURIComponent(id)}`
+            : `/dashboard/user?tab=inbox&intent=${encodeURIComponent(id)}`;
+
         return NextResponse.json({
             success: true,
             created,
@@ -36,7 +44,7 @@ export async function POST(request: Request, { params }: RouteContext) {
                 paymentLinkId: dm.paymentLinkId,
                 status: dm.status,
             },
-            dashboardUrl: `/dashboard/user?tab=inbox&intent=${encodeURIComponent(id)}`,
+            dashboardUrl,
         }, { status: created ? 201 : 200 });
     } catch (error: any) {
         const message = error?.message || "Failed to route payment request to DM";

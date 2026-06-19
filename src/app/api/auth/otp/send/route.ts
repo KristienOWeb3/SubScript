@@ -5,6 +5,8 @@ import { sanitizeInput } from "@/utils/security";
 
 import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
 
+import { verifyCaptchaToken } from "@/lib/captcha";
+
 const resend = new Resend(process.env.RESEND_API_KEY || "re_build_placeholder");
 
 export async function POST(request: Request) {
@@ -15,10 +17,16 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email } = sanitizedBody;
+        const { email, captchaCode, captchaToken, isSignup } = sanitizedBody;
 
         if (!email || typeof email !== "string" || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
             return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
+        }
+
+        if (isSignup) {
+            if (!verifyCaptchaToken(captchaToken, captchaCode)) {
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
+            }
         }
 
         const emailLower = email.toLowerCase();
