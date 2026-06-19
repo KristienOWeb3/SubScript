@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 export async function POST(request: Request) {
     try {
@@ -13,15 +13,17 @@ export async function POST(request: Request) {
 
         if (email) {
             const emailLower = email.toLowerCase().trim();
-            const wallet = await prisma.userEmbeddedWallet.findUnique({
-                where: { email: emailLower }
-            });
+            const wallet = await pgMaybeOne<{ wallet_address: string }>(
+                "select wallet_address from user_embedded_wallets where email = $1 limit 1",
+                [emailLower]
+            );
             if (wallet) {
-                const roleRecord = await prisma.accountRole.findUnique({
-                    where: { address: wallet.walletAddress.toLowerCase() }
-                });
+                const roleRecord = await pgMaybeOne<{ role: string }>(
+                    "select role from account_roles where address = $1 limit 1",
+                    [wallet.wallet_address.toLowerCase()]
+                );
                 if (roleRecord) {
-                    return NextResponse.json({ exists: true, wallet: wallet.walletAddress, role: roleRecord.role });
+                    return NextResponse.json({ exists: true, wallet: wallet.wallet_address, role: roleRecord.role });
                 }
             }
             return NextResponse.json({ exists: false });
@@ -29,9 +31,10 @@ export async function POST(request: Request) {
 
         if (address) {
             const addressLower = address.toLowerCase().trim();
-            const roleRecord = await prisma.accountRole.findUnique({
-                where: { address: addressLower }
-            });
+            const roleRecord = await pgMaybeOne<{ role: string }>(
+                "select role from account_roles where address = $1 limit 1",
+                [addressLower]
+            );
             if (roleRecord) {
                 return NextResponse.json({ exists: true, wallet: addressLower, role: roleRecord.role });
             }

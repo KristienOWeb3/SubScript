@@ -1,14 +1,35 @@
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 export type AccountRoleName = "USER" | "ENTERPRISE";
 
 export async function getAccountRole(address: string | null | undefined) {
     if (!address) return null;
-    const record = await prisma.accountRole.findUnique({
-        where: { address: address.toLowerCase() },
-        select: { role: true },
+    const normalizedAddress = address.toLowerCase();
+
+    if (supabaseAdmin) {
+        const { data, error } = await supabaseAdmin
+            .from("account_roles")
+            .select("role")
+            .eq("address", normalizedAddress)
+            .maybeSingle();
+
+        if (!error) {
+            return data?.role as AccountRoleName | undefined || null;
+        }
+
+        console.warn("Could not load account role from Supabase; falling back to pg:", error);
+    }
+
+    const record = await pgMaybeOne<{ role: AccountRoleName }>(
+        "select role from account_roles where address = $1 limit 1",
+        [normalizedAddress]
+    ).catch((error) => {
+        console.warn("Could not load account role from pg:", error);
+        return null;
     });
-    return record?.role as AccountRoleName | undefined || null;
+
+    return record?.role || null;
 }
 
 export async function requireAccountRole(address: string, expectedRole: AccountRoleName) {

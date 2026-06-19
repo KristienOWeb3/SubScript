@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { prisma } from "@/lib/prisma";
+import { getAccountRole } from "@/lib/accounts/roles";
 
 /* Users receive .sub names; enterprises receive business namespaces. */
 const USER_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
@@ -15,14 +16,6 @@ function getDataUrlByteLength(value: string) {
     return Math.floor((base64.length * 3) / 4);
 }
 
-async function getAccountRole(address: string) {
-    const roleRecord = await prisma.accountRole.findUnique({
-        where: { address },
-        select: { role: true },
-    }).catch(() => null);
-    return roleRecord?.role === "ENTERPRISE" ? "ENTERPRISE" : "USER";
-}
-
 export async function GET(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
@@ -31,7 +24,7 @@ export async function GET(request: Request) {
         }
 
         const normalizedUser = walletAddress.toLowerCase();
-        const role = await getAccountRole(normalizedUser);
+        const role = await getAccountRole(normalizedUser) || "USER";
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
@@ -97,7 +90,7 @@ export async function POST(request: Request) {
         }
 
         const { alias, isAnonymous, profilePic } = body;
-        const role = await getAccountRole(normalizedUser);
+        const role = await getAccountRole(normalizedUser) || "USER";
 
         if (typeof profilePic === "string") {
             if (!profilePic.startsWith("data:image/") || getDataUrlByteLength(profilePic) > MAX_PROFILE_PIC_BYTES) {

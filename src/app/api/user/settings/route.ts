@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-async function getAccountRole(address: string) {
-    const roleRecord = await prisma.accountRole.findUnique({
-        where: { address },
-        select: { role: true },
-    }).catch(() => null);
-    return roleRecord?.role === "ENTERPRISE" ? "ENTERPRISE" : "USER";
-}
+import { getAccountRole } from "@/lib/accounts/roles";
 
 const unsupportedUserSettings = new Set([
     "emailEnabled",
@@ -39,7 +32,7 @@ export async function GET(request: Request) {
         }
 
         const normalizedUser = walletAddress.toLowerCase();
-        const role = await getAccountRole(normalizedUser);
+        const role = await getAccountRole(normalizedUser) || "USER";
 
         // Fetch alias if it exists
         const aliasRecord = await prisma.addressAlias.findUnique({
@@ -171,7 +164,7 @@ export async function POST(request: Request) {
         }
 
         const normalizedUser = walletAddress.toLowerCase();
-        const role = await getAccountRole(normalizedUser);
+        const role = await getAccountRole(normalizedUser) || "USER";
 
         let body;
         try {

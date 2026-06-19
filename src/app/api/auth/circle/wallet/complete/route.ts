@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
-import { prisma } from "@/lib/prisma";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getAccountRole } from "@/lib/accounts/roles";
+import { withPgClient } from "@/lib/serverPg";
 import { listCircleUserWallets, selectArcEoaWallet, type CircleSocialAuth } from "@/lib/circle/client";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
@@ -19,9 +19,6 @@ export async function POST(request: Request) {
         if (!isCircleSocialAuth(circleAuth) || !email) {
             return NextResponse.json({ error: "Invalid completion payload" }, { status: 400 });
         }
-        if (!supabaseAdmin) {
-            return NextResponse.json({ error: "Supabase service client is not configured" }, { status: 500 });
-        }
 
         const wallets = await listCircleUserWallets(circleAuth.userToken);
         const wallet = selectArcEoaWallet(wallets);
@@ -30,28 +27,45 @@ export async function POST(request: Request) {
         }
 
         const walletAddress = wallet.address.toLowerCase();
-        await supabaseAdmin
-            .from("user_embedded_wallets")
-            .upsert({
-                email,
-                wallet_address: walletAddress,
-                encrypted_private_key: null,
-                provider: "circle_google",
-                circle_wallet_id: wallet.id || wallet.walletId || null,
-                circle_user_id: circleAuth.oAuthInfo?.socialUserUUID || null,
-                circle_blockchain: wallet.blockchain || process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET",
-                google_subject: circleAuth.oAuthInfo?.socialUserUUID || null,
-                updated_at: new Date().toISOString(),
-            }, { onConflict: "email" });
+        await withPgClient(async (client) => {
+            await client.query(
+                `insert into user_embedded_wallets (
+                    email,
+                    wallet_address,
+                    encrypted_private_key,
+                    provider,
+                    circle_wallet_id,
+                    circle_user_id,
+                    circle_blockchain,
+                    google_subject,
+                    updated_at
+                ) values ($1, $2, null, 'circle_google', $3, $4, $5, $6, now())
+                on conflict (email) do update set
+                    wallet_address = excluded.wallet_address,
+                    encrypted_private_key = null,
+                    provider = excluded.provider,
+                    circle_wallet_id = excluded.circle_wallet_id,
+                    circle_user_id = excluded.circle_user_id,
+                    circle_blockchain = excluded.circle_blockchain,
+                    google_subject = excluded.google_subject,
+                    updated_at = now()`,
+                [
+                    email,
+                    walletAddress,
+                    wallet.id || wallet.walletId || null,
+                    circleAuth.oAuthInfo?.socialUserUUID || null,
+                    wallet.blockchain || process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET",
+                    circleAuth.oAuthInfo?.socialUserUUID || null,
+                ]
+            );
+        });
 
         const secretStr = process.env.JWT_SECRET;
         if (!secretStr) {
             return NextResponse.json({ error: "JWT_SECRET is not configured" }, { status: 500 });
         }
 
-        const roleRecord = await prisma.accountRole.findUnique({
-            where: { address: walletAddress },
-        }).catch(() => null);
+        const role = await getAccountRole(walletAddress);
 
         const jwt = await new SignJWT({
             address: walletAddress,
@@ -68,7 +82,7 @@ export async function POST(request: Request) {
             wallet: walletAddress,
             email,
             provider: "circle_google",
-            role: roleRecord?.role || null,
+            role,
         });
 
         response.cookies.set("subscript_session_token", jwt, {

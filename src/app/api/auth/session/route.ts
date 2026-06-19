@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
-import { prisma } from "@/lib/prisma";
+import { getAccountRole } from "@/lib/accounts/roles";
 import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
 
 export async function GET(request: Request) {
@@ -55,17 +55,7 @@ export async function GET(request: Request) {
             }
         }
 
-        let role: string | null = null;
-        try {
-            const roleRecord = await prisma.accountRole.findUnique({
-                where: { address: wallet.toLowerCase() }
-            });
-            if (roleRecord) {
-                role = roleRecord.role;
-            }
-        } catch (e) {
-            console.warn("Could not load role from db:", e);
-        }
+        const role = await getAccountRole(wallet);
 
         return NextResponse.json({ 
             loggedIn: true, 

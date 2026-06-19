@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCircleArcWalletChallenge, getCircleEmail, type CircleSocialAuth } from "@/lib/circle/client";
-import { prisma } from "@/lib/prisma";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -22,16 +22,18 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Circle Google login did not return an email" }, { status: 400 });
         }
 
-        const existingWallet = await prisma.userEmbeddedWallet.findUnique({
-            where: { email: email.toLowerCase() },
-            select: { walletAddress: true },
-        }).catch(() => null);
-        const existingRole = existingWallet
-            ? await prisma.accountRole.findUnique({
-                where: { address: existingWallet.walletAddress.toLowerCase() },
-                select: { role: true },
-            }).catch(() => null)
-            : null;
+        const existingWallet = await pgMaybeOne<{ wallet_address: string }>(
+            "select wallet_address from user_embedded_wallets where email = $1 limit 1",
+            [email.toLowerCase()]
+        );
+
+        let existingRole: { role: string } | null = null;
+        if (existingWallet) {
+            existingRole = await pgMaybeOne<{ role: string }>(
+                "select role from account_roles where address = $1 limit 1",
+                [existingWallet.wallet_address.toLowerCase()]
+            );
+        }
 
         if (authIntent === "signup" && existingRole) {
             return NextResponse.json({

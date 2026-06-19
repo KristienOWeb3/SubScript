@@ -3,7 +3,7 @@ import { verifyMessage } from "viem";
 import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
 import { getCookieValue } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getAccountRole } from "@/lib/accounts/roles";
 
 export async function POST(request: Request) {
     try {
@@ -56,17 +56,7 @@ export async function POST(request: Request) {
             .setExpirationTime("30d")
             .sign(secret);
 
-        let role: string | null = null;
-        try {
-            const roleRecord = await prisma.accountRole.findUnique({
-                where: { address: address.toLowerCase() }
-            });
-            if (roleRecord) {
-                role = roleRecord.role;
-            }
-        } catch (e) {
-            console.warn("Could not query role:", e);
-        }
+        const role = await getAccountRole(address);
 
         const response = NextResponse.json({ success: true, wallet: address, role });
 
