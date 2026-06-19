@@ -34,6 +34,8 @@ function SignInContent() {
   const [sandboxOtp, setSandboxOtp] = useState<string | null>(null);
   const [siweLoading, setSiweLoading] = useState(false);
   const [siweError, setSiweError] = useState<string | null>(null);
+  const [walletAuthRequested, setWalletAuthRequested] = useState(false);
+  const [walletMissingAccount, setWalletMissingAccount] = useState(false);
 
   useEffect(() => {
     if (initialEmail) {
@@ -127,12 +129,18 @@ function SignInContent() {
   };
 
   const handleConnectWallet = () => {
+    setWalletAuthRequested(true);
+    setWalletMissingAccount(false);
+    setSiweError(null);
     const injectedConnector = connectors.find((c) => c.id === "injected");
-    if (injectedConnector) {
+    if (isConnected && address) {
+      return;
+    } else if (injectedConnector) {
       connect({ connector: injectedConnector });
     } else if (connectors.length > 0) {
       connect({ connector: connectors[0] });
     } else {
+      setWalletAuthRequested(false);
       setSiweError("No injected Web3 wallet found. Please install Metamask or Rabby.");
     }
   };
@@ -141,6 +149,7 @@ function SignInContent() {
     if (!isConnected || !address || siweLoading) return;
     setSiweLoading(true);
     setSiweError(null);
+    setWalletMissingAccount(false);
 
     try {
       // Check if wallet address already has an account
@@ -151,10 +160,7 @@ function SignInContent() {
       });
       const checkData = await checkRes.json();
       if (!checkData.exists) {
-        setSiweError("No SubScript account found for this wallet. Redirecting to Sign Up...");
-        setTimeout(() => {
-          router.push("/signup");
-        }, 2000);
+        setWalletMissingAccount(true);
         return;
       }
 
@@ -183,14 +189,15 @@ function SignInContent() {
       setSiweError(err?.message || "Error signing SIWE verification message.");
     } finally {
       setSiweLoading(false);
+      setWalletAuthRequested(false);
     }
   }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading]);
 
   useEffect(() => {
-    if (isConnected && address) {
+    if (walletAuthRequested && isConnected && address) {
       performSiwe();
     }
-  }, [isConnected, address, performSiwe]);
+  }, [walletAuthRequested, isConnected, address, performSiwe]);
 
   return (
     <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
@@ -262,6 +269,41 @@ function SignInContent() {
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                   <span className="leading-relaxed">{siweError}</span>
+                </div>
+              )}
+
+              {walletMissingAccount && address && (
+                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                  <div className="flex items-start gap-3">
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-white uppercase tracking-wider">No account found</p>
+                      <p className="leading-relaxed">
+                        This wallet is connected, but it does not have a SubScript account yet. Choose your next step.
+                      </p>
+                      <p className="font-mono text-[10px] text-white/40 break-all">{address}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push("/signup")}
+                      className="py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
+                    >
+                      Create Account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWalletMissingAccount(false);
+                        setAuthMethod("email");
+                      }}
+                      className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                    >
+                      Use Email
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

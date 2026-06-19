@@ -35,6 +35,8 @@ export default function SignupPage() {
   const [sandboxOtp, setSandboxOtp] = useState<string | null>(null);
   const [siweLoading, setSiweLoading] = useState(false);
   const [siweError, setSiweError] = useState<string | null>(null);
+  const [walletAuthRequested, setWalletAuthRequested] = useState(false);
+  const [walletSignupPrompt, setWalletSignupPrompt] = useState(false);
 
   /* Role selection states */
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -136,20 +138,27 @@ export default function SignupPage() {
   };
 
   const handleConnectWallet = () => {
+    setWalletAuthRequested(true);
+    setWalletSignupPrompt(false);
+    setSiweError(null);
     const injectedConnector = connectors.find((c) => c.id === "injected");
-    if (injectedConnector) {
+    if (isConnected && address) {
+      return;
+    } else if (injectedConnector) {
       connect({ connector: injectedConnector });
     } else if (connectors.length > 0) {
       connect({ connector: connectors[0] });
     } else {
+      setWalletAuthRequested(false);
       setSiweError("No injected Web3 wallet found. Please install Metamask or Rabby.");
     }
   };
 
-  const performSiwe = useCallback(async () => {
+  const performSiwe = useCallback(async (confirmedCreate = false) => {
     if (!isConnected || !address || siweLoading) return;
     setSiweLoading(true);
     setSiweError(null);
+    setWalletSignupPrompt(false);
 
     try {
       // 1. Check if wallet already has an account
@@ -167,11 +176,9 @@ export default function SignupPage() {
         return;
       }
 
-      // 2. Ask user if they want to create an account
-      const confirmCreate = window.confirm("No SubScript account found for this wallet. Would you like to create a new account?");
-      if (!confirmCreate) {
-        setSiweError("Signup canceled. You can connect a different wallet or continue with email.");
-        setSiweLoading(false);
+      // 2. Let the user choose instead of spawning a browser confirm loop.
+      if (!confirmedCreate) {
+        setWalletSignupPrompt(true);
         return;
       }
 
@@ -200,6 +207,7 @@ export default function SignupPage() {
       setSiweError(err?.message || "Error signing SIWE verification message.");
     } finally {
       setSiweLoading(false);
+      setWalletAuthRequested(false);
     }
   }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading]);
 
@@ -227,10 +235,10 @@ export default function SignupPage() {
   };
 
   useEffect(() => {
-    if (isConnected && address) {
+    if (walletAuthRequested && isConnected && address) {
       performSiwe();
     }
-  }, [isConnected, address, performSiwe]);
+  }, [walletAuthRequested, isConnected, address, performSiwe]);
 
   if (showRoleSelector) {
     return (
@@ -437,6 +445,51 @@ export default function SignupPage() {
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                   <span className="leading-relaxed">{siweError}</span>
+                </div>
+              )}
+
+              {walletSignupPrompt && address && (
+                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                  <div className="flex items-start gap-3">
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-white uppercase tracking-wider">Wallet detected</p>
+                      <p className="leading-relaxed">
+                        No SubScript account exists for this wallet yet. Choose what you want to do next.
+                      </p>
+                      <p className="font-mono text-[10px] text-white/40 break-all">{address}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => performSiwe(true)}
+                      disabled={siweLoading}
+                      className="w-full py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
+                    >
+                      {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
+                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWalletSignupPrompt(false);
+                          setAuthMethod("email");
+                        }}
+                        className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                      >
+                        Use Email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push("/signin")}
+                        className="py-3 bg-white/5 border border-white/10 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white"
+                      >
+                        Sign In
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
