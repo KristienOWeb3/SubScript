@@ -1,33 +1,32 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import posthog from "posthog-js";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, useConnect, useSignMessage } from "wagmi";
 import { 
   Loader2, 
   Mail, 
   Wallet, 
-  CheckCircle, 
   AlertCircle, 
   ArrowRight,
-  User,
-  Building2,
   Lock,
   MailCheck
 } from "lucide-react";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
-export default function SignupPage() {
+function SignInContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialEmail = searchParams.get("email") || "";
+
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
 
   const [authMethod, setAuthMethod] = useState<"select" | "email">("select");
-  const [activeMerchantAddress, setActiveMerchantAddress] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
@@ -36,18 +35,18 @@ export default function SignupPage() {
   const [siweLoading, setSiweLoading] = useState(false);
   const [siweError, setSiweError] = useState<string | null>(null);
 
-  /* Role selection states */
-  const [showRoleSelector, setShowRoleSelector] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE" | null>(null);
-  const [roleLoading, setRoleLoading] = useState(false);
-  const [roleError, setRoleError] = useState<string | null>(null);
+  useEffect(() => {
+    if (initialEmail) {
+      setAuthMethod("email");
+    }
+  }, [initialEmail]);
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
-    setActiveMerchantAddress(data.wallet);
     if (data.role) {
       router.push(data.role === "USER" ? "/dashboard/user" : "/dashboard");
     } else {
-      setShowRoleSelector(true);
+      // If signed in but somehow role is missing, go to onboarding (signup role selector)
+      router.push("/signup");
     }
   }, [router]);
 
@@ -62,22 +61,22 @@ export default function SignupPage() {
     setSandboxOtp(null);
 
     try {
-      // 1. Check if email already has an account
+      // Check if email has an account
       const checkRes = await fetch("/api/auth/check-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
       const checkData = await checkRes.json();
-      if (checkData.exists) {
-        setOtpError("An account with this email already exists. Redirecting to Sign In...");
+      if (!checkData.exists) {
+        setOtpError("No account found with this email. Redirecting to Sign Up...");
         setTimeout(() => {
-          router.push(`/signin?email=${encodeURIComponent(email)}`);
+          router.push(`/signup?email=${encodeURIComponent(email)}`);
         }, 2000);
         return;
       }
 
-      // 2. Send OTP
+      // Send OTP
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -144,30 +143,22 @@ export default function SignupPage() {
     setSiweError(null);
 
     try {
-      // 1. Check if wallet already has an account
+      // Check if wallet address already has an account
       const checkRes = await fetch("/api/auth/check-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address }),
       });
       const checkData = await checkRes.json();
-      if (checkData.exists) {
-        setSiweError("This wallet already has an account. Redirecting to Sign In...");
+      if (!checkData.exists) {
+        setSiweError("No SubScript account found for this wallet. Redirecting to Sign Up...");
         setTimeout(() => {
-          router.push("/signin");
+          router.push("/signup");
         }, 2000);
         return;
       }
 
-      // 2. Ask user if they want to create an account
-      const confirmCreate = window.confirm("No SubScript account found for this wallet. Would you like to create a new account?");
-      if (!confirmCreate) {
-        setSiweError("Signup canceled. You can connect a different wallet or continue with email.");
-        setSiweLoading(false);
-        return;
-      }
-
-      // 3. Continue SIWE if they want to create an account
+      // Verify wallet ownership via SIWE
       const nonceRes = await fetch("/api/auth/nonce");
       const nonceData = await nonceRes.json();
       if (!nonceRes.ok || !nonceData.nonce) {
@@ -195,146 +186,11 @@ export default function SignupPage() {
     }
   }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading]);
 
-  const handleRoleSelection = async () => {
-    if (!selectedRole) return;
-    setRoleLoading(true);
-    setRoleError(null);
-    try {
-      const res = await fetch("/api/auth/register-role", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: selectedRole }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        router.push(selectedRole === "USER" ? "/dashboard/user" : "/dashboard");
-      } else {
-        setRoleError(data.error || "Failed to register account type.");
-      }
-    } catch (err) {
-      setRoleError("Network error registering account type.");
-    } finally {
-      setRoleLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (isConnected && address) {
       performSiwe();
     }
   }, [isConnected, address, performSiwe]);
-
-  if (showRoleSelector) {
-    return (
-      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
-        <AnimatedGradientBg />
-        
-        <div className="relative z-10 w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">onboarding</span>
-            </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
-          </div>
-
-          <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
-            <div className="text-center space-y-1.5">
-              <h2 className="text-base font-bold uppercase tracking-wider text-white">Select Account Type</h2>
-              <p className="text-xs text-white/50 leading-relaxed">
-                Choose how you intend to interact with the SubScript protocol.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {/* Individual User Option */}
-              <button
-                onClick={() => setSelectedRole("USER")}
-                className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
-                  selectedRole === "USER"
-                    ? "border-[#ccff00] bg-[#ccff00]/5 shadow-[0_0_20px_rgba(204,255,0,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#ccff00]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(204,255,0,0.08)]"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-xl border transition-colors ${
-                    selectedRole === "USER"
-                      ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-[#ccff00]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#ccff00]"
-                  }`}>
-                    <User className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "USER" ? "text-[#ccff00]" : "text-white"
-                    }`}>
-                      Individual User
-                    </h3>
-                    <span className="text-[9px] text-[#ccff00] uppercase font-bold tracking-wider">Routes to User Hub</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  Subscribe to web3 APIs, manage recurring allowance streams, view payment history, and connect with merchants.
-                </p>
-              </button>
-
-              {/* Enterprise Merchant Option */}
-              <button
-                onClick={() => setSelectedRole("ENTERPRISE")}
-                className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
-                  selectedRole === "ENTERPRISE"
-                    ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`p-2.5 rounded-xl border transition-colors ${
-                    selectedRole === "ENTERPRISE"
-                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#00d2b4]"
-                  }`}>
-                    <Building2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "ENTERPRISE" ? "text-[#00d2b4]" : "text-white"
-                    }`}>
-                      Enterprise Merchant
-                    </h3>
-                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Routes to Control Center</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
-                </p>
-              </button>
-            </div>
-
-            {roleError && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{roleError}</span>
-              </div>
-            )}
-
-            <button
-              onClick={handleRoleSelection}
-              disabled={!selectedRole || roleLoading}
-              className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 transition-all font-bold text-xs uppercase tracking-wider text-black ${
-                !selectedRole 
-                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5" 
-                  : selectedRole === "USER"
-                    ? "bg-[#ccff00] hover:bg-[#ccff00]/85 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
-                    : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
-              }`}
-            >
-              {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Complete Signup"}
-              {!roleLoading && <ArrowRight className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
@@ -344,50 +200,27 @@ export default function SignupPage() {
         
         <div className="text-center mb-8">
           <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signup</span>
+            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signin</span>
           </h1>
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
 
         <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
-          {/* Onboarding Progress Indicator */}
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
-            {[{ step: 1, label: "Method" }, { step: 2, label: "Verify" }, { step: 3, label: "Access" }].map((s) => {
-              const currentStep = authMethod === "select" ? 1 : (!otpSent && authMethod === "email" ? 2 : 3);
-              const isCompleted = s.step < currentStep;
-              const isActive = s.step === currentStep;
-              return (
-                <div key={s.step} className="flex items-center gap-2">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
-                    isCompleted 
-                      ? "bg-[#ccff00] text-black" 
-                      : isActive 
-                        ? "bg-[#ccff00]/25 text-[#ccff00] border border-[#ccff00]/40 shadow-[0_0_10px_rgba(204,255,0,0.2)]" 
-                        : "bg-white/5 text-white/30 border border-white/10"
-                  }`}>
-                    {isCompleted ? "✓" : s.step}
-                  </div>
-                  <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                    isActive ? "text-[#ccff00]" : isCompleted ? "text-white/80" : "text-white/30"
-                  }`}>
-                    {s.label}
-                  </span>
-                  {s.step < 3 && <div className="w-6 h-[1px] bg-white/10 hidden sm:block" />}
-                </div>
-              );
-            })}
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#ccff00]">Authenticate</span>
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-white/40">Secure Sign In</span>
           </div>
 
           {authMethod === "select" ? (
             <div className="space-y-4">
               <p className="text-center text-xs text-white/50 leading-relaxed px-2">
-                Configure your payout wallet and secure your connection to the subscription system.
+                Connect your registered payout wallet or email to access your SubScript dashboard.
               </p>
 
               <button
                 onClick={() => {
-                  posthog.capture("signup_method_selected", { method: "email" });
+                  posthog.capture("signin_method_selected", { method: "email" });
                   setAuthMethod("email");
                 }}
                 className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
@@ -396,7 +229,7 @@ export default function SignupPage() {
                 Continue with Email
               </button>
 
-              <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+              <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
                 <CircleGoogleWalletButton />
               </div>
 
@@ -411,7 +244,7 @@ export default function SignupPage() {
 
               <button
                 onClick={() => {
-                  posthog.capture("signup_method_selected", { method: "wallet" });
+                  posthog.capture("signin_method_selected", { method: "wallet" });
                   handleConnectWallet();
                 }}
                 disabled={isConnecting || siweLoading}
@@ -438,7 +271,7 @@ export default function SignupPage() {
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
                     <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-                      Email Address
+                      Registered Email
                     </label>
                     <div className="relative">
                       <input
@@ -521,7 +354,7 @@ export default function SignupPage() {
                       disabled={otpLoading}
                       className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
                     >
-                      {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
+                      {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Sign In"}
                     </button>
                   </div>
                 </form>
@@ -529,25 +362,32 @@ export default function SignupPage() {
             </div>
           )}
 
-          <div className="text-center pt-2 space-y-4">
-            <p className="text-[10px] text-white/30 leading-relaxed">
-              By proceeding, you secure your connection to the stablecoin subscription system.
+          <div className="text-center pt-4 border-t border-white/5">
+            <p className="text-xs text-white/40">
+              Don't have an account?{" "}
+              <button 
+                onClick={() => router.push("/signup")} 
+                className="text-[#ccff00] font-bold hover:underline"
+              >
+                Sign Up
+              </button>
             </p>
-            <div className="pt-2 border-t border-white/5">
-              <p className="text-xs text-white/40">
-                Already have an account?{" "}
-                <button 
-                  onClick={() => router.push("/signin")} 
-                  className="text-[#ccff00] font-bold hover:underline"
-                >
-                  Sign In
-                </button>
-              </p>
-            </div>
           </div>
 
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#ccff00]" />
+      </div>
+    }>
+      <SignInContent />
+    </Suspense>
   );
 }
