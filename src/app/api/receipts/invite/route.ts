@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
@@ -21,24 +21,18 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing or invalid inviteAddress" }, { status: 400 });
         }
 
-        if (!supabaseAdmin) {
-            return NextResponse.json({ error: "Supabase client not initialized" }, { status: 500 });
-        }
-
         // Fetch receipt
-        const { data: receipt, error: fetchErr } = await supabaseAdmin
-            .from("receipts")
-            .select("*")
-            .eq("receipt_id", receiptId)
-            .maybeSingle();
+        const receipt = await prisma.receipt.findUnique({
+            where: { receiptId }
+        });
 
-        if (fetchErr || !receipt) {
+        if (!receipt) {
             return NextResponse.json({ error: "Receipt not found" }, { status: 404 });
         }
 
         const callerLower = walletAddress.toLowerCase();
-        const payerLower = receipt.payer_address.toLowerCase();
-        const merchantLower = receipt.merchant_address.toLowerCase();
+        const payerLower = receipt.payerAddress.toLowerCase();
+        const merchantLower = receipt.merchantAddress.toLowerCase();
 
         // Only payer or merchant can invite others
         if (callerLower !== payerLower && callerLower !== merchantLower) {
@@ -48,7 +42,7 @@ export async function POST(request: Request) {
         const inviteAddressLower = inviteAddress.toLowerCase();
 
         // Add to invited list
-        let currentInvited = receipt.invited_addresses || "";
+        let currentInvited = receipt.invitedAddresses || "";
         const invitedList = currentInvited
             .split(",")
             .map((addr: string) => addr.trim().toLowerCase())
@@ -61,17 +55,13 @@ export async function POST(request: Request) {
         invitedList.push(inviteAddressLower);
         const updatedInvited = invitedList.join(",");
 
-        const { error: updateErr } = await supabaseAdmin
-            .from("receipts")
-            .update({
-                invited_addresses: updatedInvited,
-                updated_at: new Date().toISOString()
-            })
-            .eq("receipt_id", receiptId);
-
-        if (updateErr) {
-            return NextResponse.json({ error: updateErr.message }, { status: 500 });
-        }
+        await prisma.receipt.update({
+            where: { receiptId },
+            data: {
+                invitedAddresses: updatedInvited,
+                updatedAt: new Date()
+            }
+        });
 
         return NextResponse.json({ success: true, message: "Successfully invited viewer" }, { status: 200 });
 
@@ -80,3 +70,4 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
+

@@ -184,6 +184,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     function withdraw() external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
         require(balance > 0, "No balance to withdraw");
+        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
 
         merchantBalances[msg.sender] = 0;
 
@@ -210,6 +211,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     function withdrawTo(address _recipient) external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
         require(balance > 0, "No balance to withdraw");
+        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
         require(_recipient != address(0), "Invalid recipient address");
 
         merchantBalances[msg.sender] = 0;

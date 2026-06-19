@@ -30,6 +30,7 @@ export default function WithdrawModal({
     const [payoutMode, setPayoutMode] = useState<"single" | "batch">("single");
     const [destinationType, setDestinationType] = useState<"connected" | "configured" | "custom">("connected");
     const [customAddress, setCustomAddress] = useState("");
+    const [confirmCustomAddress, setConfirmCustomAddress] = useState("");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     /* Manual entry state for batch mode */
@@ -153,6 +154,15 @@ export default function WithdrawModal({
                 setErrorMsg("Please enter a valid 42-character Ethereum address (starting with 0x).");
                 return;
             }
+            if (target.toLowerCase() !== confirmCustomAddress.trim().toLowerCase()) {
+                setErrorMsg("Confirmation address does not match. Please verify both inputs.");
+                return;
+            }
+        }
+
+        if (vaultBalance < 1.0) {
+            setErrorMsg("Minimum withdrawal amount is 1.00 USDC.");
+            return;
         }
 
         try {
@@ -215,6 +225,7 @@ export default function WithdrawModal({
         setErrorMsg(null);
         setDestinationType("connected");
         setCustomAddress("");
+        setConfirmCustomAddress("");
         setBatchText("");
         setBatchRecipients([]);
         setBatchTotalMicro(BigInt(0));
@@ -375,7 +386,7 @@ export default function WithdrawModal({
                                                 initial={{ height: 0, opacity: 0 }}
                                                 animate={{ height: "auto", opacity: 1 }}
                                                 exit={{ height: 0, opacity: 0 }}
-                                                className="overflow-hidden"
+                                                className="overflow-hidden space-y-2.5"
                                             >
                                                 <input
                                                     type="text"
@@ -384,11 +395,21 @@ export default function WithdrawModal({
                                                     onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); }}
                                                     className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
                                                 />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Confirm target wallet address (0x...)"
+                                                    value={confirmCustomAddress}
+                                                    onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); }}
+                                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
+                                                />
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
                                 </div>
 
+                                {vaultBalance < 1.0 && (
+                                    <p className="text-amber-500 text-[10px] mb-4 font-semibold">Minimum withdrawal amount is 1.00 USDC.</p>
+                                )}
                                 {errorMsg && (
                                     <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
                                 )}
@@ -396,7 +417,7 @@ export default function WithdrawModal({
                                 <button
                                     type="button"
                                     onClick={handleSingleConfirm}
-                                    disabled={isWithdrawing || vaultBalance <= 0}
+                                    disabled={isWithdrawing || vaultBalance < 1.0}
                                     className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
                                 >
                                     {isWithdrawing ? (
