@@ -863,6 +863,11 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn && data.wallet) {
+                    if (!data.role) {
+                        console.warn("Missing account role, redirecting to signup");
+                        router.push("/signup");
+                        return;
+                    }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
                         router.push("/dashboard/user");
@@ -904,6 +909,11 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
+                    if (!data.role) {
+                        console.warn("Missing account role, redirecting to signup");
+                        router.push("/signup");
+                        return;
+                    }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
                         router.push("/dashboard/user");
