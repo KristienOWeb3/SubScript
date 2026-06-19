@@ -125,5 +125,4 @@ function createPrismaProxy(client: any): any {
     });
 }
 
-export const prisma = createPrismaProxy(rawPrisma);
-
+export const prisma: PrismaClient = createPrismaProxy(rawPrisma);

@@ -389,6 +389,7 @@ model Receipt {
   blockNumber          BigInt?   @map("block_number")
   logIndex             Int?      @map("log_index")
   confirmedAt          DateTime? @map("confirmed_at")
+  invitedAddresses     String    @default("") @map("invited_addresses")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at")
 

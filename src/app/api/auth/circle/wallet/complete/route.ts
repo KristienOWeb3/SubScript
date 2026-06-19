@@ -44,14 +44,6 @@ export async function POST(request: Request) {
                 updated_at: new Date().toISOString(),
             }, { onConflict: "email" });
 
-        await supabaseAdmin
-            .from("merchants")
-            .upsert({
-                wallet_address: walletAddress,
-                tier: "FREE",
-                updated_at: new Date().toISOString(),
-            }, { onConflict: "wallet_address" });
-
         const secretStr = process.env.JWT_SECRET;
         if (!secretStr) {
             return NextResponse.json({ error: "JWT_SECRET is not configured" }, { status: 500 });

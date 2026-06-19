@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { decryptPrivateKey } from "@/lib/crypto";
 import { getSessionWallet } from "@/lib/auth";
 import {
+    CONFIDENTIAL_CONTRACT_ADDRESS,
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
     SUBSCRIPT_ROUTER_ADDRESS,
@@ -72,6 +73,16 @@ const SUBSCRIPT_ABI = [
         stateMutability: "view",
         inputs: [{ name: "", type: "address" }],
         outputs: [{ name: "", type: "uint256" }]
+    }
+];
+
+const CONFIDENTIAL_ABI = [
+    {
+        type: "function",
+        name: "registerViewKey",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
+        outputs: []
     }
 ];
 
@@ -212,6 +223,31 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "configurePayoutDestination";
                 finalArgs = [payoutAddress];
+                break;
+            }
+            case "registerViewKey": {
+                const { viewKeyHash } = args;
+                if (!viewKeyHash || typeof viewKeyHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(viewKeyHash)) {
+                    return NextResponse.json({ error: "Invalid view key hash. Expected bytes32 hex." }, { status: 400 });
+                }
+
+                const { data: merchantData, error: merchantErr } = await supabase
+                    .from("merchants")
+                    .select("tier")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
+
+                if (merchantErr) {
+                    console.error(`[execute-tx] Failed to query merchant for view key registration: ${merchantErr.message}`);
+                }
+                if (!merchantData || merchantData.tier === "FREE") {
+                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required to register a view key." }, { status: 403 });
+                }
+
+                contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
+                contractAbi = CONFIDENTIAL_ABI;
+                functionName = "registerViewKey";
+                finalArgs = [viewKeyHash];
                 break;
             }
             default:

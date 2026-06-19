@@ -4,12 +4,17 @@ import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { parseUsdcToMicros, formatUsdcFromMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 export async function POST(request: Request) {
     try {
         const requester = await getSessionWallet(request.headers);
         if (!requester) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const roleCheck = await requireAccountRole(requester, "USER");
+        if (!roleCheck.ok) {
+            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
         const body = await request.json().catch(() => null);

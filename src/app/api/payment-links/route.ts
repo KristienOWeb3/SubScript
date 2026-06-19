@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ProtocolConfig } from "@/lib/payments/config";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 /* Define parsing helper for request body */
 async function parseBody(request: Request) {
@@ -17,6 +18,10 @@ export async function GET(request: Request) {
         const merchantAddress = await getSessionWallet(request.headers);
         if (!merchantAddress) {
             return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        }
+        const roleCheck = await requireAccountRole(merchantAddress, "ENTERPRISE");
+        if (!roleCheck.ok) {
+            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -101,6 +106,10 @@ export async function POST(request: Request) {
         const merchantAddress = await getSessionWallet(request.headers);
         if (!merchantAddress) {
             return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        }
+        const roleCheck = await requireAccountRole(merchantAddress, "ENTERPRISE");
+        if (!roleCheck.ok) {
+            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
         const body = await parseBody(request);

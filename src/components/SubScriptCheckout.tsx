@@ -17,6 +17,8 @@ import {
 import { arcTestnet } from "@/lib/wagmi";
 import { 
   ARC_TESTNET_CHAIN_ID,
+  ARC_CCTP_DOMAIN_ID,
+  ARC_MESSAGE_TRANSMITTER_ADDRESS,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
   USDC_NATIVE_GAS_ADDRESS,
@@ -177,7 +179,7 @@ export default function SubScriptCheckout({
           },
         ],
         functionName: "depositForBurn",
-        args: [requiredAmount, 26, mintRecipientBytes32, sepoliaConfig.usdc],
+        args: [requiredAmount, ARC_CCTP_DOMAIN_ID, mintRecipientBytes32, sepoliaConfig.usdc],
       });
 
       setStatusMessage("Waiting for CCTP burn transaction confirmation...");
@@ -230,7 +232,7 @@ export default function SubScriptCheckout({
       // Step 6: Mint USDC on Arc
       setStatusMessage("Minting USDC on Arc Network...");
       const mintHash = await writeContractAsync({
-        address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275", // Arc MessageTransmitter
+        address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
         abi: [
           {
             type: "function",

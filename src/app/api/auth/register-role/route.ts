@@ -23,37 +23,55 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid role selected" }, { status: 400 });
         }
 
-        /* Upsert the role in the account_roles table */
-        const accountRole = await prisma.accountRole.upsert({
-            where: { address: wallet.toLowerCase() },
-            update: { role },
-            create: {
-                address: wallet.toLowerCase(),
-                role,
-            }
+        /* Check if role is already registered for this wallet */
+        const existingRole = await prisma.accountRole.findUnique({
+            where: { address: wallet.toLowerCase() }
         });
 
-        /* If Enterprise, ensure a default Merchant entry exists. If User, ensure a Customer entry exists. */
-        if (role === "ENTERPRISE") {
-            await prisma.merchant.upsert({
-                where: { walletAddress: wallet.toLowerCase() },
-                update: {},
-                create: {
-                    walletAddress: wallet.toLowerCase(),
-                    tier: "FREE",
-                    availableBalanceUsdc: BigInt(0),
-                    reservedBalanceUsdc: BigInt(0),
-                }
-            });
-        } else {
-            await prisma.customer.upsert({
-                where: { walletAddress: wallet.toLowerCase() },
-                update: {},
-                create: {
-                    walletAddress: wallet.toLowerCase(),
-                }
-            });
+        if (existingRole) {
+            if (existingRole.role !== role) {
+                return NextResponse.json({
+                    error: `This wallet is already registered as ${existingRole.role}. Use a different wallet for ${role}.`,
+                    role: existingRole.role,
+                }, { status: 409 });
+            }
+            return NextResponse.json({ success: true, role: existingRole.role, message: "Role already registered for this wallet" }, { status: 200 });
         }
+
+        const normalizedWallet = wallet.toLowerCase();
+        const accountRole = await prisma.$transaction(async (tx) => {
+            const createdRole = await tx.accountRole.create({
+                data: {
+                    address: normalizedWallet,
+                    role,
+                }
+            });
+
+            if (role === "ENTERPRISE") {
+                await tx.customer.deleteMany({ where: { walletAddress: normalizedWallet } });
+                await tx.merchant.upsert({
+                    where: { walletAddress: normalizedWallet },
+                    update: {},
+                    create: {
+                        walletAddress: normalizedWallet,
+                        tier: "FREE",
+                        availableBalanceUsdc: BigInt(0),
+                        reservedBalanceUsdc: BigInt(0),
+                    }
+                });
+            } else {
+                await tx.merchant.deleteMany({ where: { walletAddress: normalizedWallet } });
+                await tx.customer.upsert({
+                    where: { walletAddress: normalizedWallet },
+                    update: {},
+                    create: {
+                        walletAddress: normalizedWallet,
+                    }
+                });
+            }
+
+            return createdRole;
+        });
 
         return NextResponse.json({ success: true, role: accountRole.role }, { status: 200 });
     } catch (err: any) {

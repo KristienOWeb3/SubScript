@@ -1,6 +1,6 @@
 import { Interface } from "ethers";
 import { encodeFunctionData, type Hex } from "viem";
-import { ARC_MEMO_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_MEMO_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
 export const ARC_MEMO_ABI = [
@@ -52,29 +52,38 @@ export function generateReceiptId(title: string) {
     return `${slugifyReceiptTitle(title)}-${hex}`;
 }
 
-export function buildMemoWrappedUsdcTransferFrom(args: {
-    payer: `0x${string}`;
+export const ROUTER_DEPOSIT_ABI = [
+    {
+        type: "function",
+        name: "depositForMerchant",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_merchant", type: "address" },
+            { name: "_amount", type: "uint256" },
+            { name: "_memo", type: "string" },
+        ],
+        outputs: [],
+    },
+] as const;
+
+export const ROUTER_DEPOSIT_INTERFACE = new Interface([
+    "function depositForMerchant(address _merchant, uint256 _amount, string _memo)",
+]);
+
+export function buildVaultDepositTx(args: {
     merchant: `0x${string}`;
     amountUsdc: bigint;
     receiptId: string;
 }) {
-    const transferFromData = encodeFunctionData({
-        abi: USDC_ERC20_ABI,
-        functionName: "transferFrom",
-        args: [args.payer, args.merchant, args.amountUsdc],
-    });
-
-    const memoData = encodeFunctionData({
-        abi: ARC_MEMO_ABI,
-        functionName: "executeWithMemo",
-        args: [USDC_NATIVE_GAS_ADDRESS, transferFromData, args.receiptId],
+    const depositData = encodeFunctionData({
+        abi: ROUTER_DEPOSIT_ABI,
+        functionName: "depositForMerchant",
+        args: [args.merchant, args.amountUsdc, args.receiptId],
     });
 
     return {
-        to: ARC_MEMO_CONTRACT_ADDRESS,
-        data: memoData,
-        target: USDC_NATIVE_GAS_ADDRESS,
-        transferFromData,
+        to: SUBSCRIPT_ROUTER_ADDRESS,
+        data: depositData,
     };
 }
 

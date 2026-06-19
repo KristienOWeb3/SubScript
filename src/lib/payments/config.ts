@@ -1,5 +1,11 @@
 /* Protocol Configuration Registry */
 
+import {
+    ARC_TESTNET_CHAIN_ID,
+    SUBSCRIPT_ROUTER_ADDRESS,
+    USDC_NATIVE_GAS_ADDRESS
+} from "@/lib/contracts/constants";
+
 export const ProtocolConfig = {
     /* Batch Payout Constraints */
     MAX_BATCH_RECIPIENTS: 1000,
@@ -12,9 +18,9 @@ export const ProtocolConfig = {
 
     /* Blockchain Settlement & Verification */
     MIN_CONFIRMATIONS: 3,
-    USDC_ADDRESS: "0x3600000000000000000000000000000000000000",
-    ROUTER_ADDRESS: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
-    CHAIN_ID: 5042002,
+    USDC_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
+    ROUTER_ADDRESS: SUBSCRIPT_ROUTER_ADDRESS,
+    CHAIN_ID: ARC_TESTNET_CHAIN_ID,
 
     /* Idempotency Constraints */
     IDEMPOTENCY_TTL: 86400, /* 24 hours in seconds */

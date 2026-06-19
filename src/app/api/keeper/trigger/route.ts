@@ -28,9 +28,10 @@ export async function POST(request: Request) {
         ];
         const standardABI = [
             "function nextSubscriptionId() view returns (uint256)",
-            "function subscriptions(uint256) view returns (address, address, uint256, uint256, uint256, bool)",
-            "function executePayment(uint256 _subId) external",
-            "function isPaymentDue(uint256 _subId) view returns (bool)"
+            "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+            "function executePayment(uint256 _subId, uint256 _sequenceId) external",
+            "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+            "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)"
         ];
 
         const routerContract = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, routerABI, adminWallet);
@@ -50,14 +51,19 @@ export async function POST(request: Request) {
         for (let i = 1; i < nextId; i++) {
             try {
                 const sub = await standardContract.subscriptions(i);
-                const merchant = sub[1];
-                const isActive = sub[5];
+                const merchant = sub.merchant;
+                const isActive = sub.isActive;
 
                 if (merchant.toLowerCase() === walletAddress.toLowerCase() && isActive) {
-                    const isDue = await standardContract.isPaymentDue(i);
+                    let sequenceId = 1;
+                    while (await standardContract.isSequenceExecuted(i, sequenceId)) {
+                        sequenceId++;
+                    }
+
+                    const isDue = await standardContract.isPaymentDue(i, sequenceId);
                     if (isDue) {
-                        console.log(`[Manual Keeper] Sub #${i} is due. Executing payment...`);
-                        const tx = await standardContract.executePayment(i);
+                        console.log(`[Manual Keeper] Sub #${i} is due (Sequence ${sequenceId}). Executing payment...`);
+                        const tx = await standardContract.executePayment(i, sequenceId);
                         await tx.wait();
                         executedSubs.push({ subId: `sub_${i}`, txHash: tx.hash });
                     }

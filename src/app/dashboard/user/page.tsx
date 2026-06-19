@@ -16,6 +16,8 @@ import { sepolia } from "viem/chains";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
   ARC_TESTNET_CHAIN_ID, 
+  ARC_CCTP_DOMAIN_ID,
+  ARC_MESSAGE_TRANSMITTER_ADDRESS,
   CCTP_CONFIG 
 } from "@/lib/contracts/constants";
 import { QRCodeSVG } from "qrcode.react";
@@ -50,6 +52,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+
+const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
 const publicClient = createPublicClient({
   chain: arcTestnet,
@@ -97,7 +101,6 @@ const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
   { id: "links", label: "Links", icon: Link2 },
   { id: "batch", label: "Batch", icon: Users },
-  { id: "inbox", label: "DMs", icon: MessageSquare },
 ] as const;
 
 const formatAddress = (addr: string | null) => {
@@ -116,12 +119,18 @@ const splitDmDescription = (description: string | null) => {
   return description.split("\n").map((item) => item.trim()).filter(Boolean);
 };
 
+const getDmPeerAddress = (dm: DmMessage, userWallet: string | null) => {
+  const ownWallet = userWallet?.toLowerCase();
+  return dm.senderAddress.toLowerCase() === ownWallet ? dm.receiverAddress : dm.senderAddress;
+};
+
 export default function UserDashboard() {
   const router = useRouter();
   const { disconnect } = useDisconnect();
 
   const [activeTab, setActiveTab] = useState<UserTab>("home");
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
+  const [selectedDmPeer, setSelectedDmPeer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -132,7 +141,6 @@ export default function UserDashboard() {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [scanValue, setScanValue] = useState("");
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -179,6 +187,7 @@ export default function UserDashboard() {
   };
 
   const handleToggleSetting = async (field: string, currentValue: boolean) => {
+    if (comingSoonUserSettings.has(field)) return;
     setSavingSettingsField(field);
     try {
       const res = await fetch("/api/user/settings", {
@@ -303,6 +312,17 @@ export default function UserDashboard() {
         return;
       }
 
+      if (!data.role) {
+        router.push("/signup");
+        return;
+      }
+
+      if (data.role !== "USER") {
+        console.warn("Unauthorized role for user dashboard, redirecting to merchant dashboard");
+        router.push("/dashboard");
+        return;
+      }
+
       setUserWallet(data.wallet);
       setUserEmail(data.email);
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings()]);
@@ -335,6 +355,14 @@ export default function UserDashboard() {
     if (intent) setFocusIntentId(intent);
   }, []);
 
+  useEffect(() => {
+    if (!focusIntentId || !userWallet || selectedDmPeer || dms.length === 0) return;
+    const focusedDm = dms.find((dm) => dm.paymentLinkId === focusIntentId);
+    if (focusedDm) {
+      setSelectedDmPeer(getDmPeerAddress(focusedDm, userWallet).toLowerCase());
+    }
+  }, [dms, focusIntentId, selectedDmPeer, userWallet]);
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     disconnect();
@@ -346,23 +374,6 @@ export default function UserDashboard() {
     await navigator.clipboard.writeText(userWallet);
     setCopiedAddress(true);
     setTimeout(() => setCopiedAddress(false), 1600);
-  };
-
-  const handleScanSubmit = () => {
-    const value = scanValue.trim();
-    if (!value) return;
-    const paymentMatch = value.match(/\/pay\/([a-zA-Z0-9-]+)/);
-    if (paymentMatch) {
-      router.push(`/pay/${paymentMatch[1]}`);
-      return;
-    }
-    if (/^0x[a-fA-F0-9]{40}$/.test(value)) {
-      setRequestReceiver(value);
-      setActiveTab("links");
-      setScannerOpen(false);
-      return;
-    }
-    setRequestStatus("That QR payload is not a SubScript payment link or wallet address.");
   };
 
   const runAction = async (key: string, task: () => Promise<void>) => {
@@ -501,15 +512,48 @@ export default function UserDashboard() {
     return aNext - bNext;
   });
   const pendingDmCount = dms.filter((dm) => dm.status === "PENDING").length;
+  const dmThreads = Array.from(dms.reduce((threads, dm) => {
+    const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
+    const existing = threads.get(peerAddress);
+    const latestTime = new Date(dm.createdAt).getTime();
+    if (!existing) {
+      threads.set(peerAddress, {
+        peerAddress,
+        peerName: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverName : dm.senderName,
+        latest: dm,
+        latestTime,
+        pendingCount: dm.status === "PENDING" ? 1 : 0,
+        totalCount: 1,
+      });
+    } else {
+      existing.totalCount += 1;
+      if (dm.status === "PENDING") existing.pendingCount += 1;
+      if (latestTime > existing.latestTime) {
+        existing.latest = dm;
+        existing.latestTime = latestTime;
+      }
+    }
+    return threads;
+  }, new Map<string, {
+    peerAddress: string;
+    peerName: string;
+    latest: DmMessage;
+    latestTime: number;
+    pendingCount: number;
+    totalCount: number;
+  }>()).values()).sort((a, b) => b.latestTime - a.latestTime);
+  const selectedThreadDms = selectedDmPeer
+    ? dms.filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
+    : [];
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col overflow-hidden bg-[#060608] text-white font-sans">
-      {activeTab === "inbox" ? (
+      {activeTab === "inbox" && selectedDmPeer ? (
         <ChatHeader
           registeredDomain={registeredDomain}
           profilePic={profilePic}
           userWallet={userWallet}
-          onBack={() => setActiveTab("home")}
+          onBack={() => setSelectedDmPeer(null)}
         />
       ) : (
         <HomeHeader
@@ -561,7 +605,7 @@ export default function UserDashboard() {
               <section className="min-h-[390px] rounded-[36px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl">
                 <div className="mb-6 flex items-center justify-between">
                   <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                  <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00]">{subscriptions.length} active</span>
+                  <span className="rounded-full bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{subscriptions.length} active</span>
                 </div>
 
                 {sortedSubscriptions.length === 0 ? (
@@ -589,31 +633,32 @@ export default function UserDashboard() {
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
               className="min-h-[calc(100vh-160px)] space-y-4"
             >
-              <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
-                Merchant and user payment messages only
-              </div>
-              <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
-                {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-              </div>
-
-              {dms.length === 0 ? (
-                <div className="mt-20 flex flex-col items-center justify-center text-center">
-                  <Mail className="mb-4 h-10 w-10 text-white/20" />
-                  <p className="text-xs text-white/45">No SubScript system messages yet.</p>
-                </div>
+              {!selectedDmPeer ? (
+                <DmThreadSelect
+                  threads={dmThreads}
+                  onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
+                />
               ) : (
-                dms.map((dm) => (
-                  <DmBubble
-                    key={dm.id}
-                    dm={dm}
-                    focused={focusIntentId === dm.paymentLinkId}
-                    incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
-                    loadingAction={loadingAction}
-                    onPay={() => handleConfirmPaymentDm(dm)}
-                    onDecline={() => handleDeclineDm(dm)}
-                    onDismiss={() => handleDismissDm(dm)}
-                  />
-                ))
+                <>
+                  <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+                    Merchant and user payment messages only
+                  </div>
+                  <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
+                    {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </div>
+                  {selectedThreadDms.map((dm) => (
+                    <DmBubble
+                      key={dm.id}
+                      dm={dm}
+                      focused={focusIntentId === dm.paymentLinkId}
+                      incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
+                      loadingAction={loadingAction}
+                      onPay={() => handleConfirmPaymentDm(dm)}
+                      onDecline={() => handleDeclineDm(dm)}
+                      onDismiss={() => handleDismissDm(dm)}
+                    />
+                  ))}
+                </>
               )}
             </motion.section>
           )}
@@ -685,7 +730,7 @@ export default function UserDashboard() {
               {/* Profile & DNS Registration */}
               <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-6">
                 <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                  <User className="h-4 w-4 text-[#ccff00]" /> Profile & Identity
+                  <User className="h-4 w-4 text-[#00d2b4]" /> Profile & Identity
                 </h3>
                 <div className="flex items-center gap-4 pb-4 border-b border-white/5">
                   <Avatar profilePic={profilePic} size="lg" />
@@ -700,10 +745,10 @@ export default function UserDashboard() {
                 {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
 
                 {registeredDomain ? (
-                  <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
+                  <div className="rounded-3xl border border-[#00d2b4]/15 bg-[#00d2b4]/5 p-4 flex items-center justify-between">
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
-                      <h3 className="mt-1 font-mono text-lg font-black text-[#ccff00]">{registeredDomain}</h3>
+                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#00d2b4]/70">Registered Domain</p>
+                      <h3 className="mt-1 font-mono text-lg font-black text-[#00d2b4]">{registeredDomain}</h3>
                     </div>
                     <button
                       onClick={async () => {
@@ -749,7 +794,7 @@ export default function UserDashboard() {
               {userSettings && (
                 <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <CreditCard className="h-4 w-4 text-[#ccff00]" /> Spending Limits
+                    <CreditCard className="h-4 w-4 text-[#00d2b4]" /> Spending Limits
                   </h3>
                   <p className="text-[10px] text-white/40 leading-relaxed">
                     Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
@@ -803,7 +848,7 @@ export default function UserDashboard() {
               {userSettings && (
                 <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Sliders className="h-4 w-4 text-[#ccff00]" /> Notifications
+                    <Sliders className="h-4 w-4 text-[#00d2b4]" /> Notifications
                   </h3>
                   <div className="space-y-4 font-sans text-xs">
                     <div className="flex items-center justify-between">
@@ -814,23 +859,23 @@ export default function UserDashboard() {
                       <button
                         onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
                         disabled={savingSettingsField === "pushEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
                       >
                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                       <div className="space-y-0.5">
-                        <p className="text-white font-bold">Email Alerts</p>
+                        <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                         <p className="text-[9px] text-white/40">Receive transaction details via email</p>
                       </div>
                       <button
-                        onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled)}
-                        disabled={savingSettingsField === "emailEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        onClick={() => {}}
+                        disabled={true}
+                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                       >
-                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                       </button>
                     </div>
 
@@ -842,7 +887,7 @@ export default function UserDashboard() {
                       <button
                         onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
                         disabled={savingSettingsField === "debitSuccessEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
                       >
                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
                       </button>
@@ -856,7 +901,7 @@ export default function UserDashboard() {
                       <button
                         onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
                         disabled={savingSettingsField === "expiryWarningEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
                       >
                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
                       </button>
@@ -869,34 +914,34 @@ export default function UserDashboard() {
               {userSettings && (
                 <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-[#ccff00]" /> Security Settings
+                    <Lock className="h-4 w-4 text-[#00d2b4]" /> Security Settings
                   </h3>
                   <div className="space-y-4 font-sans text-xs">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                       <div className="space-y-0.5">
-                        <p className="text-white font-bold">Security Shield</p>
+                        <p className="text-white font-bold flex items-center gap-1.5">Security Shield <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                         <p className="text-[9px] text-white/40">Enable confidential routing on the Arc network</p>
                       </div>
                       <button
-                        onClick={() => handleToggleSetting("securityShieldEnabled", userSettings.securityShieldEnabled)}
-                        disabled={savingSettingsField === "securityShieldEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityShieldEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        onClick={() => {}}
+                        disabled={true}
+                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                       >
-                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityShieldEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                       <div className="space-y-0.5">
-                        <p className="text-white font-bold">Multi-Sig Verification</p>
+                        <p className="text-white font-bold flex items-center gap-1.5">Multi-Sig Verification <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                         <p className="text-[9px] text-white/40">Prompt for secondary wallet confirmations during debit limits updates</p>
                       </div>
                       <button
-                        onClick={() => handleToggleSetting("securityMultiSigEnabled", userSettings.securityMultiSigEnabled)}
-                        disabled={savingSettingsField === "securityMultiSigEnabled"}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityMultiSigEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                        onClick={() => {}}
+                        disabled={true}
+                        className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                       >
-                        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityMultiSigEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                        <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                       </button>
                     </div>
                   </div>
@@ -906,7 +951,7 @@ export default function UserDashboard() {
               {/* Transactions History */}
               <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
                 <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                  <Activity className="h-4 w-4 text-[#00d2b4]" /> Recent Transactions History
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left font-sans text-xs">
@@ -944,7 +989,7 @@ export default function UserDashboard() {
                                 href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
                               >
                                 Tx <ExternalLink className="w-3.5 h-3.5" />
                               </a>
@@ -962,19 +1007,45 @@ export default function UserDashboard() {
       </main>
 
       {userWallet && (
-        <nav className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between rounded-full border border-white/10 bg-black/70 px-3 py-3.5 shadow-2xl backdrop-blur-xl">
-          {userBottomTabs.map((tab) => (
-            <AnimatedBottomNavButton
-              key={tab.id}
-              label={tab.label}
-              icon={tab.icon}
-              active={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              accentClassName="text-[#ccff00]"
-              badgeCount={tab.id === "inbox" ? pendingDmCount : 0}
-            />
-          ))}
-        </nav>
+        <div className="fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+          <nav className="flex flex-1 items-center justify-around rounded-full border border-white/10 bg-black/70 px-3 py-3.5 shadow-2xl backdrop-blur-xl">
+            {userBottomTabs.map((tab) => (
+              <AnimatedBottomNavButton
+                key={tab.id}
+                label={tab.label}
+                icon={tab.icon}
+                active={activeTab === tab.id}
+                onClick={() => {
+                  setSelectedDmPeer(null);
+                  setActiveTab(tab.id);
+                }}
+                accentClassName="text-[#00d2b4]"
+              />
+            ))}
+          </nav>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDmPeer(null);
+              setActiveTab("inbox");
+            }}
+            className={`relative flex h-12 shrink-0 items-center justify-center gap-2 overflow-hidden rounded-full border px-3 shadow-2xl backdrop-blur-xl transition-all duration-300 ${
+              activeTab === "inbox"
+                ? "w-[108px] border-[#00d2b4]/30 bg-[#00d2b4] text-black shadow-[0_0_15px_rgba(0,210,180,0.3)]"
+                : "w-12 border-white/10 bg-black/70 text-white/55 hover:text-white"
+            }`}
+            aria-label="Open DMs"
+          >
+            <MessageSquare className="h-5 w-5 shrink-0" />
+            {activeTab === "inbox" && <span className="text-[10px] font-black uppercase tracking-wider">DMs</span>}
+            {pendingDmCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-black bg-red-500 px-1 text-[9px] font-black text-white">
+                {pendingDmCount > 9 ? "9+" : pendingDmCount}
+              </span>
+            )}
+          </button>
+        </div>
       )}
 
       <DepositModal 
@@ -995,7 +1066,7 @@ export default function UserDashboard() {
           refetchMainnet().catch(console.error);
         }}
       />
-      <ScannerModal open={scannerOpen} value={scanValue} onChange={setScanValue} onSubmit={handleScanSubmit} onClose={() => setScannerOpen(false)} />
+      <ScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} />
     </div>
   );
 }
@@ -1015,17 +1086,25 @@ function HomeHeader({
 }) {
   return (
     <header className="sticky top-0 z-40 px-5 pt-5">
-      <div className="flex items-center justify-between rounded-full border border-white/10 bg-white/[0.07] p-2 backdrop-blur-xl">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#ccff00] text-sm font-black text-black">S</div>
-        <button type="button" onClick={onLogout} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/65">
-          <LogOut className="h-4 w-4" />
+      <div className="flex items-center rounded-full border border-white/10 bg-white/[0.07] p-2 backdrop-blur-xl">
+        <button type="button" onClick={onDns} className="flex min-w-0 items-center gap-2 rounded-full pr-2 text-left">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[#00d2b4] text-sm font-black text-black shadow-[0_0_28px_rgba(0,210,180,0.28)]">S</span>
+          <span className="hidden min-w-0 sm:block">
+            <span className="block text-[11px] font-black uppercase tracking-[0.2em] text-white">SubScript</span>
+            <span className="block max-w-[120px] truncate text-[10px] font-bold uppercase tracking-[0.12em] text-white/45">User wallet</span>
+          </span>
         </button>
-        <button type="button" onClick={onDns} className="min-w-0 rounded-full border border-white/15 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
-          <span className="block max-w-[118px] truncate">{registeredDomain || formatAddress(userWallet)}</span>
-        </button>
-        <button type="button" onClick={onDns}>
-          <Avatar profilePic={profilePic} />
-        </button>
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          <button type="button" onClick={onLogout} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/65">
+            <LogOut className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onDns} className="min-w-0 rounded-full border border-white/15 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
+            <span className="block max-w-[118px] truncate">{registeredDomain || formatAddress(userWallet)}</span>
+          </button>
+          <button type="button" onClick={onDns} className="shrink-0">
+            <Avatar profilePic={profilePic} />
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -1080,7 +1159,7 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
     <div className="flex items-center justify-between rounded-[24px] border border-white/10 bg-black/20 p-4">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
-          {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#ccff00]/70" />}
+          {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#00d2b4]/70" />}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
@@ -1091,9 +1170,122 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-xs font-black text-[#ccff00]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
+        <p className="text-xs font-black text-[#00d2b4]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
         <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
       </div>
+    </div>
+  );
+}
+
+function DmThreadSelect({
+  threads,
+  onSelect,
+}: {
+  threads: Array<{
+    peerAddress: string;
+    peerName: string;
+    latest: DmMessage;
+    latestTime: number;
+    pendingCount: number;
+    totalCount: number;
+  }>;
+  onSelect: (peerAddress: string) => void;
+}) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newPeerAddress, setNewPeerAddress] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleStartDm = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!newPeerAddress || !newPeerAddress.startsWith("0x") || newPeerAddress.length !== 42) {
+      setError("Please enter a valid Ethereum address");
+      return;
+    }
+    onSelect(newPeerAddress.toLowerCase());
+    setIsCreating(false);
+    setNewPeerAddress("");
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 shadow-2xl relative">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">SubScript DMs</p>
+            <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Select a payment thread</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsCreating(!isCreating)}
+            className="rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4] hover:bg-[#00d2b4] hover:text-black font-bold uppercase tracking-wider text-[10px] px-3.5 py-2 transition"
+          >
+            {isCreating ? "Cancel" : "+ New DM"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-white/45">
+          DMs are automated payment, receipt, renewal, and request conversations. Enter a wallet to begin a new thread.
+        </p>
+
+        {isCreating && (
+          <form onSubmit={handleStartDm} className="mt-5 pt-5 border-t border-white/5 space-y-3">
+            <p className="text-[10px] uppercase tracking-wider text-white/35">Recipient Wallet Address</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newPeerAddress}
+                onChange={(e) => setNewPeerAddress(e.target.value)}
+                placeholder="0x..."
+                className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-2.5 text-sm font-mono text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition"
+              />
+              <button
+                type="submit"
+                className="rounded-xl bg-[#00d2b4] text-black font-bold text-xs px-4 py-2.5 hover:bg-[#00d2b4]/90 transition"
+              >
+                Start
+              </button>
+            </div>
+            {error && <p className="text-[10px] text-red-400 font-medium">{error}</p>}
+          </form>
+        )}
+      </div>
+
+      {threads.length === 0 ? (
+        <div className="mt-14 flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
+          <Mail className="mb-4 h-10 w-10 text-white/20" />
+          <p className="text-xs text-white/45">No SubScript system messages yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {threads.map((thread) => (
+            <button
+              key={thread.peerAddress}
+              type="button"
+              onClick={() => onSelect(thread.peerAddress)}
+              className="flex w-full items-center gap-4 rounded-[28px] border border-white/10 bg-white/[0.04] p-4 text-left shadow-xl transition hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/[0.04] active:scale-[0.99]"
+            >
+              <Avatar profilePic={null} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-white">
+                    {thread.peerName || formatAddress(thread.peerAddress)}
+                  </p>
+                  <span className="text-[9px] font-bold text-white/35">
+                    {new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-[11px] text-white/45">{thread.latest.title || thread.latest.description || "SubScript payment message"}</p>
+                <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">{thread.totalCount} system messages</p>
+              </div>
+              {thread.pendingCount > 0 && (
+                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#00d2b4] px-2 text-[10px] font-black text-black">
+                  {thread.pendingCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1124,8 +1316,8 @@ function DmBubble({
     <div className={`flex gap-3 ${incoming ? "justify-start" : "justify-end"}`}>
       {incoming && <Avatar profilePic={null} />}
       <div className={`max-w-[78%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-2`}>
-        <div className={`rounded-[28px] border px-5 py-5 shadow-xl ${focused ? "border-[#ccff00]/50 bg-[#ccff00]/[0.06]" : "border-white/12 bg-white/[0.045]"} ${incoming ? "rounded-bl-sm" : "rounded-br-sm"}`}>
-          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">{dm.messageType.replace(/_/g, " ")}</p>
+        <div className={`rounded-[28px] border px-5 py-5 shadow-xl ${focused ? "border-[#00d2b4]/50 bg-[#00d2b4]/[0.06]" : "border-white/12 bg-white/[0.045]"} ${incoming ? "rounded-bl-sm" : "rounded-br-sm"}`}>
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#00d2b4]">{dm.messageType.replace(/_/g, " ")}</p>
           <h3 className="text-base font-black uppercase leading-snug text-white">{dm.title || "SubScript message"}</h3>
           <div className="mt-4 space-y-2">
             {lines.length > 0 ? lines.map((line) => (
@@ -1136,7 +1328,7 @@ function DmBubble({
             <span className="rounded-full bg-white/10 px-4 py-1 text-[10px] font-bold text-white/50">
               {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
-            {dm.amountUsdc && <span className="text-xs font-black text-[#ccff00]">{formatUsdc(dm.amountUsdc)} USDC</span>}
+            {dm.amountUsdc && <span className="text-xs font-black text-[#00d2b4]">{formatUsdc(dm.amountUsdc)} USDC</span>}
           </div>
         </div>
 
@@ -1318,7 +1510,7 @@ function DepositModal({
           },
         ],
         functionName: "depositForBurn",
-        args: [requiredAmount, 26, mintRecipientBytes32, sepoliaConfig.usdc],
+        args: [requiredAmount, ARC_CCTP_DOMAIN_ID, mintRecipientBytes32, sepoliaConfig.usdc],
       });
 
       setCctpMessage("Waiting for CCTP burn confirmation...");
@@ -1373,7 +1565,7 @@ function DepositModal({
       // Step 6: Mint USDC on Arc
       setCctpMessage("Minting USDC on Arc Network...");
       const mintHash = await writeContractAsync({
-        address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275", // Arc MessageTransmitter
+        address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
         abi: [
           {
             type: "function",
@@ -1451,7 +1643,7 @@ function DepositModal({
                     }}
                     className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all ${
                       activeSubMode === tab
-                        ? "bg-[#ccff00] text-black shadow-md"
+                        ? "bg-[#00d2b4] text-black shadow-md"
                         : "text-white/50 hover:text-white/85"
                     }`}
                   >
@@ -1463,7 +1655,7 @@ function DepositModal({
 
             {activeSubMode === "menu" && (
               <div className="space-y-5">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#00d2b4] text-lg font-black text-black">S</div>
                 <h2 className="text-xl font-black uppercase text-white tracking-tight">Deposit USDC</h2>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
@@ -1475,9 +1667,9 @@ function DepositModal({
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 p-5 text-left hover:bg-[#00d2b4]/10 transition-all group"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00d2b4] text-black group-hover:scale-105 transition-all shrink-0">
                       <Globe className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
@@ -1522,7 +1714,7 @@ function DepositModal({
 
             {activeSubMode === "direct" && (
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#00d2b4] text-lg font-black text-black">S</div>
                 <h2 className="text-xl font-black uppercase text-white">Direct Deposit</h2>
                 <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
@@ -1561,7 +1753,7 @@ function DepositModal({
                             onClick={() => setFiatProvider(p)}
                             className={`py-2 px-3 border rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
                               fiatProvider === p
-                                ? "border-[#ccff00] bg-[#ccff00]/10 text-[#ccff00]"
+                                ? "border-[#00d2b4] bg-[#00d2b4]/10 text-[#00d2b4]"
                                 : "border-white/10 bg-white/[0.02] text-white/60 hover:border-white/20"
                             }`}
                           >
@@ -1572,7 +1764,7 @@ function DepositModal({
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
                       <span className="text-white/40">You will receive approx:</span>
-                      <span className="font-black text-[#ccff00]">${(Number(fiatAmount) || 0).toFixed(2)} USDC</span>
+                      <span className="font-black text-[#00d2b4]">${(Number(fiatAmount) || 0).toFixed(2)} USDC</span>
                     </div>
                     <button
                       type="button"
@@ -1586,12 +1778,12 @@ function DepositModal({
                   <div className="space-y-5 py-6 text-center">
                     {fiatStatus !== "success" ? (
                       <div className="flex flex-col items-center gap-4">
-                        <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
+                        <Loader2 className="h-10 w-10 animate-spin text-[#00d2b4]" />
                         <p className="text-xs text-white/70 leading-normal">{fiatMessage}</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-4">
-                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
+                        <CheckCircle2 className="h-12 w-12 text-[#00d2b4]" />
                         <h4 className="text-sm font-black uppercase tracking-wider text-white">Purchase Successful</h4>
                         <p className="text-xs text-white/50 leading-normal">{fiatMessage}</p>
                         <button
@@ -1612,7 +1804,7 @@ function DepositModal({
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-black uppercase tracking-wider text-white">Circle CCTP</h3>
-                  <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
+                  <span className="rounded-full bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-bold text-[#00d2b4]">
                     Sepolia: {totalExternalUsdc.toFixed(2)} USDC
                   </span>
                 </div>
@@ -1632,7 +1824,7 @@ function DepositModal({
                         <button
                           type="button"
                           onClick={() => setCctpAmount(totalExternalUsdc.toString())}
-                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
+                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#00d2b4] hover:bg-white/20 transition-all"
                         >
                           Max
                         </button>
@@ -1653,7 +1845,7 @@ function DepositModal({
                   <div className="space-y-5 py-4">
                     {cctpStatus === "success" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
-                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
+                        <CheckCircle2 className="h-12 w-12 text-[#00d2b4]" />
                         <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Successful</h4>
                         <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
                         <button
@@ -1680,7 +1872,7 @@ function DepositModal({
                     ) : (
                       <div className="space-y-6">
                         <div className="flex items-center gap-4 bg-black/30 border border-white/5 rounded-2xl p-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00] shrink-0" />
+                          <Loader2 className="h-6 w-6 animate-spin text-[#00d2b4] shrink-0" />
                           <div className="space-y-1">
                             <p className="text-xs font-bold text-white uppercase tracking-wider">CCTP Bridge Progress</p>
                             <p className="text-[10px] text-white/50 leading-normal">{cctpMessage}</p>
@@ -1688,23 +1880,23 @@ function DepositModal({
                         </div>
 
                         <div className="space-y-2 border-t border-white/5 pt-4 text-[10px] font-bold text-white/40">
-                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#00d2b4]" : ""}`}>
                             <span>1. Network Switch</span>
                             <span>{cctpStatus === "switching" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#00d2b4]" : ""}`}>
                             <span>2. Approve TokenMessenger</span>
                             <span>{cctpStatus === "approving" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#00d2b4]" : ""}`}>
                             <span>3. Burn USDC on Sepolia</span>
                             <span>{cctpStatus === "burning" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#00d2b4]" : ""}`}>
                             <span>4. Fetch Circle Attestation</span>
                             <span>{cctpStatus === "attesting" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#ccff00]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#00d2b4]" : ""}`}>
                             <span>5. Mint USDC on Arc Testnet</span>
                             <span>{cctpStatus === "claiming" ? "In Progress" : ""}</span>
                           </div>
@@ -1722,30 +1914,23 @@ function DepositModal({
   );
 }
 
-function ScannerModal({
-  open,
-  value,
-  onChange,
-  onSubmit,
-  onClose,
-}: {
-  open: boolean;
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-  onClose: () => void;
-}) {
+function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm rounded-[36px] border border-white/10 bg-[#0b0b0d] p-6 shadow-2xl">
-            <button type="button" onClick={onClose} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60"><X className="h-4 w-4" /></button>
-            <h2 className="text-xl font-black uppercase text-white">QR Scanner</h2>
-            <p className="mt-2 text-xs text-white/45">Paste a scanned SubScript payment link or wallet address.</p>
-            <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={4} className="subscript-input mt-5 resize-none" placeholder="subscript.app/pay/... or 0x..." />
-            <button type="button" onClick={onSubmit} className="subscript-primary-button mt-4">
-              Continue <ArrowRight className="h-4 w-4" />
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm overflow-hidden rounded-[36px] border border-white/10 bg-[#0b0b0d] shadow-2xl">
+            <div className="relative p-6">
+              <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#00d2b4]/20 blur-3xl" />
+              <button type="button" onClick={onClose} className="relative ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60"><X className="h-4 w-4" /></button>
+              <div className="relative mt-4 flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#00d2b4]/30 bg-[#00d2b4]/10 text-[#00d2b4]">
+                <QrCode className="h-9 w-9" />
+              </div>
+              <h2 className="relative mt-6 text-xl font-black uppercase text-white flex items-center gap-2">QR Scanner <span className="text-[10px] text-black font-black uppercase bg-[#00d2b4] px-1.5 py-0.5 rounded">Coming Soon</span></h2>
+              <p className="relative mt-2 text-sm font-medium leading-6 text-white/55">Live QR scanning will be available soon. SubScript is tuning the scanner so payments feel instant when it launches.</p>
+            </div>
+            <button type="button" onClick={onClose} className="subscript-primary-button mx-6 mb-6">
+              Got it <ArrowRight className="h-4 w-4" />
             </button>
           </motion.div>
         </motion.div>

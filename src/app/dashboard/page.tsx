@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
 import posthog from "posthog-js";
 import { ethers } from "ethers";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
@@ -85,7 +86,10 @@ const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof A
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
+const comingSoonMerchantSettings = new Set(["emailEnabled", "disputeAlertsEnabled", "securityMultiSigEnabled"]);
+
 export default function DashboardPage() {
+    const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
     const { address: realAddress, isConnected: realIsConnected, chainId } = useAccount();
     const { connect, connectors, error: connectError, isError: isConnectError, isPending: isConnecting } = useConnect();
@@ -180,34 +184,9 @@ export default function DashboardPage() {
             } else if (functionName === "approve") {
                 action = "approveUsdc";
                 serializedArgs = { spender: args[0], amount: args[1].toString() };
-            } else if (functionName === "depositAndCommit") {
-                action = "depositAndCommit";
-                serializedArgs = { commitment: args[0], amount: args[1].toString() };
-            } else if (functionName === "verifyAndActivate") {
-                action = "verifyAndActivate";
-                serializedArgs = {
-                    proof: args[0],
-                    nullifierHash: args[1],
-                    merchant: args[2],
-                    amount: args[3].toString(),
-                    period: args[4].toString()
-                };
-            } else if (functionName === "setMerchantTier") {
-                action = "setMerchantTier";
-                serializedArgs = {
-                    merchant: args[0],
-                    tier: Number(args[1]),
-                    zkProof: args[2],
-                    rerouteConfig: args[3]
-                };
-            } else if (functionName === "withdrawWithProof") {
-                action = "withdrawWithProof";
-                serializedArgs = {
-                    proof: args[0],
-                    nullifierHash: args[1],
-                    merchant: args[2],
-                    target: args[3]
-                };
+            } else if (functionName === "registerViewKey") {
+                action = "registerViewKey";
+                serializedArgs = { viewKeyHash: args[0] };
             } else {
                 throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
             }
@@ -547,6 +526,7 @@ export default function DashboardPage() {
     }, [address, fetchSettings]);
 
     const handleToggleSetting = async (field: string, currentValue: boolean) => {
+        if (comingSoonMerchantSettings.has(field)) return;
         setSavingSettingsField(field);
         try {
             const res = await fetch("/api/user/settings", {
@@ -877,6 +857,11 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn && data.wallet) {
+                    if (data.role === "USER") {
+                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
+                        router.push("/dashboard/user");
+                        return;
+                    }
                     setSessionWallet(data.wallet.toLowerCase());
                     if (data.email) {
                         setEmbeddedWallet({
@@ -892,7 +877,7 @@ export default function DashboardPage() {
             }
         };
         restoreSession();
-    }, []);
+    }, [router]);
 
 
     useEffect(() => {
@@ -913,6 +898,11 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
+                    if (data.role === "USER") {
+                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
+                        router.push("/dashboard/user");
+                        return;
+                    }
                     setSessionWallet(data.wallet.toLowerCase());
                 } else {
                     setSessionWallet(null);
@@ -926,7 +916,7 @@ export default function DashboardPage() {
         if (isConnected && !embeddedWallet) {
             verifySession();
         }
-    }, [address, isConnected, embeddedWallet]);
+    }, [address, isConnected, embeddedWallet, router]);
 
     const handleSendOtp = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1370,19 +1360,34 @@ export default function DashboardPage() {
                 return;
             }
 
+            // Query the next unexecuted sequence ID
+            let sequenceId = 1;
+            while (true) {
+                const isExecuted = await publicClient.readContract({
+                    address: STANDARD_CONTRACT_ADDRESS,
+                    abi: STANDARD_ABI,
+                    functionName: "isSequenceExecuted",
+                    args: [BigInt(rawId), BigInt(sequenceId)],
+                });
+                if (!isExecuted) {
+                    break;
+                }
+                sequenceId++;
+            }
+
             await publicClient.simulateContract({
                 address: STANDARD_CONTRACT_ADDRESS,
                 abi: STANDARD_ABI,
                 functionName: "executePayment",
                 account: userAddress,
-                args: [BigInt(rawId)],
+                args: [BigInt(rawId), BigInt(sequenceId)],
             });
 
             const txHash = await executeContractWrite({
                 address: STANDARD_CONTRACT_ADDRESS,
                 abi: STANDARD_ABI,
                 functionName: "executePayment",
-                args: [BigInt(rawId)],
+                args: [BigInt(rawId), BigInt(sequenceId)],
             });
 
             const receipt = await publicClient.waitForTransactionReceipt({
@@ -1434,11 +1439,12 @@ export default function DashboardPage() {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
+            const hasTarget = targetAddress && targetAddress.toLowerCase() !== address?.toLowerCase();
             const txHash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: ROUTER_ABI,
-                functionName: "withdraw",
-                args: [],
+                functionName: hasTarget ? "withdrawTo" : "withdraw",
+                args: hasTarget ? [targetAddress as `0x${string}`] : [],
             });
 
             setWithdrawSuccess(true);
@@ -2569,17 +2575,17 @@ Please complete the following implementation tasks:
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold">Email Alerts</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                                     <p className="text-[9px] text-white/40">Receive settlement summaries via email</p>
                                 </div>
                                 <button
-                                    onClick={() => handleToggleSetting("emailEnabled", userSettings.emailEnabled)}
-                                    disabled={savingSettingsField === "emailEnabled"}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.emailEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                    onClick={() => {}}
+                                    disabled={true}
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
-                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.emailEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                                 </button>
                             </div>
 
@@ -2597,17 +2603,17 @@ Please complete the following implementation tasks:
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold">Client Disputes</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Client Disputes <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                                     <p className="text-[9px] text-white/40">Receive immediate alerts on cancel or payment failure events</p>
                                 </div>
                                 <button
-                                    onClick={() => handleToggleSetting("disputeAlertsEnabled", userSettings.disputeAlertsEnabled)}
-                                    disabled={savingSettingsField === "disputeAlertsEnabled"}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.disputeAlertsEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                    onClick={() => {}}
+                                    disabled={true}
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
-                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.disputeAlertsEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                                 </button>
                             </div>
                         </div>
@@ -2626,17 +2632,17 @@ Please complete the following implementation tasks:
                         </div>
 
                         <div className="space-y-4 font-sans text-xs">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                                 <div className="space-y-0.5">
-                                    <p className="text-white font-bold">Multi-Sig Payout Verification</p>
+                                    <p className="text-white font-bold flex items-center gap-1.5">Multi-Sig Payout Verification <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
                                     <p className="text-[9px] text-white/40">Require secondary signature verification for payouts</p>
                                 </div>
                                 <button
-                                    onClick={() => handleToggleSetting("securityMultiSigEnabled", userSettings.securityMultiSigEnabled)}
-                                    disabled={savingSettingsField === "securityMultiSigEnabled"}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.securityMultiSigEnabled ? "bg-[#00d2b4]" : "bg-white/10"}`}
+                                    onClick={() => {}}
+                                    disabled={true}
+                                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
-                                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.securityMultiSigEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                                    <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
                                 </button>
                             </div>
                         </div>

@@ -51,7 +51,7 @@ import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { sendWebhookRequest } from "@/lib/webhooks";
 import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, ARC_MEMO_CONTRACT_ADDRESS, isProd } from "@/lib/contracts/constants";
-import { ARC_MEMO_INTERFACE, USDC_TRANSFER_FROM_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { ARC_MEMO_INTERFACE, USDC_TRANSFER_FROM_INTERFACE, ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 const ERC20_INTERFACE = new ethers.Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)"
@@ -298,52 +298,40 @@ export async function POST(request: Request) {
                                     throw new Error("On-chain transaction reverted");
                                 }
 
-                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== ARC_MEMO_CONTRACT_ADDRESS.toLowerCase()) {
-                                    throw new Error("Target contract is not Arc Memo contract");
+                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
+                                    throw new Error("Target contract is not SubScript Router contract");
                                 }
 
-                                const parsedMemoCall = ARC_MEMO_INTERFACE.parseTransaction({
+                                const parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
                                     data: nativeTx.data,
                                     value: nativeTx.value
                                 });
                                 if (
-                                    !parsedMemoCall ||
-                                    parsedMemoCall.name !== "executeWithMemo" ||
-                                    parsedMemoCall.args[0].toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase() ||
-                                    parsedMemoCall.args[2] !== receiptId
+                                    !parsedRouterCall ||
+                                    parsedRouterCall.name !== "depositForMerchant" ||
+                                    parsedRouterCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
+                                    BigInt(parsedRouterCall.args[1]) !== BigInt(paymentLink.amount_usdc) ||
+                                    parsedRouterCall.args[2] !== receiptId
                                 ) {
-                                    throw new Error("Arc Memo call does not contain the expected receipt memo");
+                                    throw new Error("SubScript Router deposit call does not match receipt parameters");
                                 }
 
-                                const expectedReceiver = (paymentLink.receiver_address || paymentLink.merchant_address).toLowerCase();
-                                const parsedUsdcCall = USDC_TRANSFER_FROM_INTERFACE.parseTransaction({
-                                    data: parsedMemoCall.args[1]
-                                });
-                                if (
-                                    !parsedUsdcCall ||
-                                    parsedUsdcCall.name !== "transferFrom" ||
-                                    parsedUsdcCall.args[0].toLowerCase() !== normalizedPayer ||
-                                    parsedUsdcCall.args[1].toLowerCase() !== expectedReceiver ||
-                                    BigInt(parsedUsdcCall.args[2]) !== BigInt(paymentLink.amount_usdc)
-                                ) {
-                                    throw new Error("Memo payload is not the expected USDC transferFrom payment");
-                                }
-
-                                /* Verify log event transfer to expected receiver address */
+                                /* Verify log event DepositWithMemo from SubScriptRouter */
                                 let logFound = false;
                                 for (const log of receipt.logs) {
-                                    if (log.address.toLowerCase() !== ProtocolConfig.USDC_ADDRESS.toLowerCase()) continue;
+                                    if (log.address.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) continue;
                                     try {
-                                        const parsed = ERC20_INTERFACE.parseLog({
+                                        const parsed = ROUTER_DEPOSIT_INTERFACE.parseLog({
                                             topics: log.topics,
                                             data: log.data
                                         });
                                         if (
                                             parsed &&
-                                            parsed.name === "Transfer" &&
-                                            parsed.args.from.toLowerCase() === normalizedPayer &&
-                                            parsed.args.to.toLowerCase() === expectedReceiver &&
-                                            BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
+                                            parsed.name === "DepositWithMemo" &&
+                                            parsed.args.payer.toLowerCase() === normalizedPayer &&
+                                            parsed.args.merchant.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
+                                            BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
+                                            parsed.args.memo === receiptId
                                         ) {
                                             logFound = true;
                                             break;
@@ -354,7 +342,7 @@ export async function POST(request: Request) {
                                 }
 
                                 if (!logFound) {
-                                    throw new Error("USDC Transfer event to expected receiver not found");
+                                    throw new Error("SubScript Router DepositWithMemo event not found");
                                 }
                             } else {
                                 /* CCTP Cross-chain transaction verification */
@@ -522,7 +510,7 @@ export async function POST(request: Request) {
                                         payment_link_payment_id: newPayment.id,
                                         tx_hash: normalizedTx,
                                         chain_id: Number(chainId),
-                                        memo_contract: ARC_MEMO_CONTRACT_ADDRESS.toLowerCase(),
+                                        memo_contract: SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
                                         payer_address: normalizedPayer,
                                         merchant_address: paymentLink.merchant_address.toLowerCase(),
                                         amount_usdc: paymentLink.amount_usdc.toString(),

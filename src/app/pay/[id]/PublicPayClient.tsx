@@ -22,7 +22,7 @@ import {
     isProd
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
-import { ARC_MEMO_ABI, buildMemoWrappedUsdcTransferFrom, generateReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { ROUTER_DEPOSIT_ABI, generateReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 export interface PublicPayClientProps {
     id: string;
@@ -314,17 +314,17 @@ export default function PublicPayClient({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                         abi: USDC_ERC20_ABI,
                         functionName: "allowance",
-                        args: [address as `0x${string}`, ARC_MEMO_CONTRACT_ADDRESS],
+                        args: [address as `0x${string}`, SUBSCRIPT_ROUTER_ADDRESS],
                     })
                     : BigInt(0);
 
                 if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
-                    setVerificationStatus("Approving SubScript receipt memo routing...");
+                    setVerificationStatus("Approving merchant vault deposit...");
                     const approvalHash = await writeContractAsync({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                         abi: USDC_ERC20_ABI,
                         functionName: "approve",
-                        args: [ARC_MEMO_CONTRACT_ADDRESS, BigInt(linkData.amount_usdc)],
+                        args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
                     });
 
                     if (publicClient) {
@@ -333,24 +333,17 @@ export default function PublicPayClient({
                             timeout: 120_000,
                         });
                         if (approvalReceipt.status !== "success") {
-                            throw new Error("USDC approval for receipt memo routing reverted.");
+                            throw new Error("USDC approval for merchant vault deposit reverted.");
                         }
                     }
                 }
 
-                const memoTransfer = buildMemoWrappedUsdcTransferFrom({
-                    payer: address as `0x${string}`,
-                    merchant: linkData.merchant_address as `0x${string}`,
-                    amountUsdc: BigInt(linkData.amount_usdc),
-                    receiptId: nextReceiptId,
-                });
-
-                setVerificationStatus("Attaching human-readable receipt memo...");
+                setVerificationStatus("Depositing funds to merchant vault...");
                 const hash = await writeContractAsync({
-                    address: memoTransfer.to,
-                    abi: ARC_MEMO_ABI,
-                    functionName: "executeWithMemo",
-                    args: [memoTransfer.target, memoTransfer.transferFromData, nextReceiptId],
+                    address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
+                    abi: ROUTER_DEPOSIT_ABI,
+                    functionName: "depositForMerchant",
+                    args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc), nextReceiptId],
                 });
 
                 setTxHash(hash);

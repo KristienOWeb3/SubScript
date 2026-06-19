@@ -446,11 +446,12 @@ export default function PayrollPage() {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
+            const hasTarget = targetAddress && targetAddress.toLowerCase() !== address?.toLowerCase();
             await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
                 abi: SUBSCRIPT_ROUTER_ABI,
-                functionName: "withdraw",
-                args: [],
+                functionName: hasTarget ? "withdrawTo" : "withdraw",
+                args: hasTarget ? [targetAddress as `0x${string}`] : [],
             });
 
             setWithdrawSuccess(true);

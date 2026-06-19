@@ -131,6 +131,10 @@ export default function DepositModal({
             console.error("Terms not agreed.");
             return;
         }
+        if (isPrivacyDepositUnavailable) {
+            setTxError("Privacy deposit routing is coming soon. This contract path is not deployed yet, so SubScript will not ask you to sign a transaction that would fail.");
+            return;
+        }
         if (!isConnected && !isEmbeddedWallet) {
             console.error("Wallet not connected.");
             return;
@@ -224,6 +228,10 @@ export default function DepositModal({
     const handleTransfer = async () => {
         if (!agreed) {
             console.error("Terms not agreed.");
+            return;
+        }
+        if (isPrivacyDepositUnavailable) {
+            setTxError("Privacy deposit routing is coming soon. Use regular Arc USDC payment flows until the depositAndCommit contract is deployed.");
             return;
         }
         if (!isConnected && !isEmbeddedWallet) {
@@ -324,6 +332,7 @@ export default function DepositModal({
 
     const isLoading = txLoading;
     const isWrongNetwork = chainId !== 5042002 && !isEmbeddedWallet;
+    const isPrivacyDepositUnavailable = true;
 
     return (
         <AnimatePresence>
@@ -365,7 +374,7 @@ export default function DepositModal({
                                         About this deposit
                                     </p>
                                     <p>
-                                        Commit $1.00 USDC to fund the privacy-enhanced subscription execution gas pool on-chain.
+                                        Privacy deposit routing is not live yet. We will enable this once the matching depositAndCommit contract is deployed on Arc.
                                     </p>
                                     <div className="flex items-center gap-2 pt-1.5 border-t border-white/5 mt-1.5">
                                         <input
@@ -551,7 +560,7 @@ export default function DepositModal({
 
                                                  <button
                                                      onClick={handleApprove}
-                                                     disabled={isLoading || !agreed}
+                                                     disabled={isLoading || !agreed || isPrivacyDepositUnavailable}
                                                      className="w-full py-2.5 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
                                                               hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
                                                               transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
@@ -561,7 +570,9 @@ export default function DepositModal({
                                                          ? "Switch to Arc Testnet" 
                                                          : isLoading 
                                                              ? (txStatus || "Processing...") 
-                                                             : "Approve $1 USDC"}
+                                                             : isPrivacyDepositUnavailable
+                                                                 ? "Privacy Deposit Coming Soon"
+                                                                 : "Approve $1 USDC"}
                                                  </button>
                                              </div>
                                          ) : (
@@ -584,7 +595,7 @@ export default function DepositModal({
 
                                                  <button
                                                      onClick={handleTransfer}
-                                                     disabled={isLoading}
+                                                     disabled={isLoading || isPrivacyDepositUnavailable}
                                                      className="w-full py-2.5 bg-[#00d2b4] text-[#111111] font-semibold rounded-xl
                                                               hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed
                                                               transition-all duration-200 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
@@ -594,7 +605,9 @@ export default function DepositModal({
                                                          ? "Switch to Arc Testnet" 
                                                          : isLoading 
                                                              ? (txStatus || "Processing...") 
-                                                             : "Deposit $1 USDC"}
+                                                             : isPrivacyDepositUnavailable
+                                                                 ? "Privacy Deposit Coming Soon"
+                                                                 : "Deposit $1 USDC"}
                                                  </button>
                                              </div>
                                          )}

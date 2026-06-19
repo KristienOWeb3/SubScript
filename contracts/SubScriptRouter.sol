@@ -42,6 +42,13 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
     event Withdraw(address indexed merchant, uint256 amount);
 
+    event DepositWithMemo(
+        address indexed payer,
+        address indexed merchant,
+        uint256 amount,
+        string memo
+    );
+
     event MerchantPayoutRerouted(
         address indexed merchant,
         address indexed oldDestination,
@@ -154,8 +161,25 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
+     * @notice Deposit funds for a merchant to credit their vault balance.
+     */
+    function depositForMerchant(
+        address _merchant,
+        uint256 _amount,
+        string calldata _memo
+    ) external nonReentrant whenNotPaused {
+        require(_merchant != address(0), "Invalid merchant address");
+        require(_amount > 0, "Amount must be positive");
+
+        paymentToken.safeTransferFrom(msg.sender, address(this), _amount);
+        merchantBalances[_merchant] += _amount;
+
+        emit DepositWithMemo(msg.sender, _merchant, _amount, _memo);
+    }
+
+    /**
      * @notice Safe, non-gated withdrawal function.
-     *         Reverts since stateless router holds no funds across blocks.
+     *         Withdraws merchant vault balance, deducting 1% protocol fee to Treasury.
      */
     function withdraw() external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
@@ -163,14 +187,42 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
         merchantBalances[msg.sender] = 0;
 
+        uint256 fee = balance / 100; // 1% fee
+        uint256 netAmount = balance - fee;
+
         address targetPayout = msg.sender;
         if (merchantTiers[msg.sender] >= 1 && merchantPayoutDestination[msg.sender] != address(0)) {
             targetPayout = merchantPayoutDestination[msg.sender];
         }
 
-        paymentToken.safeTransfer(targetPayout, balance);
+        if (fee > 0) {
+            paymentToken.safeTransfer(treasury, fee);
+        }
+        paymentToken.safeTransfer(targetPayout, netAmount);
 
-        emit Withdraw(targetPayout, balance);
+        emit Withdraw(targetPayout, netAmount);
+    }
+
+    /**
+     * @notice Safe withdrawal function to a specified target recipient.
+     *         Withdraws caller's merchant vault balance, deducting 1% protocol fee to Treasury.
+     */
+    function withdrawTo(address _recipient) external nonReentrant whenNotPaused {
+        uint256 balance = merchantBalances[msg.sender];
+        require(balance > 0, "No balance to withdraw");
+        require(_recipient != address(0), "Invalid recipient address");
+
+        merchantBalances[msg.sender] = 0;
+
+        uint256 fee = balance / 100; // 1% fee
+        uint256 netAmount = balance - fee;
+
+        if (fee > 0) {
+            paymentToken.safeTransfer(treasury, fee);
+        }
+        paymentToken.safeTransfer(_recipient, netAmount);
+
+        emit Withdraw(_recipient, netAmount);
     }
 
 

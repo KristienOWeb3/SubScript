@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createPaymentRequestDm } from "@/lib/dms/system";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -11,6 +12,10 @@ export async function POST(request: Request, { params }: RouteContext) {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const roleCheck = await requireAccountRole(wallet, "USER");
+        if (!roleCheck.ok) {
+            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
         const { id } = await params;

@@ -10,8 +10,7 @@ import {
     getOfflineOtpCode, 
     deleteOfflineOtpCode, 
     getOfflineUserEmbeddedWallet, 
-    saveOfflineUserEmbeddedWallet, 
-    upsertOfflineMerchant 
+    saveOfflineUserEmbeddedWallet
 } from "@/lib/offlineDb";
 
 export async function POST(request: Request) {
@@ -153,7 +152,6 @@ export async function POST(request: Request) {
 
             if (isOfflineMode) {
                 saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
-                upsertOfflineMerchant(walletAddress.toLowerCase());
             } else {
                 try {
                     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -169,24 +167,15 @@ export async function POST(request: Request) {
                         if (isConnectionError(insertError)) {
                             console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
                             saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
-                            upsertOfflineMerchant(walletAddress.toLowerCase());
                         } else {
                             console.error("Failed to store generated embedded wallet:", insertError);
                             return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
                         }
-                    } else {
-                        await supabase
-                            .from("merchants")
-                            .upsert({
-                                wallet_address: walletAddress.toLowerCase(),
-                                tier: "FREE"
-                            }, { onConflict: "wallet_address" });
                     }
                 } catch (err: any) {
                     if (isConnectionError(err)) {
                         console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
                         saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
-                        upsertOfflineMerchant(walletAddress.toLowerCase());
                     } else {
                         console.error("Failed to store generated embedded wallet (catch):", err);
                         return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });

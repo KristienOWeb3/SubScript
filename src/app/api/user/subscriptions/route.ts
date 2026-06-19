@@ -2,12 +2,17 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 export async function GET(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const roleCheck = await requireAccountRole(wallet, "USER");
+        if (!roleCheck.ok) {
+            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
 
         const subscriptions = await prisma.subscription.findMany({

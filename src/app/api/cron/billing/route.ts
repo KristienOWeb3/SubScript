@@ -7,9 +7,10 @@ import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
 
 const STANDARD_ABI = [
-    "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
-    "function executePayment(uint256 _subId) external",
-    "function isPaymentDue(uint256 _subId) view returns (bool)"
+    "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+    "function executePayment(uint256 _subId, uint256 _sequenceId) external",
+    "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+    "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)"
 ];
 
 const ROUTER_ABI = [
@@ -425,8 +426,14 @@ export async function POST(request: Request) {
                     continue;
                 }
 
+                /* Determine the next sequence ID */
+                let sequenceId = 1;
+                while (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                    sequenceId++;
+                }
+
                 /* Check if payment is due on-chain */
-                const isDueOnChain = await standardContract.isPaymentDue(subId);
+                const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
                 if (!isDueOnChain) {
                     results.push({
                         subId,
@@ -438,7 +445,7 @@ export async function POST(request: Request) {
                 }
 
                 /* Execute payment */
-                const tx = await standardContract.executePayment(subId);
+                const tx = await standardContract.executePayment(subId, sequenceId);
                 const receipt = await tx.wait();
                 if (receipt.status !== 1) {
                     throw new Error("Payment execution transaction reverted");

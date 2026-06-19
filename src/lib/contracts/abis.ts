@@ -85,11 +85,40 @@ export const SUBSCRIPT_ROUTER_ABI = [
         outputs: [],
     },
     {
+        type: "function",
+        name: "withdrawTo",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_recipient", type: "address" }],
+        outputs: [],
+    },
+    {
         type: "event",
         name: "Withdraw",
         inputs: [
             { name: "merchant", type: "address", indexed: true },
             { name: "amount", type: "uint256", indexed: false },
+        ],
+        anonymous: false,
+    },
+    {
+        type: "function",
+        name: "depositForMerchant",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_merchant", type: "address" },
+            { name: "_amount", type: "uint256" },
+            { name: "_memo", type: "string" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "event",
+        name: "DepositWithMemo",
+        inputs: [
+            { name: "payer", type: "address", indexed: true },
+            { name: "merchant", type: "address", indexed: true },
+            { name: "amount", type: "uint256", indexed: false },
+            { name: "memo", type: "string", indexed: false },
         ],
         anonymous: false,
     },
@@ -243,8 +272,31 @@ export const STANDARD_SUBSCRIPT_ABI = [
         type: "function",
         name: "executePayment",
         stateMutability: "nonpayable",
-        inputs: [{ name: "_subId", type: "uint256" }],
+        inputs: [
+            { name: "_subId", type: "uint256" },
+            { name: "_sequenceId", type: "uint256" }
+        ],
         outputs: [],
+    },
+    {
+        type: "function",
+        name: "isPaymentDue",
+        stateMutability: "view",
+        inputs: [
+            { name: "_subId", type: "uint256" },
+            { name: "_sequenceId", type: "uint256" }
+        ],
+        outputs: [{ name: "", type: "bool" }],
+    },
+    {
+        type: "function",
+        name: "isSequenceExecuted",
+        stateMutability: "view",
+        inputs: [
+            { name: "_subId", type: "uint256" },
+            { name: "_sequenceId", type: "uint256" }
+        ],
+        outputs: [{ name: "", type: "bool" }],
     },
     {
         type: "event",

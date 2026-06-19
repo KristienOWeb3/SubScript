@@ -467,4 +467,104 @@ describe("SubScript", function () {
       expect(subscriberUsdcBeforeExecution - subscriberUsdcAfterExecution).to.equal(expectedUsdcSpent);
     });
   });
+
+  /* SUBSCRIPT ROUTER VAULT AND FEES */
+  describe("SubScriptRouter Vault and Fees", function () {
+    async function deployRouterFixture() {
+      const [owner, subscriber, merchant, treasury] = await ethers.getSigners();
+
+      const MockUSDC = await ethers.getContractFactory("MockUSDC");
+      const usdc = await MockUSDC.deploy();
+
+      const SubScriptRouter = await ethers.getContractFactory("SubScriptRouter");
+      const implementation = await SubScriptRouter.deploy();
+
+      const ERC1967Proxy = await ethers.getContractFactory("MockERC1967Proxy");
+      const initData = implementation.interface.encodeFunctionData("initialize", [
+        await usdc.getAddress(),
+        treasury.address,
+        owner.address
+      ]);
+      const proxy = await ERC1967Proxy.deploy(await implementation.getAddress(), initData);
+      const router = SubScriptRouter.attach(await proxy.getAddress());
+
+      const TEN_K = ethers.parseUnits("10000", 6);
+      await usdc.mint(subscriber.address, TEN_K);
+      await usdc.connect(subscriber).approve(await router.getAddress(), TEN_K);
+
+      return {
+        usdc,
+        router,
+        owner,
+        subscriber,
+        merchant,
+        treasury,
+      };
+    }
+
+    it("should deposit funds into merchant vault and emit event", async function () {
+      const { usdc, router, subscriber, merchant } = await loadFixture(deployRouterFixture);
+
+      const amount = ethers.parseUnits("100", 6);
+      const memo = "receipt-12345";
+
+      await expect(
+        router.connect(subscriber).depositForMerchant(merchant.address, amount, memo)
+      )
+        .to.emit(router, "DepositWithMemo")
+        .withArgs(subscriber.address, merchant.address, amount, memo);
+
+      expect(await router.merchantBalances(merchant.address)).to.equal(amount);
+      expect(await usdc.balanceOf(await router.getAddress())).to.equal(amount);
+    });
+
+    it("should withdraw vault balance to merchant and send 1% fee to treasury", async function () {
+      const { usdc, router, subscriber, merchant, treasury } = await loadFixture(deployRouterFixture);
+
+      const amount = ethers.parseUnits("100", 6); // 100 USDC
+      const memo = "receipt-12345";
+
+      await router.connect(subscriber).depositForMerchant(merchant.address, amount, memo);
+
+      const merchantBalBefore = await usdc.balanceOf(merchant.address);
+      const treasuryBalBefore = await usdc.balanceOf(treasury.address);
+
+      // Perform withdrawal
+      await expect(router.connect(merchant).withdraw())
+        .to.emit(router, "Withdraw")
+        .withArgs(merchant.address, ethers.parseUnits("99", 6));
+
+      const merchantBalAfter = await usdc.balanceOf(merchant.address);
+      const treasuryBalAfter = await usdc.balanceOf(treasury.address);
+
+      expect(merchantBalAfter - merchantBalBefore).to.equal(ethers.parseUnits("99", 6));
+      expect(treasuryBalAfter - treasuryBalBefore).to.equal(ethers.parseUnits("1", 6));
+      expect(await router.merchantBalances(merchant.address)).to.equal(0);
+    });
+
+    it("should withdraw vault balance to a custom recipient and send 1% fee to treasury", async function () {
+      const { usdc, router, subscriber, merchant, treasury } = await loadFixture(deployRouterFixture);
+      const [, , , , recipient] = await ethers.getSigners();
+
+      const amount = ethers.parseUnits("100", 6); // 100 USDC
+      const memo = "receipt-12345";
+
+      await router.connect(subscriber).depositForMerchant(merchant.address, amount, memo);
+
+      const recipientBalBefore = await usdc.balanceOf(recipient.address);
+      const treasuryBalBefore = await usdc.balanceOf(treasury.address);
+
+      // Perform withdrawal to recipient
+      await expect(router.connect(merchant).withdrawTo(recipient.address))
+        .to.emit(router, "Withdraw")
+        .withArgs(recipient.address, ethers.parseUnits("99", 6));
+
+      const recipientBalAfter = await usdc.balanceOf(recipient.address);
+      const treasuryBalAfter = await usdc.balanceOf(treasury.address);
+
+      expect(recipientBalAfter - recipientBalBefore).to.equal(ethers.parseUnits("99", 6));
+      expect(treasuryBalAfter - treasuryBalBefore).to.equal(ethers.parseUnits("1", 6));
+      expect(await router.merchantBalances(merchant.address)).to.equal(0);
+    });
+  });
 });
