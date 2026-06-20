@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { uploadProfilePicture } from "@/lib/storage";
+
 
 const unsupportedUserSettings = new Set([
     "securityShieldEnabled",
@@ -187,6 +189,17 @@ export async function POST(request: Request) {
             spendingLimitMonthly,
         } = body;
 
+        let finalProfilePic = profilePic;
+        if (typeof profilePic === "string" && profilePic.startsWith("data:image/")) {
+            const MAX_PROFILE_PIC_BYTES = 2 * 1024 * 1024;
+            const base64 = profilePic.split(",")[1] || "";
+            const byteLength = Math.floor((base64.length * 3) / 4);
+            if (byteLength > MAX_PROFILE_PIC_BYTES) {
+                return NextResponse.json({ error: "Profile image must be smaller than 2MB" }, { status: 400 });
+            }
+            finalProfilePic = await uploadProfilePicture(profilePic, normalizedUser);
+        }
+
         if (role === "ENTERPRISE") {
             const unsupportedField = getUnsupportedSetting(body, unsupportedMerchantSettings);
             if (unsupportedField) {
@@ -194,7 +207,7 @@ export async function POST(request: Request) {
             }
 
             const updateData: any = {};
-            if (profilePic !== undefined) updateData.profilePic = profilePic;
+            if (profilePic !== undefined) updateData.profilePic = finalProfilePic;
             if (pushEnabled !== undefined) updateData.pushEnabled = false;
             if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
             if (payoutSettlementEnabled !== undefined) updateData.payoutSettlementEnabled = false;
@@ -216,7 +229,7 @@ export async function POST(request: Request) {
                     disputeAlertsEnabled: false,
                     securityMultiSigEnabled: false,
                     payoutDestination: payoutDestination || null,
-                    profilePic: profilePic || null,
+                    profilePic: finalProfilePic || null,
                 },
             });
         } else {
@@ -226,7 +239,7 @@ export async function POST(request: Request) {
             }
 
             const updateData: any = {};
-            if (profilePic !== undefined) updateData.profilePic = profilePic;
+            if (profilePic !== undefined) updateData.profilePic = finalProfilePic;
             if (pushEnabled !== undefined) updateData.pushEnabled = !!pushEnabled;
             if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
             if (debitSuccessEnabled !== undefined) updateData.debitSuccessEnabled = !!debitSuccessEnabled;
@@ -249,7 +262,7 @@ export async function POST(request: Request) {
                 update: updateData,
                 create: {
                     walletAddress: normalizedUser,
-                    profilePic: profilePic || null,
+                    profilePic: finalProfilePic || null,
                     pushEnabled: pushEnabled !== undefined ? !!pushEnabled : true,
                     emailEnabled: emailEnabled !== undefined ? !!emailEnabled : true,
                     debitSuccessEnabled: debitSuccessEnabled !== undefined ? !!debitSuccessEnabled : true,

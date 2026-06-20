@@ -5,6 +5,8 @@ import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { uploadProfilePicture } from "@/lib/storage";
+
 
 /* Users receive .sub names; enterprises receive business namespaces. */
 const USER_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
@@ -129,13 +131,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Profile image must be an image data URL smaller than 2MB" }, { status: 400 });
             }
 
+            const uploadedUrl = await uploadProfilePicture(profilePic, normalizedUser);
+
             if (role === "ENTERPRISE") {
                 await prisma.merchant.upsert({
                     where: { walletAddress: normalizedUser },
-                    update: { profilePic, updatedAt: new Date() },
+                    update: { profilePic: uploadedUrl, updatedAt: new Date() },
                     create: {
                         walletAddress: normalizedUser,
-                        profilePic,
+                        profilePic: uploadedUrl,
                         tier: "FREE",
                         availableBalanceUsdc: BigInt(0),
                         reservedBalanceUsdc: BigInt(0),
@@ -144,15 +148,15 @@ export async function POST(request: Request) {
             } else {
                 await prisma.customer.upsert({
                     where: { walletAddress: normalizedUser },
-                    update: { profilePic },
-                    create: { walletAddress: normalizedUser, profilePic },
+                    update: { profilePic: uploadedUrl },
+                    create: { walletAddress: normalizedUser, profilePic: uploadedUrl },
                 });
             }
 
             return NextResponse.json({
                 success: true,
                 address: normalizedUser,
-                profile_pic: profilePic,
+                profile_pic: uploadedUrl,
             }, { status: 200 });
         }
 
