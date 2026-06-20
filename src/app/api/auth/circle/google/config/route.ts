@@ -6,12 +6,14 @@ export async function GET() {
     const redirectUri = process.env.CIRCLE_GOOGLE_REDIRECT_URI;
 
     if (!appId || !googleClientId || !redirectUri) {
-        return NextResponse.json({ error: "Circle Google login is not configured" }, { status: 500 });
+        return NextResponse.json({ isMock: true });
     }
 
     return NextResponse.json({
         appId,
         googleClientId,
         redirectUri,
+        isMock: false
     });
 }
+

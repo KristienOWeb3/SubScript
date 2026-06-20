@@ -18,10 +18,15 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { role } = sanitizedBody;
+        const { role, email } = sanitizedBody;
 
         if (role !== "USER" && role !== "ENTERPRISE") {
             return NextResponse.json({ error: "Invalid role selected" }, { status: 400 });
+        }
+
+        let emailVal: string | null = null;
+        if (email && typeof email === "string" && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+            emailVal = email.toLowerCase().trim();
         }
 
         const normalizedWallet = wallet.toLowerCase();
@@ -41,6 +46,23 @@ export async function POST(request: Request) {
                         role: existingRole.role,
                         alreadyRegistered: true,
                     };
+                }
+
+                if (emailVal) {
+                    const emailConflictResult = await client.query(
+                        "select wallet_address from user_embedded_wallets where email = $1 and wallet_address != $2 limit 1",
+                        [emailVal, normalizedWallet]
+                    );
+                    if (emailConflictResult.rows[0]) {
+                        throw new Error("This email is already associated with another account wallet.");
+                    }
+
+                    await client.query(
+                        `insert into user_embedded_wallets (wallet_address, email, provider)
+                         values ($1, $2, 'external_wallet')
+                         on conflict (wallet_address) do update set email = excluded.email, updated_at = now()`,
+                        [normalizedWallet, emailVal]
+                    );
                 }
 
                 const createdRoleResult = await client.query(
@@ -63,12 +85,21 @@ export async function POST(request: Request) {
                     );
                 } else {
                     await client.query("delete from merchants where wallet_address = $1", [normalizedWallet]);
-                    await client.query(
-                        `insert into customers (wallet_address)
-                        values ($1)
-                        on conflict (wallet_address) do nothing`,
-                        [normalizedWallet]
-                    );
+                    if (emailVal) {
+                        await client.query(
+                            `insert into customers (wallet_address, email)
+                            values ($1, $2)
+                            on conflict (wallet_address) do update set email = excluded.email`,
+                            [normalizedWallet, emailVal]
+                        );
+                    } else {
+                        await client.query(
+                            `insert into customers (wallet_address)
+                            values ($1)
+                            on conflict (wallet_address) do nothing`,
+                            [normalizedWallet]
+                        );
+                    }
                 }
 
                 await client.query("commit");

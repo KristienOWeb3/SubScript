@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
@@ -13,6 +12,7 @@ import {
     getOfflineUserEmbeddedWallet, 
     saveOfflineUserEmbeddedWallet
 } from "@/lib/offlineDb";
+import { prisma } from "@/lib/prisma";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -56,47 +56,22 @@ export async function POST(request: Request) {
         const emailLower = emailVal;
         const rememberMeVal = rememberMeBool;
 
-        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        
         let record = null;
         let isOfflineMode = false;
 
-        if (!supabaseUrl || !supabaseServiceKey) {
-            if (!allowOfflineAuth()) {
-                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-            }
-            isOfflineMode = true;
-        } else {
-            try {
-                const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                const { data, error } = await supabase
-                    .from("otp_codes")
-                    .select("code, expires_at")
-                    .eq("email", emailVal)
-                    .maybeSingle();
-
-                if (error) {
-                    if (isConnectionError(error)) {
-                        if (!allowOfflineAuth()) {
-                            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-                        }
-                        isOfflineMode = true;
-                    } else {
-                        return NextResponse.json({ error: error.message || "Failed to query verification code." }, { status: 500 });
-                    }
-                } else {
-                    record = data;
+        try {
+            const rows = await prisma.$queryRaw<any[]>`
+                SELECT code, expires_at FROM otp_codes WHERE email = ${emailVal} LIMIT 1
+            `;
+            record = rows[0] || null;
+        } catch (err: any) {
+            if (isConnectionError(err)) {
+                if (!allowOfflineAuth()) {
+                    return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
-            } catch (err: any) {
-                if (isConnectionError(err)) {
-                    if (!allowOfflineAuth()) {
-                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-                    }
-                    isOfflineMode = true;
-                } else {
-                    return NextResponse.json({ error: err.message || "Failed to query verification code." }, { status: 500 });
-                }
+                isOfflineMode = true;
+            } else {
+                return NextResponse.json({ error: err.message || "Failed to query verification code." }, { status: 500 });
             }
         }
 
@@ -118,8 +93,7 @@ export async function POST(request: Request) {
                 deleteOfflineOtpCode(emailVal);
             } else {
                 try {
-                    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                    await supabase.from("otp_codes").delete().eq("email", emailVal);
+                    await prisma.$executeRaw`DELETE FROM otp_codes WHERE email = ${emailVal}`;
                 } catch (e) {}
             }
             return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
@@ -129,8 +103,7 @@ export async function POST(request: Request) {
             deleteOfflineOtpCode(emailVal);
         } else {
             try {
-                const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                await supabase.from("otp_codes").delete().eq("email", emailVal);
+                await prisma.$executeRaw`DELETE FROM otp_codes WHERE email = ${emailVal}`;
             } catch (e) {}
         }
 
@@ -139,21 +112,11 @@ export async function POST(request: Request) {
 
         if (!isOfflineMode) {
             try {
-                const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                const { data, error } = await supabase
-                    .from("user_embedded_wallets")
-                    .select("wallet_address")
-                    .eq("email", emailVal)
-                    .maybeSingle();
-
-                if (error) {
-                    if (isConnectionError(error)) {
-                        isOfflineMode = true;
-                    } else {
-                        return NextResponse.json({ error: error.message || "Failed to check wallet." }, { status: 500 });
-                    }
-                } else {
-                    walletRecord = data;
+                const walletRecordRes = await prisma.userEmbeddedWallet.findUnique({
+                    where: { email: emailVal }
+                });
+                if (walletRecordRes) {
+                    walletRecord = { wallet_address: walletRecordRes.walletAddress };
                 }
             } catch (err: any) {
                 if (isConnectionError(err)) {
@@ -180,30 +143,20 @@ export async function POST(request: Request) {
                 saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
             } else {
                 try {
-                    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                    const { error: insertError } = await supabase
-                        .from("user_embedded_wallets")
-                        .insert({
+                    await prisma.userEmbeddedWallet.create({
+                        data: {
                             email: emailVal,
-                            wallet_address: walletAddress.toLowerCase(),
-                            encrypted_private_key: encryptedKey
-                        });
-
-                    if (insertError) {
-                        if (isConnectionError(insertError)) {
-                            console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
-                            saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
-                        } else {
-                            console.error("Failed to store generated embedded wallet:", insertError);
-                            return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
+                            walletAddress: walletAddress.toLowerCase(),
+                            encryptedPrivateKey: encryptedKey,
+                            provider: "circle_google"
                         }
-                    }
+                    });
                 } catch (err: any) {
                     if (isConnectionError(err)) {
-                        console.warn("⚠️ Supabase is offline. Storing new social embedded wallet in offlineDb.");
+                        console.warn("⚠️ Database is offline. Storing new social embedded wallet in offlineDb.");
                         saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
                     } else {
-                        console.error("Failed to store generated embedded wallet (catch):", err);
+                        console.error("Failed to store generated OTP embedded wallet:", err);
                         return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
                     }
                 }
@@ -214,6 +167,7 @@ export async function POST(request: Request) {
         if (!secretStr) {
             return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
         }
+
         const secret = new TextEncoder().encode(secretStr);
         const sessionDuration = rememberMeVal ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
         const expiresAt = new Date(Date.now() + sessionDuration);
@@ -233,7 +187,6 @@ export async function POST(request: Request) {
             role
         });
 
-        
         response.cookies.set("subscript_session_token", jwt, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",

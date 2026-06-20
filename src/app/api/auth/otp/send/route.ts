@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
 import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
+import { prisma } from "@/lib/prisma";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
 
@@ -49,45 +49,22 @@ export async function POST(request: Request) {
         const codeHash = hashOtp(emailLower, code);
         const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
-        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-        if (!supabaseUrl || !supabaseServiceKey) {
-            if (!allowOfflineAuth()) {
-                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-            }
-            saveOfflineOtpCode(emailLower, codeHash, expiresAt);
-        } else {
-            try {
-                const supabase = createClient(supabaseUrl, supabaseServiceKey);
-                const { error } = await supabase
-                    .from("otp_codes")
-                    .upsert({
-                        email: emailLower,
-                        code: codeHash,
-                        expires_at: expiresAt.toISOString()
-                    }, { onConflict: "email" });
-
-                if (error) {
-                    if (isConnectionError(error)) {
-                        if (!allowOfflineAuth()) {
-                            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-                        }
-                        saveOfflineOtpCode(emailLower, codeHash, expiresAt);
-                    } else {
-                        console.error("Failed to store OTP code in Supabase:", error);
-                        return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
-                    }
+        try {
+            await prisma.$executeRaw`
+                INSERT INTO otp_codes (email, code, expires_at)
+                VALUES (${emailLower}, ${codeHash}, ${expiresAt})
+                ON CONFLICT (email)
+                DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at, created_at = NOW()
+            `;
+        } catch (err: any) {
+            if (isConnectionError(err)) {
+                if (!allowOfflineAuth()) {
+                    return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
-            } catch (err: any) {
-                if (isConnectionError(err)) {
-                    if (!allowOfflineAuth()) {
-                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-                    }
-                    saveOfflineOtpCode(emailLower, codeHash, expiresAt);
-                } else {
-                    console.error("Failed to store OTP code (catch):", err);
-                    return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
-                }
+                saveOfflineOtpCode(emailLower, codeHash, expiresAt);
+            } else {
+                console.error("Failed to store OTP code in database via Prisma:", err);
+                return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
             }
         }
 

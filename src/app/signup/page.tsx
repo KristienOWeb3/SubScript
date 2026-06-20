@@ -45,6 +45,7 @@ export default function SignupPage() {
   const [selectedRole, setSelectedRole] = useState<"USER" | "ENTERPRISE" | null>(null);
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
 
   /* CAPTCHA states */
   const [captchaCodeInput, setCaptchaCodeInput] = useState("");
@@ -75,11 +76,41 @@ export default function SignupPage() {
     }
   }, [authMethod, walletSignupPrompt, loadCaptcha]);
 
+  const [showEmailInput, setShowEmailInput] = useState(false);
+
   useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.loggedIn) {
+            setActiveMerchantAddress(data.wallet);
+            if (data.email) {
+              setEmail(data.email);
+              setRequiresEmailLinking(false);
+            } else {
+              setRequiresEmailLinking(true);
+            }
+            if (data.role) {
+              window.location.href = getDashboardUrl(data.role as any, "/dashboard");
+            } else {
+              setShowRoleSelector(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check active session on mount:", err);
+      }
+    };
+    checkSession();
+
     const initialEmail = new URLSearchParams(window.location.search).get("email");
     if (initialEmail) {
       setEmail(initialEmail);
       setAuthMethod("email");
+    } else {
+      setShowEmailInput(true);
     }
   }, []);
 
@@ -88,9 +119,12 @@ export default function SignupPage() {
     if (data.role) {
       window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
+      if (!email) {
+        setRequiresEmailLinking(true);
+      }
       setShowRoleSelector(true);
     }
-  }, []);
+  }, [email]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,13 +288,19 @@ export default function SignupPage() {
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
+    if (requiresEmailLinking) {
+      if (!email || !email.includes("@")) {
+        setRoleError("Please enter a valid email address.");
+        return;
+      }
+    }
     setRoleLoading(true);
     setRoleError(null);
     try {
       const res = await fetch("/api/auth/register-role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: selectedRole }),
+        body: JSON.stringify({ role: selectedRole, email: requiresEmailLinking ? email : undefined }),
       });
       const data = await res.json();
       if (data.success) {
@@ -365,6 +405,28 @@ export default function SignupPage() {
                 </p>
               </button>
             </div>
+
+            {requiresEmailLinking && (
+              <div className="space-y-2 pt-2 text-left">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                  Email Address (for push notifications)
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    placeholder="name@domain.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="subscript-input pr-10"
+                  />
+                  <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
+                </div>
+                <p className="text-[9px] text-white/40 leading-relaxed">
+                  Enter your email address so you don't miss critical payment and billing push notifications.
+                </p>
+              </div>
+            )}
 
             {roleError && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3">

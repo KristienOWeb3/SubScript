@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ARC_TESTNET_CHAIN_ID, PREMIUM_PRICE } from "@/lib/payments/constants";
 import crypto from "crypto";
+import { prisma } from "@/lib/prisma";
 
 const parseBody = async (request: Request) => {
     try {
@@ -104,13 +105,18 @@ export async function POST(request: Request) {
         }
 
         /* Ensure merchant record exists before creating payment session */
-        const { error: merchantUpsertError } = await supabase
-            .from("merchants")
-            .upsert({
-                wallet_address: userWallet,
-            }, { onConflict: "wallet_address" });
-
-        if (merchantUpsertError) {
+        try {
+            await prisma.merchant.upsert({
+                where: { walletAddress: userWallet },
+                update: { updatedAt: new Date() },
+                create: {
+                    walletAddress: userWallet,
+                    tier: "FREE",
+                    availableBalanceUsdc: BigInt(0),
+                    reservedBalanceUsdc: BigInt(0),
+                },
+            });
+        } catch (merchantUpsertError) {
             console.error("[Premium Checkout] Merchant upsert failed:", merchantUpsertError);
             return NextResponse.json({ error: "Database Sync Error: Failed to synchronize merchant record" }, { status: 500 });
         }
