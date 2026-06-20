@@ -28,6 +28,16 @@ type CircleSession = {
     oAuthInfo?: SocialLoginResult["oAuthInfo"];
 };
 
+type CircleGoogleWalletButtonProps = {
+    onSuccess?: (data: {
+        success: boolean;
+        wallet: string;
+        email?: string | null;
+        provider?: string;
+        role?: string | null;
+    }) => void;
+};
+
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const COOKIE_OPTIONS = {
     path: "/",
@@ -92,7 +102,7 @@ function getNextUrl(defaultRole?: string | null) {
     return getDashboardUrl("USER", "/user");
 }
 
-export default function CircleGoogleWalletButton() {
+export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -113,9 +123,16 @@ export default function CircleGoogleWalletButton() {
             throw new Error(completed.error || "Could not save your wallet.");
         }
 
+        if (onSuccess) {
+            onSuccess(completed);
+            return;
+        }
+
         const destination = completed.role
             ? getDashboardUrl(completed.role as any, "/dashboard")
-            : getNextUrl(roleHint);
+            : getAuthIntent() === "signup"
+                ? `/signup?email=${encodeURIComponent(completed.email || "")}`
+                : getNextUrl(roleHint);
 
         router.push(destination);
         router.refresh();

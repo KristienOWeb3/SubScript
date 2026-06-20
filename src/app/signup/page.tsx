@@ -147,12 +147,16 @@ export default function SignupPage() {
     }
   }, []);
 
-  const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
+  const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; email?: string | null; role?: string | null }) => {
     setActiveMerchantAddress(data.wallet);
+    if (data.email) {
+      setEmail(data.email);
+      setRequiresEmailLinking(false);
+    }
     if (data.role) {
       window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
-      if (!email) {
+      if (!data.email && !email) {
         setRequiresEmailLinking(true);
       }
       setShowRoleSelector(true);
@@ -552,7 +556,7 @@ export default function SignupPage() {
               </p>
 
               <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton />
+                <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
               </div>
 
               <div className="relative py-2 flex items-center justify-center">
@@ -773,4 +777,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
