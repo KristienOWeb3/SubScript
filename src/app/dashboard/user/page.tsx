@@ -131,6 +131,18 @@ export default function UserDashboard() {
   const router = useRouter();
   const { disconnect } = useDisconnect();
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<UserTab>("home");
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -888,29 +900,31 @@ export default function UserDashboard() {
       </aside>
 
       {/* Mobile headers (only shown on small screens) */}
-      <div className="md:hidden w-full">
-        {activeTab === "inbox" && selectedDmPeer ? (
-          <ChatHeader
-            peerName={activeThread?.peerName || formatAddress(selectedDmPeer)}
-            peerProfilePic={activeThread?.peerProfilePic || null}
-            peerAddress={selectedDmPeer}
-            isMerchant={subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")}
-            onBack={() => setSelectedDmPeer(null)}
-            onSendFunds={() => {
-              setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
-              setSendFundsOpen(true);
-            }}
-          />
-        ) : (
-          <HomeHeader
-            registeredDomain={registeredDomain}
-            profilePic={profilePic}
-            userWallet={userWallet}
-            onDns={() => setActiveTab("dns")}
-            onLogout={handleLogout}
-          />
-        )}
-      </div>
+      {isMobile && (
+        <div className="w-full">
+          {activeTab === "inbox" && selectedDmPeer ? (
+            <ChatHeader
+              peerName={activeThread?.peerName || formatAddress(selectedDmPeer)}
+              peerProfilePic={activeThread?.peerProfilePic || null}
+              peerAddress={selectedDmPeer}
+              isMerchant={subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")}
+              onBack={() => setSelectedDmPeer(null)}
+              onSendFunds={() => {
+                setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
+                setSendFundsOpen(true);
+              }}
+            />
+          ) : (
+            <HomeHeader
+              registeredDomain={registeredDomain}
+              profilePic={profilePic}
+              userWallet={userWallet}
+              onDns={() => setActiveTab("dns")}
+              onLogout={handleLogout}
+            />
+          )}
+        </div>
+      )}
 
       {/* Main View Area */}
       <div className="flex-1 flex flex-col min-h-screen bg-[#060608] overflow-hidden">
@@ -932,7 +946,7 @@ export default function UserDashboard() {
         </header>
 
         {/* Content main scroll view */}
-        <main className="flex-1 overflow-y-auto px-5 md:px-8 pb-28 pt-5 md:pt-8 min-h-0">
+        <main className="flex-1 overflow-y-auto px-5 md:px-8 pb-28 pt-24 md:pt-8 min-h-0">
           <AnimatePresence mode="wait">
             {activeTab === "home" && (
               <motion.section
@@ -1001,111 +1015,20 @@ export default function UserDashboard() {
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
                 className="min-h-[calc(100vh-160px)] md:min-h-0 md:h-[calc(100vh-160px)] flex flex-col md:flex-row gap-5 -mx-5 md:mx-0"
               >
-                {/* Mobile View Thread Selection Toggle */}
-                <div className="md:hidden flex-1 flex flex-col min-h-0 h-full overflow-hidden justify-between">
-                  {!selectedDmPeer ? (
-                    <div className="px-5 space-y-4 overflow-y-auto pb-20">
-                      <DmThreadSelect
-                        threads={dmThreads}
-                        onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col justify-between overflow-hidden h-full">
-                      <div className="flex-1 overflow-y-auto space-y-4 px-5 pb-24">
-                        <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
-                          {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
-                            ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
-                            : "Direct peer-to-peer system messages only"}
-                        </div>
-                        <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
-                          {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        </div>
-                        {selectedThreadDms.map((dm) => (
-                          <DmBubble
-                            key={dm.id}
-                            dm={dm}
-                            focused={focusIntentId === dm.paymentLinkId}
-                            incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
-                            loadingAction={loadingAction}
-                            onPay={() => handleConfirmPaymentDm(dm)}
-                            onDecline={() => handleDeclineDm(dm)}
-                            onDismiss={() => handleDismissDm(dm)}
-                            onNudge={() => handleNudgeSuggestion(dm)}
-                            onThanks={() => handleThanksSuggestion(dm)}
-                            onCancelPlan={() => handleCancelPlanSuggestion(dm)}
-                          />
-                        ))}
+                {isMobile ? (
+                  /* Mobile View Thread Selection Toggle */
+                  <div className="flex-1 flex flex-col min-h-0 h-full overflow-hidden justify-between">
+                    {!selectedDmPeer ? (
+                      <div className="px-5 space-y-4 overflow-y-auto pb-20">
+                        <DmThreadSelect
+                          threads={dmThreads}
+                          onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
+                        />
                       </div>
-
-                      {/* Bottom Action Footer for Mobile */}
-                      <div className="fixed bottom-20 left-0 right-0 px-5 py-3 bg-[#060608]/95 border-t border-white/5 z-40 backdrop-blur-md">
-                        {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
-                          <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
-                            YOU CAN NOT REQUEST FROM A MERCHANT
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveTab("links");
-                            }}
-                            className="w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
-                          >
-                            REQUEST
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Desktop Split Multi-Column DM Layout */}
-                <div className="hidden md:flex flex-1 flex-row gap-5 h-full overflow-hidden items-stretch">
-                  {/* List of opened DMs (middle column in blueprint) */}
-                  <div className="w-[340px] border-r border-white/5 pr-5 flex flex-col overflow-y-auto space-y-4 shrink-0">
-                    <DmThreadSelect
-                      threads={dmThreads}
-                      onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
-                      selectedPeerAddress={selectedDmPeer}
-                    />
-                  </div>
-
-                  {/* Active thread message bubble display (right column in blueprint) */}
-                  <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
-                    {selectedDmPeer ? (
-                      <div className="flex flex-col h-full justify-between gap-5 overflow-hidden">
-                        {/* Desktop Chat Pane Header */}
-                        <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
-                          <div className="flex items-center gap-3">
-                            <Avatar profilePic={activeThread?.peerProfilePic || null} />
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <h4 className="text-sm font-black uppercase tracking-wider text-white">
-                                  {activeThread?.peerName || formatAddress(selectedDmPeer)}
-                                </h4>
-                                {(subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")) && (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                                )}
-                              </div>
-                              <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{selectedDmPeer}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
-                              setSendFundsOpen(true);
-                            }}
-                            className="px-4 py-2.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)]"
-                          >
-                            Send Funds
-                          </button>
-                        </div>
-
-                        {/* Desktop Messages Scroll View */}
-                        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                          <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+                    ) : (
+                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-full">
+                        <div className="flex-1 overflow-y-auto space-y-4 px-5 pb-24">
+                          <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                               : "Direct peer-to-peer system messages only"}
@@ -1113,27 +1036,25 @@ export default function UserDashboard() {
                           <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
                             {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                           </div>
-                          <div className="space-y-4">
-                            {selectedThreadDms.map((dm) => (
-                              <DmBubble
-                                key={dm.id}
-                                dm={dm}
-                                focused={focusIntentId === dm.paymentLinkId}
-                                incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
-                                loadingAction={loadingAction}
-                                onPay={() => handleConfirmPaymentDm(dm)}
-                                onDecline={() => handleDeclineDm(dm)}
-                                onDismiss={() => handleDismissDm(dm)}
-                                onNudge={() => handleNudgeSuggestion(dm)}
-                                onThanks={() => handleThanksSuggestion(dm)}
-                                onCancelPlan={() => handleCancelPlanSuggestion(dm)}
-                              />
-                            ))}
-                          </div>
+                          {selectedThreadDms.map((dm) => (
+                            <DmBubble
+                              key={dm.id}
+                              dm={dm}
+                              focused={focusIntentId === dm.paymentLinkId}
+                              incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
+                              loadingAction={loadingAction}
+                              onPay={() => handleConfirmPaymentDm(dm)}
+                              onDecline={() => handleDeclineDm(dm)}
+                              onDismiss={() => handleDismissDm(dm)}
+                              onNudge={() => handleNudgeSuggestion(dm)}
+                              onThanks={() => handleThanksSuggestion(dm)}
+                              onCancelPlan={() => handleCancelPlanSuggestion(dm)}
+                            />
+                          ))}
                         </div>
 
-                        {/* Bottom Action Footer for Desktop */}
-                        <div className="pt-4 border-t border-white/5 shrink-0">
+                        {/* Bottom Action Footer for Mobile */}
+                        <div className="fixed bottom-20 left-0 right-0 px-5 py-3 bg-[#060608]/95 border-t border-white/5 z-40 backdrop-blur-md">
                           {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
                             <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                               YOU CAN NOT REQUEST FROM A MERCHANT
@@ -1151,15 +1072,110 @@ export default function UserDashboard() {
                           )}
                         </div>
                       </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3">
-                        <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
-                        <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
-                        <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
-                      </div>
                     )}
                   </div>
-                </div>
+                ) : (
+                  /* Desktop Split Multi-Column DM Layout */
+                  <div className="flex flex-1 flex-row gap-5 h-full overflow-hidden items-stretch">
+                    {/* List of opened DMs (middle column in blueprint) */}
+                    <div className="w-[340px] border-r border-white/5 pr-5 flex flex-col overflow-y-auto space-y-4 shrink-0">
+                      <DmThreadSelect
+                        threads={dmThreads}
+                        onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
+                        selectedPeerAddress={selectedDmPeer}
+                      />
+                    </div>
+
+                    {/* Active thread message bubble display (right column in blueprint) */}
+                    <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
+                      {selectedDmPeer ? (
+                        <div className="flex flex-col h-full justify-between gap-5 overflow-hidden">
+                          {/* Desktop Chat Pane Header */}
+                          <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
+                            <div className="flex items-center gap-3">
+                              <Avatar profilePic={activeThread?.peerProfilePic || null} />
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                                    {activeThread?.peerName || formatAddress(selectedDmPeer)}
+                                  </h4>
+                                  {(subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")) && (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                  )}
+                                </div>
+                                <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{selectedDmPeer}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
+                                setSendFundsOpen(true);
+                              }}
+                              className="px-4 py-2.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)]"
+                            >
+                              Send Funds
+                            </button>
+                          </div>
+
+                          {/* Desktop Messages Scroll View */}
+                          <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                            <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+                              {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
+                                ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
+                                : "Direct peer-to-peer system messages only"}
+                            </div>
+                            <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
+                              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </div>
+                            <div className="space-y-4">
+                              {selectedThreadDms.map((dm) => (
+                                <DmBubble
+                                  key={dm.id}
+                                  dm={dm}
+                                  focused={focusIntentId === dm.paymentLinkId}
+                                  incoming={dm.senderAddress.toLowerCase() !== userWallet?.toLowerCase()}
+                                  loadingAction={loadingAction}
+                                  onPay={() => handleConfirmPaymentDm(dm)}
+                                  onDecline={() => handleDeclineDm(dm)}
+                                  onDismiss={() => handleDismissDm(dm)}
+                                  onNudge={() => handleNudgeSuggestion(dm)}
+                                  onThanks={() => handleThanksSuggestion(dm)}
+                                  onCancelPlan={() => handleCancelPlanSuggestion(dm)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Bottom Action Footer for Desktop */}
+                          <div className="pt-4 border-t border-white/5 shrink-0">
+                            {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
+                              <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
+                                YOU CAN NOT REQUEST FROM A MERCHANT
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab("links");
+                                }}
+                                className="w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
+                              >
+                                REQUEST
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3">
+                          <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
+                          <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </motion.section>
             )}
 
@@ -1727,9 +1743,10 @@ export default function UserDashboard() {
       </div>
 
       {/* Mobile-only Bottom Navigation Bar */}
-      {userWallet && (
-        <div className="md:hidden fixed bottom-4 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
-          <nav className="flex flex-1 items-center justify-around rounded-full border border-white/10 bg-black/70 px-3 py-3.5 shadow-2xl backdrop-blur-xl">
+      {isMobile && userWallet && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+          {/* Capsule Navigation Menu */}
+          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
@@ -1740,26 +1757,26 @@ export default function UserDashboard() {
                   setSelectedDmPeer(null);
                   setActiveTab(tab.id);
                 }}
-                accentClassName="text-[#00d2b4]"
               />
             ))}
           </nav>
 
+          {/* DMs Icon Outside Bottom Bar Capsule */}
           <button
             type="button"
             onClick={() => {
               setSelectedDmPeer(null);
               setActiveTab("inbox");
             }}
-            className={`relative flex h-12 shrink-0 items-center justify-center gap-2 overflow-hidden rounded-full border px-3 shadow-2xl backdrop-blur-xl transition-all duration-300 ${
+            className={`relative h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl gap-2 px-3 overflow-hidden ${
               activeTab === "inbox"
-                ? "w-[108px] border-[#00d2b4]/30 bg-[#00d2b4] text-black shadow-[0_0_15px_rgba(0,210,180,0.3)]"
-                : "w-12 border-white/10 bg-black/70 text-white/55 hover:text-white"
+                ? "bg-[#00d2b4] border-[#00d2b4]/30 text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] scale-105 w-[108px]"
+                : "bg-black/60 border-white/5 text-white/50 hover:text-white w-12"
             }`}
             aria-label="Open DMs"
           >
             <MessageSquare className="h-5 w-5 shrink-0" />
-            {activeTab === "inbox" && <span className="text-[10px] font-black uppercase tracking-wider">DMs</span>}
+            {activeTab === "inbox" && <span className="text-[10px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
             {pendingDmCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-black bg-red-500 px-1 text-[9px] font-black text-white">
                 {pendingDmCount > 9 ? "9+" : pendingDmCount}
@@ -1816,28 +1833,54 @@ function HomeHeader({
   onLogout: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 px-5 pt-5 relative z-20">
-      <div className="flex items-center rounded-full border border-white/5 bg-black/40 p-2 backdrop-blur-xl shadow-lg">
-        <button type="button" onClick={onDns} className="flex min-w-0 items-center gap-2 rounded-full pr-2 text-left">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 text-sm font-black text-[#00d2b4] shadow-[0_0_15px_rgba(0,210,180,0.15)]">S</span>
-          <span className="hidden min-w-0 sm:block">
-            <span className="block text-[11px] font-black uppercase tracking-[0.2em] text-white">SubScript</span>
-            <span className="block max-w-[120px] truncate text-[10px] font-bold uppercase tracking-[0.12em] text-[#00d2b4]">User wallet</span>
-          </span>
-        </button>
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          <button type="button" onClick={onLogout} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/5 bg-black/25 text-white/50 hover:text-white transition">
-            <LogOut className="h-4 w-4" />
-          </button>
-          <button type="button" onClick={onDns} className="min-w-0 rounded-full border border-white/5 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
-            <span className="block max-w-[118px] truncate">{registeredDomain || formatAddress(userWallet)}</span>
-          </button>
-          <button type="button" onClick={onDns} className="shrink-0">
-            <Avatar profilePic={profilePic} />
-          </button>
+    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+      <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
+        <div className="flex items-center justify-between w-full">
+          {/* Logo (Left - Always visible on mobile) */}
+          <div className="flex items-center flex-shrink-0">
+            <img 
+              src="/logo.png" 
+              alt="SubScript Logo" 
+              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
+            />
+          </div>
+          {/* Actions (Right) */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            {/* Logout Button */}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-2 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-full transition-all"
+              title="Log Out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+            {/* Address/Domain Pill */}
+            <button
+              type="button"
+              onClick={onDns}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
+              title="Click to manage account settings"
+            >
+              <div className="w-4 h-4 bg-[#00d2b4]/10 rounded-full flex items-center justify-center">
+                <Wallet className="w-2 h-2 text-[#00d2b4]" />
+              </div>
+              <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
+                {registeredDomain || formatAddress(userWallet)}
+              </span>
+            </button>
+            {/* PFP Avatar button */}
+            <button
+              type="button"
+              onClick={onDns}
+              className="shrink-0 focus:outline-none"
+            >
+              <Avatar profilePic={profilePic} size="xs" />
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </div>
   );
 }
 
@@ -1857,32 +1900,51 @@ function ChatHeader({
   onSendFunds: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 px-5 pt-5 relative z-20">
-      <div className="flex items-center gap-3 rounded-full border border-white/5 bg-black/40 p-2 backdrop-blur-xl shadow-lg">
-        <button type="button" onClick={onBack} className="flex h-11 w-11 items-center justify-center rounded-full text-white/60 hover:text-white transition">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <Avatar profilePic={peerProfilePic} />
-        <div className="min-w-0 rounded-full border border-white/5 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,210,180,0.1)]">
-          <span className="block max-w-[110px] truncate">{peerName}</span>
-          {isMerchant && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
+    <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
+      <header className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/30 backdrop-blur-lg">
+        <div className="flex items-center justify-between w-full gap-2">
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={onBack}
+            className="p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          
+          {/* Peer Info Capsule */}
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
+            <Avatar profilePic={peerProfilePic} size="xs" />
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] truncate max-w-[80px]">
+              {peerName}
+            </span>
+            {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
+          </div>
+
+          {/* Action button */}
+          <button
+            type="button"
+            onClick={onSendFunds}
+            className="ml-auto px-3.5 py-1.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] active:scale-95 shrink-0"
+          >
+            Send Funds
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onSendFunds}
-          className="ml-auto mr-2 px-4 py-2 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] active:scale-95"
-        >
-          Send Funds
-        </button>
-      </div>
-    </header>
+      </header>
+    </div>
   );
 }
 
-function Avatar({ profilePic, size = "sm" }: { profilePic: string | null; size?: "sm" | "lg" }) {
+function Avatar({ profilePic, size = "sm" }: { profilePic: string | null; size?: "xs" | "sm" | "lg" }) {
   return (
-    <div className={`${size === "lg" ? "h-16 w-16" : "h-10 w-10"} flex items-center justify-center overflow-hidden rounded-full border border-white/5 bg-black/30`}>
-      {profilePic ? <img src={profilePic} alt="Profile" className="h-full w-full object-cover" /> : <User className="h-4 w-4 text-white/45" />}
+    <div className={`${
+      size === "lg" ? "h-16 w-16" : size === "xs" ? "h-7 w-7" : "h-10 w-10"
+    } flex items-center justify-center overflow-hidden rounded-full border border-white/5 bg-black/30 shrink-0`}>
+      {profilePic ? (
+        <img src={profilePic} alt="Profile" className="h-full w-full object-cover" />
+      ) : (
+        <User className={`${size === "xs" ? "h-3.5 w-3.5" : "h-4 w-4"} text-white/45`} />
+      )}
     </div>
   );
 }
