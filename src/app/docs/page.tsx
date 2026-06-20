@@ -299,7 +299,7 @@ interface ISubScriptRouter {
 
         <div className="flex items-center gap-4">
           <Link 
-            href="/dashboard" 
+            href="/merchant" 
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 text-xs font-bold uppercase tracking-wider text-white transition-all"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -381,7 +381,7 @@ interface ISubScriptRouter {
                   );
                 })}
                 <Link 
-                  href="/dashboard" 
+                  href="/merchant" 
                   className="flex items-center gap-3 px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold uppercase tracking-wider text-white"
                 >
                   <ArrowLeft className="w-4 h-4" />

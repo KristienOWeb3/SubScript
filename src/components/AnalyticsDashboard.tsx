@@ -481,7 +481,7 @@ export default function AnalyticsDashboard({
                                         </p>
                                     </div>
                                     <Link
-                                        href="/dashboard/upgrade"
+                                        href="/merchant/upgrade"
                                         className="px-6 py-2.5 bg-yellow-300 hover:bg-yellow-200 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-yellow-500/15"
                                     >
                                         Upgrade Now

@@ -386,7 +386,7 @@ export default function UserDashboard() {
 
       if (data.role !== "USER") {
         console.warn("Unauthorized role for user dashboard, redirecting to merchant dashboard");
-        window.location.href = getDashboardUrl("ENTERPRISE", "/dashboard");
+        window.location.href = getDashboardUrl("ENTERPRISE", "/merchant");
         return;
       }
 

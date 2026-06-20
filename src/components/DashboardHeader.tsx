@@ -178,7 +178,7 @@ export default function DashboardHeader({
         if (onDnsClick) {
             onDnsClick();
         } else {
-            window.location.href = "/dashboard?tab=settings";
+            window.location.href = "/merchant?tab=settings";
         }
     };
 

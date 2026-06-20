@@ -97,7 +97,7 @@ export default function CircleGoogleWalletButton() {
                             }
 
                             const params = new URLSearchParams(window.location.search);
-                            const next = params.get("next") || "/dashboard/user";
+                            const next = params.get("next") || "/user";
                             router.push(next);
                             router.refresh();
                         } catch (err: any) {
@@ -222,4 +222,3 @@ export default function CircleGoogleWalletButton() {
         </div>
     );
 }
-

@@ -71,7 +71,7 @@ const tabs = [
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payment Links", icon: Link2 },
-    { id: "payroll", label: "Payroll", icon: Building2, href: "/dashboard/payroll" },
+    { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -878,7 +878,7 @@ export default function DashboardPage() {
                     }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/dashboard/user");
+                        window.location.href = getDashboardUrl("USER", "/user");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -930,7 +930,7 @@ export default function DashboardPage() {
                     }
                     if (data.role === "USER") {
                         console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/dashboard/user");
+                        window.location.href = getDashboardUrl("USER", "/user");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -3156,7 +3156,7 @@ Please complete the following implementation tasks:
                                 </div>
                                 <div>
                                     <Link
-                                        href="/dashboard/payroll"
+                                        href="/merchant/payroll"
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
                                         <Building2 className="w-5 h-5" />
@@ -3640,7 +3640,7 @@ Please complete the following implementation tasks:
                                             )}
                                         </div>
                                         <Link
-                                            href="/dashboard/upgrade"
+                                            href="/merchant/upgrade"
                                             className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 text-center"
                                         >
                                             Manage Subscription
@@ -3665,7 +3665,7 @@ Please complete the following implementation tasks:
                                     </div>
 
                                     <Link
-                                        href="/dashboard/upgrade"
+                                        href="/merchant/upgrade"
                                         className="px-8 py-3.5 bg-gradient-to-r from-[#d4a853] to-[#c49240] text-[#111111] font-extrabold text-xs uppercase tracking-widest rounded-full shadow-[0_4px_25px_rgba(212,168,83,0.3)] hover:brightness-110 transition-all flex items-center gap-2 mx-auto w-fit"
                                     >
                                         <Crown className="w-4 h-4" /> View Upgrade Options

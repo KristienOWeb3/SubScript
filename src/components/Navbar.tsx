@@ -196,7 +196,7 @@ export default function Navbar() {
                             </button>
                         )}
                         <Link 
-                            href="/dashboard"
+                            href="/merchant"
                             className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
                         >
                             Sign In

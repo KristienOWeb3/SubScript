@@ -259,7 +259,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
     // 2. Receipt Details State (Authorized)
     const paidAt = receipt.confirmed_at || receipt.created_at;
-    const claimHref = `/signup?next=/dashboard/user&claimReceipt=${encodeURIComponent(receiptId)}`;
+    const claimHref = `/signup?next=/user&claimReceipt=${encodeURIComponent(receiptId)}`;
 
     return (
         <main className="min-h-screen bg-[#060608] text-white px-6 py-10 flex items-center justify-center">

@@ -152,7 +152,7 @@ export default function UpgradePage() {
             setSuccessTxHash(hash);
             setCheckoutState("success");
             setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
-            router.push("/dashboard?upgradeSuccess=true");
+            router.push("/merchant?upgradeSuccess=true");
         } catch (err: any) {
             console.error("Premium upgrade sync failed:", err);
             setCheckoutError(err.message || "Failed to sync premium state with server");
@@ -342,13 +342,13 @@ export default function UpgradePage() {
                 <DashboardHeader 
                     isPremium={isPremium}
                     activeTab="premium"
-                    onBackToOverview={() => router.push("/dashboard")}
+                    onBackToOverview={() => router.push("/merchant")}
                 />
 
                 <main className="max-w-4xl mx-auto px-6 pt-28 pb-12">
                     <div className="mb-8 flex items-center justify-between">
                         <Link 
-                            href="/dashboard"
+                            href="/merchant"
                             className="flex items-center gap-2 text-xs text-white/50 hover:text-white transition-all font-mono uppercase tracking-wider"
                         >
                             <ChevronLeft className="w-4 h-4" />

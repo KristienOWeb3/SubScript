@@ -116,7 +116,7 @@ export default function PublicPayClient({
             if (!dmRes.ok) {
                 throw new Error(dmData.error || "Could not create SubScript DM");
             }
-            router.push(dmData.dashboardUrl || `/dashboard/user?tab=inbox&intent=${linkData.id}`);
+            router.push(dmData.dashboardUrl || `/user?tab=inbox&intent=${linkData.id}`);
         } catch (err: any) {
             setDmError(err.message || "Failed to initiate DM session. Please try again.");
             setIsCreatingDm(false);

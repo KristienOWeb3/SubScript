@@ -38,10 +38,10 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     if (role === "USER") {
         const cleanPath = path.replace(/^\/dashboard\/user/, "").replace(/^\/dashboard/, "");
         const suffix = cleanPath ? (cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`) : "";
-        return `/dashboard/user${suffix}`;
+        return `/user${suffix}`;
     } else {
         const cleanPath = path.replace(/^\/dashboard\/merchant/, "").replace(/^\/dashboard/, "").replace(/^\/merchant/, "");
         const suffix = cleanPath ? (cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`) : "";
-        return `/dashboard${suffix}`;
+        return `/merchant${suffix}`;
     }
 }

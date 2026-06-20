@@ -446,7 +446,7 @@ export default function WithdrawModal({
                                             </p>
                                         </div>
                                         <Link
-                                            href="/dashboard/upgrade"
+                                            href="/merchant/upgrade"
                                             onClick={resetStates}
                                             className="px-6 py-2.5 bg-[#d4a853] hover:brightness-105 text-black rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-lg shadow-[#d4a853]/15 text-center"
                                         >

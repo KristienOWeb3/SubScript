@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: RouteContext) {
 
         const dashboardUrl = isProduction
             ? `${protocol}://dashboard.subscriptonarc.com/user?tab=inbox&intent=${encodeURIComponent(id)}`
-            : `/dashboard/user?tab=inbox&intent=${encodeURIComponent(id)}`;
+            : `/user?tab=inbox&intent=${encodeURIComponent(id)}`;
 
         return NextResponse.json({
             success: true,
