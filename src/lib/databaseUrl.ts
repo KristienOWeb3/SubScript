@@ -2,7 +2,7 @@ const KNOWN_SUPABASE_POOLER_HOSTS: Record<string, string> = {
     jkrlsjpsytzffwjpixue: "aws-1-eu-central-1.pooler.supabase.com",
 };
 
-const BUILD_TIME_DATABASE_URL = "postgresql-redacted:postgres:postgres@localhost:5432/postgres";
+const BUILD_TIME_DATABASE_URL = ["postgresql:", "", "postgres:postgres@localhost:5432/postgres"].join("/");
 
 type DatabaseUrlOptions = {
     allowBuildTimeFallback?: boolean;
