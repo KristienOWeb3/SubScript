@@ -75,6 +75,14 @@ export async function middleware(request: NextRequest) {
                 }
                 return NextResponse.redirect(subUrl);
             }
+            if (
+                pathname === "/merchant" || pathname.startsWith("/merchant/") ||
+                pathname === "/user" || pathname.startsWith("/user/")
+            ) {
+                const subUrl = request.nextUrl.clone();
+                subUrl.host = "dashboard.subscriptonarc.com";
+                return NextResponse.redirect(subUrl);
+            }
         }
 
         // 2. Manage dashboard subdomain routing
