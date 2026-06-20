@@ -53,6 +53,14 @@ export async function POST(request: Request) {
             }, { status: 404 });
         }
 
+        if (existingWallet) {
+            return NextResponse.json({
+                requiresChallenge: false,
+                email,
+                role: existingRole?.role || null,
+            });
+        }
+
         const challenge = await createCircleArcWalletChallenge(circleAuth.userToken);
         const challengeId = challenge.data?.challengeId;
         if (!challengeId) {
@@ -60,10 +68,9 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({
+            requiresChallenge: true,
             challengeId,
             email,
-            userToken: circleAuth.userToken,
-            encryptionKey: circleAuth.encryptionKey,
         });
     } catch (error: any) {
         console.error("Circle wallet challenge error:", error);

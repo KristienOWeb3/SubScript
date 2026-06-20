@@ -76,8 +76,8 @@ export async function middleware(request: NextRequest) {
             const token = request.cookies.get("subscript_session_token")?.value;
 
             // If not logged in, redirect to landing sign-in page
-            if (!token && pathname !== "/signin" && pathname !== "/signup") {
-                return NextResponse.redirect("https://subscriptonarc.com/signin");
+            if (!token && pathname !== "/signin" && pathname !== "/login" && pathname !== "/signup") {
+                return NextResponse.redirect("https://subscriptonarc.com/login");
             }
 
             if (pathname === "/") {
@@ -86,7 +86,7 @@ export async function middleware(request: NextRequest) {
                 return NextResponse.redirect(userUrl);
             }
 
-            if (pathname === "/signin" || pathname === "/signup") {
+            if (pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
                 return NextResponse.redirect(`https://subscriptonarc.com${pathname}`);
             }
 
