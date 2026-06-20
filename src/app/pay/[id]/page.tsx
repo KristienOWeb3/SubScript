@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         ? process.env.NEXT_PUBLIC_APP_URL 
         : process.env.VERCEL_URL 
             ? `https://${process.env.VERCEL_URL}` 
-            : "https://subscript.network";
+            : "https://subscriptonarc.com";
     return {
         metadataBase: new URL(appUrl),
         title,

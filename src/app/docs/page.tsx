@@ -1,112 +1,209 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { 
-  BookOpen, 
-  Code, 
-  Terminal, 
-  Webhook, 
-  Link2, 
-  Cpu, 
-  ChevronRight, 
-  ArrowLeft, 
-  Check, 
-  Copy, 
-  Menu, 
-  X,
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  Code,
+  Copy,
   FileText,
-  ShieldCheck,
-  Server,
-  ShieldAlert,
+  Globe,
   HelpCircle,
-  Wrench
+  KeyRound,
+  Link2,
+  Menu,
+  MessageSquare,
+  QrCode,
+  ReceiptText,
+  Server,
+  ShieldCheck,
+  Terminal,
+  Webhook,
+  X,
+  Zap,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import { motion, AnimatePresence } from "framer-motion";
 
+type Section = {
+  id: string;
+  title: string;
+  icon: typeof BookOpen;
+};
 
-interface CodeBlockProps {
-  code: string;
-  language: string;
-}
+const sections: Section[] = [
+  { id: "overview", title: "Overview", icon: BookOpen },
+  { id: "paths", title: "Choose a path", icon: Zap },
+  { id: "nocode", title: "No-code links", icon: Link2 },
+  { id: "vibecoder", title: "Vibecoder prompt", icon: MessageSquare },
+  { id: "developer", title: "Developer API", icon: Server },
+  { id: "webhooks", title: "Webhooks", icon: Webhook },
+  { id: "receipts", title: "Receipts", icon: ReceiptText },
+  { id: "contracts", title: "On-chain", icon: Code },
+  { id: "faq", title: "FAQ", icon: HelpCircle },
+];
 
-function CodeBlock({ code, language }: CodeBlockProps) {
+function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1600);
   };
 
   return (
-    <div className="relative border border-white/10 rounded-2xl overflow-hidden bg-black/60 font-mono text-xs my-4 shadow-xl">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/[0.02] text-white/50 text-[10px] uppercase font-bold tracking-wider">
+    <div className="my-4 overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-xs shadow-xl">
+      <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
         <span>{language}</span>
         <button
+          type="button"
           onClick={handleCopy}
-          className="p-1 hover:text-white bg-white/5 hover:bg-white/10 rounded transition-all flex items-center gap-1.5"
-          title="Copy Code"
+          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-white/55 transition hover:bg-white/10 hover:text-white"
         >
-          {copied ? (
-            <>
-              <Check className="w-3 h-3 text-[#00d2b4]" />
-              <span className="text-[#00d2b4] text-[9px]">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3 h-3" />
-              <span className="text-[9px]">Copy</span>
-            </>
-          )}
+          {copied ? <Check className="h-3 w-3 text-[#ccff00]" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-white/85 leading-relaxed whitespace-pre scrollbar-thin">
+      <pre className="overflow-x-auto p-4 leading-relaxed text-white/85">
         <code>{code}</code>
       </pre>
     </div>
   );
 }
 
-export default function DocsPage() {
-  const [activeSection, setActiveSection] = useState("intro");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [apiLang, setApiLang] = useState<"js" | "curl" | "python">("js");
-  const [webhookLang, setWebhookLang] = useState<"js" | "python">("js");
+const checkoutIntentCode = `// Merchant backend: create a Checkout Intent with SubScript
+const response = await fetch("https://subscriptonarc.com/api/payment-links", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer sk_live_your_subscript_secret_key",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    amountUsdc: "15.00",
+    title: "Premium Plan",
+    description: "Monthly access for user_123",
+    intentId: "intent_abc123",
+    customerReference: "user_123",
+    webhookUrl: "https://yourapp.com/api/subscript-webhook"
+  })
+});
 
+const { payUrl, qrCodeUrl, receiptId } = await response.json();`;
+
+const frontendEmbedCode = `// Frontend: send the customer to hosted checkout
+export function UpgradeButton({ payUrl }) {
+  return (
+    <a href={payUrl} className="subscript-button">
+      Pay with SubScript
+    </a>
+  );
+}`;
+
+const webhookCode = `import crypto from "crypto";
+
+export async function POST(req) {
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-subscript-signature");
+  const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET;
+
+  const [timestampPart, digestPart] = signature.split(",");
+  const timestamp = timestampPart.replace("t=", "");
+  const digest = digestPart.replace("v1=", "");
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(\`\${timestamp}.\${rawBody}\`)
+    .digest("hex");
+
+  if (!crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(expected))) {
+    return Response.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  const event = JSON.parse(rawBody);
+  if (event.event === "payment.success") {
+    await unlockPlanForUser(event.data.intent_id);
+  }
+
+  return Response.json({ received: true });
+}`;
+
+const vibePrompt = `You are integrating SubScript into my app.
+
+Goal:
+- Add a "Pay with SubScript" button to my pricing page.
+- My backend should create a Checkout Intent for the logged-in user.
+- Store intent_id in my database beside the user's account.
+- Redirect the user to the SubScript payUrl.
+- Add a webhook route that verifies x-subscript-signature.
+- When payment.success arrives, look up data.intent_id and unlock the plan.
+
+Use:
+- Amount: 15 USDC
+- Product: Premium Plan
+- Webhook path: /api/subscript-webhook
+- Env vars: SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET
+
+Important:
+- Do not ask the merchant to know the payer wallet.
+- Use intent_id as the source of truth.
+- Keep all secret keys server-side only.`;
+
+const viemMemoCode = `import { encodeFunctionData, parseUnits } from "viem";
+
+const memoContract = "0x5294E9927c3306DcBaDb03fe70b92e01cCede505";
+const receiptId = "Premium-Plan-user-123-a8f2";
+
+const data = encodeFunctionData({
+  abi: [{
+    type: "function",
+    name: "callWithMemo",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "target", type: "address" },
+      { name: "data", type: "bytes" },
+      { name: "memo", type: "string" }
+    ],
+    outputs: [{ name: "result", type: "bytes" }]
+  }],
+  functionName: "callWithMemo",
+  args: [
+    SUBSCRIPT_ROUTER_ADDRESS,
+    encodeFunctionData({
+      abi: routerAbi,
+      functionName: "depositForMerchant",
+      args: [merchantAddress, parseUnits("15", 6), receiptId]
+    }),
+    JSON.stringify({
+      receipt_id: receiptId,
+      intent_id: "intent_abc123",
+      merchant: "yourapp.hq",
+      amount: "15000000"
+    })
+  ]
+});
+
+await walletClient.sendTransaction({ to: memoContract, data });`;
+
+export default function DocsPage() {
+  const [activeSection, setActiveSection] = useState("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const observer = useRef<IntersectionObserver | null>(null);
 
-  const sections = [
-    { id: "intro", title: "Introduction", icon: BookOpen },
-    { id: "cli", title: "CLI Scaffolding", icon: Code },
-    { id: "mcp", title: "AI Agentic Servers", icon: Server },
-    { id: "links", title: "Direct Payment Links", icon: Link2 },
-    { id: "customization", title: "Checkout Customization", icon: Wrench },
-    { id: "security", title: "Secret Key Security", icon: ShieldAlert },
-    { id: "webhooks", title: "Webhook Integration", icon: Webhook },
-    { id: "api", title: "REST API Reference", icon: Terminal },
-    { id: "contracts", title: "On-Chain Contracts", icon: Cpu },
-    { id: "faq", title: "Developer FAQ", icon: HelpCircle },
-  ];
-
   useEffect(() => {
-    // Setup intersection observer to highlight current section in navigation
-    const handleIntersect = (entries: IntersectionObserverEntry[]) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          setActiveSection(entry.target.id);
-        }
-      });
-    };
+    observer.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) setActiveSection(entry.target.id);
+        });
+      },
+      { rootMargin: "-18% 0px -64% 0px", threshold: 0.1 },
+    );
 
-    observer.current = new IntersectionObserver(handleIntersect, {
-      rootMargin: "-20% 0px -60% 0px",
-      threshold: 0.1
-    });
-
-    sections.forEach((s) => {
-      const el = document.getElementById(s.id);
+    sections.forEach((section) => {
+      const el = document.getElementById(section.id);
       if (el) observer.current?.observe(el);
     });
 
@@ -114,665 +211,248 @@ export default function DocsPage() {
   }, []);
 
   const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth" });
-      setActiveSection(id);
-      setMobileMenuOpen(false);
-    }
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    setActiveSection(id);
+    setMobileMenuOpen(false);
   };
 
-  const cliCode = `npx @subscript-protocol/create@latest my-subscript-app`;
-
-  const mcpCode = `npx @subscript-protocol/mcp@latest --api-key sk_test_your_secret_key_here`;
-
-  const jsApiCode = `// Fetch subscription details using Node.js / JavaScript
-const fetchSubscription = async (subscriptionId) => {
-  const apiKey = "sk_test_55f2...c8a9"; // Replace with your merchant secret key
-  const response = await fetch(
-    \`https://subscript.protocol/api/v1/subscriptions?id=\${subscriptionId}\`,
-    {
-      method: "GET",
-      headers: {
-        "Authorization": \`Bearer \${apiKey}\`,
-        "Content-Type": "application/json"
-      }
-    }
-  );
-  
-  if (!response.ok) {
-    throw new Error(\`API returned status: \${response.status}\`);
-  }
-  
-  const data = await response.json();
-  console.log("Subscription details:", data);
-};`;
-
-  const curlApiCode = `# Retrieve subscription details via cURL
-curl -X GET "https://subscript.protocol/api/v1/subscriptions?id=sub_102" \\
-  -H "Authorization: Bearer sk_test_your_secret_key_here" \\
-  -H "Content-Type: application/json"`;
-
-  const pythonApiCode = `# Fetch subscription details using Python
-import requests
-
-def get_subscription(subscription_id, api_key):
-    url = f"https://subscript.protocol/api/v1/subscriptions?id={subscription_id}"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    return response.json()`;
-
-  const jsWebhookCode = `// Webhook signature validation in Node.js / Express
-const crypto = require('crypto');
-
-app.post('/webhooks/subscript', express.raw({ type: 'application/json' }), (req, res) => {
-  const signatureHeader = req.headers['x-subscript-signature'];
-  const endpointSecret = process.env.SUBSCRIPT_WEBHOOK_SECRET; // e.g. whsec_...
-  
-  if (!signatureHeader) {
-    return res.status(400).send("Missing x-subscript-signature header");
-  }
-  
-  // Parse header structure: t=TIMESTAMP,v1=SIGNATURE
-  const match = signatureHeader.match(/t=(\\d+),v1=([a-f0-9]+)/);
-  if (!match) {
-    return res.status(400).send("Invalid signature format");
-  }
-  
-  const [, timestamp, signature] = match;
-  
-  // Verify timestamp within 5 minutes tolerance (prevent replay attacks)
-  const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 300;
-  if (parseInt(timestamp, 10) < fiveMinutesAgo) {
-    return res.status(400).send("Signature expired");
-  }
-  
-  // Compute expected HMAC SHA-256 signature
-  const rawBody = req.body.toString();
-  const signaturePayload = \`\${timestamp}.\${rawBody}\`;
-  const computedSignature = crypto
-    .createHmac('sha256', endpointSecret)
-    .update(signaturePayload)
-    .digest('hex');
-    
-  if (computedSignature !== signature) {
-    return res.status(401).send("Signature verification failed");
-  }
-  
-  // Signature is valid. Handle the event!
-  const payload = JSON.parse(rawBody);
-  console.log(\`Received valid event: \${payload.event}\`);
-  res.json({ received: true });
-});`;
-
-  const pythonWebhookCode = `# Webhook signature validation in Python (Flask/FastAPI)
-import hmac
-import hashlib
-import time
-
-def verify_subscript_signature(raw_body_bytes, signature_header, secret):
-    if not signature_header:
-        raise ValueError("Missing signature header")
-        
-    parts = dict(x.split('=') for x in signature_header.split(','))
-    t = parts.get('t')
-    v1 = parts.get('v1')
-    
-    if not t or not v1:
-        raise ValueError("Invalid signature format")
-        
-    # Prevent replay attacks
-    if int(time.time()) - int(t) > 300:
-        raise ValueError("Signature expired")
-        
-    # Re-compute HMAC
-    payload = f"{t}.".encode('utf-8') + raw_body_bytes
-    computed = hmac.new(
-        secret.encode('utf-8'),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    
-    if not hmac.compare_digest(computed, v1):
-        raise ValueError("Signature mismatch")
-        
-    return True`;
-
-  const solidityContractCode = `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-
-interface ISubScriptRouter {
-    // Structure of active subscription
-    struct Subscription {
-        address subscriber;
-        address merchant;
-        uint256 amount;
-        uint256 period;
-        uint256 nextPayment;
-        bool isActive;
-    }
-
-    // Read details of a specific subscription
-    function subscriptions(uint256 id) external view returns (
-        address subscriber,
-        address merchant,
-        uint256 amount,
-        uint256 period,
-        uint256 nextPayment,
-        bool isActive
-    );
-
-    // Cancel a subscription directly on-chain
-    function cancelSubscription(uint256 id) external;
-    
-    // Deposit USDC and commit a ZK hash (Escrow routing)
-    function depositAndCommit(bytes32 commitment, uint256 amount) external;
-}`;
-
   return (
-    <div className="min-h-screen bg-transparent text-white relative font-sans scrollbar-thin">
+    <div className="relative min-h-screen bg-transparent text-white">
       <AnimatedGradientBg />
 
-      {/* Top Navigation Bar */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-[#070709]/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <img 
-              src="/logo.png" 
-              alt="SubScript" 
-              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" 
-            />
-            <span className="text-sm font-black uppercase tracking-wider">
-              SubScript <span className="text-[#00d2b4] lowercase font-serif italic font-normal">docs</span>
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-white/5 bg-[#070709]/85 px-6 py-4 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between">
+          <div className="flex items-center gap-5">
+            <Link href="/" className="flex items-center gap-2.5">
+              <img src="/logo.png" alt="SubScript" className="h-7 w-7 object-contain" />
+              <span className="text-sm font-black uppercase tracking-wider">
+                SubScript <span className="font-serif font-normal italic lowercase text-[#ccff00]">docs</span>
+              </span>
+            </Link>
+            <span className="hidden h-4 w-px bg-white/10 md:block" />
+            <span className="hidden text-[10px] font-black uppercase tracking-[0.18em] text-white/35 md:block">
+              Integration guide
             </span>
-          </Link>
-          <span className="hidden md:inline-block w-[1px] h-4 bg-white/10" />
-          <span className="hidden md:inline-block text-[10px] font-bold text-white/40 uppercase tracking-widest">
-            Protocol Integration Guide
-          </span>
-        </div>
+          </div>
 
-        <div className="flex items-center gap-4">
-          <Link 
-            href="/merchant" 
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 text-xs font-bold uppercase tracking-wider text-white transition-all"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Dashboard
-          </Link>
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-white/70 hover:text-white bg-white/5 border border-white/5 hover:border-white/10 rounded-full transition-all"
-            aria-label="Toggle navigation menu"
-          >
-            {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/merchant"
+              className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10 sm:flex"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              className="rounded-full border border-white/5 bg-white/5 p-2 text-white/70 transition hover:text-white md:hidden"
+              aria-label="Toggle documentation navigation"
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 pt-24 pb-20 grid grid-cols-1 md:grid-cols-4 gap-8">
-        
-        {/* Navigation Sidebar (Desktop) */}
-        <aside className="hidden md:block col-span-1 sticky top-24 self-start space-y-6">
-          <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-md rounded-2xl p-5 space-y-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-white/30 border-b border-white/5 pb-2">
-              Documentation Map
-            </p>
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            className="fixed left-0 right-0 top-16 z-40 border-b border-white/10 bg-[#070709] p-5 shadow-2xl md:hidden"
+          >
             <nav className="flex flex-col gap-1">
-              {sections.map((s) => {
-                const Icon = s.icon;
-                const isActive = activeSection === s.id;
+              {sections.map((section) => {
+                const Icon = section.icon;
                 return (
                   <button
-                    key={s.id}
-                    onClick={() => scrollToSection(s.id)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-left transition-all ${
-                      isActive 
-                        ? "bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/20 shadow-[0_0_15px_rgba(0,210,180,0.1)]" 
-                        : "text-white/50 hover:text-white/85 hover:bg-white/[0.02]"
+                    key={section.id}
+                    type="button"
+                    onClick={() => scrollToSection(section.id)}
+                    className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left text-xs font-bold uppercase tracking-wider transition ${
+                      activeSection === section.id ? "bg-[#ccff00]/15 text-[#ccff00]" : "text-white/60 hover:bg-white/5 hover:text-white"
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? "text-[#00d2b4]" : "text-white/40"}`} />
-                    {s.title}
+                    <Icon className="h-4 w-4" />
+                    {section.title}
+                  </button>
+                );
+              })}
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-20 pt-24 md:grid-cols-4">
+        <aside className="sticky top-24 col-span-1 hidden self-start md:block">
+          <div className="liquid-glass rounded-2xl border border-white/5 bg-black/40 p-5 backdrop-blur-md">
+            <p className="mb-3 border-b border-white/5 pb-3 text-[9px] font-black uppercase tracking-widest text-white/30">
+              Documentation map
+            </p>
+            <nav className="flex flex-col gap-1">
+              {sections.map((section) => {
+                const Icon = section.icon;
+                const active = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => scrollToSection(section.id)}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition ${
+                      active ? "border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {section.title}
                   </button>
                 );
               })}
             </nav>
           </div>
-
-          <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-md rounded-2xl p-5 text-xs text-white/45 space-y-2">
-            <p className="font-bold text-white uppercase tracking-wider text-[10px]">Arc Network Testnet</p>
-            <p className="leading-relaxed">Chain ID: <code className="text-white font-mono bg-white/5 px-1 rounded">5042002</code></p>
-            <p className="leading-relaxed">USDC Gas: <code className="text-white font-mono bg-white/5 px-1 rounded">0x4200...0006</code></p>
-          </div>
         </aside>
 
-        {/* Mobile Navigation Dropdown Menu */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="md:hidden fixed top-16 left-0 right-0 z-40 bg-[#070709] border-b border-white/10 p-5 space-y-4 shadow-2xl"
-            >
-              <div className="flex flex-col gap-1.5">
-                {sections.map((s) => {
-                  const Icon = s.icon;
-                  const isActive = activeSection === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => scrollToSection(s.id)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider text-left transition-all ${
-                        isActive 
-                          ? "bg-[#00d2b4]/15 text-[#00d2b4] border border-[#00d2b4]/25" 
-                          : "text-white/60 hover:text-white hover:bg-white/5"
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {s.title}
-                    </button>
-                  );
-                })}
-                <Link 
-                  href="/merchant" 
-                  className="flex items-center gap-3 px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold uppercase tracking-wider text-white"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Dashboard
-                </Link>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Documentation Content Panel */}
-        <main className="col-span-1 md:col-span-3 space-y-16">
-
-          {/* Section: Introduction */}
-          <section id="intro" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <BookOpen className="w-3 h-3" />
-              Getting Started
+        <main className="col-span-1 space-y-16 md:col-span-3">
+          <section id="overview" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00]">
+              <BookOpen className="h-3 w-3" />
+              Start here
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
-              Integrating SubScript Protocol
+            <h1 className="max-w-3xl text-4xl font-black uppercase tracking-tight text-white sm:text-5xl">
+              The easiest way to add programmable USDC subscriptions.
             </h1>
-            <p className="text-sm text-white/70 leading-relaxed">
-              SubScript is a decentralized recurring billing protocol built for EVM chains, powered natively by stablecoins.
-              It allows merchants to create on-chain subscription plans, setup payment links, and charge customers periodically using direct meta-transaction signature execution.
+            <p className="max-w-3xl text-sm leading-relaxed text-white/70">
+              SubScript lets a platform accept recurring USDC payments without forcing users to understand wallets, gas, bridges, or raw transaction hashes. Merchants create Checkout Intents, users pay through SubScript, Arc memo receipts make the payment human-readable, and webhooks tell the merchant exactly which Web2 user to unlock.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
-                <span className="p-2 bg-[#00d2b4]/10 rounded-xl inline-block">
-                  <Link2 className="w-5 h-5 text-[#00d2b4]" />
-                </span>
-                <h3 className="font-bold text-white text-sm uppercase tracking-wider">No-Code Integration</h3>
-                <p className="text-xs text-white/50 leading-relaxed">
-                  Use generated hosted Payment Links and share them on social platforms, emails, or embedded QR codes. No backend programming required.
-                </p>
-              </div>
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
-                <span className="p-2 bg-purple-500/10 rounded-xl inline-block">
-                  <Webhook className="w-5 h-5 text-purple-400" />
-                </span>
-                <h3 className="font-bold text-white text-sm uppercase tracking-wider">Low-Code Backend</h3>
-                <p className="text-xs text-white/50 leading-relaxed">
-                  Leverage REST APIs to fetch subscription states on demand and setup webhook listeners with cryptographic signature checks to automate provisioning.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: CLI Scaffolding */}
-          <section id="cli" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Code className="w-3 h-3" />
-              Developer Tooling
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              CLI Scaffolding
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              SubScript offers an official scaffolding CLI tool to kickstart new project integrations. With a single command, you can generate a fully functional Next.js, React, or Node.js template pre-configured with SubScript SDK, wallet connectors (Wagmi/Viem), and checkout routes.
-            </p>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-[#ccff00]" />
-                Interactive App Generator
-              </h3>
-              <p className="text-xs text-white/60 leading-relaxed">
-                Run the following command in your project directory:
-              </p>
-              <CodeBlock code={cliCode} language="bash" />
-              <p className="text-xs text-white/60 leading-relaxed">
-                Follow the interactive prompt to choose your framework, preferred environment (Arc Testnet or Mainnet), and preferred stablecoins.
-              </p>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: AI Agentic Servers (MCP) */}
-          <section id="mcp" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Server className="w-3 h-3" />
-              Agentic Integrations
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              AI Agentic Servers (MCP)
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              For merchants deploying AI agents, autonomous checkouts, or chat-based shopping assistants, SubScript provides a Model Context Protocol (MCP) server. This server exposes the SubScript API directly to LLMs (such as Claude or Gemini), enabling AI assistants to check subscription status, generate payment links, and verify transaction hashes on behalf of users.
-            </p>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[#ccff00]" />
-                Expose Tools to AI Agents
-              </h3>
-              <p className="text-xs text-white/60 leading-relaxed">
-                Start the MCP server using your merchant API key:
-              </p>
-              <CodeBlock code={mcpCode} language="bash" />
-              <p className="text-xs text-white/60 leading-relaxed">
-                Once active, your AI agent can issue structured API requests using tool calls to verify subscription states, list plans, or generate peer-to-peer invoices.
-              </p>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: Direct Payment Links */}
-          <section id="links" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Link2 className="w-3 h-3" />
-              No-Code Links
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Direct Payment Links
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              Payment links are the fastest way to accept stablecoin subscriptions. You can generate them directly from your merchant dashboard dashboard without writing a single line of code.
-            </p>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#ccff00]" />
-                How it works
-              </h3>
-              <ul className="text-xs text-white/60 space-y-3 pl-4 list-decimal leading-relaxed">
-                <li>Create a subscription tier on the merchant dashboard (e.g. Premium Plan for 10 USDC / month).</li>
-                <li>Copy the unique generated Link (e.g. <code className="text-white bg-white/5 px-1 py-0.5 rounded font-mono">/pay/link_uuid</code>).</li>
-                <li>Direct your users to this link. SubScript handles wallet connection, USDC approval, and subscription creation.</li>
-                <li>Upon completion, the user is redirected back to your app with a success receipt, and a webhook notification is instantly dispatched.</li>
-              </ul>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: Checkout Customization */}
-          <section id="customization" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Wrench className="w-3 h-3" />
-              Merchant Configuration
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Checkout Customization & Prompts
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              Tailor the payment experience to match your brand and provide custom onboarding instructions to your customers during the checkout flow.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Visual Customization</h4>
-                <p className="text-[11px] text-white/50 leading-relaxed">
-                  Upload your merchant brand logo, define custom color accents, and set a custom description shown on the payment screen.
-                </p>
-              </div>
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Checkout Instructions Prompts</h4>
-                <p className="text-[11px] text-white/50 leading-relaxed">
-                  Configure dynamic instructions prompts shown directly on checkout (e.g. reminding users of active MetaMask wallet switching logic, or outlining subscription unlock steps).
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: Secret Key Security */}
-          <section id="security" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-red-400">
-              <ShieldAlert className="w-3 h-3" />
-              Critical Security
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Secret Key Storage Security
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              Your merchant credentials grant complete read and write access to your billing infrastructure. Safeguard your keys following strict industry patterns.
-            </p>
-            <div className="bg-red-500/[0.03] border border-red-500/20 rounded-2xl p-5 space-y-3">
-              <p className="text-xs text-white/80 leading-relaxed">
-                Your API keys consist of a public key (safe for client side configurations) and a secret key starting with <code className="text-red-400 bg-red-500/10 px-1 py-0.5 rounded font-mono">sk_...</code>.
-              </p>
-              <div className="bg-black/40 border border-white/5 p-4 rounded-xl space-y-2 text-xs leading-relaxed">
-                <p className="text-red-300 font-bold uppercase tracking-wide text-[10px]">Security Rules:</p>
-                <ul className="list-disc pl-4 space-y-1.5 text-white/60">
-                  <li><strong>Never expose secret keys on the frontend:</strong> Do not use them in React pages or public script loads.</li>
-                  <li><strong>Use server-side API routes:</strong> Perform key validation inside Next.js API routes, lambda functions, or secure backend services.</li>
-                  <li><strong>Environment storage:</strong> Load keys via <code className="text-white bg-white/5 px-1 rounded font-mono">process.env.SUBSCRIPT_SECRET_KEY</code>, never hardcoded.</li>
-                </ul>
-              </div>
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: Webhook Integration */}
-          <section id="webhooks" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-purple-400">
-              <Webhook className="w-3 h-3" />
-              Event Dispatcher
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Webhook Integration
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              Webhooks notify your backend database immediately when events happen on-chain, such as subscription creation or monthly charge events.
-              This allows you to automate user provisioning (unlocking access, updating account status) without manual polling.
-            </p>
-
-            <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-5 space-y-2">
-              <h4 className="text-xs font-bold text-[#ccff00] uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4" />
-                Webhook Signature Security
-              </h4>
-              <p className="text-xs text-white/75 leading-relaxed">
-                SubScript signs all webhook payloads using a Stripe-compatible header: <code className="text-white font-mono bg-black/40 px-1 py-0.5 rounded">x-subscript-signature</code>.
-                You <strong>must</strong> verify the cryptographic HMAC signature to verify that the request came from SubScript and was not intercepted.
-              </p>
-            </div>
-
-            {/* Language Switcher for Webhooks */}
-            <div className="space-y-4 pt-4">
-              <div className="flex gap-2 border-b border-white/5 pb-2">
-                <button
-                  onClick={() => setWebhookLang("js")}
-                  className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
-                    webhookLang === "js" ? "bg-[#00d2b4] text-black" : "text-white/50 hover:text-white"
-                  }`}
-                >
-                  Node.js (Express)
-                </button>
-                <button
-                  onClick={() => setWebhookLang("python")}
-                  className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
-                    webhookLang === "python" ? "bg-[#00d2b4] text-black" : "text-white/50 hover:text-white"
-                  }`}
-                >
-                  Python (Flask)
-                </button>
-              </div>
-
-              {webhookLang === "js" ? (
-                <CodeBlock code={jsWebhookCode} language="javascript" />
-              ) : (
-                <CodeBlock code={pythonWebhookCode} language="python" />
-              )}
-            </div>
-          </section>
-
-          <hr className="border-white/5" />
-
-          {/* Section: REST API Reference */}
-          <section id="api" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Terminal className="w-3 h-3" />
-              Developer API
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              REST API Reference
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              Query SubScript programmatically using your merchant API keys. Make authorized HTTPS requests to fetch payment records or verify active subscriptions on demand.
-            </p>
-
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-3 text-left">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Server className="w-4 h-4 text-[#00d2b4]" />
-                Authorization Header
-              </h3>
-              <p className="text-xs text-white/60 leading-relaxed">
-                Include your API key as a Bearer token in the request headers:
-              </p>
-              <code className="block p-3 bg-black/40 border border-white/10 rounded-xl text-[11px] font-mono text-white/90">
-                Authorization: Bearer sk_test_your_secret_key_here
-              </code>
-            </div>
-
-            <div className="space-y-4 pt-4">
-              <div className="flex items-center gap-3">
-                <span className="px-2.5 py-1 bg-green-500/10 border border-green-500/25 rounded text-[10px] font-bold text-green-400 font-mono">
-                  GET
-                </span>
-                <code className="text-xs font-mono text-white/90 font-bold">
-                  /api/v1/subscriptions?id=&#123;subId&#125;
-                </code>
-              </div>
-              <p className="text-xs text-white/60 pl-2 border-l border-white/10 text-left">
-                Retrieves the status, amount, billing period, and subscriber address for a given subscription ID.
-              </p>
-
-              {/* Language Switcher for REST API */}
-              <div className="pt-2">
-                <div className="flex gap-2 border-b border-white/5 pb-2">
-                  <button
-                    onClick={() => setApiLang("js")}
-                    className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
-                      apiLang === "js" ? "bg-[#00d2b4] text-black" : "text-white/50 hover:text-white"
-                    }`}
-                  >
-                    Node.js
-                  </button>
-                  <button
-                    onClick={() => setApiLang("curl")}
-                    className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
-                      apiLang === "curl" ? "bg-[#00d2b4] text-black" : "text-white/50 hover:text-white"
-                    }`}
-                  >
-                    cURL
-                  </button>
-                  <button
-                    onClick={() => setApiLang("python")}
-                    className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
-                      apiLang === "python" ? "bg-[#00d2b4] text-black" : "text-white/50 hover:text-white"
-                    }`}
-                  >
-                    Python
-                  </button>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {[
+                ["10 minutes", "Hosted payment links for no-code teams"],
+                ["30 minutes", "Backend Checkout Intent plus webhook"],
+                ["Advanced", "Direct Arc memo and router integration"],
+              ].map(([label, text]) => (
+                <div key={label} className="liquid-glass rounded-2xl border border-white/5 bg-black/25 p-5">
+                  <p className="text-2xl font-black text-[#ccff00]">{label}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
                 </div>
-
-                {apiLang === "js" && <CodeBlock code={jsApiCode} language="javascript" />}
-                {apiLang === "curl" && <CodeBlock code={curlApiCode} language="bash" />}
-                {apiLang === "python" && <CodeBlock code={pythonApiCode} language="python" />}
-              </div>
+              ))}
             </div>
           </section>
 
-          <hr className="border-white/5" />
-
-          {/* Section: On-Chain Smart Contracts */}
-          <section id="contracts" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <Cpu className="w-3 h-3" />
-              On-Chain Solidity
+          <section id="paths" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Choose your integration path</h2>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {[
+                ["No-code merchant", "Create a payment link in the merchant dashboard, copy the URL or QR code, and paste it into your product, Notion page, Linktree, or checkout screen.", Link2],
+                ["Vibecoder", "Paste the prompt below into your coding agent. It tells the agent to create Checkout Intents, store intent IDs, redirect users, and verify webhooks.", MessageSquare],
+                ["Backend developer", "Use the REST API to create Checkout Intents and a signed webhook route to fulfill purchases in your own database.", Server],
+                ["Protocol team", "Use Viem/Ethers to route USDC transfers through SubScript contracts and Arc memo payloads directly.", Code],
+              ].map(([title, text, Icon]) => (
+                <div key={String(title)} className="rounded-3xl border border-white/5 bg-black/30 p-6">
+                  <Icon className="mb-4 h-6 w-6 text-[#ccff00]" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">{title as string}</h3>
+                  <p className="mt-3 text-xs leading-relaxed text-white/55">{text as string}</p>
+                </div>
+              ))}
             </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              On-Chain Contract Integration
-            </h2>
-            <p className="text-sm text-white/70 leading-relaxed">
-              If your application relies wholly on smart contract components (e.g. DAO voting, decentralized protocols), you can query or manipulate subscription details directly by calling the SubScript solidity router contracts deployed on-chain.
+          </section>
+
+          <section id="nocode" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">No-code setup: payment links and QR checkout</h2>
+            <ol className="space-y-3 text-sm leading-relaxed text-white/70">
+              <li>1. Sign up as a merchant and open the SubScript merchant dashboard.</li>
+              <li>2. Create a payment link with amount, title, description, and optional customer reference.</li>
+              <li>3. Copy the hosted checkout URL or QR code.</li>
+              <li>4. Put the URL behind your pricing button, invoice, Discord message, or email campaign.</li>
+              <li>5. When the payer completes checkout, SubScript records the payment, creates a receipt, and can notify your backend through webhooks.</li>
+            </ol>
+            <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+              Best for creators, small SaaS teams, vibe-built products, and early pilots that need payments live before a full backend integration exists.
+            </div>
+          </section>
+
+          <section id="vibecoder" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Vibecoder prompt</h2>
+            <p className="text-sm leading-relaxed text-white/70">
+              If you are building with an AI coding agent, paste this directly into it. The important thing is that your app stores the SubScript `intent_id` beside your own user record and waits for the signed webhook before unlocking access.
             </p>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-3 text-xs leading-relaxed text-left">
-              <p className="font-bold text-white uppercase tracking-wider text-[10px] text-[#00d2b4]">
-                Solidity Contract Interfaces
-              </p>
-              <p className="text-white/50">
-                You can instantiate the router ABI directly to read active states or cancel subscriptions via contract-to-contract calls.
-              </p>
-              <CodeBlock code={solidityContractCode} language="solidity" />
+            <CodeBlock code={vibePrompt} language="prompt" />
+          </section>
+
+          <section id="developer" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Developer flow: Checkout Intent lifecycle</h2>
+            <div className="rounded-3xl border border-white/5 bg-black/30 p-6">
+              <ol className="space-y-3 text-sm leading-relaxed text-white/70">
+                <li>1. Your user clicks upgrade inside your app.</li>
+                <li>2. Your backend creates `intent_abc123` and associates it with your user ID.</li>
+                <li>3. Your backend asks SubScript for a hosted pay URL tagged with that intent.</li>
+                <li>4. SubScript checkout handles wallet connection, Google wallet onboarding, USDC approval, Arc payment execution, and receipt creation.</li>
+                <li>5. Your webhook receives `payment.success` with the same `intent_id` and unlocks the user.</li>
+              </ol>
+            </div>
+            <CodeBlock code={checkoutIntentCode} language="javascript" />
+            <CodeBlock code={frontendEmbedCode} language="tsx" />
+          </section>
+
+          <section id="webhooks" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Webhook fulfillment</h2>
+            <p className="text-sm leading-relaxed text-white/70">
+              Webhooks close the Web2/Web3 gap. The merchant does not need the payer wallet address. The merchant only needs to trust the signed event and use the `intent_id` to unlock the right Web2 account.
+            </p>
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-xs leading-relaxed text-white/75">
+              Keep `SUBSCRIPT_SECRET_KEY` and `SUBSCRIPT_WEBHOOK_SECRET` server-side only. Never expose them in React, mobile clients, public repositories, or browser bundles.
+            </div>
+            <CodeBlock code={webhookCode} language="javascript" />
+          </section>
+
+          <section id="receipts" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Human-readable receipts with Arc memos</h2>
+            <p className="text-sm leading-relaxed text-white/70">
+              SubScript receipts are designed for humans, not explorers. A payer can share a URL like `subscriptonarc.com/receipt/Dinner-With-Alex-8f2a`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                <ReceiptText className="mb-3 h-5 w-5 text-[#ccff00]" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">Default visibility</h3>
+                <p className="mt-2 text-xs leading-relaxed text-white/55">Receipt data is intended for the payer, merchant, and SubScript by default. Future invite flows can selectively disclose a receipt to another viewer.</p>
+              </div>
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                <ShieldCheck className="mb-3 h-5 w-5 text-[#ccff00]" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">Proof without confusion</h3>
+                <p className="mt-2 text-xs leading-relaxed text-white/55">The receipt page hides raw transaction complexity while preserving auditability through Arc memo indexing.</p>
+              </div>
             </div>
           </section>
 
-          <hr className="border-white/5" />
+          <section id="contracts" className="scroll-mt-24 space-y-6">
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">Advanced: Arc memo transaction payload</h2>
+            <p className="text-sm leading-relaxed text-white/70">
+              Advanced teams can attach memo metadata to a SubScript router call through Arc's predeployed memo contract. Use this only when you are building a custom wallet, checkout, or protocol integration.
+            </p>
+            <CodeBlock code={viemMemoCode} language="typescript" />
+          </section>
 
-          {/* Section: Developer FAQ */}
           <section id="faq" className="scroll-mt-24 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
-              <HelpCircle className="w-3 h-3" />
-              Frequently Asked Questions
-            </div>
-            <h2 className="text-2xl font-extrabold text-white tracking-tight">
-              Developer FAQ
-            </h2>
-            <div className="space-y-4">
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: How do I retrieve my API Keys?</h4>
-                <p className="text-xs text-white/50 leading-relaxed">
-                  A: Go to your Merchant Dashboard, click on API Credentials, and click "Generate New API Key". Securely copy the secret key immediately.
-                </p>
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white">FAQ</h2>
+            {[
+              ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
+              ["Does the merchant need to track wallets?", "No. The merchant should track Checkout Intent IDs. SubScript maps wallet payment activity to the off-chain intent and sends the signed result."],
+              ["What does the user pay?", "The user pays the advertised USDC price. SubScript is designed around predictable Arc USDC gas and sponsored-fee flows so users avoid hidden card-style fees."],
+              ["Why is this better than dollar cards?", "Users avoid virtual card setup fees, maintenance fees, failed transaction penalties, KYC delays for basic wallet setup, billing-address failures, and FX markup surprises."],
+              ["What problem does SubScript solve?", "It stops zombie subscriptions, double-billing, hidden cancellation traps, overdraft-style penalties, and opaque receipt disputes by moving billing state into transparent programmable payment logic."],
+            ].map(([question, answer]) => (
+              <div key={question} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">{question}</h3>
+                <p className="mt-2 text-xs leading-relaxed text-white/55">{answer}</p>
               </div>
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: Why does my MetaMask keep complaining about wrong chain ID?</h4>
-                <p className="text-xs text-white/50 leading-relaxed">
-                  A: SubScript operates on the Arc Network. Ensure your Metamask has Arc Testnet (Chain ID <code className="text-white bg-white/5 px-1 rounded font-mono">5042002</code>) added or click "Switch Network" on the checkout page to add it automatically.
-                </p>
-              </div>
-              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
-                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: Can I use USDC on Ethereum Mainnet directly?</h4>
-                <p className="text-xs text-white/50 leading-relaxed">
-                  A: Yes! Through our Circle CCTP integration, users with USDC on Ethereum can pay directly. The protocol will automatically burn the USDC on Ethereum and mint it natively on the Arc Network.
-                </p>
-              </div>
-            </div>
+            ))}
           </section>
-
         </main>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-[#070709] py-12 px-6 text-center text-xs text-white/40">
+      <footer className="border-t border-white/5 bg-[#070709] px-6 py-12 text-center text-xs text-white/40">
         <p className="mb-2">© 2026 SubScript Protocol. All rights reserved.</p>
-        <p>Built for EVM chains on the Arc Network Testnet.</p>
+        <p>Built for programmable USDC payments on Arc Network.</p>
       </footer>
     </div>
   );

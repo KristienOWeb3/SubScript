@@ -7,10 +7,10 @@ import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, He
 import Navbar from "@/components/Navbar";
 
 const subscriptions = [
-    { name: "LLM Inference API", amount: "99.00", status: "active" },
-    { name: "Vector DB Storage", amount: "49.00", status: "active" },
-    { name: "Web Scraping Cluster", amount: "25.00", status: "active" },
-    { name: "Decentralized Compute", amount: "120.00", status: "active" },
+    { name: "Premium SaaS Plan", amount: "15.00", status: "active" },
+    { name: "Creator Membership", amount: "9.00", status: "active" },
+    { name: "API Access", amount: "49.00", status: "active" },
+    { name: "Team Workspace", amount: "120.00", status: "active" },
 ];
 
 function RedactedShuffleText({ text, isHovered }: { text: string; isHovered: boolean }) {
@@ -114,8 +114,8 @@ function MockupDashboardCard() {
 
                     {/* Card Title */}
                     <div className="mb-4">
-                        <span className="text-[9px] uppercase font-bold tracking-widest text-[#00d2b4]">Agent Allowance</span>
-                        <h3 className="text-xs font-bold text-white tracking-tight">Active Subscriptions</h3>
+                        <span className="text-[9px] uppercase font-bold tracking-widest text-[#00d2b4]">Checkout Intents</span>
+                        <h3 className="text-xs font-bold text-white tracking-tight">USDC Subscriptions</h3>
                     </div>
 
                     {/* Subscription Rows (2-column grid layout to reduce vertical height and stretch horizontally) */}
@@ -284,7 +284,7 @@ function WaitlistForm() {
                     return;
                 }
 
-                setMessage(data?.message || "Spot secured. SubScript is fast, private, and reliable.");
+                setMessage(data?.message || "Spot secured. SubScript makes USDC subscriptions fast, private, and reliable.");
                 setStep("success");
             } catch (err: any) {
                 console.error("Submission error:", err);
@@ -699,7 +699,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.6 }}
                             >
-                                SubScript is fast, private, and reliable.
+                                USDC subscriptions without Web3 friction.
                             </motion.span>
 
                             {/* Heading: Massive, mixing standard sans with italic Instrument Serif */}
@@ -709,8 +709,8 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.15 }}
                             >
-                                Autonomous Billing<br />
-                                <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">for the</span> Machine Economy
+                                Stop Zombie Subscriptions<br />
+                                <span className="font-serif italic text-[#00d2b4] lowercase font-normal tracking-normal">with</span> Arc USDC Checkout
                             </motion.h1>
 
                             {/* Subtext Paragraph */}
@@ -720,7 +720,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.3 }}
                             >
-                                Recurring USDC infrastructure for AI toolchains, autonomous agents, and developer APIs. Built on the Arc Network for sub-second settlement, predictable pricing, and zero smart-contract headaches.
+                                SubScript gives platforms programmable USDC subscriptions, Continue with Google wallet onboarding, Checkout Intent IDs, signed webhooks, and human-readable receipt links on Arc Network. Users pay the advertised price without dollar-card friction, hidden maintenance fees, or confusing transaction hashes.
                             </motion.p>
 
                             <WaitlistForm />

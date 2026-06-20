@@ -1,13 +1,35 @@
 # Terms of Service
 
+Last Updated: June 20th, 2026
+
 ## 1. Description of Service
-SubScript is a non-custodial, decentralized, zero-knowledge recurring payment protocol built on the Arc Network. All transitions, deposits, and payments are executed purely on-chain via smart contracts.
 
-## 2. No Custody of Funds
-We do not hold, store, manage, or have access to any user funds. Your USDC is kept inside either your own non-custodial wallets or in the audited smart contract vaults.
+SubScript is a Web3 payment and subscription routing protocol built around USDC, Arc Network transaction memos, Checkout Intent IDs, signed merchant webhooks, and human-readable digital dollar receipts.
 
-## 3. ZK Commitment & Privacy Risks
-Users are responsible for safeguarding their private keys, secrets, and commitment parameters. Loss of a secret pre-image means funds inside that commitment are permanently unrecoverable.
+## 2. Non-Custodial Wallet Use
 
-## 4. Fees
-SubScript protocol charges a flat 1% fee on successful verifyAndActivate cycles. Fiat settlement off-ramps incur a 0.5% off-ramp fee. These fees are hardcoded into the immutable smart contract code.
+SubScript is designed to be non-custodial. Users may connect an external wallet or use supported embedded wallet onboarding such as Circle User-Controlled Wallets. SubScript does not ask for seed phrases.
+
+## 3. Account Roles
+
+A wallet may be registered as either a user account or a merchant account, not both, unless SubScript explicitly supports a migration or reset process.
+
+## 4. Payments and Fees
+
+Subscribers should see the advertised USDC amount before confirming payment. Merchants may pay SubScript a transparent processing fee, currently intended as 1% of successful payment volume unless another written arrangement applies.
+
+## 5. Checkout Intents and Webhooks
+
+Merchants are responsible for mapping their own Web2 users, orders, plans, and entitlements to SubScript Checkout Intent IDs. Merchants must verify webhook signatures and enforce idempotency before unlocking access.
+
+## 6. Receipts and Memos
+
+SubScript may use Arc Network memo capabilities to create human-readable receipt identifiers and index payment metadata. Blockchain data can be public, permanent, and outside SubScript's ability to delete.
+
+## 7. Prohibited Uses
+
+You may not use SubScript for fraud, sanctions evasion, malware, deceptive billing, spam, unauthorized access, or attacks against users, merchants, infrastructure, or smart contracts.
+
+## 8. Disclaimer
+
+SubScript is provided as-is and as-available. Blockchain transactions are generally irreversible, and SubScript cannot guarantee refunds, reversals, uninterrupted service, or compatibility with every wallet, jurisdiction, or third-party provider.

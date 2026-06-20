@@ -1,13 +1,31 @@
 import { MetadataRoute } from "next";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-    const baseUrl = "https://subscript.network";
+    const baseUrl = "https://subscriptonarc.com";
     return [
         {
             url: baseUrl,
             lastModified: new Date(),
-            changeFrequency: "yearly",
+            changeFrequency: "weekly",
             priority: 1.0,
+        },
+        {
+            url: `${baseUrl}/docs`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.9,
+        },
+        {
+            url: `${baseUrl}/signup`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.8,
+        },
+        {
+            url: `${baseUrl}/login`,
+            lastModified: new Date(),
+            changeFrequency: "monthly",
+            priority: 0.6,
         },
         {
             url: `${baseUrl}/waitlist`,
@@ -18,14 +36,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
         {
             url: `${baseUrl}/privacy`,
             lastModified: new Date(),
-            changeFrequency: "monthly",
-            priority: 0.5,
+            changeFrequency: "yearly",
+            priority: 0.6,
         },
         {
             url: `${baseUrl}/terms`,
             lastModified: new Date(),
-            changeFrequency: "monthly",
-            priority: 0.5,
+            changeFrequency: "yearly",
+            priority: 0.6,
         },
     ];
 }

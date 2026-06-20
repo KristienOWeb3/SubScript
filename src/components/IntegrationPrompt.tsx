@@ -30,7 +30,7 @@ export default function IntegrationPrompt({
     if (isPremiumState) {
       return `Act as an elite full-stack Web3 integration engineer. You are integrating the SubScript Decentralized Subscription Protocol into my application.
 
-SubScript uses ZK Burner Proofs on Arc Testnet to implement secure, automated, recurring subscriptions.
+SubScript uses Arc USDC routing, Checkout Intent IDs, and privacy-aware receipt controls to implement secure, automated, recurring subscriptions.
 
 LIVE MERCHANT DEPLOYMENT DETAILS:
 - Merchant Payout Wallet: "${addressStr}"
@@ -66,7 +66,7 @@ Responsibilities:
 
 MISSION 4 — DETERMINISTIC CRYPTOGRAPHY & FRONTEND HOOKS
 Responsibilities:
-- Implement useSubscriptCheckout() to handle ZK Burner private flow (approve router, commit keccak256(secret), depositAndCommit(), sign/verify signature).
+- Implement useSubscriptCheckout() to create or consume Checkout Intents, approve the SubScript router, execute the payment, verify the receipt, and handle webhook fulfillment.
 - Derive AES key from deterministic EIP-191 signature. Encrypt secret, store ciphertext only.
 - CRITICAL: The signature itself must never be stored. Only derived key material or ciphertext metadata may persist.
 - Implement wallet reconnect, multi-device, and browser refresh recovery.

@@ -3655,7 +3655,7 @@ Please complete the following implementation tasks:
                                     <div className="space-y-2">
                                         <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Privacy Premium</h3>
                                         <p className="text-xs text-white/50 leading-relaxed">
-                                            Unlock zero-knowledge shielded payouts, fund rerouting to cold storage and multisigs, priority keeper execution, and full API/webhook access.
+                                            Unlock privacy-aware payouts, fund rerouting to cold storage and multisigs, priority keeper execution, and full API/webhook access.
                                         </p>
                                     </div>
 
@@ -3674,7 +3674,7 @@ Please complete the following implementation tasks:
                                     {/* Features list */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left pt-4 border-t border-white/5">
                                         {[
-                                            "Opt-In ZK Confidentiality",
+                                            "Opt-In Privacy Controls",
                                             "Priority keeper execution",
                                             "Advanced analytics",
                                             "Full API & webhook access",

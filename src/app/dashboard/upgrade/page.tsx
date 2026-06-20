@@ -361,7 +361,7 @@ export default function UpgradePage() {
                             Privacy Premium <span className="font-serif italic lowercase font-normal text-[#d4a853]">subscription</span>
                         </h1>
                         <p className="text-sm text-white/50 max-w-xl mx-auto leading-relaxed">
-                            Upgrade your SubScript merchant node to activate zero-knowledge privacy guards, priority keeper execution, and advanced automation.
+                            Upgrade your SubScript merchant node to activate Arc privacy-aware receipt controls, priority keeper execution, and advanced automation.
                         </p>
                     </div>
 
@@ -487,7 +487,7 @@ export default function UpgradePage() {
 
                                 <div className="space-y-4 py-6 border-t border-b border-white/5 mb-8">
                                     {[
-                                        { title: "Opt-In ZK Confidentiality", desc: "Shield counterparty addresses and settlement amounts from L1 public state logs." },
+                                        { title: "Opt-In Privacy Controls", desc: "Use Arc privacy-aware disclosure policies to limit who can view sensitive billing and settlement details." },
                                         { title: "Automated Cold-Storage Rerouting", desc: "Instantly sweep merchant revenue to secure cold storage, hardware, or multisig wallets." },
                                         { title: "Priority Keeper Execution", desc: "Enjoy priority processing status with automated keeper contract bots." },
                                         { title: "Full Webhooks & API Keys", desc: "Generate publishing keys and audit the complete HTTP payload stream." }
