@@ -390,6 +390,13 @@ export default function UserDashboard() {
         return;
       }
 
+      if (accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
+        console.warn("Session wallet mismatch, logging out");
+        await fetch("/api/auth/logout", { method: "POST" });
+        window.location.href = "/signup";
+        return;
+      }
+
       setUserWallet(data.wallet);
       setUserEmail(data.email);
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings()]);
@@ -399,11 +406,11 @@ export default function UserDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, accountAddress]);
 
   useEffect(() => {
     verifySession();
-  }, [verifySession]);
+  }, [verifySession, accountAddress]);
 
   useEffect(() => {
     if (receiveOpen && userWallet) {
@@ -842,7 +849,7 @@ export default function UserDashboard() {
             <div className="h-9 w-44 bg-white/10 rounded-full animate-pulse" />
           </header>
 
-          <main className="flex-1 overflow-y-auto px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
+          <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
             {/* Balance Card Skeleton */}
             <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
               <div className="flex-1 space-y-4">
@@ -884,7 +891,7 @@ export default function UserDashboard() {
         {/* Mobile Bottom Bar Skeleton */}
         {isMobile && (
           <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
-            <div className="flex-1 flex items-center justify-around rounded-full px-3 py-3.5 border border-white/5 bg-black/60 backdrop-blur-xl">
+            <div className="flex-1 flex items-center justify-around rounded-full px-3 py-3.5 border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-6 w-6 bg-white/10 rounded-full animate-pulse" />
               ))}
@@ -1009,7 +1016,6 @@ export default function UserDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
           {/* Desktop Left Navigation (Matches Merchant Dashboard Sidebar) */}
-          {!isMobile && (
             <div className="hidden lg:block lg:col-span-1 space-y-2">
               {[
                 { id: "home", label: "Home Hub", icon: Home },
@@ -1064,7 +1070,6 @@ export default function UserDashboard() {
                 )}
               </button>
             </div>
-          )}
 
           {/* Right main view content (spans 3 columns on desktop) */}
           <div className="col-span-1 lg:col-span-3 min-h-[500px]">
@@ -1166,7 +1171,7 @@ export default function UserDashboard() {
                       </div>
                     ) : (
                       <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100vh-220px)]">
-                        <div className="flex-1 overflow-y-auto space-y-4 px-5 pb-24">
+                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-5 pb-24">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -1217,7 +1222,7 @@ export default function UserDashboard() {
                   /* Desktop Split Multi-Column DM Layout */
                   <div className="flex flex-1 flex-row gap-5 h-full overflow-hidden items-stretch">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[340px] border-r border-white/5 pr-5 flex flex-col overflow-y-auto space-y-4 shrink-0">
+                    <div className="w-[340px] border-r border-white/5 pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -1258,7 +1263,7 @@ export default function UserDashboard() {
                           </div>
 
                           {/* Desktop Messages Scroll View */}
-                          <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                          <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 pr-2">
                             <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
                               {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
                                 ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -1361,8 +1366,16 @@ export default function UserDashboard() {
                       </div>
                     </div>
                   )}
-                  <button type="submit" className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${loadingAction === "create-request" ? "quick-action-loading" : ""}`}>
-                    <Send className="h-4 w-4" /> Request
+                  <button type="submit" disabled={loadingAction === "create-request"} className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed">
+                    {loadingAction === "create-request" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Requesting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" /> Request
+                      </>
+                    )}
                   </button>
                 </form>
               </motion.section>
@@ -1898,7 +1911,7 @@ export default function UserDashboard() {
       {isMobile && userWallet && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
-          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
+          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] liquid-glass bg-black/30 backdrop-blur-lg">
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
@@ -1920,10 +1933,10 @@ export default function UserDashboard() {
               setSelectedDmPeer(null);
               setActiveTab("inbox");
             }}
-            className={`relative h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl gap-2 px-3 overflow-hidden ${
+            className={`relative h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
               activeTab === "inbox"
                 ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
-                : "bg-black/60 border-white/5 text-white/50 hover:text-white w-12"
+                : "liquid-glass bg-black/30 backdrop-blur-lg border-white/5 text-white/50 hover:text-white w-12"
             }`}
             aria-label="Open DMs"
           >
@@ -2108,7 +2121,7 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
       type="button" 
       onClick={onClick} 
       aria-label={label} 
-      className="flex h-14 w-14 items-center justify-center rounded-full border border-white/5 bg-black/20 text-[#ccff00]/80 hover:text-white hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 shadow-lg hover:shadow-[#ccff00]/5 transition-all duration-300 active:scale-95 group"
+      className="flex h-14 w-14 items-center justify-center rounded-full border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg text-[#ccff00]/80 hover:text-white hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 shadow-lg hover:shadow-[#ccff00]/5 transition-all duration-300 active:scale-95 group"
     >
       <Icon className="h-6 w-6 group-hover:scale-105 transition-transform" />
     </button>

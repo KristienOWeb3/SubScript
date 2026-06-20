@@ -89,6 +89,9 @@ export default function PublicPayClient({
     const [error, setError] = useState<string | null>(null);
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
 
+    /* Derived variables */
+    const isUserRequest = linkData?.merchant_name_snapshot === "SubScript user request" || linkData?.external_reference?.startsWith("peer-request:");
+
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
@@ -98,6 +101,27 @@ export default function PublicPayClient({
     const [shareableReceiptUrl, setShareableReceiptUrl] = useState<string | null>(null);
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
+
+    /* Inbox DM creation states */
+    const [isCreatingDm, setIsCreatingDm] = useState(false);
+    const [dmError, setDmError] = useState<string | null>(null);
+
+    const handleGoToDms = async () => {
+        if (!linkData?.id) return;
+        setIsCreatingDm(true);
+        setDmError(null);
+        try {
+            const dmRes = await fetch(`/api/payment-links/${linkData.id}/dm`, { method: "POST" });
+            const dmData = await dmRes.json().catch(() => ({}));
+            if (!dmRes.ok) {
+                throw new Error(dmData.error || "Could not create SubScript DM");
+            }
+            router.push(dmData.dashboardUrl || `/dashboard/user?tab=inbox&intent=${linkData.id}`);
+        } catch (err: any) {
+            setDmError(err.message || "Failed to initiate DM session. Please try again.");
+            setIsCreatingDm(false);
+        }
+    };
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -163,7 +187,7 @@ export default function PublicPayClient({
                 const mRes = await fetch(`/api/merchant/profile?address=${linkData.merchant_address}`);
                 if (mRes.ok) {
                     const mData = await mRes.json();
-                    setMerchantVerified(mData.verified === true);
+                    setMerchantVerified(mData.isUser ? null : mData.verified === true);
                 }
             } catch {
                 /* Verification badges are advisory; payment validation remains server-side. */
@@ -172,42 +196,6 @@ export default function PublicPayClient({
 
         fetchMerchantVerification();
     }, [linkData?.merchant_address]);
-
-    useEffect(() => {
-        if (!linkData?.id || routedIntentRef.current === linkData.id) return;
-
-        // Skip DM routing if user clicked "Confirm" from their inbox and was directed here
-        if (typeof window !== "undefined") {
-            const params = new URLSearchParams(window.location.search);
-            if (params.get("direct") === "true") {
-                return;
-            }
-        }
-
-        const routeExistingUserToDm = async () => {
-            try {
-                const sessionRes = await fetch("/api/auth/session");
-                const session = await sessionRes.json();
-                if (!session?.loggedIn || !session.wallet) return;
-
-                const sessionWallet = String(session.wallet).toLowerCase();
-                const merchantWallet = String(linkData.merchant_address || "").toLowerCase();
-                if (!sessionWallet || sessionWallet === merchantWallet || session.role === "ENTERPRISE") return;
-
-                routedIntentRef.current = linkData.id;
-                const dmRes = await fetch(`/api/payment-links/${linkData.id}/dm`, { method: "POST" });
-                const dmData = await dmRes.json().catch(() => ({}));
-                if (!dmRes.ok) {
-                    throw new Error(dmData.error || "Could not create SubScript DM");
-                }
-                router.replace(dmData.dashboardUrl || `/dashboard/user?tab=inbox&intent=${linkData.id}`);
-            } catch (err) {
-                console.warn("SubScript DM routing unavailable; keeping public checkout open.", err);
-            }
-        };
-
-        routeExistingUserToDm();
-    }, [linkData?.id, linkData?.merchant_address, router]);
 
     useEffect(() => {
         if (!address) {
@@ -524,7 +512,7 @@ export default function PublicPayClient({
                         )}
 
                         {/* Unverified Merchant Warning Banner */}
-                        {merchantVerified === false && !unverifiedAccepted && (
+                        {merchantVerified === false && !unverifiedAccepted && !isUserRequest && (
                             <div className="bg-amber-500/[0.06] border border-amber-500/25 rounded-2xl p-4 space-y-3">
                                 <div className="flex items-start gap-3">
                                     <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -676,6 +664,30 @@ export default function PublicPayClient({
                                                 View Tx on Explorer <ExternalLink className="w-3 h-3" />
                                             </a>
                                         )}
+                                        {verificationStatus === "Payment confirmed and settled successfully!" && (
+                                            <div className="w-full pt-4 border-t border-white/5 space-y-3">
+                                                {dmError && (
+                                                    <p className="text-[10px] font-mono text-red-400 text-center">{dmError}</p>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={handleGoToDms}
+                                                    disabled={isCreatingDm}
+                                                    className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                                                >
+                                                    {isCreatingDm ? (
+                                                        <>
+                                                            <Loader2 className="w-4 h-4 animate-spin text-black" />
+                                                            Opening Inbox DMs...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            Go to Inbox DMs <ArrowRight className="w-4 h-4" />
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -719,7 +731,7 @@ export default function PublicPayClient({
                                             >
                                                 Payment Link Exhausted
                                             </button>
-                                        ) : (merchantVerified === false && !unverifiedAccepted) ? (
+                                        ) : (merchantVerified === false && !unverifiedAccepted && !isUserRequest) ? (
                                             <button
                                                 type="button"
                                                 onClick={() => setShowUnverifiedWarning(true)}

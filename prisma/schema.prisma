@@ -152,6 +152,7 @@ model Subscription {
   merchant                Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   currentNonce            Int       @default(0) @map("current_nonce")
   lastSettlementTimestamp DateTime? @map("last_settlement_timestamp")
+  nextBillingDate        DateTime? @map("next_billing_date")
   billingIntervalSeconds  BigInt    @map("billing_interval_seconds")
   amountCapUsdc           Decimal   @map("amount_cap_usdc")
   paymentTxHash           String?   @unique @map("payment_tx_hash")

@@ -921,7 +921,13 @@ export default function DashboardPage() {
             try {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
-                if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
+                if (data.loggedIn) {
+                    if (data.wallet.toLowerCase() !== address.toLowerCase()) {
+                        console.warn("Session wallet mismatch, logging out");
+                        await fetch("/api/auth/logout", { method: "POST" });
+                        window.location.href = "/signup";
+                        return;
+                    }
                     if (!data.role) {
                         console.warn("Missing account role, redirecting to signup");
                         window.location.href = getDashboardUrl("USER", "/signup");

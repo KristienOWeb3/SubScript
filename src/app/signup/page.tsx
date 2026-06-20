@@ -73,17 +73,12 @@ export default function SignupPage() {
       
       if (window.grecaptcha) {
         setRecaptchaLoaded(true);
-      } else {
-        window.onRecaptchaLoad = () => {
-          setRecaptchaLoaded(true);
-        };
       }
     }
     return () => {
       if (typeof window !== "undefined") {
         window.onRecaptchaSuccess = () => {};
         window.onRecaptchaExpired = () => {};
-        window.onRecaptchaLoad = () => {};
       }
     };
   }, []);
@@ -767,8 +762,9 @@ export default function SignupPage() {
       </div>
 
       <Script 
-        src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" 
-        strategy="afterInteractive" 
+        src="https://www.google.com/recaptcha/api.js?render=explicit" 
+        strategy="afterInteractive"
+        onLoad={() => setRecaptchaLoaded(true)}
       />
     </div>
   );

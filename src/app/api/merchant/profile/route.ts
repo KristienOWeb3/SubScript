@@ -11,6 +11,11 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Missing address parameter" }, { status: 400 });
         }
 
+        const roleRecord = await prisma.accountRole.findUnique({
+            where: { address: address.toLowerCase() }
+        });
+        const isUser = roleRecord?.role === "USER";
+
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: address.toLowerCase() },
             select: {
@@ -21,10 +26,11 @@ export async function GET(request: Request) {
         });
 
         if (!merchant) {
-            return NextResponse.json({ verified: false, profilePic: null, tier: "FREE" }, { status: 200 });
+            return NextResponse.json({ isUser, verified: false, profilePic: null, tier: "FREE" }, { status: 200 });
         }
 
         return NextResponse.json({
+            isUser,
             verified: merchant.verified,
             profilePic: merchant.profilePic,
             tier: merchant.tier,

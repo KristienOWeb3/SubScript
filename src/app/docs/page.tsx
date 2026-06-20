@@ -17,7 +17,10 @@ import {
   X,
   FileText,
   ShieldCheck,
-  Server
+  Server,
+  ShieldAlert,
+  HelpCircle,
+  Wrench
 } from "lucide-react";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { motion, AnimatePresence } from "framer-motion";
@@ -76,10 +79,15 @@ export default function DocsPage() {
 
   const sections = [
     { id: "intro", title: "Introduction", icon: BookOpen },
+    { id: "cli", title: "CLI Scaffolding", icon: Code },
+    { id: "mcp", title: "AI Agentic Servers", icon: Server },
     { id: "links", title: "Direct Payment Links", icon: Link2 },
+    { id: "customization", title: "Checkout Customization", icon: Wrench },
+    { id: "security", title: "Secret Key Security", icon: ShieldAlert },
     { id: "webhooks", title: "Webhook Integration", icon: Webhook },
     { id: "api", title: "REST API Reference", icon: Terminal },
     { id: "contracts", title: "On-Chain Contracts", icon: Cpu },
+    { id: "faq", title: "Developer FAQ", icon: HelpCircle },
   ];
 
   useEffect(() => {
@@ -113,6 +121,10 @@ export default function DocsPage() {
       setMobileMenuOpen(false);
     }
   };
+
+  const cliCode = `npx @subscript-protocol/create@latest my-subscript-app`;
+
+  const mcpCode = `npx @subscript-protocol/mcp@latest --api-key sk_test_your_secret_key_here`;
 
   const jsApiCode = `// Fetch subscription details using Node.js / JavaScript
 const fetchSubscription = async (subscriptionId) => {
@@ -420,6 +432,64 @@ interface ISubScriptRouter {
 
           <hr className="border-white/5" />
 
+          {/* Section: CLI Scaffolding */}
+          <section id="cli" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
+              <Code className="w-3 h-3" />
+              Developer Tooling
+            </div>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              CLI Scaffolding
+            </h2>
+            <p className="text-sm text-white/70 leading-relaxed">
+              SubScript offers an official scaffolding CLI tool to kickstart new project integrations. With a single command, you can generate a fully functional Next.js, React, or Node.js template pre-configured with SubScript SDK, wallet connectors (Wagmi/Viem), and checkout routes.
+            </p>
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-[#ccff00]" />
+                Interactive App Generator
+              </h3>
+              <p className="text-xs text-white/60 leading-relaxed">
+                Run the following command in your project directory:
+              </p>
+              <CodeBlock code={cliCode} language="bash" />
+              <p className="text-xs text-white/60 leading-relaxed">
+                Follow the interactive prompt to choose your framework, preferred environment (Arc Testnet or Mainnet), and preferred stablecoins.
+              </p>
+            </div>
+          </section>
+
+          <hr className="border-white/5" />
+
+          {/* Section: AI Agentic Servers (MCP) */}
+          <section id="mcp" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
+              <Server className="w-3 h-3" />
+              Agentic Integrations
+            </div>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              AI Agentic Servers (MCP)
+            </h2>
+            <p className="text-sm text-white/70 leading-relaxed">
+              For merchants deploying AI agents, autonomous checkouts, or chat-based shopping assistants, SubScript provides a Model Context Protocol (MCP) server. This server exposes the SubScript API directly to LLMs (such as Claude or Gemini), enabling AI assistants to check subscription status, generate payment links, and verify transaction hashes on behalf of users.
+            </p>
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-[#ccff00]" />
+                Expose Tools to AI Agents
+              </h3>
+              <p className="text-xs text-white/60 leading-relaxed">
+                Start the MCP server using your merchant API key:
+              </p>
+              <CodeBlock code={mcpCode} language="bash" />
+              <p className="text-xs text-white/60 leading-relaxed">
+                Once active, your AI agent can issue structured API requests using tool calls to verify subscription states, list plans, or generate peer-to-peer invoices.
+              </p>
+            </div>
+          </section>
+
+          <hr className="border-white/5" />
+
           {/* Section: Direct Payment Links */}
           <section id="links" className="scroll-mt-24 space-y-6">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
@@ -443,6 +513,65 @@ interface ISubScriptRouter {
                 <li>Direct your users to this link. SubScript handles wallet connection, USDC approval, and subscription creation.</li>
                 <li>Upon completion, the user is redirected back to your app with a success receipt, and a webhook notification is instantly dispatched.</li>
               </ul>
+            </div>
+          </section>
+
+          <hr className="border-white/5" />
+
+          {/* Section: Checkout Customization */}
+          <section id="customization" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
+              <Wrench className="w-3 h-3" />
+              Merchant Configuration
+            </div>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              Checkout Customization & Prompts
+            </h2>
+            <p className="text-sm text-white/70 leading-relaxed">
+              Tailor the payment experience to match your brand and provide custom onboarding instructions to your customers during the checkout flow.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Visual Customization</h4>
+                <p className="text-[11px] text-white/50 leading-relaxed">
+                  Upload your merchant brand logo, define custom color accents, and set a custom description shown on the payment screen.
+                </p>
+              </div>
+              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-3">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Checkout Instructions Prompts</h4>
+                <p className="text-[11px] text-white/50 leading-relaxed">
+                  Configure dynamic instructions prompts shown directly on checkout (e.g. reminding users of active MetaMask wallet switching logic, or outlining subscription unlock steps).
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <hr className="border-white/5" />
+
+          {/* Section: Secret Key Security */}
+          <section id="security" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-[10px] font-black uppercase tracking-wider text-red-400">
+              <ShieldAlert className="w-3 h-3" />
+              Critical Security
+            </div>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              Secret Key Storage Security
+            </h2>
+            <p className="text-sm text-white/70 leading-relaxed">
+              Your merchant credentials grant complete read and write access to your billing infrastructure. Safeguard your keys following strict industry patterns.
+            </p>
+            <div className="bg-red-500/[0.03] border border-red-500/20 rounded-2xl p-5 space-y-3">
+              <p className="text-xs text-white/80 leading-relaxed">
+                Your API keys consist of a public key (safe for client side configurations) and a secret key starting with <code className="text-red-400 bg-red-500/10 px-1 py-0.5 rounded font-mono">sk_...</code>.
+              </p>
+              <div className="bg-black/40 border border-white/5 p-4 rounded-xl space-y-2 text-xs leading-relaxed">
+                <p className="text-red-300 font-bold uppercase tracking-wide text-[10px]">Security Rules:</p>
+                <ul className="list-disc pl-4 space-y-1.5 text-white/60">
+                  <li><strong>Never expose secret keys on the frontend:</strong> Do not use them in React pages or public script loads.</li>
+                  <li><strong>Use server-side API routes:</strong> Perform key validation inside Next.js API routes, lambda functions, or secure backend services.</li>
+                  <li><strong>Environment storage:</strong> Load keys via <code className="text-white bg-white/5 px-1 rounded font-mono">process.env.SUBSCRIPT_SECRET_KEY</code>, never hardcoded.</li>
+                </ul>
+              </div>
             </div>
           </section>
 
@@ -601,6 +730,39 @@ interface ISubScriptRouter {
                 You can instantiate the router ABI directly to read active states or cancel subscriptions via contract-to-contract calls.
               </p>
               <CodeBlock code={solidityContractCode} language="solidity" />
+            </div>
+          </section>
+
+          <hr className="border-white/5" />
+
+          {/* Section: Developer FAQ */}
+          <section id="faq" className="scroll-mt-24 space-y-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-full text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">
+              <HelpCircle className="w-3 h-3" />
+              Frequently Asked Questions
+            </div>
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              Developer FAQ
+            </h2>
+            <div className="space-y-4">
+              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: How do I retrieve my API Keys?</h4>
+                <p className="text-xs text-white/50 leading-relaxed">
+                  A: Go to your Merchant Dashboard, click on API Credentials, and click "Generate New API Key". Securely copy the secret key immediately.
+                </p>
+              </div>
+              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: Why does my MetaMask keep complaining about wrong chain ID?</h4>
+                <p className="text-xs text-white/50 leading-relaxed">
+                  A: SubScript operates on the Arc Network. Ensure your Metamask has Arc Testnet (Chain ID <code className="text-white bg-white/5 px-1 rounded font-mono">5042002</code>) added or click "Switch Network" on the checkout page to add it automatically.
+                </p>
+              </div>
+              <div className="liquid-glass border border-white/5 bg-black/20 p-5 rounded-2xl space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">Q: Can I use USDC on Ethereum Mainnet directly?</h4>
+                <p className="text-xs text-white/50 leading-relaxed">
+                  A: Yes! Through our Circle CCTP integration, users with USDC on Ethereum can pay directly. The protocol will automatically burn the USDC on Ethereum and mint it natively on the Arc Network.
+                </p>
+              </div>
             </div>
           </section>
 

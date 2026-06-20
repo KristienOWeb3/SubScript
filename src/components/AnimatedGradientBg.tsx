@@ -101,7 +101,7 @@ export default function AnimatedGradientBg() {
         <canvas
             ref={canvasRef}
             className="fixed inset-0 w-full h-full pointer-events-none"
-            style={{ zIndex: 0 }}
+            style={{ zIndex: 0, willChange: "transform", transform: "translate3d(0,0,0)" }}
             aria-hidden="true"
         />
     );
