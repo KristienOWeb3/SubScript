@@ -178,7 +178,7 @@ export default function DashboardHeader({
         if (onDnsClick) {
             onDnsClick();
         } else {
-            window.location.href = "/dashboard?scroll=dns";
+            window.location.href = "/dashboard?tab=settings";
         }
     };
 
@@ -317,10 +317,10 @@ export default function DashboardHeader({
                                         </p>
                                     </div>
 
-                                    {/* Routed/Vault Balance */}
+                                    {/* Claimable routed settlement */}
                                     {isPremium && promptFlowMode === "private" && (
                                         <div className="hidden sm:block text-right px-2 sm:px-3 border-l border-white/5">
-                                            <p className="text-[9px] text-[#00d2b4]/60 uppercase font-bold tracking-widest leading-none mb-0.5">Routed</p>
+                                            <p className="text-[9px] text-[#00d2b4]/60 uppercase font-bold tracking-widest leading-none mb-0.5">Settlement</p>
                                             <p className="text-sm sm:text-base font-bold text-[#00d2b4] tracking-tight leading-none">
                                                 {balancesVisible ? `$${vaultBalance.toFixed(2)}` : "•••••"}
                                                 <span className="text-[10px] text-[#00d2b4]/50 font-normal ml-1">USDC</span>

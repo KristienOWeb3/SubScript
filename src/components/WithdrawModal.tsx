@@ -182,7 +182,7 @@ export default function WithdrawModal({
         }
 
         if (batchTotalUsdc > vaultBalance) {
-            setErrorMsg("Insufficient funds: Total batch amount exceeds your vault balance.");
+            setErrorMsg("Insufficient funds: total batch amount exceeds your claimable balance.");
             return;
         }
 
@@ -282,7 +282,7 @@ export default function WithdrawModal({
                             </button>
                         </div>
 
-                        {/* Vault Balance Display */}
+                        {/* Claimable Balance Display */}
                         <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-5 text-center">
                             <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Claimable Balance</p>
                             <p className="text-2xl font-black text-white leading-none">
@@ -375,7 +375,7 @@ export default function WithdrawModal({
                                     >
                                         <div>
                                             <p className="font-semibold mb-0.5">Custom Payout Wallet Address</p>
-                                            <p className="text-[10px] opacity-50">Route your settlement privately to any external wallet</p>
+                                            <p className="text-[10px] opacity-50">Send your settlement privately to any external wallet</p>
                                         </div>
                                         <ShieldCheck className={`w-4 h-4 ${destinationType === "custom" ? "text-[#00d2b4]" : "opacity-0"}`} />
                                     </button>

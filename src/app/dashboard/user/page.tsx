@@ -791,7 +791,7 @@ export default function UserDashboard() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
+      <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
         <AnimatedGradientBg />
         
         {/* Desktop Sidebar Skeleton */}
@@ -839,7 +839,7 @@ export default function UserDashboard() {
         )}
 
         {/* Content Pane Skeleton */}
-        <div className="flex-1 flex flex-col min-h-screen bg-[#060608] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#060608] overflow-hidden">
           {/* Desktop Header Skeleton */}
           <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
             <div className="space-y-2">
@@ -952,7 +952,7 @@ export default function UserDashboard() {
     : null;
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00]">
+    <div className="min-h-[100dvh] bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00]">
       <AnimatedGradientBg />
       
       {/* Desktop Header */}
@@ -999,7 +999,7 @@ export default function UserDashboard() {
       )}
 
       {/* Main Grid View Container */}
-      <main className="max-w-7xl mx-auto px-5 lg:px-6 pt-24 lg:pt-28 pb-12">
+      <main className="max-w-7xl mx-auto px-5 lg:px-6 pt-24 lg:pt-28 pb-[calc(8rem+env(safe-area-inset-bottom))] lg:pb-12">
         {/* Title Header (Desktop only) */}
         {!isMobile && (
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
@@ -1157,7 +1157,7 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="min-h-0 lg:h-[calc(100vh-160px)] flex flex-col lg:flex-row gap-5 -mx-5 lg:mx-0"
+                className="min-h-0 lg:h-[calc(100dvh-160px)] flex flex-col lg:flex-row gap-5 -mx-5 lg:mx-0"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
@@ -1170,7 +1170,7 @@ export default function UserDashboard() {
                         />
                       </div>
                     ) : (
-                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100vh-220px)]">
+                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100dvh-220px)]">
                         <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-5 pb-24">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
@@ -1329,7 +1329,7 @@ export default function UserDashboard() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
-                className="space-y-5 max-w-lg"
+                className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
                 <SectionTitle title="Payment Links" subtitle="Request USDC from another SubScript user." />
                 <form onSubmit={handleCreateRequest} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
@@ -1387,7 +1387,7 @@ export default function UserDashboard() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
-                className="space-y-5 max-w-lg"
+                className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />

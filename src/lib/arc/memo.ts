@@ -70,7 +70,7 @@ export const ROUTER_DEPOSIT_INTERFACE = new Interface([
     "event DepositWithMemo(address indexed payer, address indexed merchant, uint256 amount, string memo)",
 ]);
 
-export function buildVaultDepositTx(args: {
+export function buildMerchantPaymentTx(args: {
     merchant: `0x${string}`;
     amountUsdc: bigint;
     receiptId: string;

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
@@ -54,6 +54,8 @@ import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } fro
 import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
 
+export const maxDuration = 120;
+
 const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
     "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
 ]);
@@ -108,6 +110,7 @@ export async function POST(request: Request) {
         const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
         const isCctp = Number(chainId) in CCTP_CONFIG;
+        const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
 
         if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid txHash" }, { status: 400 });
@@ -120,7 +123,7 @@ export async function POST(request: Request) {
         if (!payerAddress || typeof payerAddress !== "string" || !ethers.isAddress(payerAddress)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid payerAddress" }, { status: 400 });
         }
-        if (!isCctp && !isReceiptId(receiptId)) {
+        if (!isCctp && !submittedReceiptId) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid receiptId" }, { status: 400 });
         }
 
@@ -130,6 +133,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
         }
         supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const requestOrigin = request.headers.get("origin");
 
         /* Normalize address */
         const normalizedPayer = payerAddress.toLowerCase();
@@ -162,7 +166,15 @@ export async function POST(request: Request) {
         if (linkError || !paymentLink) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
-        if (!isCctp && receiptId !== paymentLink.receipt_token) {
+        const paymentLinkReceiptId = isReceiptId(paymentLink.receipt_token) ? paymentLink.receipt_token : null;
+        const finalReceiptId = paymentLinkReceiptId || submittedReceiptId;
+        if (!finalReceiptId) {
+            return NextResponse.json({ error: "Payment link is missing a valid receipt token" }, { status: 400 });
+        }
+        if (!isCctp && submittedReceiptId !== finalReceiptId) {
+            return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
+        }
+        if (isCctp && submittedReceiptId && submittedReceiptId !== finalReceiptId) {
             return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
         }
 
@@ -225,8 +237,8 @@ export async function POST(request: Request) {
                 tx_hash: normalizedTx
             });
 
-        /* Spawn the async verification job in the background (Non-Blocking) */
-        (async () => {
+        /* Schedule the async verification job after the submit response. */
+        after(async () => {
             try {
                 let attempts = 0;
                 const maxAttempts = 15;
@@ -311,7 +323,7 @@ export async function POST(request: Request) {
                                     parsedRouterCall.name !== "depositForMerchant" ||
                                     parsedRouterCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
                                     BigInt(parsedRouterCall.args[1]) !== BigInt(paymentLink.amount_usdc) ||
-                                    parsedRouterCall.args[2] !== receiptId
+                                    parsedRouterCall.args[2] !== finalReceiptId
                                 ) {
                                     throw new Error("SubScript Router deposit call does not match receipt parameters");
                                 }
@@ -331,7 +343,7 @@ export async function POST(request: Request) {
                                             parsed.args.payer.toLowerCase() === normalizedPayer &&
                                             parsed.args.merchant.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
                                             BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
-                                            parsed.args.memo === receiptId
+                                            parsed.args.memo === finalReceiptId
                                         ) {
                                             logFound = true;
                                             break;
@@ -500,30 +512,30 @@ export async function POST(request: Request) {
 
                             /* Complete idempotency key */
                             const successPayload = { success: true, message: "Payment verified and settled", paymentId: newPayment.id };
-                            if (!isCctp && isReceiptId(receiptId)) {
-                                const shareUrl = receiptUrl(receiptId, request.headers.get("origin"));
-                                await supabase
-                                    .from("receipts")
-                                    .upsert({
-                                        receipt_id: receiptId,
-                                        payment_link_id: paymentLink.id,
-                                        payment_link_payment_id: newPayment.id,
-                                        tx_hash: normalizedTx,
-                                        chain_id: Number(chainId),
-                                        memo_contract: SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
-                                        payer_address: normalizedPayer,
-                                        merchant_address: paymentLink.merchant_address.toLowerCase(),
-                                        amount_usdc: paymentLink.amount_usdc.toString(),
-                                        memo_note: receiptId,
-                                        share_url: shareUrl,
-                                        status: "CONFIRMED",
-                                        block_number: receipt.blockNumber.toString(),
-                                        confirmed_at: new Date().toISOString(),
-                                        updated_at: new Date().toISOString()
-                                    }, { onConflict: "receipt_id" });
+                            const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
+                            await supabase
+                                .from("receipts")
+                                .upsert({
+                                    receipt_id: finalReceiptId,
+                                    payment_link_id: paymentLink.id,
+                                    payment_link_payment_id: newPayment.id,
+                                    tx_hash: normalizedTx,
+                                    chain_id: Number(chainId),
+                                    memo_contract: isCctp
+                                        ? CCTP_CONFIG[Number(chainId)].tokenMessenger.toLowerCase()
+                                        : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+                                    payer_address: normalizedPayer,
+                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
+                                    amount_usdc: paymentLink.amount_usdc.toString(),
+                                    memo_note: finalReceiptId,
+                                    share_url: shareUrl,
+                                    status: "CONFIRMED",
+                                    block_number: receipt.blockNumber.toString(),
+                                    confirmed_at: new Date().toISOString(),
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: "receipt_id" });
 
-                                Object.assign(successPayload, { receiptId, shareUrl });
-                            }
+                            Object.assign(successPayload, { receiptId: finalReceiptId, shareUrl });
 
                             const { data: payerSettings } = await supabase
                                 .from("customers")
@@ -545,24 +557,22 @@ export async function POST(request: Request) {
                                             `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
                                             `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
                                             `Transaction: ${normalizedTx}`,
-                                            !isCctp && isReceiptId(receiptId) ? `Receipt: ${receiptUrl(receiptId, request.headers.get("origin"))}` : null,
+                                            `Receipt: ${shareUrl}`,
                                         ].filter(Boolean).join("\n"),
                                         tx_hash: normalizedTx,
                                         payment_link_id: paymentLink.id,
                                     });
                             }
 
-                            if (!isCctp && isReceiptId(receiptId)) {
-                                await sendPaymentReceiptEmails({
-                                    amountUsdc: paymentLink.amount_usdc,
-                                    receiptUrl: receiptUrl(receiptId),
-                                    receiptId,
-                                    merchantAddress: paymentLink.merchant_address,
-                                    payerAddress: normalizedPayer,
-                                    paymentTitle: paymentLink.title,
-                                    txHash: normalizedTx,
-                                });
-                            }
+                            await sendPaymentReceiptEmails({
+                                amountUsdc: paymentLink.amount_usdc,
+                                receiptUrl: shareUrl,
+                                receiptId: finalReceiptId,
+                                merchantAddress: paymentLink.merchant_address,
+                                payerAddress: normalizedPayer,
+                                paymentTitle: paymentLink.title,
+                                txHash: normalizedTx,
+                            });
 
                             await supabase
                                 .from("idempotency_keys")
@@ -586,7 +596,7 @@ export async function POST(request: Request) {
                                     checkoutSessionId: paymentLink.id,
                                     merchantReference: paymentLink.external_reference || null,
                                     amountUsdc: paymentLink.amount_usdc,
-                                    receiptId: !isCctp && isReceiptId(receiptId) ? receiptId : null,
+                                    receiptId: finalReceiptId,
                                     txHash: normalizedTx,
                                 });
                                 for (const endpoint of endpoints) {
@@ -626,7 +636,7 @@ export async function POST(request: Request) {
                 /* Remove or fail idempotency key to allow retries */
                 await supabase.from("idempotency_keys").delete().eq("execution_key", executionKey);
             }
-        })();
+        });
 
         return NextResponse.json({
             success: true,

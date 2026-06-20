@@ -21,7 +21,7 @@ import {
     isProd
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
-import { ROUTER_DEPOSIT_ABI, generateReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 
 export interface PublicPayClientProps {
     id: string;
@@ -259,6 +259,13 @@ export default function PublicPayClient({
             return;
         }
 
+        const checkoutReceiptId = linkData.receipt_token;
+        if (!isReceiptId(checkoutReceiptId)) {
+            setVerificationError("This checkout session is missing a valid receipt token. Please ask the merchant to generate a new payment link.");
+            return;
+        }
+        setReceiptId(checkoutReceiptId);
+
         setIsPaying(true);
 
         if (isCctpChain && chainId) {
@@ -317,6 +324,7 @@ export default function PublicPayClient({
 
                 setTxHash(cctpHash);
                 setSuccessTxHash(cctpHash);
+                setShareableReceiptUrl(receiptUrl(checkoutReceiptId, window.location.origin));
                 setIsVerifying(true);
                 setVerificationStatus("CCTP transaction submitted. Waiting for confirmation...");
                 setIsPaying(false);
@@ -329,7 +337,7 @@ export default function PublicPayClient({
         } else {
             /* Native Arc Network Payment Flow */
             try {
-                const nextReceiptId = receiptId || generateReceiptId(linkData.title || "SubScript Receipt");
+                const nextReceiptId = receiptId || checkoutReceiptId;
                 setReceiptId(nextReceiptId);
 
                 const currentAllowance = publicClient
@@ -342,7 +350,7 @@ export default function PublicPayClient({
                     : BigInt(0);
 
                 if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
-                    setVerificationStatus("Approving merchant vault deposit...");
+                    setVerificationStatus("Approving merchant payment route...");
                     const approvalHash = await writeContractAsync({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                         abi: USDC_ERC20_ABI,
@@ -356,12 +364,12 @@ export default function PublicPayClient({
                             timeout: 120_000,
                         });
                         if (approvalReceipt.status !== "success") {
-                            throw new Error("USDC approval for merchant vault deposit reverted.");
+                            throw new Error("USDC approval for merchant payment reverted.");
                         }
                     }
                 }
 
-                setVerificationStatus("Depositing funds to merchant vault...");
+                setVerificationStatus("Routing payment to merchant...");
                 const hash = await writeContractAsync({
                     address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
                     abi: ROUTER_DEPOSIT_ABI,

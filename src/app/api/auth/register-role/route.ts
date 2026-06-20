@@ -49,12 +49,16 @@ export async function POST(request: Request) {
                 }
 
                 if (emailVal) {
+                    /* Check if the email is associated with a different wallet address in either embedded wallets or customer profiles */
                     const emailConflictResult = await client.query(
-                        "select wallet_address from user_embedded_wallets where email = $1 and wallet_address != $2 limit 1",
+                        `select wallet_address from user_embedded_wallets where email = $1 and wallet_address != $2
+                         union
+                         select wallet_address from customers where email = $1 and wallet_address != $2
+                         limit 1`,
                         [emailVal, normalizedWallet]
                     );
                     if (emailConflictResult.rows[0]) {
-                        throw new Error("This email is already associated with another account wallet.");
+                        throw new Error("This email is already associated with another account.");
                     }
 
                     await client.query(

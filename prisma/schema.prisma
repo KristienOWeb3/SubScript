@@ -159,6 +159,9 @@ model Subscription {
   status                  String    @default("PENDING") @map("status")
   tier                    Int       @default(0) @map("tier")
   subscriber              String?   @map("subscriber")
+  cancelAtPeriodEnd       Boolean   @default(false) @map("cancel_at_period_end")
+  cancelRequestedAt       DateTime? @map("cancel_requested_at")
+  downgradeFailures       Int       @default(0) @map("downgrade_failures")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 

@@ -49,7 +49,7 @@ export async function GET(request: Request) {
                         sendEvent("status", {
                             status: tv.status,
                             confirmations: tv.confirmations,
-                            errorMessage: tv.errorMessage,
+                            errorMessage: tv.error_message,
                             message: `Status: ${tv.status} (${tv.confirmations} confirmations)`
                         });
 

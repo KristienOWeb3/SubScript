@@ -12,8 +12,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /**
  * @title SubScriptRouter
  * @author SubScript Protocol
- * @notice Vault router for merchant payout distribution and batch settlement.
- *         Operates as a stateless transient dispatcher with tier-gated payout rerouting.
+ * @notice Payment router for merchant claimable settlement and batch distribution.
+ *         Uses an internal pull-payment ledger with tier-gated payout rerouting.
  */
 contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuard, PausableUpgradeable {
     using SafeERC20 for IERC20;
@@ -26,7 +26,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /* Treasury wallet address receiving the 1% protocol fees */
     address public treasury;
 
-    /* Secure internal pull-payment ledger mapping merchant => USDC balance */
+    /* Secure internal pull-payment ledger mapping merchant => claimable USDC settlement */
     mapping(address => uint256) public merchantBalances;
 
     /* CCTP Ethereum Sepolia USDC contract address */
@@ -161,7 +161,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
-     * @notice Deposit funds for a merchant to credit their vault balance.
+     * @notice Route funds for a merchant and credit their claimable settlement balance.
      */
     function depositForMerchant(
         address _merchant,
@@ -179,7 +179,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
     /**
      * @notice Safe, non-gated withdrawal function.
-     *         Withdraws merchant vault balance, deducting 1% protocol fee to Treasury.
+     *         Withdraws caller's claimable settlement, deducting 1% protocol fee to Treasury.
      */
     function withdraw() external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
@@ -206,7 +206,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
 
     /**
      * @notice Safe withdrawal function to a specified target recipient.
-     *         Withdraws caller's merchant vault balance, deducting 1% protocol fee to Treasury.
+     *         Withdraws caller's claimable settlement, deducting 1% protocol fee to Treasury.
      */
     function withdrawTo(address _recipient) external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];

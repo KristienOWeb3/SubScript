@@ -120,7 +120,7 @@ export default function AnalyticsDashboard({
     }, [ledgers]);
 
     const totalVolume = useMemo(() => {
-        /* Estimate total historical volume as active MRR + vault balance */
+        /* Estimate total historical volume as active MRR + claimable settlement */
         return mrr * 1.25 + vaultBalance;
     }, [mrr, vaultBalance]);
 

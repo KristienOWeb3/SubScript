@@ -75,11 +75,12 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "settings", label: "Profile", icon: User },
 ] as const;
 
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks" | "settings";
 
-const vaultTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
+const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Activity }> = [
     { id: "overview", label: "Home", icon: Activity },
@@ -258,13 +259,7 @@ export default function DashboardPage() {
             }
             const scrollParam = urlParams.get("scroll");
             if (scrollParam === "dns") {
-                setActiveTab("overview");
-                setTimeout(() => {
-                    const el = document.getElementById("dns-section");
-                    if (el) {
-                        el.scrollIntoView({ behavior: "smooth", block: "center" });
-                    }
-                }, 500);
+                setActiveTab("settings");
             }
         }
     }, [realAddress, realIsConnected]);
@@ -383,7 +378,7 @@ export default function DashboardPage() {
     const [copiedViewKey, setCopiedViewKey] = useState(false);
     const [isSavingConfidentiality, setIsSavingConfidentiality] = useState(false);
     const [isDepositOpen, setIsDepositOpen] = useState(false);
-    const [vaultTimeframe, setVaultTimeframe] = useState<string>('6M');
+    const [settlementTimeframe, setSettlementTimeframe] = useState<string>('6M');
     const [balanceVisible, setBalanceVisible] = useState(true);
     const [timeframeOpen, setTimeframeOpen] = useState(false);
 
@@ -1188,13 +1183,7 @@ export default function DashboardPage() {
     };
 
     const handleDnsClick = () => {
-        setActiveTab("overview");
-        setTimeout(() => {
-            const el = document.getElementById("dns-section");
-            if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-        }, 100);
+        setActiveTab("settings");
     };
 
     const handleLogout = async () => {
@@ -2847,10 +2836,10 @@ Please complete the following implementation tasks:
                                     </p>
                                 </div>
 
-                                {/* Vault Balance */}
+                                {/* Claimable Settlement */}
                                 <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Vault Balance</p>
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Claimable Settlement</p>
                                         <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
                                             {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                                         </button>
@@ -2859,7 +2848,7 @@ Please complete the following implementation tasks:
                                         {balanceVisible ? `$${vaultBalance.toFixed(2)}` : '•••••'}
                                     </p>
                                     <div className="flex items-center justify-between">
-                                        <p className="text-[10px] text-white/30">Claimable USDC in router</p>
+                                        <p className="text-[10px] text-white/30">USDC ready for merchant payout</p>
                                         <button
                                             onClick={() => handleWithdraw()}
                                             disabled={vaultBalance <= 0 || isWithdrawing}
@@ -3027,157 +3016,6 @@ Please complete the following implementation tasks:
                                     );
                                 })()}
                             </div>
-
-                            {/* SubScript DNS Domain Registration Card */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
-                                <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
-                                        <Globe className={`w-4 h-4 ${primaryColorText}`} />
-                                        SubScript Domain Name System (DNS)
-                                    </h2>
-                                    <p className="text-xs text-white/50 leading-relaxed">
-                                        Map your EVM wallet address to a readable `.sub` domain. This domain name is displayed in place of your hexadecimal address for transaction statistics, payroll recipient list mapping, and payment receipts.
-                                    </p>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                                    {/* Alias Setup Form */}
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] text-white/40 uppercase font-bold tracking-wider block">
-                                                Register or Modify Domain Alias
-                                            </label>
-                                            <div className="relative">
-                                                <input
-                                                    type="text"
-                                                    value={aliasInput}
-                                                    onChange={(e) => {
-                                                        setAliasInput(e.target.value);
-                                                        setAliasSuccessMessage(null);
-                                                        setAliasErrorMessage(null);
-                                                    }}
-                                                    placeholder="my-merchant.sub"
-                                                    className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-2xl px-4 py-3 text-sm text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
-                                                />
-                                                {aliasInput && !aliasInput.endsWith(".sub") && (
-                                                    <span className="absolute right-4 top-3 text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/25">
-                                                        Will auto-append .sub
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-[9px] text-white/30 font-sans leading-relaxed">
-                                                Must be 3-15 alphanumeric characters or hyphens.
-                                            </p>
-                                        </div>
-
-                                        {/* Anonymous Toggle */}
-                                        <div className="flex items-center justify-between p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl">
-                                            <div className="space-y-0.5">
-                                                <p className="text-xs font-bold text-white uppercase tracking-wide">
-                                                    Enable Privacy (Anonymous Mode)
-                                                </p>
-                                                <p className="text-[9px] text-white/30 leading-normal">
-                                                    If enabled, your alias will be hidden and show as &quot;Anonymous&quot;.
-                                                </p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setAliasIsAnonymousInput(!aliasIsAnonymousInput);
-                                                    setAliasSuccessMessage(null);
-                                                    setAliasErrorMessage(null);
-                                                }}
-                                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                                    aliasIsAnonymousInput ? "bg-[#00d2b4]" : "bg-white/10"
-                                                }`}
-                                            >
-                                                <span
-                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                                                        aliasIsAnonymousInput ? "translate-x-4" : "translate-x-0"
-                                                    }`}
-                                                />
-                                            </button>
-                                        </div>
-
-                                        {/* Action Buttons */}
-                                        <div className="flex flex-wrap gap-3 pt-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleSaveAlias}
-                                                disabled={isSavingAlias}
-                                                className="px-6 py-2.5 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-lg shadow-[#00d2b4]/10"
-                                            >
-                                                {isSavingAlias ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                ) : (
-                                                    <CheckCircle className="w-3.5 h-3.5" />
-                                                )}
-                                                Save Domain Settings
-                                            </button>
-
-                                            {merchantAlias && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleDeleteAlias}
-                                                    disabled={isSavingAlias}
-                                                    className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
-                                                >
-                                                    {isSavingAlias ? (
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    ) : (
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    )}
-                                                    Remove Alias
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {/* Messages */}
-                                        {aliasSuccessMessage && (
-                                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
-                                                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                                                {aliasSuccessMessage}
-                                            </div>
-                                        )}
-                                        {aliasErrorMessage && (
-                                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-semibold leading-relaxed flex items-center gap-1.5">
-                                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                                {aliasErrorMessage}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Alias Status Display */}
-                                    <div className="liquid-glass bg-white/[0.01] border border-white/5 rounded-2xl p-5 space-y-4">
-                                        <h3 className="text-[10px] text-white/40 uppercase font-bold tracking-wider">
-                                            Current Resolution Status
-                                        </h3>
-                                        <div className="space-y-3.5">
-                                            <div>
-                                                <p className="text-[9px] text-white/30 uppercase font-bold">Connected Address</p>
-                                                <p className="text-xs font-mono text-white/80 break-all">{address}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[9px] text-white/30 uppercase font-bold">Registered SubScript Alias</p>
-                                                {merchantAlias ? (
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="font-sans font-bold text-white px-2.5 py-1 bg-[#00d2b4]/10 border border-[#00d2b4]/25 rounded-xl text-xs uppercase tracking-wide">
-                                                            {merchantAlias}
-                                                        </span>
-                                                        {merchantAliasIsAnonymous && (
-                                                            <span className="font-sans font-bold text-white/50 px-2 py-0.5 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase">
-                                                                Anonymous Mode Active
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-xs text-white/40 italic mt-0.5">No domain alias registered yet</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* Mobile Overview Layout (Strictly blueprint aligned) */}
@@ -3217,12 +3055,12 @@ Please complete the following implementation tasks:
                                 </div>
                             </div>
 
-                            {/* Vault Balance Card */}
+                            {/* Claimable Settlement Card */}
                             <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-black/35 backdrop-blur-xl">
                                 <div className="relative z-10 space-y-4">
                                     <div className="flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Vault Balance</span>
+                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Claimable Settlement</span>
                                             <button
                                                 type="button"
                                                 onClick={() => setBalanceVisible(!balanceVisible)}
@@ -3237,9 +3075,9 @@ Please complete the following implementation tasks:
                                             onClick={() => setTimeframeOpen((open) => !open)}
                                             className="flex items-center gap-1 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/15 px-2.5 py-1 text-[8px] font-bold text-[#00d2b4] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:bg-[#00d2b4]/25 active:scale-95"
                                             aria-expanded={timeframeOpen}
-                                            aria-label="Select vault timeframe"
+                                            aria-label="Select settlement timeframe"
                                         >
-                                            <span>{vaultTimeframe}</span>
+                                            <span>{settlementTimeframe}</span>
                                             <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${timeframeOpen ? "rotate-180" : "rotate-0"}`} />
                                         </button>
                                     </div>
@@ -3253,13 +3091,13 @@ Please complete the following implementation tasks:
                                                 className="overflow-hidden"
                                             >
                                                 <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
-                                                    {vaultTimeframes.map((tf) => (
+                                                    {settlementTimeframes.map((tf) => (
                                                         <button
                                                             key={tf}
                                                             type="button"
-                                                            onClick={() => { setVaultTimeframe(tf); setTimeframeOpen(false); }}
+                                                            onClick={() => { setSettlementTimeframe(tf); setTimeframeOpen(false); }}
                                                             className={`rounded-full px-2 py-1.5 text-center text-[8px] font-bold transition-all duration-200 active:scale-95 ${
-                                                                vaultTimeframe === tf
+                                                                settlementTimeframe === tf
                                                                     ? "bg-[#00d2b4]/15 text-[#00d2b4] ring-1 ring-[#00d2b4]/30"
                                                                     : "text-white/50 hover:bg-white/5 hover:text-white"
                                                             }`}
@@ -3428,116 +3266,6 @@ Please complete the following implementation tasks:
                                         </div>
                                     );
                                 })()}
-                            </div>
-
-                            {/* SubScript DNS Domain Registration Card (Optimized stacked layout) */}
-                            <div id="dns-section" className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-5">
-                                <div>
-                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <Globe className={`w-3.5 h-3.5 ${primaryColorText}`} />
-                                        SubScript DNS Domain Setup
-                                    </h3>
-                                    <p className="text-[10px] text-white/45 leading-relaxed mt-1.5">
-                                        Register a custom `.sub` domain alias mapped to your EVM wallet address to resolve readable names instead of hex.
-                                    </p>
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[8px] text-white/30 uppercase font-bold tracking-widest block">
-                                            Alias Name
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={aliasInput}
-                                                onChange={(e) => {
-                                                    setAliasInput(e.target.value);
-                                                    setAliasSuccessMessage(null);
-                                                    setAliasErrorMessage(null);
-                                                }}
-                                                placeholder="my-merchant.sub"
-                                                className="w-full bg-black/40 border border-white/10 focus:border-[#00d2b4]/50 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-white/20 focus:outline-none transition-colors"
-                                            />
-                                            {aliasInput && !aliasInput.endsWith(".sub") && (
-                                                <span className="absolute right-3 top-2.5 text-[8px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20">
-                                                    + .sub
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Anonymous Toggle */}
-                                    <div className="flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl">
-                                        <div className="space-y-0.5">
-                                            <p className="text-[10px] font-bold text-white uppercase">Anonymous Mode</p>
-                                            <p className="text-[8px] text-white/30">Hide alias from public transaction receipts.</p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setAliasIsAnonymousInput(!aliasIsAnonymousInput);
-                                                setAliasSuccessMessage(null);
-                                                setAliasErrorMessage(null);
-                                            }}
-                                            className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                                aliasIsAnonymousInput ? "bg-[#00d2b4]" : "bg-white/10"
-                                            }`}
-                                        >
-                                            <span
-                                                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                                                    aliasIsAnonymousInput ? "translate-x-3.5" : "translate-x-0"
-                                                }`}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    {/* Action Buttons */}
-                                    <div className="flex flex-wrap gap-2.5 pt-1">
-                                        <button
-                                            type="button"
-                                            onClick={handleSaveAlias}
-                                            disabled={isSavingAlias}
-                                            className="px-4 py-2 bg-[#00d2b4] hover:bg-[#00c0a4] disabled:opacity-50 text-black rounded-xl text-[9px] font-extrabold uppercase tracking-widest transition-all flex items-center gap-1 shadow-lg"
-                                        >
-                                            {isSavingAlias ? (
-                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            ) : (
-                                                <CheckCircle className="w-3.5 h-3.5" />
-                                            )}
-                                            Save Alias
-                                        </button>
-
-                                        {merchantAlias && (
-                                            <button
-                                                type="button"
-                                                onClick={handleDeleteAlias}
-                                                disabled={isSavingAlias}
-                                                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 disabled:opacity-50 text-red-400 rounded-xl text-[9px] font-extrabold uppercase tracking-widest transition-all flex items-center gap-1"
-                                            >
-                                                {isSavingAlias ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                ) : (
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                )}
-                                                Remove
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    /* Messages */
-                                    {aliasSuccessMessage && (
-                                        <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[9px] font-bold flex items-center gap-1">
-                                            <CheckCircle className="w-3 h-3 shrink-0" />
-                                            {aliasSuccessMessage}
-                                        </div>
-                                    )}
-                                    {aliasErrorMessage && (
-                                        <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[9px] font-bold flex items-center gap-1">
-                                            <AlertTriangle className="w-3 h-3 shrink-0" />
-                                            {aliasErrorMessage}
-                                        </div>
-                                    )}
-                                </div>
                             </div>
                         </div>
                     </>

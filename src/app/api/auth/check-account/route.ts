@@ -22,9 +22,7 @@ export async function POST(request: Request) {
                     "select role from account_roles where address = $1 limit 1",
                     [wallet.wallet_address.toLowerCase()]
                 );
-                if (roleRecord) {
-                    return NextResponse.json({ exists: true, wallet: wallet.wallet_address, role: roleRecord.role });
-                }
+                return NextResponse.json({ exists: true, wallet: wallet.wallet_address, role: roleRecord?.role || null });
             }
             return NextResponse.json({ exists: false });
         }

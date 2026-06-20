@@ -26,6 +26,23 @@ export async function POST(request: Request) {
         }
 
         const walletAddress = wallet.address.toLowerCase();
+        
+        /* Check if this email is already registered to a different wallet address */
+        const emailLower = email.toLowerCase().trim();
+        const existingMapping = await withPgClient(async (client) => {
+            const res = await client.query(
+                "select wallet_address from user_embedded_wallets where email = $1 limit 1",
+                [emailLower]
+            );
+            return res.rows[0] || null;
+        });
+
+        if (existingMapping && existingMapping.wallet_address.toLowerCase() !== walletAddress) {
+            return NextResponse.json({
+                error: "This email is already associated with another wallet account."
+            }, { status: 409 });
+        }
+
         await withPgClient(async (client) => {
             await client.query(
                 `insert into user_embedded_wallets (
