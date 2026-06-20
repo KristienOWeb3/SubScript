@@ -2256,99 +2256,177 @@ function DmBubble({
   const canPay = isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
   const canDecline = isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
 
-  // Parse lines to show a beautiful checkout details card for payment requests
+  /* Parse lines to show a beautiful checkout details card for payment requests */
   const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
 
   return (
-    <div className={`flex gap-3 ${incoming ? "justify-start" : "justify-end"}`}>
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0, y: 15 }}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 400, damping: 22 }}
+      className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
+    >
       {incoming && <Avatar profilePic={dm.senderProfilePic} />}
-      <div className={`max-w-[78%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-2`}>
-        <div className={`rounded-[28px] border px-5 py-5 shadow-xl ${focused ? "border-[#ccff00]/50 bg-[#ccff00]/[0.06]" : "border-white/12 bg-white/[0.045]"} ${incoming ? "rounded-bl-sm" : "rounded-br-sm"}`}>
-          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">{dm.messageType.replace(/_/g, " ")}</p>
+      <div className={`max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
+        <div 
+          className={`px-5 py-4 shadow-md select-none transition-all duration-200 ${
+            incoming 
+              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
+              : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
+          }`}
+        >
+          <p 
+            className={`mb-2 text-[9px] font-black uppercase tracking-[0.16em] ${
+              incoming ? "text-[#ccff00]" : "text-white/70"
+            }`}
+          >
+            {dm.messageType.replace(/_/g, " ")}
+          </p>
           
           {isRequest ? (
             <div className="space-y-3 font-sans text-xs">
-              <h4 className="text-sm font-black uppercase tracking-wider text-white border-b border-white/5 pb-2">{dm.title || "Payment Details"}</h4>
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-white/60">
+              <h4 
+                className={`text-sm font-black uppercase tracking-wider border-b pb-2 ${
+                  incoming ? "text-white border-white/5" : "text-white border-white/10"
+                }`}
+              >
+                {dm.title || "Payment Details"}
+              </h4>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <div>
-                  <span className="block text-white/30 uppercase tracking-widest text-[8px]">Plan / Purpose</span>
+                  <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Plan / Purpose</span>
                   <span className="font-bold text-white">{dm.title?.split(" requested")[0] || "Services / Payout"}</span>
                 </div>
                 <div>
-                  <span className="block text-white/30 uppercase tracking-widest text-[8px]">Merchant / Sender</span>
+                  <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Merchant / Sender</span>
                   <span className="font-bold text-white truncate block">{dm.senderName || formatAddress(dm.senderAddress)}</span>
                 </div>
               </div>
               
               {dm.description && (
-                <div className="bg-black/25 rounded-xl p-3 border border-white/5 mt-2">
-                  <span className="block text-white/30 uppercase tracking-widest text-[8px] mb-1">Details</span>
-                  <p className="text-white/80 text-[10px] leading-relaxed whitespace-pre-wrap">{dm.description}</p>
+                <div 
+                  className={`rounded-xl p-3 border mt-2 ${
+                    incoming ? "bg-black/25 border-white/5" : "bg-black/15 border-white/10"
+                  }`}
+                >
+                  <span className={`block uppercase tracking-widest text-[8px] mb-1 ${incoming ? "text-white/40" : "text-white/60"}`}>Details</span>
+                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap">{dm.description}</p>
                 </div>
               )}
             </div>
           ) : (
             <>
               <h3 className="text-base font-black uppercase leading-snug text-white">{dm.title || "SubScript message"}</h3>
-              <div className="mt-4 space-y-2">
+              <div className="mt-3 space-y-1.5">
                 {lines.length > 0 ? lines.map((line) => (
-                  <p key={line} className="text-xs leading-relaxed text-white/62">{line}</p>
-                )) : <p className="text-xs leading-relaxed text-white/62">System-generated SubScript payment update.</p>}
+                  <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                )) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}
 
           <div className="mt-4 flex items-center justify-between gap-4">
-            <span className="rounded-full bg-white/10 px-4 py-1 text-[10px] font-bold text-white/50">
+            <span 
+              className={`rounded-full px-3 py-0.5 text-[9px] font-bold ${
+                incoming ? "bg-white/5 text-white/40" : "bg-black/15 text-white/70"
+              }`}
+            >
               {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
-            {dm.amountUsdc && <span className="text-xs font-black text-[#ccff00]">{formatUsdc(dm.amountUsdc)} USDC</span>}
+            {dm.amountUsdc && (
+              <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-white"}`}>
+                {formatUsdc(dm.amountUsdc)} USDC
+              </span>
+            )}
           </div>
         </div>
 
-        <div className={`flex flex-wrap gap-3 ${incoming ? "justify-start" : "justify-end"}`}>
+        <div className={`flex flex-wrap gap-2 ${incoming ? "justify-start" : "justify-end"}`}>
           {canPay && (
-            <button type="button" onClick={onPay} className={`dm-quick-button relative overflow-hidden ${loadingAction === `pay-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onPay} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `pay-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               {dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm"}
-            </button>
+            </motion.button>
           )}
           {canDecline && (
-            <button type="button" onClick={onDecline} className={`dm-quick-button relative overflow-hidden ${loadingAction === `decline-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onDecline} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `decline-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               {dm.messageType === "EXPIRY_WARNING" ? "Cancel Plan" : "Decline"}
-            </button>
+            </motion.button>
           )}
           {dm.messageType === "DEBIT_SUCCESS" && isPending && (
-            <button type="button" onClick={onDismiss} className={`dm-quick-button relative overflow-hidden ${loadingAction === `dismiss-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onDismiss} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `dismiss-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               Thanks
-            </button>
+            </motion.button>
           )}
           
-          {/* Shimmer suggestions for peer transfers (Thanks & Nudge) */}
           {dm.messageType === "PEER_TRANSFER" && onThanks && (
-            <button type="button" onClick={onThanks} className={`dm-quick-button relative overflow-hidden ${loadingAction === `thanks-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onThanks} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `thanks-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               Thanks ❤️
-            </button>
+            </motion.button>
           )}
           {dm.messageType === "PEER_REQUEST" && isPending && !incoming && onNudge && (
-            <button type="button" onClick={onNudge} className={`dm-quick-button relative overflow-hidden ${loadingAction === `nudge-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onNudge} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `nudge-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               Nudge 🔔
-            </button>
+            </motion.button>
           )}
           {dm.messageType === "PAYMENT_REQUEST" && isPending && incoming && onCancelPlan && (
-            <button type="button" onClick={onCancelPlan} className={`dm-quick-button relative overflow-hidden ${loadingAction === `cancel-${dm.id}` ? "quick-action-loading" : ""}`}>
+            <motion.button 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              type="button" 
+              onClick={onCancelPlan} 
+              className={`dm-quick-button relative overflow-hidden ${loadingAction === `cancel-${dm.id}` ? "quick-action-loading" : ""}`}
+            >
               Cancel Plan
-            </button>
+            </motion.button>
           )}
 
           {dm.txHash && (
-            <a href={`https://explorer.testnet.arc.network/tx/${dm.txHash}`} target="_blank" rel="noopener noreferrer" className="dm-quick-button">
+            <motion.a 
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              href={`https://explorer.testnet.arc.network/tx/${dm.txHash}`} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="dm-quick-button"
+            >
               View Tx <ExternalLink className="h-3 w-3" />
-            </a>
+            </motion.a>
           )}
         </div>
       </div>
       {!incoming && <Avatar profilePic={dm.senderProfilePic} />}
-    </div>
+    </motion.div>
   );
 }
 
