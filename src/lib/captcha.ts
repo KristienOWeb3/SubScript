@@ -83,38 +83,37 @@ export function createCaptchaToken(code: string): string {
 }
 
 /**
- * Verifies that the entered code matches the one signed in the captcha token,
- * and confirms that the token has not expired.
+ * Verifies the Google reCAPTCHA token using Google's official verify API.
+ * Falls back to the developer testing key if RECAPTCHA_SECRET_KEY is not configured.
  */
-export function verifyCaptchaToken(token: string | null | undefined, enteredCode: string | null | undefined): boolean {
-    if (!token || !enteredCode) return false;
-    
-    const parts = token.split(".");
-    if (parts.length !== 3) return false;
-
-    const [signedCode, expiresAtStr, signature] = parts;
-    const expiresAt = parseInt(expiresAtStr, 10);
-    if (isNaN(expiresAt) || Date.now() > expiresAt) {
-        console.warn("Captcha verification failed: Token expired");
+export async function verifyCaptchaToken(
+    recaptchaToken: string | null | undefined,
+    _ignoredCode?: string | null | undefined
+): Promise<boolean> {
+    if (!recaptchaToken) {
+        console.warn("reCAPTCHA verification failed: Token is empty");
         return false;
     }
-
-    if (signedCode.toUpperCase() !== enteredCode.toUpperCase().trim()) {
-        return false;
-    }
-
-    const secret = process.env.JWT_SECRET || "subscript_default_captcha_secret_key_443";
-    const data = `${signedCode}.${expiresAt}`;
     
-    const hmac = crypto.createHmac("sha256", secret);
-    hmac.update(data);
-    const expectedSignature = hmac.digest("hex");
-
     try {
-        const sigBuffer = Buffer.from(signature, "hex");
-        const expectedBuffer = Buffer.from(expectedSignature, "hex");
-        return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
-    } catch {
+        const secret = process.env.RECAPTCHA_SECRET_KEY || "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe";
+        const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: `secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(recaptchaToken)}`,
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            return true;
+        } else {
+            console.warn("reCAPTCHA verification failed:", data["error-codes"]);
+            return false;
+        }
+    } catch (err) {
+        console.error("Error communicating with reCAPTCHA API:", err);
         return false;
     }
 }

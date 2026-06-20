@@ -46,14 +46,16 @@ model WebhookEndpoint {
 }
 
 model WebhookEvent {
-  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  webhookEndpointId String          @map("webhook_endpoint_id") @db.Uuid
-  endpoint          WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
-  event             String
-  status            Int
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookEndpointId String?          @map("webhook_endpoint_id") @db.Uuid
+  endpoint          WebhookEndpoint? @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  event             String?
+  status            Int?
   payload           Json
-  responseBody      String?         @map("response_body")
-  createdAt         DateTime        @default(now()) @map("created_at")
+  responseBody      String?          @map("response_body")
+  txHash            String?          @unique @map("tx_hash")
+  eventType         String?          @map("event_type")
+  createdAt         DateTime         @default(now()) @map("created_at")
 
   @@index([webhookEndpointId])
   @@map("webhook_events")

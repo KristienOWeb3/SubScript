@@ -145,6 +145,7 @@ export default function DashboardPage() {
 
 
     const [embeddedWallet, setEmbeddedWallet] = useState<{ wallet: string; email: string } | null>(null);
+    const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [otpEmail, setOtpEmail] = useState("");
     const [otpCode, setOtpCode] = useState("");
     const [otpSent, setOtpSent] = useState(false);
@@ -155,10 +156,10 @@ export default function DashboardPage() {
 
     const activeMerchantAddress = useMemo(() => {
         if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-        return embeddedWallet?.wallet || realAddress || "";
-    }, [embeddedWallet, realAddress, isTestMode]);
+        return embeddedWallet?.wallet || realAddress || sessionWallet || "";
+    }, [embeddedWallet, realAddress, isTestMode, sessionWallet]);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
+    const isConnected = realIsConnected || isTestMode || !!embeddedWallet || !!sessionWallet;
     const address = activeMerchantAddress;
 
     const executeContractWrite = async ({
@@ -365,6 +366,7 @@ export default function DashboardPage() {
     const [vaultBalance, setVaultBalance] = useState(0);
     const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
     const [walletBalance, setWalletBalance] = useState(0);
+    const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
     const [isPremium, setIsPremium] = useState(false);
     const [promptFlowMode, setPromptFlowMode] = useState<"standard" | "private">("standard");
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
@@ -488,6 +490,17 @@ export default function DashboardPage() {
     const refetchVaultBalance = refetchBalancesAndTier;
     const refetchPayoutDest = refetchBalancesAndTier;
     const refetchWalletBalance = refetchBalancesAndTier;
+
+    const handleManualRefreshBalances = async () => {
+        setIsRefreshingBalances(true);
+        try {
+            await refetchBalancesAndTier();
+        } catch (err) {
+            console.error("Failed to refresh balances manually:", err);
+        } finally {
+            setIsRefreshingBalances(false);
+        }
+    };
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -651,7 +664,6 @@ export default function DashboardPage() {
 
     const [copiedText, setCopiedText] = useState<string | null>(null);
 
-    const [sessionWallet, setSessionWallet] = useState<string | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
     
     /* Loading states for initial fetches to support skeleton loading */
@@ -2164,16 +2176,22 @@ Please complete the following implementation tasks:
                         </p>
                     </div>
 
-                    {isLinksLoading ? (
-                        <div className="flex items-center justify-center py-12">
-                            <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
-                        </div>
-                    ) : paymentLinks.length === 0 ? (
-                        <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
-                            <p className="text-white/40 text-xs font-sans">No payment links created yet.</p>
-                        </div>
-                    ) : (
-                        <>
+                    <div className="relative">
+                        {isLinksLoading && paymentLinks.length > 0 && (
+                            <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center rounded-2xl z-20">
+                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                            </div>
+                        )}
+                        {isLinksLoading && paymentLinks.length === 0 ? (
+                            <div className="flex items-center justify-center py-12">
+                                <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
+                            </div>
+                        ) : paymentLinks.length === 0 ? (
+                            <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
+                                <p className="text-white/40 text-xs font-sans">No payment links created yet.</p>
+                            </div>
+                        ) : (
+                            <>
                             <div className="overflow-x-auto">
                                 <table className="w-full border-collapse font-sans text-xs">
                                     <thead>
@@ -2395,6 +2413,7 @@ Please complete the following implementation tasks:
                         })()}
                     </>
                     )}
+                    </div>
                 </div>
             </div>
         );
@@ -2798,10 +2817,20 @@ Please complete the following implementation tasks:
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                                 {/* Wallet Balance */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Wallet Balance</p>
-                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Wallet Balance</p>
+                                            <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
+                                                {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                            </button>
+                                        </div>
+                                        <button 
+                                            onClick={handleManualRefreshBalances}
+                                            disabled={isRefreshingBalances}
+                                            className="text-white/30 hover:text-white/65 disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
+                                            title="Refresh Balance"
+                                        >
+                                            <RefreshCw className={`w-3 h-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                                         </button>
                                     </div>
                                     <p className="text-3xl font-extrabold text-white mb-1 tracking-tight">
@@ -3154,6 +3183,14 @@ Please complete the following implementation tasks:
                                         <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
                                         <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
                                             {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                        </button>
+                                        <button 
+                                            onClick={handleManualRefreshBalances}
+                                            disabled={isRefreshingBalances}
+                                            className="text-white/30 hover:text-white/65 disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
+                                            title="Refresh Balance"
+                                        >
+                                            <RefreshCw className={`w-3 h-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                                         </button>
                                     </div>
                                     <p className="text-3xl font-extrabold text-white mt-1.5 tracking-tight leading-none">

@@ -162,10 +162,10 @@ export default function PayrollPage() {
 
     const activeMerchantAddress = useMemo(() => {
         if (isTestMode) return "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
-        return embeddedWallet?.wallet || realAddress || "";
-    }, [embeddedWallet, realAddress, isTestMode]);
+        return embeddedWallet?.wallet || realAddress || sessionWallet || "";
+    }, [embeddedWallet, realAddress, isTestMode, sessionWallet]);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
+    const isConnected = realIsConnected || isTestMode || !!embeddedWallet || !!sessionWallet;
     const address = activeMerchantAddress;
 
     /* ----- Header balances & modals states ----- */

@@ -24,6 +24,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import UserDashboardHeader from "@/components/UserDashboardHeader";
 import { getDashboardUrl } from "@/utils/navigation";
 import {
   AlertCircle,
@@ -51,6 +52,9 @@ import {
   Activity,
   Sliders,
   Lock,
+  Eye,
+  EyeOff,
+  RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -166,6 +170,7 @@ export default function UserDashboard() {
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
@@ -311,6 +316,21 @@ export default function UserDashboard() {
 
   const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
   const localFiatBalance = walletBalance * 1250;
+
+  const handleManualRefreshBalances = async () => {
+    setIsRefreshingBalances(true);
+    try {
+      await Promise.all([
+        refetchUsdc().catch(console.error),
+        refetchSepolia().catch(console.error),
+        refetchMainnet().catch(console.error),
+      ]);
+    } catch (err) {
+      console.error("Failed to refresh balances manually:", err);
+    } finally {
+      setIsRefreshingBalances(false);
+    }
+  };
 
   const loadSubscriptions = async () => {
     try {
@@ -607,21 +627,25 @@ export default function UserDashboard() {
       return;
     }
 
-    if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-      setSingleResolved({ address: trimmed, alias: null, profilePic: null });
-      fetch(`/api/merchant/alias?address=${trimmed}`)
-        .then(res => res.json())
-        .then(data => {
+    setSingleResolving(true);
+    const timer = setTimeout(async () => {
+      if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
+        setSingleResolved({ address: trimmed, alias: null, profilePic: null });
+        try {
+          const res = await fetch(`/api/merchant/alias?address=${trimmed}`);
+          const data = await res.json();
           if (data.success && data.alias) {
             setSingleResolved({ address: trimmed, alias: data.alias, profilePic: data.profile_pic });
           }
-        }).catch(console.warn);
-      return;
-    }
+        } catch (e) {
+          console.warn(e);
+        } finally {
+          setSingleResolving(false);
+        }
+        return;
+      }
 
-    if (trimmed.endsWith(".sub") || trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
-      setSingleResolving(true);
-      const timer = setTimeout(async () => {
+      if (trimmed.endsWith(".sub") || trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
         try {
           const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`);
           const data = await res.json();
@@ -635,11 +659,13 @@ export default function UserDashboard() {
         } finally {
           setSingleResolving(false);
         }
-      }, 500);
-      return () => clearTimeout(timer);
-    } else {
-      setSingleResolved(null);
-    }
+      } else {
+        setSingleResolved(null);
+        setSingleResolving(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
   }, [singleRecipient]);
 
   const handleSingleSend = async (e: React.FormEvent) => {
@@ -912,96 +938,24 @@ export default function UserDashboard() {
     : null;
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md md:max-w-none md:w-full flex-col md:flex-row overflow-hidden bg-transparent text-white font-sans relative selection:bg-[#ccff00]/30 selection:text-white">
+    <div className="min-h-screen bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00]">
       <AnimatedGradientBg />
       
-      {/* Desktop Sidebar (visible only on md and larger viewports) */}
-      <aside className="hidden md:flex w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
-        <div className="space-y-8">
-          {/* Brand logo */}
-          <div className="flex items-center gap-3 px-3 py-2 bg-[#ccff00]/10 border border-[#ccff00]/30 rounded-2xl shadow-lg shadow-[#ccff00]/5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#ccff00]/20 bg-[#ccff00]/10 text-sm font-black text-[#ccff00] shadow-[0_0_12px_rgba(204,255,0,0.15)]">S</span>
-            <div>
-              <h1 className="text-sm font-black uppercase tracking-[0.2em] text-white">SubScript</h1>
-              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#ccff00]">User Wallet</span>
-            </div>
-          </div>
-
-          {/* Navigation options */}
-          <nav className="space-y-1.5">
-            {[
-              { id: "home", label: "Home Hub", icon: Home },
-              { id: "links", label: "Payment Links", icon: Link2 },
-              { id: "batch", label: "Send Out", icon: Send },
-              { id: "dns", label: "DNS Settings", icon: Globe },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setSelectedDmPeer(null);
-                    setActiveTab(tab.id as any);
-                  }}
-                  className={`w-full flex items-center gap-3.5 px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                    isActive
-                      ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
-                      : "bg-white/[0.01] border-white/5 text-white/55 hover:text-white hover:bg-white/[0.03]"
-                  }`}
-                >
-                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/40"}`} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => {
-                setSelectedDmPeer(null);
-                setActiveTab("inbox");
-              }}
-              className={`w-full flex items-center justify-between px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                activeTab === "inbox"
-                  ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
-                  : "bg-white/[0.01] border-white/5 text-white/55 hover:text-white hover:bg-white/[0.03]"
-              }`}
-            >
-              <div className="flex items-center gap-3.5">
-                <MessageSquare className={`h-4 w-4 shrink-0 ${activeTab === "inbox" ? "text-[#ccff00]" : "text-white/40"}`} />
-                <span>Direct Messages</span>
-              </div>
-              {pendingDmCount > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                  activeTab === "inbox"
-                    ? "bg-[#ccff00]/10 border-[#ccff00]/20 text-[#ccff00]"
-                    : "bg-white/10 border-white/5 text-white/55"
-                }`}>
-                  {pendingDmCount}
-                </span>
-              )}
-            </button>
-          </nav>
-        </div>
-
-        {/* Profile & Logout section */}
-        <div className="space-y-4 pt-4 border-t border-white/5">
-          <div className="flex items-center gap-3 px-2">
-            <Avatar profilePic={profilePic} />
-            <div className="min-w-0">
-              <p className="font-mono text-[10px] font-black text-white/80 truncate max-w-[130px]">{registeredDomain || formatAddress(userWallet)}</p>
-              <p className="text-[9px] text-[#ccff00] uppercase font-bold tracking-wider">Verified User</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3.5 px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider text-red-400/80 hover:text-red-300 border border-transparent hover:border-red-500/10 hover:bg-red-500/5 transition-all duration-200 text-left"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span>Log Out</span>
-          </button>
-        </div>
-      </aside>
+      {/* Desktop Header */}
+      {!isMobile && (
+        <UserDashboardHeader
+          userWallet={userWallet}
+          registeredDomain={registeredDomain}
+          profilePic={profilePic}
+          walletBalance={walletBalance}
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setSelectedDmPeer(null);
+            setActiveTab(tab);
+          }}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* Mobile headers (only shown on small screens) */}
       {isMobile && (
@@ -1030,28 +984,84 @@ export default function UserDashboard() {
         </div>
       )}
 
-      {/* Main View Area */}
-      <div className="flex-1 flex flex-col min-h-screen bg-[#060608] overflow-hidden">
-        {/* Desktop Navbar (header of the right content pane) */}
-        <header className="hidden md:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
-          <div>
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white">
-              {activeTab === "home" ? "Home Hub" : activeTab === "links" ? "Payment Links" : activeTab === "batch" ? "Send Funds" : activeTab === "dns" ? "DNS Settings" : "Messages"}
-            </h2>
-            <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">
-              {activeTab === "home" ? "Overview & Allowance Streams" : activeTab === "links" ? "USDC Payment Requests" : activeTab === "batch" ? "On-chain payouts & direct send" : activeTab === "dns" ? "Domain identity & spending limits" : "System and Merchant DMs"}
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-bold text-white/70">
-              Sepolia: {sepoliaUsdc.toFixed(2)} USDC | Arc: {walletBalance.toFixed(2)} USDC
+      {/* Main Grid View Container */}
+      <main className="max-w-7xl mx-auto px-5 md:px-6 pt-24 md:pt-28 pb-12">
+        {/* Title Header (Desktop only) */}
+        {!isMobile && (
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+            <div>
+              <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
+                User Wallet <span className="font-serif italic lowercase font-normal text-[#ccff00]">hub</span>
+              </h1>
+              <p className="text-xs text-white/50 font-sans">
+                Manage your payment flows, subscriptions, inbox DMs, and batch distributions.
+              </p>
             </div>
           </div>
-        </header>
+        )}
 
-        {/* Content main scroll view */}
-        <main className="flex-1 overflow-y-auto px-5 md:px-8 pb-28 pt-24 md:pt-8 min-h-0">
-          <AnimatePresence mode="wait">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 items-start">
+          {/* Desktop Left Navigation (Matches Merchant Dashboard Sidebar) */}
+          {!isMobile && (
+            <div className="hidden md:block md:col-span-1 space-y-2">
+              {[
+                { id: "home", label: "Home Hub", icon: Home },
+                { id: "links", label: "Payment Links", icon: Link2 },
+                { id: "batch", label: "Send Out", icon: Send },
+                { id: "dns", label: "DNS Settings", icon: Globe },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setSelectedDmPeer(null);
+                      setActiveTab(tab.id as any);
+                    }}
+                    className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                      isActive
+                        ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
+                        : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
+                    }`}
+                  >
+                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/40"}`} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => {
+                  setSelectedDmPeer(null);
+                  setActiveTab("inbox");
+                }}
+                className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                  activeTab === "inbox"
+                    ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
+                    : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <MessageSquare className={`h-4 w-4 shrink-0 ${activeTab === "inbox" ? "text-[#ccff00]" : "text-white/40"}`} />
+                  <span>Direct Messages</span>
+                </div>
+                {pendingDmCount > 0 && (
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
+                    activeTab === "inbox"
+                      ? "bg-[#ccff00]/10 border-[#ccff00]/20 text-[#ccff00]"
+                      : "bg-white/10 border-white/5 text-white/50"
+                  }`}>
+                    {pendingDmCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Right main view content (spans 3 columns on desktop) */}
+          <div className="col-span-1 md:col-span-3 min-h-[500px]">
+            <AnimatePresence mode="wait">
             {activeTab === "home" && (
               <motion.section
                 key="home"
@@ -1063,14 +1073,32 @@ export default function UserDashboard() {
               >
                 <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
-                    <button
-                      type="button"
-                      onClick={() => setBalanceVisible((value) => !value)}
-                      className="flex-1 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-6 py-6 text-left"
+                    <div
+                      className="flex-1 rounded-2xl border border-white/5 bg-black/20 px-6 py-6 text-left relative overflow-hidden"
                     >
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#ccff00]/85">Connected Wallet Balance</p>
-                      <div className="mt-4 flex items-center gap-3">
-                        <span className="text-4xl font-extrabold tracking-tight text-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#ccff00]/85">Connected Wallet Balance</span>
+                          <button 
+                            type="button"
+                            onClick={() => setBalanceVisible((value) => !value)} 
+                            className="text-white/35 hover:text-white/60 transition-colors p-0.5"
+                          >
+                            {balanceVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                          </button>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={handleManualRefreshBalances}
+                          disabled={isRefreshingBalances}
+                          className="text-[#ccff00]/60 hover:text-[#ccff00] disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
+                          title="Refresh Balance"
+                        >
+                          <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
+                        </button>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <span className="text-4xl font-extrabold tracking-tight text-white select-all">
                           {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "••••"}
                         </span>
                         <Wallet className="h-5 w-5 text-white/35" />
@@ -1078,7 +1106,7 @@ export default function UserDashboard() {
                       <p className="mt-2 text-sm font-bold text-white/55">
                         {balanceVisible ? `₦${localFiatBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                       </p>
-                    </button>
+                    </div>
 
                     <div className="flex flex-row sm:flex-col justify-center gap-4">
                       <RoundAction icon={ArrowDown} label="Deposit" onClick={() => setReceiveOpen(true)} />
@@ -1117,20 +1145,20 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="min-h-[calc(100vh-160px)] md:min-h-0 md:h-[calc(100vh-160px)] flex flex-col md:flex-row gap-5 -mx-5 md:mx-0"
+                className="min-h-0 md:h-[calc(100vh-160px)] flex flex-col md:flex-row gap-5 -mx-5 md:mx-0"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
-                  <div className="flex-1 flex flex-col min-h-0 h-full overflow-hidden justify-between">
+                  <div className="flex-1 flex flex-col justify-between">
                     {!selectedDmPeer ? (
-                      <div className="px-5 space-y-4 overflow-y-auto pb-20">
+                      <div className="px-5 space-y-4 pb-20">
                         <DmThreadSelect
                           threads={dmThreads}
                           onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
                         />
                       </div>
                     ) : (
-                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-full">
+                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100vh-220px)]">
                         <div className="flex-1 overflow-y-auto space-y-4 px-5 pb-24">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
@@ -1855,8 +1883,9 @@ export default function UserDashboard() {
               </motion.section>
             )}
           </AnimatePresence>
-        </main>
-      </div>
+          </div>
+        </div>
+      </main>
 
       {/* Mobile-only Bottom Navigation Bar */}
       {isMobile && userWallet && (
@@ -2569,8 +2598,13 @@ function DepositModal({
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm rounded-[36px] border border-white/10 bg-[#0b0b0d] p-6 shadow-2xl">
-            <button type="button" onClick={onClose} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all mb-4"><X className="h-4 w-4" /></button>
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
+            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Fiat On-Ramp" : "Circle CCTP Bridge"}
+              </h3>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+            </div>
             
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
@@ -2599,7 +2633,6 @@ function DepositModal({
             {activeSubMode === "menu" && (
               <div className="space-y-5">
                 <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
-                <h2 className="text-xl font-black uppercase text-white tracking-tight">Deposit USDC</h2>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
                   <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
@@ -2658,7 +2691,6 @@ function DepositModal({
             {activeSubMode === "direct" && (
               <div className="text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
-                <h2 className="text-xl font-black uppercase text-white">Direct Deposit</h2>
                 <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
                   <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/logo.png", height: 34, width: 34, excavate: true }} />
@@ -2671,7 +2703,6 @@ function DepositModal({
 
             {activeSubMode === "fiat" && (
               <div className="space-y-4 text-left">
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">Fiat On-Ramp</h3>
                 <p className="text-[10px] text-white/45 leading-relaxed">Simulated fiat-to-cryptocurrency purchase. (Testnet Mode)</p>
                 
                 {fiatStatus === "idle" ? (
@@ -2746,7 +2777,6 @@ function DepositModal({
             {activeSubMode === "cctp" && (
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Circle CCTP</h3>
                   <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
                     Sepolia: {totalExternalUsdc.toFixed(2)} USDC
                   </span>
@@ -2977,7 +3007,7 @@ function SendFundsModal({
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm rounded-[36px] border border-white/10 bg-[#0b0b0d] p-6 shadow-2xl">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black uppercase tracking-wider text-white">Send Funds</h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
@@ -3045,19 +3075,45 @@ function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void })
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm overflow-hidden rounded-[36px] border border-white/10 bg-[#0b0b0d] shadow-2xl">
-            <div className="relative p-6">
-              <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
-              <button type="button" onClick={onClose} className="relative ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60"><X className="h-4 w-4" /></button>
-              <div className="relative mt-4 flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]">
+          <motion.div
+            initial={{ scale: 0.92, y: 18 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.92, y: 18 }}
+            className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl shadow-2xl relative overflow-hidden bg-black/50 backdrop-blur-xl p-6"
+          >
+            <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                QR Scanner
+                <span className="text-[9px] text-black font-black uppercase bg-[#ccff00] px-1.5 py-0.5 rounded">Coming Soon</span>
+              </h3>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center text-center py-4 relative z-10">
+              <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00] mb-4">
                 <QrCode className="h-9 w-9" />
               </div>
-              <h2 className="relative mt-6 text-xl font-black uppercase text-white flex items-center gap-2">QR Scanner <span className="text-[10px] text-black font-black uppercase bg-[#ccff00] px-1.5 py-0.5 rounded">Coming Soon</span></h2>
-              <p className="relative mt-2 text-sm font-medium leading-6 text-white/55">Live QR scanning will be available soon. SubScript is tuning the scanner so payments feel instant when it launches.</p>
+              <p className="text-xs text-white/65 leading-relaxed">
+                Live QR scanning will be available soon. SubScript is tuning the scanner so payments feel instant when it launches.
+              </p>
             </div>
-            <button type="button" onClick={onClose} className="subscript-primary-button mx-6 mb-6">
-              Got it <ArrowRight className="h-4 w-4" />
-            </button>
+
+            <div className="pt-4 relative z-10">
+              <button
+                type="button"
+                onClick={onClose}
+                className="subscript-primary-button w-full flex items-center justify-center gap-2"
+              >
+                Got it <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
           </motion.div>
         </motion.div>
       )}

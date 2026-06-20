@@ -38,7 +38,8 @@ export async function POST(request: Request) {
         }
 
         if (isSignup) {
-            if (!verifyCaptchaToken(captchaToken, captchaCode)) {
+            const isValid = await verifyCaptchaToken(captchaToken);
+            if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
         }

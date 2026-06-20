@@ -20,6 +20,17 @@ import {
 import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import Script from "next/script";
+
+// Add global type declaration for reCAPTCHA
+declare global {
+  interface Window {
+    grecaptcha: any;
+    onRecaptchaLoad: () => void;
+    onRecaptchaSuccess: (token: string) => void;
+    onRecaptchaExpired: () => void;
+  }
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -48,33 +59,60 @@ export default function SignupPage() {
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
 
   /* CAPTCHA states */
-  const [captchaCodeInput, setCaptchaCodeInput] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
-  const [captchaSvg, setCaptchaSvg] = useState("");
-  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [recaptchaLoaded, setRecaptchaLoaded] = useState(false);
 
-  const loadCaptcha = useCallback(async () => {
-    setCaptchaLoading(true);
-    try {
-      const res = await fetch("/api/auth/captcha");
-      const data = await res.json();
-      if (data.svg && data.token) {
-        setCaptchaSvg(data.svg);
-        setCaptchaToken(data.token);
-        setCaptchaCodeInput("");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.onRecaptchaSuccess = (token: string) => {
+        setCaptchaToken(token);
+      };
+      window.onRecaptchaExpired = () => {
+        setCaptchaToken("");
+      };
+      
+      if (window.grecaptcha) {
+        setRecaptchaLoaded(true);
+      } else {
+        window.onRecaptchaLoad = () => {
+          setRecaptchaLoaded(true);
+        };
       }
-    } catch (err) {
-      console.error("Failed to load CAPTCHA:", err);
-    } finally {
-      setCaptchaLoading(false);
     }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.onRecaptchaSuccess = () => {};
+        window.onRecaptchaExpired = () => {};
+        window.onRecaptchaLoad = () => {};
+      }
+    };
   }, []);
 
   useEffect(() => {
-    if (authMethod === "email" || walletSignupPrompt) {
-      loadCaptcha();
+    if (recaptchaLoaded && typeof window !== "undefined" && window.grecaptcha) {
+      const renderRecaptcha = (elementId: string) => {
+        const container = document.getElementById(elementId);
+        if (container && container.innerHTML === "") {
+          try {
+            window.grecaptcha.render(elementId, {
+              sitekey: process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+              theme: "dark",
+              callback: "onRecaptchaSuccess",
+              "expired-callback": "onRecaptchaExpired",
+            });
+          } catch (e) {
+            console.warn("reCAPTCHA render error for " + elementId + ":", e);
+          }
+        }
+      };
+
+      // Attempt to render in both possible containers depending on active screen
+      setTimeout(() => {
+        renderRecaptcha("recaptcha-email-signup");
+        renderRecaptcha("recaptcha-wallet-signup");
+      }, 100);
     }
-  }, [authMethod, walletSignupPrompt, loadCaptcha]);
+  }, [recaptchaLoaded, authMethod, walletSignupPrompt]);
 
   const [showEmailInput, setShowEmailInput] = useState(false);
 
@@ -156,7 +194,7 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, captchaCode: captchaCodeInput, captchaToken, isSignup: true }),
+        body: JSON.stringify({ email, captchaCode: "", captchaToken, isSignup: true }),
       });
       const data = await res.json();
       if (data.success) {
@@ -166,11 +204,9 @@ export default function SignupPage() {
         }
       } else {
         setOtpError(data.error || "Failed to send verification code.");
-        loadCaptcha();
       }
     } catch (err) {
       setOtpError("Network error sending verification code.");
-      loadCaptcha();
     } finally {
       setOtpLoading(false);
     }
@@ -266,7 +302,7 @@ export default function SignupPage() {
           address, 
           signature, 
           nonce: fetchedNonce,
-          captchaCode: captchaCodeInput,
+          captchaCode: "",
           captchaToken
         }),
       });
@@ -275,16 +311,14 @@ export default function SignupPage() {
         handleLoginSuccess(verifyData);
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
-        loadCaptcha();
       }
     } catch (err: any) {
       setSiweError(err?.message || "Error signing SIWE verification message.");
-      loadCaptcha();
     } finally {
       setSiweLoading(false);
       setWalletAuthRequested(false);
     }
-  }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading, captchaCodeInput, captchaToken, loadCaptcha]);
+  }, [isConnected, address, signMessageAsync, handleLoginSuccess, router, siweLoading, captchaToken]);
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
@@ -567,41 +601,19 @@ export default function SignupPage() {
                     </div>
                   </div>
 
-                  {/* Visual CAPTCHA for Wallet Signup */}
-                  <div className="space-y-2 border-t border-white/5 pt-3">
-                    <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50">
+                  {/* Google reCAPTCHA for Wallet Signup */}
+                  <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
+                    <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
                       Security Verification
                     </label>
-                    <div className="flex gap-2 items-center">
-                      <div 
-                        className="h-[40px] w-[120px] shrink-0 rounded-lg overflow-hidden bg-black/35 flex items-center justify-center border border-white/5"
-                        dangerouslySetInnerHTML={{ __html: captchaSvg }}
-                      />
-                      <button
-                        type="button"
-                        onClick={loadCaptcha}
-                        disabled={captchaLoading}
-                        className="p-2.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-lg text-white/70 hover:text-white transition flex items-center justify-center shrink-0 disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${captchaLoading ? "animate-spin" : ""}`} />
-                      </button>
-                      <input
-                        type="text"
-                        maxLength={5}
-                        placeholder="Code"
-                        value={captchaCodeInput}
-                        onChange={(e) => setCaptchaCodeInput(e.target.value.toUpperCase().trim())}
-                        required
-                        className="subscript-input text-center tracking-widest font-mono text-xs uppercase h-[40px] px-2"
-                      />
-                    </div>
+                    <div id="recaptcha-wallet-signup" className="my-2"></div>
                   </div>
 
                   <div className="grid gap-2">
                     <button
                       type="button"
                       onClick={() => performSiwe(true)}
-                      disabled={siweLoading || !captchaCodeInput}
+                      disabled={siweLoading || !captchaToken}
                       className="w-full py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
                     >
                       {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
@@ -649,34 +661,12 @@ export default function SignupPage() {
                       <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                     </div>
 
-                    {/* Visual CAPTCHA */}
-                    <div className="space-y-2 pt-2">
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    {/* Google reCAPTCHA */}
+                    <div className="space-y-2 pt-2 flex flex-col items-center">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
                         Security Verification
                       </label>
-                      <div className="flex gap-3 items-center">
-                        <div 
-                          className="h-[50px] w-[150px] shrink-0 rounded-xl overflow-hidden bg-black/20 flex items-center justify-center border border-white/10"
-                          dangerouslySetInnerHTML={{ __html: captchaSvg }}
-                        />
-                        <button
-                          type="button"
-                          onClick={loadCaptcha}
-                          disabled={captchaLoading}
-                          className="p-3 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition flex items-center justify-center shrink-0 disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${captchaLoading ? "animate-spin" : ""}`} />
-                        </button>
-                        <input
-                          type="text"
-                          maxLength={5}
-                          placeholder="Code"
-                          value={captchaCodeInput}
-                          onChange={(e) => setCaptchaCodeInput(e.target.value.toUpperCase().trim())}
-                          required
-                          className="subscript-input text-center tracking-widest font-mono text-sm uppercase h-[50px]"
-                        />
-                      </div>
+                      <div id="recaptcha-email-signup" className="my-2"></div>
                     </div>
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
@@ -775,6 +765,13 @@ export default function SignupPage() {
 
         </div>
       </div>
+
+      <Script 
+        src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" 
+        strategy="afterInteractive" 
+      />
     </div>
   );
 }
+
+
