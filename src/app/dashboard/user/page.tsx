@@ -10,7 +10,8 @@ import {
   http, 
   keccak256, 
   parseEventLogs, 
-  parseUnits 
+  parseUnits,
+  fallback
 } from "viem";
 import { sepolia } from "viem/chains";
 import { arcTestnet } from "@/lib/wagmi";
@@ -68,7 +69,12 @@ const publicClient = createPublicClient({
 
 const sepoliaClient = createPublicClient({
   chain: sepolia,
-  transport: http("https://rpc.ankr.com/eth_sepolia"),
+  transport: fallback([
+    http("https://ethereum-sepolia-rpc.publicnode.com"),
+    http("https://rpc.ankr.com/eth_sepolia"),
+    http("https://sepolia.gateway.tenderly.co"),
+    http("https://1rpc.io/sepolia"),
+  ]),
 });
 
 interface Subscription {
@@ -141,7 +147,7 @@ export default function UserDashboard() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < 1024);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -296,6 +302,7 @@ export default function UserDashboard() {
   const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
     address: userWallet as `0x${string}` | undefined,
     token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+    chainId: ARC_TESTNET_CHAIN_ID,
   });
 
   const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useBalance({
@@ -777,11 +784,11 @@ export default function UserDashboard() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md md:max-w-none md:w-full flex-col md:flex-row overflow-hidden bg-transparent text-white font-sans relative">
+      <div className="mx-auto flex min-h-screen max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
         <AnimatedGradientBg />
         
         {/* Desktop Sidebar Skeleton */}
-        <aside className="hidden md:flex w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
+        <aside className="hidden lg:flex w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
           <div className="space-y-8">
             <div className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/5 rounded-2xl">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-sm font-black text-white/20">S</span>
@@ -827,7 +834,7 @@ export default function UserDashboard() {
         {/* Content Pane Skeleton */}
         <div className="flex-1 flex flex-col min-h-screen bg-[#060608] overflow-hidden">
           {/* Desktop Header Skeleton */}
-          <header className="hidden md:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
+          <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
             <div className="space-y-2">
               <div className="h-4.5 w-28 bg-white/10 rounded-full animate-pulse" />
               <div className="h-2.5 w-44 bg-white/5 rounded-full animate-pulse" />
@@ -835,7 +842,7 @@ export default function UserDashboard() {
             <div className="h-9 w-44 bg-white/10 rounded-full animate-pulse" />
           </header>
 
-          <main className="flex-1 overflow-y-auto px-5 md:px-8 pb-28 pt-24 md:pt-8 min-h-0 space-y-7 max-w-2xl">
+          <main className="flex-1 overflow-y-auto px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
             {/* Balance Card Skeleton */}
             <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
               <div className="flex-1 space-y-4">
@@ -985,10 +992,10 @@ export default function UserDashboard() {
       )}
 
       {/* Main Grid View Container */}
-      <main className="max-w-7xl mx-auto px-5 md:px-6 pt-24 md:pt-28 pb-12">
+      <main className="max-w-7xl mx-auto px-5 lg:px-6 pt-24 lg:pt-28 pb-12">
         {/* Title Header (Desktop only) */}
         {!isMobile && (
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
             <div>
               <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
                 User Wallet <span className="font-serif italic lowercase font-normal text-[#ccff00]">hub</span>
@@ -1000,10 +1007,10 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
           {/* Desktop Left Navigation (Matches Merchant Dashboard Sidebar) */}
           {!isMobile && (
-            <div className="hidden md:block md:col-span-1 space-y-2">
+            <div className="hidden lg:block lg:col-span-1 space-y-2">
               {[
                 { id: "home", label: "Home Hub", icon: Home },
                 { id: "links", label: "Payment Links", icon: Link2 },
@@ -1060,7 +1067,7 @@ export default function UserDashboard() {
           )}
 
           {/* Right main view content (spans 3 columns on desktop) */}
-          <div className="col-span-1 md:col-span-3 min-h-[500px]">
+          <div className="col-span-1 lg:col-span-3 min-h-[500px]">
             <AnimatePresence mode="wait">
             {activeTab === "home" && (
               <motion.section
@@ -1145,7 +1152,7 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="min-h-0 md:h-[calc(100vh-160px)] flex flex-col md:flex-row gap-5 -mx-5 md:mx-0"
+                className="min-h-0 lg:h-[calc(100vh-160px)] flex flex-col lg:flex-row gap-5 -mx-5 lg:mx-0"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
@@ -2454,7 +2461,7 @@ function DepositModal({
       setCctpMessage("Waiting for Sepolia approval confirmation...");
       const approveReceipt = await sepoliaClient.waitForTransactionReceipt({
         hash: approveHash,
-        timeout: 120_000,
+        timeout: 240_000,
       });
       if (approveReceipt.status !== "success") {
         throw new Error("Sepolia USDC approval failed.");
@@ -2488,7 +2495,7 @@ function DepositModal({
       setCctpMessage("Waiting for CCTP burn confirmation...");
       const burnReceipt = await sepoliaClient.waitForTransactionReceipt({
         hash: burnHash,
-        timeout: 120_000,
+        timeout: 240_000,
       });
       if (burnReceipt.status !== "success") {
         throw new Error("Sepolia CCTP burn failed.");

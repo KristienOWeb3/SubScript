@@ -50,7 +50,7 @@ export default function UserDashboardHeader({
                 <header className={`w-full max-w-5xl liquid-glass rounded-full px-5 sm:px-6 py-3 pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/50 backdrop-blur-xl" : "bg-black/30 backdrop-blur-lg"}`}>
                     
                     {/* Mobile Header Layout */}
-                    <div className="flex sm:hidden items-center justify-between w-full">
+                    <div className="flex lg:hidden items-center justify-between w-full">
                         {/* Logo */}
                         <div className="flex items-center flex-shrink-0">
                             <Link href="/" className="flex items-center">
@@ -102,7 +102,7 @@ export default function UserDashboardHeader({
                     </div>
 
                     {/* Desktop Header Layout */}
-                    <div className="hidden sm:flex items-center justify-between w-full">
+                    <div className="hidden lg:flex items-center justify-between w-full">
                         {/* Logo */}
                         <Link href="/" className="flex items-center gap-2.5 group flex-shrink-0">
                             <img 
