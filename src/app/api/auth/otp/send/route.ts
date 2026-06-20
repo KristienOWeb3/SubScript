@@ -56,6 +56,7 @@ export async function POST(request: Request) {
                 }, { status: 409 });
             }
         } catch (err: any) {
+            console.error("OTP send email binding query error:", err);
             if (!isConnectionError(err) || !allowOfflineAuth()) {
                 return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
             }
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
                 DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at, created_at = NOW()
             `;
         } catch (err: any) {
+            console.error("OTP send Prisma insert error:", err);
             if (isConnectionError(err)) {
                 if (!allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });

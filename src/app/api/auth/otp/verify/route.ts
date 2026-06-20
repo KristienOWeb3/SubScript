@@ -67,6 +67,7 @@ export async function POST(request: Request) {
             `;
             record = rows[0] || null;
         } catch (err: any) {
+            console.error("OTP verify query error:", err);
             if (isConnectionError(err)) {
                 if (!allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
