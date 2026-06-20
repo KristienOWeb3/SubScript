@@ -53,6 +53,7 @@ const MAX_PAYLOAD_SIZE = 1048576;
 
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+    const isApiRoute = pathname === "/api" || pathname.startsWith("/api/");
     const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "")
         .split(",")[0]
         .trim()
@@ -62,7 +63,7 @@ export async function middleware(request: NextRequest) {
         || host === "www.subscriptonarc.com"
         || host === "dashboard.subscriptonarc.com";
 
-    if (isProductionDomain) {
+    if (isProductionDomain && !isApiRoute) {
         // 1. Redirect dashboard paths on the main landing domain to the dashboard subdomain
         if (host === "subscriptonarc.com" || host === "www.subscriptonarc.com") {
             if (pathname.startsWith("/dashboard")) {
