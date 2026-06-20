@@ -4,6 +4,8 @@ import { sanitizeInput } from "@/utils/security";
 import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 import { prisma } from "@/lib/prisma";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
+import { withPgClient } from "@/lib/serverPg";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
 
@@ -45,6 +47,19 @@ export async function POST(request: Request) {
         }
 
         const emailLower = email.toLowerCase();
+
+        try {
+            const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
+            if (isWalletOnlyEmailBinding(emailBinding)) {
+                return NextResponse.json({
+                    error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
+                }, { status: 409 });
+            }
+        } catch (err: any) {
+            if (!isConnectionError(err) || !allowOfflineAuth()) {
+                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+            }
+        }
 
         const code = crypto.randomInt(100000, 1000000).toString();
         const codeHash = hashOtp(emailLower, code);

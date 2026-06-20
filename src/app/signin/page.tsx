@@ -78,6 +78,10 @@ function SignInContent() {
         }, 2000);
         return;
       }
+      if (checkData.authMethod === "wallet") {
+        setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; email recovery is not available for linked notification emails.");
+        return;
+      }
 
       // Send OTP
       const res = await fetch("/api/auth/otp/send", {

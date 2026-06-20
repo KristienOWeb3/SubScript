@@ -5,6 +5,8 @@ import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
+import { withPgClient } from "@/lib/serverPg";
 import { 
     isConnectionError, 
     getOfflineUserEmbeddedWallet, 
@@ -41,9 +43,27 @@ export async function POST(request: Request) {
         let walletRecord = null;
         let isOfflineMode = false;
 
+        try {
+            const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
+            if (isWalletOnlyEmailBinding(emailBinding)) {
+                return NextResponse.json({
+                    error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
+                }, { status: 409 });
+            }
+            if (emailBinding) {
+                walletRecord = { wallet_address: emailBinding.walletAddress };
+            }
+        } catch (err: any) {
+            if (isConnectionError(err)) {
+                isOfflineMode = true;
+            } else {
+                return NextResponse.json({ error: err.message || "Failed to query wallet." }, { status: 500 });
+            }
+        }
+
         if (!supabaseUrl || !supabaseServiceKey) {
             isOfflineMode = true;
-        } else {
+        } else if (!walletRecord) {
             try {
                 const supabase = createClient(supabaseUrl, supabaseServiceKey);
                 const { data, error } = await supabase

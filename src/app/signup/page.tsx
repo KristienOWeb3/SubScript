@@ -178,6 +178,10 @@ export default function SignupPage() {
       });
       const checkData = await checkRes.json();
       if (checkData.exists) {
+        if (checkData.authMethod === "wallet") {
+          setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; this email cannot create another account.");
+          return;
+        }
         setOtpError("An account with this email already exists. Redirecting to Sign In...");
         setTimeout(() => {
           router.push(`/signin?email=${encodeURIComponent(email)}`);
@@ -769,5 +773,4 @@ export default function SignupPage() {
     </div>
   );
 }
-
 

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { withPgClient } from "@/lib/serverPg";
+import { AccountEmailConflictError, assertAccountEmailAvailable, normalizeAccountEmail } from "@/lib/auth/accountEmail";
 import { sanitizeInput } from "@/utils/security";
 import { safelySendEmail, sendWelcomeEmail } from "@/lib/email/transactional";
 
@@ -24,10 +25,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid role selected" }, { status: 400 });
         }
 
-        let emailVal: string | null = null;
-        if (email && typeof email === "string" && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
-            emailVal = email.toLowerCase().trim();
-        }
+        const emailVal = normalizeAccountEmail(email);
 
         const normalizedWallet = wallet.toLowerCase();
 
@@ -49,17 +47,7 @@ export async function POST(request: Request) {
                 }
 
                 if (emailVal) {
-                    /* Check if the email is associated with a different wallet address in either embedded wallets or customer profiles */
-                    const emailConflictResult = await client.query(
-                        `select wallet_address from user_embedded_wallets where email = $1 and wallet_address != $2
-                         union
-                         select wallet_address from customers where email = $1 and wallet_address != $2
-                         limit 1`,
-                        [emailVal, normalizedWallet]
-                    );
-                    if (emailConflictResult.rows[0]) {
-                        throw new Error("This email is already associated with another account.");
-                    }
+                    await assertAccountEmailAvailable(client, emailVal, normalizedWallet);
 
                     await client.query(
                         `insert into user_embedded_wallets (wallet_address, email, provider)
@@ -140,8 +128,11 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, role: accountRole.role }, { status: 200 });
     } catch (err: any) {
+        if (err instanceof AccountEmailConflictError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
         if (err?.code === "23505") {
-            return NextResponse.json({ error: "This wallet already has an account role. Please sign in again." }, { status: 409 });
+            return NextResponse.json({ error: "This wallet or email already has an account. Please sign in again." }, { status: 409 });
         }
         console.error("Failed to register role:", err);
         return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });

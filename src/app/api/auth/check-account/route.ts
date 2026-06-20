@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeInput } from "@/utils/security";
-import { pgMaybeOne } from "@/lib/serverPg";
+import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding, normalizeAccountEmail } from "@/lib/auth/accountEmail";
 
 export async function POST(request: Request) {
     try {
@@ -12,17 +13,23 @@ export async function POST(request: Request) {
         const { email, address } = sanitizeInput(body);
 
         if (email) {
-            const emailLower = email.toLowerCase().trim();
-            const wallet = await pgMaybeOne<{ wallet_address: string }>(
-                "select wallet_address from user_embedded_wallets where email = $1 limit 1",
-                [emailLower]
-            );
-            if (wallet) {
+            const emailLower = normalizeAccountEmail(email);
+            if (!emailLower) {
+                return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+            }
+
+            const binding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
+            if (binding) {
                 const roleRecord = await pgMaybeOne<{ role: string }>(
                     "select role from account_roles where address = $1 limit 1",
-                    [wallet.wallet_address.toLowerCase()]
+                    [binding.walletAddress]
                 );
-                return NextResponse.json({ exists: true, wallet: wallet.wallet_address, role: roleRecord?.role || null });
+                return NextResponse.json({
+                    exists: true,
+                    wallet: binding.walletAddress,
+                    role: roleRecord?.role || null,
+                    authMethod: isWalletOnlyEmailBinding(binding) ? "wallet" : "email",
+                });
             }
             return NextResponse.json({ exists: false });
         }

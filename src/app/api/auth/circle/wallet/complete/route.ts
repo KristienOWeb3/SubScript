@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { withPgClient } from "@/lib/serverPg";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { getCircleEmail, listCircleUserWallets, selectArcEoaWallet, type CircleSocialAuth } from "@/lib/circle/client";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
@@ -30,14 +31,16 @@ export async function POST(request: Request) {
         /* Check if this email is already registered to a different wallet address */
         const emailLower = email.toLowerCase().trim();
         const existingMapping = await withPgClient(async (client) => {
-            const res = await client.query(
-                "select wallet_address from user_embedded_wallets where email = $1 limit 1",
-                [emailLower]
-            );
-            return res.rows[0] || null;
+            return findAccountEmailBinding(client, emailLower);
         });
 
-        if (existingMapping && existingMapping.wallet_address.toLowerCase() !== walletAddress) {
+        if (isWalletOnlyEmailBinding(existingMapping)) {
+            return NextResponse.json({
+                error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
+            }, { status: 409 });
+        }
+
+        if (existingMapping && existingMapping.walletAddress !== walletAddress) {
             return NextResponse.json({
                 error: "This email is already associated with another wallet account."
             }, { status: 409 });

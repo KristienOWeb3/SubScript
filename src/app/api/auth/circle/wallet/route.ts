@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createCircleArcWalletChallenge, getCircleEmail, type CircleSocialAuth } from "@/lib/circle/client";
-import { pgMaybeOne } from "@/lib/serverPg";
+import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -21,16 +22,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Circle Google login did not return an email" }, { status: 400 });
         }
 
-        const existingWallet = await pgMaybeOne<{ wallet_address: string }>(
-            "select wallet_address from user_embedded_wallets where email = $1 limit 1",
-            [email.toLowerCase()]
-        );
+        const existingWallet = await withPgClient((client) => findAccountEmailBinding(client, email.toLowerCase()));
+
+        if (isWalletOnlyEmailBinding(existingWallet)) {
+            return NextResponse.json({
+                error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in.",
+                redirectTo: "/signin",
+            }, { status: 409 });
+        }
 
         let existingRole: { role: string } | null = null;
         if (existingWallet) {
             existingRole = await pgMaybeOne<{ role: string }>(
                 "select role from account_roles where address = $1 limit 1",
-                [existingWallet.wallet_address.toLowerCase()]
+                [existingWallet.walletAddress]
             );
         }
 

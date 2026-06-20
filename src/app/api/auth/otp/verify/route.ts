@@ -4,6 +4,8 @@ import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
+import { withPgClient } from "@/lib/serverPg";
 import crypto from "crypto";
 import { 
     isConnectionError, 
@@ -112,11 +114,14 @@ export async function POST(request: Request) {
 
         if (!isOfflineMode) {
             try {
-                const walletRecordRes = await prisma.userEmbeddedWallet.findUnique({
-                    where: { email: emailVal }
-                });
-                if (walletRecordRes) {
-                    walletRecord = { wallet_address: walletRecordRes.walletAddress };
+                const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
+                if (isWalletOnlyEmailBinding(emailBinding)) {
+                    return NextResponse.json({
+                        error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
+                    }, { status: 409 });
+                }
+                if (emailBinding) {
+                    walletRecord = { wallet_address: emailBinding.walletAddress };
                 }
             } catch (err: any) {
                 if (isConnectionError(err)) {
