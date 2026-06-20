@@ -142,6 +142,7 @@ model Merchant {
   updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at")
   subscriptions          Subscription[]
   paymentSessions        PaymentSession[]
+  meteredVaults          MeteredVault[]
 
   @@map("merchants")
 }
@@ -360,6 +361,7 @@ model Customer {
   securityShieldEnabled    Boolean  @default(false) @map("security_shield_enabled")
   securityMultiSigEnabled  Boolean  @default(false) @map("security_multi_sig_enabled")
   createdAt            DateTime @default(now()) @map("created_at")
+  meteredVaults        MeteredVault[]
 
   @@map("customers")
 }
@@ -486,4 +488,26 @@ model SubscriptDm {
   @@index([senderAddress])
   @@index([receiverAddress])
   @@map("subscript_dms")
+}
+
+model MeteredVault {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userAddress       String   @map("user_address")
+  merchantAddress   String   @map("merchant_address")
+  balanceUsdc       BigInt   @default(0) @map("balance_usdc")
+  thresholdUsdc     BigInt   @default(2000000) @map("threshold_usdc")
+  topUpAmountUsdc   BigInt   @default(10000000) @map("top_up_amount_usdc")
+  monthlyLimitUsdc  BigInt   @default(50000000) @map("monthly_limit_usdc")
+  monthlySpentUsdc  BigInt   @default(0) @map("monthly_spent_usdc")
+  lastTopUpAt       DateTime? @map("last_top_up_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+
+  merchant          Merchant @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
+  customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@unique([userAddress, merchantAddress])
+  @@index([userAddress])
+  @@index([merchantAddress])
+  @@map("metered_vaults")
 }

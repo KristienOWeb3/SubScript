@@ -148,7 +148,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
         }
 
-        if (!["PENDING", "APPROVED", "DECLINED", "DISMISSED"].includes(status)) {
+        const validStatuses = ["PENDING", "APPROVED", "DECLINED", "DISMISSED", "TOO_EXPENSIVE", "LACK_OF_FEATURES", "TECHNICAL_ISSUES", "OTHER"];
+        if (!validStatuses.includes(status)) {
             return NextResponse.json({ error: "Invalid status" }, { status: 400 });
         }
 

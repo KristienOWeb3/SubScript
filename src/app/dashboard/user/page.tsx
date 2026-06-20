@@ -207,6 +207,13 @@ export default function UserDashboard() {
   const [weeklyLimitInput, setWeeklyLimitInput] = useState("");
   const [monthlyLimitInput, setMonthlyLimitInput] = useState("");
 
+  // Prepaid Metered Vault States
+  const [vaults, setVaults] = useState<any[]>([]);
+  const [isVaultsLoading, setIsVaultsLoading] = useState(false);
+  const [configVaultOpen, setConfigVaultOpen] = useState(false);
+  const [topupVaultOpen, setTopupVaultOpen] = useState(false);
+  const [editingVault, setEditingVault] = useState<any | null>(null);
+
   useEffect(() => {
     if (userSettings) {
       setDailyLimitInput(userSettings.spendingLimitDaily ? (Number(userSettings.spendingLimitDaily) / 1_000_000).toString() : "");
@@ -230,6 +237,21 @@ export default function UserDashboard() {
       console.error("Failed to load user settings:", err);
     } finally {
       setIsSettingsLoading(false);
+    }
+  };
+
+  const loadVaults = async () => {
+    setIsVaultsLoading(true);
+    try {
+      const res = await fetch("/api/user/vault/config");
+      const data = await res.json();
+      if (data.success) {
+        setVaults(data.vaults);
+      }
+    } catch (err) {
+      console.error("Failed to load metered vaults:", err);
+    } finally {
+      setIsVaultsLoading(false);
     }
   };
 
@@ -338,6 +360,7 @@ export default function UserDashboard() {
         refetchUsdc().catch(console.error),
         refetchSepolia().catch(console.error),
         refetchMainnet().catch(console.error),
+        loadVaults().catch(console.error),
       ]);
     } catch (err) {
       console.error("Failed to refresh balances manually:", err);
@@ -406,7 +429,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
-      await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings()]);
+      await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
       window.location.href = getDashboardUrl("USER", "/signup");
@@ -537,6 +560,13 @@ export default function UserDashboard() {
     await runAction(`cancel-${dm.id}`, async () => {
       await new Promise(resolve => setTimeout(resolve, 700));
       await handleUpdateDmStatus(dm.id, "DECLINED");
+    });
+  };
+
+  const handleSurveySubmit = async (dm: DmMessage, response: string) => {
+    await runAction(`survey-${dm.id}-${response}`, async () => {
+      await new Promise(resolve => setTimeout(resolve, 700));
+      await handleUpdateDmStatus(dm.id, response);
     });
   };
 
@@ -1081,6 +1111,64 @@ export default function UserDashboard() {
                   </div>
                 </section>
 
+                {/* PREPAID METERED VAULTS SECTION */}
+                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
+                  <div className="mb-6 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
+                      <p className="text-[9px] text-white/40 mt-1">Fund platform allowances with automated on-chain top-up rules.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingVault(null);
+                        setConfigVaultOpen(true);
+                      }}
+                      className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/20 transition"
+                    >
+                      + Create Vault
+                    </button>
+                  </div>
+
+                  {isVaultsLoading ? (
+                    <div className="flex h-36 items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+                    </div>
+                  ) : vaults.length === 0 ? (
+                    <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
+                      <Shield className="mb-2 h-6 w-6 text-white/20" />
+                      <p className="text-xs text-white/45">No prepaid vaults configured.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingVault(null);
+                          setConfigVaultOpen(true);
+                        }}
+                        className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
+                      >
+                        Create your first prepaid vault
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {vaults.map((vault) => (
+                        <MeteredVaultRow
+                          key={vault.id}
+                          vault={vault}
+                          onTopup={(v) => {
+                            setEditingVault(v);
+                            setTopupVaultOpen(true);
+                          }}
+                          onConfigure={(v) => {
+                            setEditingVault(v);
+                            setConfigVaultOpen(true);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+
                 <section className="min-h-[390px] liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
                   <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
@@ -1146,6 +1234,7 @@ export default function UserDashboard() {
                               onNudge={() => handleNudgeSuggestion(dm)}
                               onThanks={() => handleThanksSuggestion(dm)}
                               onCancelPlan={() => handleCancelPlanSuggestion(dm)}
+                              onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                             />
                           ))}
                         </div>
@@ -1239,6 +1328,7 @@ export default function UserDashboard() {
                                   onNudge={() => handleNudgeSuggestion(dm)}
                                   onThanks={() => handleThanksSuggestion(dm)}
                                   onCancelPlan={() => handleCancelPlanSuggestion(dm)}
+                                  onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                                 />
                               ))}
                             </div>
@@ -1936,6 +2026,26 @@ export default function UserDashboard() {
         refetchUsdc={refetchUsdc}
         loadDms={loadDms}
       />
+
+      <ConfigureVaultModal
+        open={configVaultOpen}
+        onClose={() => {
+          setConfigVaultOpen(false);
+          setEditingVault(null);
+        }}
+        editingVault={editingVault}
+        refetchVaults={loadVaults}
+      />
+
+      <TopupVaultModal
+        open={topupVaultOpen}
+        onClose={() => {
+          setTopupVaultOpen(false);
+          setEditingVault(null);
+        }}
+        vault={editingVault}
+        refetchVaults={loadVaults}
+      />
     </div>
   );
 }
@@ -2292,6 +2402,7 @@ function DmBubble({
   onNudge,
   onThanks,
   onCancelPlan,
+  onSurveySubmit,
 }: {
   dm: DmMessage;
   focused: boolean;
@@ -2303,6 +2414,7 @@ function DmBubble({
   onNudge?: () => void;
   onThanks?: () => void;
   onCancelPlan?: () => void;
+  onSurveySubmit?: (dm: DmMessage, response: string) => void;
 }) {
   const isPending = dm.status === "PENDING";
   const lines = splitDmDescription(dm.description);
@@ -2462,6 +2574,53 @@ function DmBubble({
             >
               Cancel Plan
             </motion.button>
+          )}
+
+          {dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit && (
+            <>
+              <motion.button 
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                type="button" 
+                onClick={() => onSurveySubmit(dm, "TOO_EXPENSIVE")} 
+                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-TOO_EXPENSIVE` ? "quick-action-loading" : ""}`}
+              >
+                Too Expensive
+              </motion.button>
+              <motion.button 
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                type="button" 
+                onClick={() => onSurveySubmit(dm, "LACK_OF_FEATURES")} 
+                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-LACK_OF_FEATURES` ? "quick-action-loading" : ""}`}
+              >
+                Lack of Features
+              </motion.button>
+              <motion.button 
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                type="button" 
+                onClick={() => onSurveySubmit(dm, "TECHNICAL_ISSUES")} 
+                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-TECHNICAL_ISSUES` ? "quick-action-loading" : ""}`}
+              >
+                Technical Issues
+              </motion.button>
+              <motion.button 
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                type="button" 
+                onClick={() => onSurveySubmit(dm, "OTHER")} 
+                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-OTHER` ? "quick-action-loading" : ""}`}
+              >
+                Other
+              </motion.button>
+            </>
+          )}
+
+          {dm.messageType === "CHURN_SURVEY" && !isPending && (
+            <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
+              Response: {dm.status.replace(/_/g, " ")}
+            </span>
           )}
 
           {dm.txHash && (
@@ -3327,5 +3486,409 @@ function BalanceRoutingNotice({
         (${walletBalance.toFixed(2)} USDC on Arc, ${sepoliaUsdc.toFixed(2)} USDC on Sepolia). This transaction will fail.
       </p>
     </div>
+  );
+}
+
+function MeteredVaultRow({
+  vault,
+  onTopup,
+  onConfigure,
+}: {
+  vault: any;
+  onTopup: (vault: any) => void;
+  onConfigure: (vault: any) => void;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30 shrink-0">
+          <Shield className="h-5 w-5 text-[#ccff00]/70" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
+          </div>
+          <p className="mt-1 text-[10px] text-white/40">
+            Top-up {formatUsdc(vault.topUpAmountUsdc)} USDC if under {formatUsdc(vault.thresholdUsdc)} USDC
+          </p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-white/60">
+              Spent: {formatUsdc(vault.monthlySpentUsdc)} / {formatUsdc(vault.monthlyLimitUsdc)} USDC
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+        <div className="text-right sm:mr-2">
+          <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
+          <p className="text-[9px] uppercase text-white/35">vault balance</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onTopup(vault)}
+            className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
+          >
+            Deposit
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfigure(vault)}
+            className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
+          >
+            Config
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfigureVaultModal({
+  open,
+  onClose,
+  editingVault,
+  refetchVaults,
+}: {
+  open: boolean;
+  onClose: () => void;
+  editingVault: any | null;
+  refetchVaults: () => void;
+}) {
+  const [merchantAddress, setMerchantAddress] = useState("");
+  const [threshold, setThreshold] = useState("2.00");
+  const [topUpAmount, setTopUpAmount] = useState("10.00");
+  const [monthlyLimit, setMonthlyLimit] = useState("50.00");
+  const [initialDeposit, setInitialDeposit] = useState("10.00");
+  const [resolving, setResolving] = useState(false);
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setStatus(null);
+    if (editingVault) {
+      setMerchantAddress(editingVault.merchantName || editingVault.merchantAddress);
+      setResolvedAddress(editingVault.merchantAddress);
+      setThreshold((Number(editingVault.thresholdUsdc) / 1_000_000).toString());
+      setTopUpAmount((Number(editingVault.topUpAmountUsdc) / 1_000_000).toString());
+      setMonthlyLimit((Number(editingVault.monthlyLimitUsdc) / 1_000_000).toString());
+      setInitialDeposit("0");
+    } else {
+      setMerchantAddress("");
+      setResolvedAddress(null);
+      setThreshold("2.00");
+      setTopUpAmount("10.00");
+      setMonthlyLimit("50.00");
+      setInitialDeposit("10.00");
+    }
+  }, [open, editingVault]);
+
+  useEffect(() => {
+    if (editingVault) return;
+    const trimmed = merchantAddress.trim().toLowerCase();
+    if (!trimmed) {
+      setResolvedAddress(null);
+      setResolving(false);
+      return;
+    }
+
+    if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
+      setResolvedAddress(trimmed);
+      return;
+    }
+
+    setResolving(true);
+    const delayDebounce = setTimeout(() => {
+      fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.address) {
+            setResolvedAddress(data.address);
+          } else {
+            setResolvedAddress(null);
+          }
+        })
+        .catch(console.error)
+        .finally(() => setResolving(false));
+    }, 400);
+
+    return () => clearTimeout(delayDebounce);
+  }, [merchantAddress, editingVault]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvedAddress) {
+      setStatus("Recipient merchant address is not resolved.");
+      return;
+    }
+    if (Number(threshold) <= 0 || Number(topUpAmount) <= 0 || Number(monthlyLimit) <= 0) {
+      setStatus("Threshold, top-up amount, and monthly limit must be positive numbers.");
+      return;
+    }
+    setLoading(true);
+    setStatus(null);
+
+    try {
+      const payload: any = {
+        merchantAddress: resolvedAddress,
+        thresholdUsdc: (Number(threshold) * 1_000_000).toString(),
+        topUpAmountUsdc: (Number(topUpAmount) * 1_000_000).toString(),
+        monthlyLimitUsdc: (Number(monthlyLimit) * 1_000_000).toString(),
+      };
+
+      if (!editingVault && Number(initialDeposit) > 0) {
+        payload.balanceUsdc = (Number(initialDeposit) * 1_000_000).toString();
+      }
+
+      const res = await fetch("/api/user/vault/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStatus("success");
+        refetchVaults();
+        setTimeout(() => onClose(), 1500);
+      } else {
+        setStatus(data.error || "Failed to save configuration.");
+      }
+    } catch (err: any) {
+      setStatus(err.message || "Failed to configure vault.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                {editingVault ? "Configure prepaid vault" : "Create prepaid vault"}
+              </h3>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 text-left">
+              <div className="space-y-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant (Address or .sub DNS)</span>
+                {editingVault ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
+                    {merchantAddress}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={merchantAddress}
+                    onChange={(e) => setMerchantAddress(e.target.value)}
+                    className="subscript-input text-xs"
+                    placeholder="merchant.sub or 0x..."
+                    required
+                  />
+                )}
+                {!editingVault && resolving && <span className="text-[9px] text-[#ccff00] animate-pulse">Resolving...</span>}
+                {!editingVault && resolvedAddress && (
+                  <div className="text-[9px] text-white/40 truncate mt-1">Resolved: {resolvedAddress}</div>
+                )}
+              </div>
+
+              {!editingVault && (
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Initial Deposit Amount (USDC)</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={initialDeposit}
+                    onChange={(e) => setInitialDeposit(e.target.value)}
+                    className="subscript-input"
+                    placeholder="10.00"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Auto-Topup Threshold</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={threshold}
+                    onChange={(e) => setThreshold(e.target.value)}
+                    className="subscript-input"
+                    placeholder="2.00"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Topup Chunk Size</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={topUpAmount}
+                    onChange={(e) => setTopUpAmount(e.target.value)}
+                    className="subscript-input"
+                    placeholder="10.00"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Monthly Velocity Cap Limit</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={monthlyLimit}
+                  onChange={(e) => setMonthlyLimit(e.target.value)}
+                  className="subscript-input"
+                  placeholder="50.00"
+                  required
+                />
+              </div>
+
+              {status && status !== "success" && (
+                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+              )}
+
+              {status === "success" && (
+                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
+                  <p className="text-xs text-white/80 font-bold">prepaid vault configured!</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || (!editingVault && !resolvedAddress) || status === "success"}
+                className="subscript-primary-button w-full mt-2"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : editingVault ? "Update Settings" : "Authorize & Fund"}
+              </button>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function TopupVaultModal({
+  open,
+  onClose,
+  vault,
+  refetchVaults,
+}: {
+  open: boolean;
+  onClose: () => void;
+  vault: any | null;
+  refetchVaults: () => void;
+}) {
+  const [amount, setAmount] = useState("10.00");
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setStatus(null);
+    setAmount("10.00");
+  }, [open]);
+
+  const handleTopup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vault) return;
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      setStatus("Please enter a valid amount.");
+      return;
+    }
+
+    setLoading(true);
+    setStatus(null);
+
+    try {
+      const res = await fetch("/api/user/vault/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantAddress: vault.merchantAddress,
+          amountUsdc: amount,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStatus("success");
+        refetchVaults();
+        setTimeout(() => onClose(), 1500);
+      } else {
+        setStatus(data.error || "Top-up failed.");
+      }
+    } catch (err: any) {
+      setStatus(err.message || "Failed to execute top-up.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && vault && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden text-left">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">Manual Deposit</h3>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleTopup} className="space-y-4 text-left">
+              <div className="space-y-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant Vault</span>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
+                  {vault.merchantName || vault.merchantAddress}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Deposit (USDC)</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="subscript-input"
+                  placeholder="10.00"
+                  required
+                />
+              </div>
+
+              {status && status !== "success" && (
+                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+              )}
+
+              {status === "success" && (
+                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
+                  <p className="text-xs text-white/80 font-bold">deposit success!</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || status === "success"}
+                className="subscript-primary-button w-full mt-2"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Deposit USDC"}
+              </button>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

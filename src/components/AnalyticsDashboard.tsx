@@ -1,7 +1,7 @@
 /* Premium Analytics and Automations Dashboard Component */
 
 import { useMemo, useState, useEffect } from "react";
-import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock } from "lucide-react";
+import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "lucide-react";
 import Link from "next/link";
 
 interface AnalyticsDashboardProps {
@@ -35,6 +35,30 @@ export default function AnalyticsDashboard({
     const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
     const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+    const [responses, setResponses] = useState<any[]>([]);
+
+    /* Metered Vault Simulation States */
+    const [vaults, setVaults] = useState<any[]>([]);
+    const [isVaultsLoading, setIsVaultsLoading] = useState(false);
+    const [apiKeys, setApiKeys] = useState<any[]>([]);
+    const [selectedApiKey, setSelectedApiKey] = useState("");
+
+    const fetchVaults = async () => {
+        setIsVaultsLoading(true);
+        try {
+            const res = await fetch("/api/user/vault/config");
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    setVaults(data.vaults || []);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load customer vaults:", err);
+        } finally {
+            setIsVaultsLoading(false);
+        }
+    };
 
     /* Fetch template settings on mount/tab change */
     useEffect(() => {
@@ -48,6 +72,7 @@ export default function AnalyticsDashboard({
                         setIsActive(data.is_active || false);
                         setSubjectLine(data.subject_line || "");
                         setBodyContent(data.body_content || "");
+                        setResponses(data.responses || []);
                     }
                 } catch (err) {
                     console.error("Failed to load automation template:", err);
@@ -55,9 +80,53 @@ export default function AnalyticsDashboard({
                     setIsLoadingTemplate(false);
                 }
             };
+
+            const fetchApiKeys = async () => {
+                try {
+                    const res = await fetch("/api/merchant/api-keys");
+                    if (res.ok) {
+                        const data = await res.json();
+                        setApiKeys(data.keys || []);
+                        if (data.keys && data.keys.length > 0) {
+                            setSelectedApiKey(data.keys[0].secretKeyPlain);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to load API keys:", err);
+                }
+            };
+
             fetchTemplate();
+            fetchVaults();
+            fetchApiKeys();
         }
     }, [activeSubTab, isPremium, merchantAddress]);
+
+    const surveyStats = useMemo(() => {
+        const counts = {
+            TOO_EXPENSIVE: 0,
+            LACK_OF_FEATURES: 0,
+            TECHNICAL_ISSUES: 0,
+            OTHER: 0
+        };
+        responses.forEach((r: any) => {
+            const status = r.status as keyof typeof counts;
+            if (counts[status] !== undefined) {
+                counts[status]++;
+            }
+        });
+        const total = responses.length;
+        return {
+            counts,
+            total,
+            percentages: {
+                TOO_EXPENSIVE: total ? Math.round((counts.TOO_EXPENSIVE / total) * 100) : 0,
+                LACK_OF_FEATURES: total ? Math.round((counts.LACK_OF_FEATURES / total) * 100) : 0,
+                TECHNICAL_ISSUES: total ? Math.round((counts.TECHNICAL_ISSUES / total) * 100) : 0,
+                OTHER: total ? Math.round((counts.OTHER / total) * 100) : 0
+            }
+        };
+    }, [responses]);
 
     const handleSaveTemplate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -618,10 +687,233 @@ export default function AnalyticsDashboard({
                                     </div>
                                 </form>
                             )}
+
+                            {isPremium && surveyStats.total > 0 && (
+                                <div className="mt-8 border-t border-white/5 pt-6 space-y-5">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <Sparkles className="w-4 h-4 text-[#00d2b4]" />
+                                            Exit Survey Responses ({surveyStats.total})
+                                        </h4>
+                                        <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
+                                            Real-time user feedback compiled from automated in-app churn chats.
+                                        </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Left Side: Progress Bars */}
+                                        <div className="space-y-3.5 bg-black/20 border border-white/5 rounded-2xl p-5">
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Too Expensive</span>
+                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.TOO_EXPENSIVE}% ({surveyStats.counts.TOO_EXPENSIVE})</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TOO_EXPENSIVE}%` }}></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Lack of Features</span>
+                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.LACK_OF_FEATURES}% ({surveyStats.counts.LACK_OF_FEATURES})</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.LACK_OF_FEATURES}%` }}></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Technical Issues</span>
+                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.TECHNICAL_ISSUES}% ({surveyStats.counts.TECHNICAL_ISSUES})</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.TECHNICAL_ISSUES}%` }}></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-white/60 font-bold uppercase tracking-wide">Other</span>
+                                                    <span className="text-[#00d2b4] font-black">{surveyStats.percentages.OTHER}% ({surveyStats.counts.OTHER})</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-[#00d2b4] rounded-full transition-all duration-500" style={{ width: `${surveyStats.percentages.OTHER}%` }}></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Right Side: Feed of Recent Responses */}
+                                        <div className="bg-black/20 border border-white/5 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
+                                            <span className="text-[9px] font-bold text-white/50 uppercase tracking-widest block mb-3 border-b border-white/5 pb-2">Recent Feedback Logs</span>
+                                            <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                                                {responses.slice(0, 5).map((resp: any) => (
+                                                    <div key={resp.id} className="flex justify-between items-center text-[10px] bg-white/[0.02] border border-white/5 rounded-xl p-2.5">
+                                                        <div>
+                                                            <p className="font-mono text-white/80 truncate max-w-[120px] sm:max-w-[180px]">{resp.receiver_address}</p>
+                                                            <p className="text-[8px] text-white/30">{new Date(resp.updated_at).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#00d2b4]/10 text-[#00d2b4] border border-[#00d2b4]/15">
+                                                            {resp.status.replace(/_/g, " ")}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isPremium && (
+                                <div className="mt-8 border-t border-white/5 pt-6 space-y-5 text-left">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                            <Shield className="w-4 h-4 text-[#00d2b4]" />
+                                            Active Customer Prepaid Vaults ({vaults.length})
+                                        </h4>
+                                        <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
+                                            Allowances configured by customers for your platform. Use the simulator to test charges.
+                                        </p>
+                                    </div>
+
+                                    {isVaultsLoading ? (
+                                        <div className="flex h-24 items-center justify-center">
+                                            <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
+                                        </div>
+                                    ) : vaults.length === 0 ? (
+                                        <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
+                                            <p className="text-xs text-white/45">No customers have configured prepaid vaults for your service yet.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {vaults.map((vault) => (
+                                                    <CustomerVaultRow
+                                                        key={vault.id}
+                                                        vault={vault}
+                                                        apiKey={selectedApiKey}
+                                                        onRefresh={fetchVaults}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function CustomerVaultRow({
+    vault,
+    apiKey,
+    onRefresh,
+}: {
+    vault: any;
+    apiKey: string;
+    onRefresh: () => void;
+}) {
+    const [chargeAmount, setChargeAmount] = useState("1.50");
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+    const handleCharge = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!apiKey) {
+            setStatus({ text: "API Key required. Please generate one under the API Keys tab.", type: "error" });
+            return;
+        }
+        if (!chargeAmount || isNaN(Number(chargeAmount)) || Number(chargeAmount) <= 0) {
+            setStatus({ text: "Invalid charge amount.", type: "error" });
+            return;
+        }
+
+        setLoading(true);
+        setStatus(null);
+
+        try {
+            const res = await fetch("/api/user/vault/report-usage", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    userAddress: vault.userAddress,
+                    amountUsdc: chargeAmount
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                if (data.topUpTriggered) {
+                    setStatus({ 
+                        text: `Charge successful. Remaining balance: $${(Number(data.balanceUsdc) / 1_000_000).toFixed(2)}. Auto-Top-Up was triggered!`, 
+                        type: "success" 
+                    });
+                } else {
+                    setStatus({ 
+                        text: `Charge successful. Remaining balance: $${(Number(data.balanceUsdc) / 1_000_000).toFixed(2)}`, 
+                        type: "success" 
+                    });
+                }
+                onRefresh();
+            } else {
+                setStatus({ text: data.error || "Simulation charge failed.", type: "error" });
+            }
+        } catch (err: any) {
+            setStatus({ text: err.message || "Failed to execute simulated charge.", type: "error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
+            <div className="min-w-0">
+                <p className="text-xs font-mono text-white/90 truncate max-w-xs">{vault.userName || vault.userAddress}</p>
+                <p className="text-[10px] text-white/40 mt-1">
+                    Balance: <span className="font-bold text-[#ccff00]">${(Number(vault.balanceUsdc) / 1_000_000).toFixed(2)} USDC</span> |
+                    Threshold: ${(Number(vault.thresholdUsdc) / 1_000_000).toFixed(2)} USDC |
+                    Topup: ${(Number(vault.topUpAmountUsdc) / 1_000_000).toFixed(2)} USDC
+                </p>
+                <p className="text-[9px] text-white/30 uppercase mt-0.5">
+                    Spent: ${(Number(vault.monthlySpentUsdc) / 1_000_000).toFixed(2)} / ${(Number(vault.monthlyLimitUsdc) / 1_000_000).toFixed(2)} USDC
+                </p>
+            </div>
+            
+            <form onSubmit={handleCharge} className="flex flex-col gap-2 shrink-0 sm:items-end">
+                <div className="flex items-center gap-2">
+                    <input
+                        type="number"
+                        step="any"
+                        value={chargeAmount}
+                        onChange={(e) => setChargeAmount(e.target.value)}
+                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs w-20 text-center"
+                        placeholder="1.50"
+                        required
+                    />
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="px-4 py-1.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                    >
+                        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Charge"}
+                    </button>
+                </div>
+                {status && (
+                    <span className={`text-[9px] font-bold tracking-wide ${
+                        status.type === "success" ? "text-emerald-400" : "text-red-400"
+                    }`}>
+                        {status.text}
+                    </span>
+                )}
+            </form>
         </div>
     );
 }

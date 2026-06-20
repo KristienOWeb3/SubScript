@@ -28,16 +28,30 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Database error" }, { status: 500 });
         }
 
-        if (!template) {
-            return NextResponse.json({
-                merchant_address: normalizedUser,
-                is_active: false,
-                subject_line: "Subscription Cancellation Survey",
-                body_content: "Hello,\n\nWe noticed you cancelled your subscription (Tier: {{subscription_tier}}).\n\nPlease let us know if there is anything we could have done better.\n\nWallet: {{customer_wallet}}\n\nBest regards,\nMerchant Team"
-            }, { status: 200 });
+        // Fetch exit survey responses (CHURN_SURVEY system-DMs that have been answered)
+        const { data: responses, error: responsesError } = await supabaseAdmin
+            .from("subscript_dms")
+            .select("id, receiver_address, status, updated_at")
+            .eq("sender_address", normalizedUser)
+            .eq("message_type", "CHURN_SURVEY")
+            .neq("status", "PENDING")
+            .order("updated_at", { ascending: false });
+
+        if (responsesError) {
+            console.error("Failed to query survey responses:", responsesError);
         }
 
-        return NextResponse.json(template, { status: 200 });
+        const templatePayload = template || {
+            merchant_address: normalizedUser,
+            is_active: false,
+            subject_line: "Subscription Cancellation Survey",
+            body_content: "Hello,\n\nWe noticed you cancelled your subscription (Tier: {{subscription_tier}}).\n\nPlease let us know if there is anything we could have done better.\n\nWallet: {{customer_wallet}}\n\nBest regards,\nMerchant Team"
+        };
+
+        return NextResponse.json({
+            ...templatePayload,
+            responses: responses || []
+        }, { status: 200 });
 
     } catch (err: any) {
         console.error("Failed to load automation template:", err);
