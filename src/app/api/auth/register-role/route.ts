@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { withPgClient } from "@/lib/serverPg";
 import { sanitizeInput } from "@/utils/security";
+import { safelySendEmail, sendWelcomeEmail } from "@/lib/email/transactional";
 
 export async function POST(request: Request) {
     try {
@@ -89,6 +90,17 @@ export async function POST(request: Request) {
                 }, { status: 409 });
             }
             return NextResponse.json({ success: true, role: accountRole.role, message: "Role already registered for this wallet" }, { status: 200 });
+        }
+
+        const emailRecord = await withPgClient(async (client) => {
+            const result = await client.query(
+                "select email from user_embedded_wallets where wallet_address = $1 limit 1",
+                [normalizedWallet]
+            );
+            return result.rows[0] || null;
+        });
+        if (typeof emailRecord?.email === "string") {
+            await safelySendEmail("account welcome", () => sendWelcomeEmail(emailRecord.email, accountRole.role, normalizedWallet));
         }
 
         return NextResponse.json({ success: true, role: accountRole.role }, { status: 200 });

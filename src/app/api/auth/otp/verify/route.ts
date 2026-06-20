@@ -5,6 +5,7 @@ import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
+import crypto from "crypto";
 import { 
     isConnectionError, 
     getOfflineOtpCode, 
@@ -12,6 +13,22 @@ import {
     getOfflineUserEmbeddedWallet, 
     saveOfflineUserEmbeddedWallet
 } from "@/lib/offlineDb";
+
+function hashOtp(email: string, code: string) {
+    const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
+    if (!secret) throw new Error("OTP_SECRET or JWT_SECRET must be configured");
+    return crypto.createHmac("sha256", secret).update(`${email}:${code}`).digest("hex");
+}
+
+function safeHashMatch(expected: string, actual: string) {
+    const expectedBuffer = Buffer.from(expected, "utf8");
+    const actualBuffer = Buffer.from(actual, "utf8");
+    return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+function allowOfflineAuth() {
+    return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+}
 
 export async function POST(request: Request) {
     try {
@@ -46,6 +63,9 @@ export async function POST(request: Request) {
         let isOfflineMode = false;
 
         if (!supabaseUrl || !supabaseServiceKey) {
+            if (!allowOfflineAuth()) {
+                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+            }
             isOfflineMode = true;
         } else {
             try {
@@ -58,6 +78,9 @@ export async function POST(request: Request) {
 
                 if (error) {
                     if (isConnectionError(error)) {
+                        if (!allowOfflineAuth()) {
+                            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+                        }
                         isOfflineMode = true;
                     } else {
                         return NextResponse.json({ error: error.message || "Failed to query verification code." }, { status: 500 });
@@ -67,6 +90,9 @@ export async function POST(request: Request) {
                 }
             } catch (err: any) {
                 if (isConnectionError(err)) {
+                    if (!allowOfflineAuth()) {
+                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+                    }
                     isOfflineMode = true;
                 } else {
                     return NextResponse.json({ error: err.message || "Failed to query verification code." }, { status: 500 });
@@ -83,7 +109,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Verification code expired or not found. Please request a new one." }, { status: 400 });
         }
 
-        if (record.code !== codeTrimmed) {
+        if (!safeHashMatch(record.code, hashOtp(emailVal, codeTrimmed))) {
             return NextResponse.json({ error: "Invalid verification code. Please check and try again." }, { status: 400 });
         }
 

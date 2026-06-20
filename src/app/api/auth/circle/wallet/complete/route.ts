@@ -2,19 +2,18 @@ import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { withPgClient } from "@/lib/serverPg";
-import { listCircleUserWallets, selectArcEoaWallet, type CircleSocialAuth } from "@/lib/circle/client";
+import { getCircleEmail, listCircleUserWallets, selectArcEoaWallet, type CircleSocialAuth } from "@/lib/circle/client";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
-        typeof value.userToken === "string" &&
-        typeof value.encryptionKey === "string";
+        typeof value.userToken === "string";
 }
 
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
         const circleAuth = body?.circleAuth;
-        const email = typeof body?.email === "string" ? body.email.toLowerCase() : "";
+        const email = isCircleSocialAuth(circleAuth) ? getCircleEmail(circleAuth) : "";
 
         if (!isCircleSocialAuth(circleAuth) || !email) {
             return NextResponse.json({ error: "Invalid completion payload" }, { status: 400 });

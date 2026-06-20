@@ -23,6 +23,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import {
   AlertCircle,
   ArrowDown,
@@ -131,6 +132,17 @@ export default function UserDashboard() {
   const { disconnect } = useDisconnect();
 
   const [activeTab, setActiveTab] = useState<UserTab>("home");
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+
+  const triggerToast = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+    }, 3000);
+  };
+
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
   const [selectedDmPeer, setSelectedDmPeer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -242,7 +254,6 @@ export default function UserDashboard() {
     }
   };
 
-  const [requestReceiver, setRequestReceiver] = useState("");
   const [requestAmount, setRequestAmount] = useState("");
   const [requestNote, setRequestNote] = useState("");
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
@@ -483,7 +494,6 @@ export default function UserDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          receiverAddress: requestReceiver,
           amountUsdc: requestAmount,
           title: "USDC request",
           description: requestNote || "SubScript user payment request",
@@ -492,7 +502,6 @@ export default function UserDashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create request");
       setRequestStatus(`Request created: ${window.location.origin}${data.payUrl}`);
-      setRequestReceiver("");
       setRequestAmount("");
       setRequestNote("");
       await loadDms();
@@ -787,22 +796,23 @@ export default function UserDashboard() {
     : null;
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md md:max-w-none md:w-full flex-col md:flex-row overflow-hidden bg-[#060608] text-white font-sans">
+    <div className="mx-auto flex min-h-screen max-w-md md:max-w-none md:w-full flex-col md:flex-row overflow-hidden bg-transparent text-white font-sans relative selection:bg-[#00d2b4]/30 selection:text-white">
+      <AnimatedGradientBg />
       
       {/* Desktop Sidebar (visible only on md and larger viewports) */}
-      <aside className="hidden md:flex w-64 border-r border-white/10 bg-black/45 flex-col p-5 shrink-0 h-screen sticky top-0 justify-between">
+      <aside className="hidden md:flex w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
         <div className="space-y-8">
           {/* Brand logo */}
-          <div className="flex items-center gap-3 px-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-[#00d2b4] text-sm font-black text-black shadow-[0_0_20px_rgba(0,210,180,0.25)]">S</span>
+          <div className="flex items-center gap-3 px-3 py-2 bg-[#00d2b4]/10 border border-[#00d2b4]/30 rounded-2xl shadow-lg shadow-[#00d2b4]/5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-sm font-black text-[#00d2b4] shadow-[0_0_12px_rgba(0,210,180,0.15)]">S</span>
             <div>
               <h1 className="text-sm font-black uppercase tracking-[0.2em] text-white">SubScript</h1>
-              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">User Wallet</span>
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#00d2b4]">User Wallet</span>
             </div>
           </div>
 
           {/* Navigation options */}
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             {[
               { id: "home", label: "Home Hub", icon: Home },
               { id: "links", label: "Payment Links", icon: Link2 },
@@ -818,13 +828,13 @@ export default function UserDashboard() {
                     setSelectedDmPeer(null);
                     setActiveTab(tab.id as any);
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 text-left ${
+                  className={`w-full flex items-center gap-3.5 px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                     isActive
-                      ? "bg-[#00d2b4] text-black shadow-[0_0_15px_rgba(0,210,180,0.2)]"
-                      : "text-white/55 hover:text-white hover:bg-white/5"
+                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
+                      : "bg-white/[0.01] border-white/5 text-white/55 hover:text-white hover:bg-white/[0.03]"
                   }`}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#00d2b4]" : "text-white/40"}`} />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -835,19 +845,21 @@ export default function UserDashboard() {
                 setSelectedDmPeer(null);
                 setActiveTab("inbox");
               }}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 text-left ${
+              className={`w-full flex items-center justify-between px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                 activeTab === "inbox"
-                  ? "bg-[#00d2b4] text-black shadow-[0_0_15px_rgba(0,210,180,0.2)]"
-                  : "text-white/55 hover:text-white hover:bg-white/5"
+                  ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-white shadow-lg shadow-[#00d2b4]/5"
+                  : "bg-white/[0.01] border-white/5 text-white/55 hover:text-white hover:bg-white/[0.03]"
               }`}
             >
-              <div className="flex items-center gap-3">
-                <MessageSquare className="h-4 h-4 shrink-0" />
+              <div className="flex items-center gap-3.5">
+                <MessageSquare className={`h-4 w-4 shrink-0 ${activeTab === "inbox" ? "text-[#00d2b4]" : "text-white/40"}`} />
                 <span>Direct Messages</span>
               </div>
               {pendingDmCount > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
-                  activeTab === "inbox" ? "bg-black text-[#00d2b4]" : "bg-[#00d2b4] text-black"
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
+                  activeTab === "inbox"
+                    ? "bg-[#00d2b4]/10 border-[#00d2b4]/20 text-[#00d2b4]"
+                    : "bg-white/10 border-white/5 text-white/55"
                 }`}>
                   {pendingDmCount}
                 </span>
@@ -867,9 +879,9 @@ export default function UserDashboard() {
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-all duration-200 text-left"
+            className="w-full flex items-center gap-3.5 px-5 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider text-red-400/80 hover:text-red-300 border border-transparent hover:border-red-500/10 hover:bg-red-500/5 transition-all duration-200 text-left"
           >
-            <LogOut className="h-4 h-4 shrink-0" />
+            <LogOut className="h-4 w-4 shrink-0" />
             <span>Log Out</span>
           </button>
         </div>
@@ -931,40 +943,41 @@ export default function UserDashboard() {
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
                 className="space-y-7 max-w-2xl"
               >
-                <section className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-5">
+                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-8 rounded-3xl shadow-2xl">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
                     <button
                       type="button"
                       onClick={() => setBalanceVisible((value) => !value)}
-                      className="flex-1 rounded-[28px] border border-white/10 bg-black/25 px-5 py-6 text-left"
+                      className="flex-1 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-6 py-6 text-left"
                     >
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/55">Connected Wallet Balance</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#00d2b4]/85">Connected Wallet Balance</p>
                       <div className="mt-4 flex items-center gap-3">
-                        <span className="text-5xl font-black tracking-tight">
+                        <span className="text-4xl font-extrabold tracking-tight text-white">
                           {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "••••"}
                         </span>
                         <Wallet className="h-5 w-5 text-white/35" />
                       </div>
-                      <p className="mt-2 text-center text-sm font-bold text-white/65">
+                      <p className="mt-2 text-sm font-bold text-white/55">
                         {balanceVisible ? `₦${localFiatBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                       </p>
                     </button>
 
-                    <div className="flex flex-row sm:flex-col justify-center gap-5">
+                    <div className="flex flex-row sm:flex-col justify-center gap-4">
                       <RoundAction icon={ArrowDown} label="Deposit" onClick={() => setReceiveOpen(true)} />
+                      <RoundAction icon={Send} label="Send" onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }} />
                       <RoundAction icon={QrCode} label="Scan QR" onClick={() => setScannerOpen(true)} />
                     </div>
                   </div>
                 </section>
 
-                <section className="min-h-[390px] rounded-[36px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl">
+                <section className="min-h-[390px] liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-8 rounded-3xl shadow-2xl">
                   <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                    <span className="rounded-full bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{subscriptions.length} active</span>
+                    <span className="rounded-full bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4] border border-[#00d2b4]/20">{subscriptions.length} active</span>
                   </div>
 
                   {sortedSubscriptions.length === 0 ? (
-                    <div className="flex h-72 flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-black/20 text-center">
+                    <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
                       <CreditCard className="mb-3 h-8 w-8 text-white/25" />
                       <p className="text-xs text-white/45">No active subscription streams yet.</p>
                     </div>
@@ -1028,17 +1041,16 @@ export default function UserDashboard() {
                       {/* Bottom Action Footer for Mobile */}
                       <div className="fixed bottom-20 left-0 right-0 px-5 py-3 bg-[#060608]/95 border-t border-white/5 z-40 backdrop-blur-md">
                         {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
-                          <div className="rounded-full border border-white/5 bg-white/[0.02] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
+                          <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                             YOU CAN NOT REQUEST FROM A MERCHANT
                           </div>
                         ) : (
                           <button
                             type="button"
                             onClick={() => {
-                              setRequestReceiver(selectedDmPeer);
                               setActiveTab("links");
                             }}
-                            className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 text-xs font-black uppercase tracking-[0.16em] text-white/70 hover:bg-white/[0.08] transition"
+                            className="w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
                           >
                             REQUEST
                           </button>
@@ -1060,7 +1072,7 @@ export default function UserDashboard() {
                   </div>
 
                   {/* Active thread message bubble display (right column in blueprint) */}
-                  <div className="flex-1 flex flex-col overflow-hidden border border-white/10 bg-white/[0.02] rounded-3xl p-6 min-h-0 justify-between">
+                  <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
                     {selectedDmPeer ? (
                       <div className="flex flex-col h-full justify-between gap-5 overflow-hidden">
                         {/* Desktop Chat Pane Header */}
@@ -1085,7 +1097,7 @@ export default function UserDashboard() {
                               setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
                               setSendFundsOpen(true);
                             }}
-                            className="px-4 py-2.5 bg-[#00d2b4] text-black font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#00d2b4]/90 transition"
+                            className="px-4 py-2.5 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)]"
                           >
                             Send Funds
                           </button>
@@ -1123,17 +1135,16 @@ export default function UserDashboard() {
                         {/* Bottom Action Footer for Desktop */}
                         <div className="pt-4 border-t border-white/5 shrink-0">
                           {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
-                            <div className="rounded-full border border-white/5 bg-white/[0.02] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
+                            <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                               YOU CAN NOT REQUEST FROM A MERCHANT
                             </div>
                           ) : (
                             <button
                               type="button"
                               onClick={() => {
-                                setRequestReceiver(selectedDmPeer);
                                 setActiveTab("links");
                               }}
-                              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 text-xs font-black uppercase tracking-[0.16em] text-white/70 hover:bg-white/[0.08] transition"
+                              className="w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
                             >
                               REQUEST
                             </button>
@@ -1161,18 +1172,41 @@ export default function UserDashboard() {
                 className="space-y-5 max-w-lg"
               >
                 <SectionTitle title="Payment Links" subtitle="Request USDC from another SubScript user." />
-                <form onSubmit={handleCreateRequest} className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 space-y-4">
-                  <Field label="Recipient Wallet">
-                    <input value={requestReceiver} onChange={(event) => setRequestReceiver(event.target.value)} placeholder="0x..." className="subscript-input" required />
-                  </Field>
+                <form onSubmit={handleCreateRequest} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                   <Field label="USDC Amount">
                     <input value={requestAmount} onChange={(event) => setRequestAmount(event.target.value)} placeholder="25.00" inputMode="decimal" className="subscript-input" required />
                   </Field>
                   <Field label="Memo">
                     <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Dinner, deposit, subscription split..." rows={3} className="subscript-input resize-none" />
                   </Field>
-                  {requestStatus && <p className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[11px] text-white/60">{requestStatus}</p>}
-                  <button type="submit" className={`subscript-primary-button ${loadingAction === "create-request" ? "quick-action-loading" : ""}`}>
+                  {requestStatus && (
+                    <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 p-4 flex flex-col gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-[#00d2b4]">Payment Link Generated</p>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          readOnly
+                          value={requestStatus.replace("Request created: ", "")}
+                          className="flex-1 rounded-xl bg-black/40 border border-white/5 px-3 py-2 text-[11px] font-mono text-white/80 focus:outline-none"
+                          onClick={(e) => {
+                            (e.target as HTMLInputElement).select();
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = requestStatus.replace("Request created: ", "");
+                            navigator.clipboard.writeText(url);
+                            triggerToast("Link copied to clipboard!");
+                          }}
+                          className="rounded-xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] text-xs font-bold px-3 py-2 transition"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button type="submit" className={`w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] ${loadingAction === "create-request" ? "quick-action-loading" : ""}`}>
                     <Send className="h-4 w-4" /> Request
                   </button>
                 </form>
@@ -1216,9 +1250,8 @@ export default function UserDashboard() {
                     </button>
                   </div>
                 </div>
-
                 {sendMode === "single" ? (
-                  <form onSubmit={handleSingleSend} className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 space-y-4">
+                  <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                     <Field label="Recipient Wallet Address or DNS Name (.sub, .hq, .biz)">
                       <div className="relative">
                         <input
@@ -1297,7 +1330,7 @@ export default function UserDashboard() {
                     <button
                       type="submit"
                       disabled={singleSendLoading || !singleResolved?.address}
-                      className={`subscript-primary-button ${
+                      className={`w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] ${
                         singleSendLoading ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -1313,9 +1346,9 @@ export default function UserDashboard() {
                     </button>
                   </form>
                 ) : (
-                  <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 space-y-4">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                     {batchRows.map((row, index) => (
-                      <div key={index} className="rounded-3xl border border-white/10 bg-black/20 p-4 space-y-3 relative">
+                      <div key={index} className="rounded-3xl border border-white/5 bg-black/20 p-4 space-y-3 relative">
                         {batchRows.length > 1 && (
                           <button
                             type="button"
@@ -1369,7 +1402,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setBatchRows((rows) => [...rows, { address: "", amount: "" }])}
-                      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 text-xs font-black uppercase tracking-[0.16em] text-white/70"
+                      className="w-full rounded-2xl border border-white/5 bg-black/20 hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20 text-[#00d2b4] py-3.5 text-xs font-black uppercase tracking-[0.16em] transition"
                     >
                       Add Recipient
                     </button>
@@ -1378,7 +1411,9 @@ export default function UserDashboard() {
                       type="button"
                       onClick={handleBatchSend}
                       disabled={batchSendLoading}
-                      className="subscript-primary-button"
+                      className={`w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] ${
+                        batchSendLoading ? "opacity-60 cursor-not-allowed" : ""
+                      }`}
                     >
                       {batchSendLoading ? (
                         <>
@@ -1406,14 +1441,14 @@ export default function UserDashboard() {
                 <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
                 
                 {/* Profile & DNS Registration */}
-                <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-6">
+                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                     <User className="h-4 w-4 text-[#00d2b4]" /> Profile & Identity
                   </h3>
                   <div className="flex items-center gap-4 pb-4 border-b border-white/5">
                     <Avatar profilePic={profilePic} size="lg" />
                     <div className="space-y-2">
-                      <label className="inline-block rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/75 cursor-pointer hover:bg-white/[0.08] transition-all">
+                      <label className="inline-block rounded-2xl border border-white/5 bg-black/20 hover:bg-[#00d2b4]/10 hover:border-[#00d2b4]/30 text-[#00d2b4] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] cursor-pointer transition-all">
                         Choose Image
                         <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                       </label>
@@ -1461,7 +1496,11 @@ export default function UserDashboard() {
                       </Field>
                       {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
                       {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
-                      <button type="submit" disabled={dnsLoading} className="subscript-primary-button">
+                      <button 
+                        type="submit" 
+                        disabled={dnsLoading} 
+                        className="w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(0,210,180,0.15)]"
+                      >
                         {dnsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}
                       </button>
                     </form>
@@ -1470,7 +1509,7 @@ export default function UserDashboard() {
 
                 {/* Spending Limits Form */}
                 {userSettings && (
-                  <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                       <CreditCard className="h-4 w-4 text-[#00d2b4]" /> Spending Limits
                     </h3>
@@ -1514,7 +1553,9 @@ export default function UserDashboard() {
                       <button
                         type="submit"
                         disabled={savingSettingsField === "spendingLimits"}
-                        className="subscript-primary-button"
+                        className={`w-full rounded-2xl bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] ${
+                          savingSettingsField === "spendingLimits" ? "opacity-60 cursor-not-allowed" : ""
+                        }`}
                       >
                         {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
                       </button>
@@ -1524,7 +1565,7 @@ export default function UserDashboard() {
 
                 {/* Notification Toggles */}
                 {userSettings && (
-                  <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                       <Sliders className="h-4 w-4 text-[#00d2b4]" /> Notifications
                     </h3>
@@ -1590,7 +1631,7 @@ export default function UserDashboard() {
 
                 {/* Security Preferences */}
                 {userSettings && (
-                  <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                       <Lock className="h-4 w-4 text-[#00d2b4]" /> Security Settings
                     </h3>
@@ -1627,7 +1668,7 @@ export default function UserDashboard() {
                 )}
 
                 {/* Transactions History */}
-                <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 space-y-5">
+                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
                     <Activity className="h-4 w-4 text-[#00d2b4]" /> Recent Transactions History
                   </h3>
@@ -1775,20 +1816,20 @@ function HomeHeader({
   onLogout: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 px-5 pt-5">
-      <div className="flex items-center rounded-full border border-white/10 bg-white/[0.07] p-2 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 px-5 pt-5 relative z-20">
+      <div className="flex items-center rounded-full border border-white/5 bg-black/40 p-2 backdrop-blur-xl shadow-lg">
         <button type="button" onClick={onDns} className="flex min-w-0 items-center gap-2 rounded-full pr-2 text-left">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[#00d2b4] text-sm font-black text-black shadow-[0_0_28px_rgba(0,210,180,0.28)]">S</span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 text-sm font-black text-[#00d2b4] shadow-[0_0_15px_rgba(0,210,180,0.15)]">S</span>
           <span className="hidden min-w-0 sm:block">
             <span className="block text-[11px] font-black uppercase tracking-[0.2em] text-white">SubScript</span>
-            <span className="block max-w-[120px] truncate text-[10px] font-bold uppercase tracking-[0.12em] text-white/45">User wallet</span>
+            <span className="block max-w-[120px] truncate text-[10px] font-bold uppercase tracking-[0.12em] text-[#00d2b4]">User wallet</span>
           </span>
         </button>
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <button type="button" onClick={onLogout} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/65">
+          <button type="button" onClick={onLogout} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/5 bg-black/25 text-white/50 hover:text-white transition">
             <LogOut className="h-4 w-4" />
           </button>
-          <button type="button" onClick={onDns} className="min-w-0 rounded-full border border-white/15 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
+          <button type="button" onClick={onDns} className="min-w-0 rounded-full border border-white/5 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
             <span className="block max-w-[118px] truncate">{registeredDomain || formatAddress(userWallet)}</span>
           </button>
           <button type="button" onClick={onDns} className="shrink-0">
@@ -1816,20 +1857,20 @@ function ChatHeader({
   onSendFunds: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 px-5 pt-5">
-      <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.07] p-2 backdrop-blur-xl">
-        <button type="button" onClick={onBack} className="flex h-11 w-11 items-center justify-center rounded-full text-white/80">
+    <header className="sticky top-0 z-40 px-5 pt-5 relative z-20">
+      <div className="flex items-center gap-3 rounded-full border border-white/5 bg-black/40 p-2 backdrop-blur-xl shadow-lg">
+        <button type="button" onClick={onBack} className="flex h-11 w-11 items-center justify-center rounded-full text-white/60 hover:text-white transition">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Avatar profilePic={peerProfilePic} />
-        <div className="min-w-0 rounded-full border border-white/15 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,210,180,0.1)]">
+        <div className="min-w-0 rounded-full border border-white/5 bg-black/25 px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,210,180,0.1)]">
           <span className="block max-w-[110px] truncate">{peerName}</span>
           {isMerchant && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
         </div>
         <button
           type="button"
           onClick={onSendFunds}
-          className="ml-auto mr-2 px-3 py-2 bg-[#00d2b4] text-black font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#00d2b4]/90 transition shadow-[0_0_15px_rgba(0,210,180,0.2)] active:scale-95"
+          className="ml-auto mr-2 px-4 py-2 bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#00d2b4]/20 hover:border-[#00d2b4]/50 transition shadow-[0_0_15px_rgba(0,210,180,0.15)] active:scale-95"
         >
           Send Funds
         </button>
@@ -1840,7 +1881,7 @@ function ChatHeader({
 
 function Avatar({ profilePic, size = "sm" }: { profilePic: string | null; size?: "sm" | "lg" }) {
   return (
-    <div className={`${size === "lg" ? "h-16 w-16" : "h-10 w-10"} flex items-center justify-center overflow-hidden rounded-full border border-white/15 bg-black/30`}>
+    <div className={`${size === "lg" ? "h-16 w-16" : "h-10 w-10"} flex items-center justify-center overflow-hidden rounded-full border border-white/5 bg-black/30`}>
       {profilePic ? <img src={profilePic} alt="Profile" className="h-full w-full object-cover" /> : <User className="h-4 w-4 text-white/45" />}
     </div>
   );
@@ -1848,8 +1889,13 @@ function Avatar({ profilePic, size = "sm" }: { profilePic: string | null; size?:
 
 function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} aria-label={label} className="flex h-16 w-16 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white shadow-xl transition active:scale-95">
-      <Icon className="h-7 w-7" />
+    <button 
+      type="button" 
+      onClick={onClick} 
+      aria-label={label} 
+      className="flex h-14 w-14 items-center justify-center rounded-full border border-white/5 bg-black/20 text-[#00d2b4]/80 hover:text-white hover:bg-[#00d2b4]/10 hover:border-[#00d2b4]/30 shadow-lg hover:shadow-[#00d2b4]/5 transition-all duration-300 active:scale-95 group"
+    >
+      <Icon className="h-6 w-6 group-hover:scale-105 transition-transform" />
     </button>
   );
 }
@@ -1857,9 +1903,9 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
 function SubscriptionRow({ subscription }: { subscription: Subscription }) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
-    <div className="flex items-center justify-between rounded-[24px] border border-white/10 bg-black/20 p-4">
+    <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30">
           {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#00d2b4]/70" />}
         </div>
         <div className="min-w-0">
@@ -1895,86 +1941,16 @@ function DmThreadSelect({
   onSelect: (peerAddress: string) => void;
   selectedPeerAddress?: string | null;
 }) {
-  const [isCreating, setIsCreating] = useState(false);
-  const [newPeerAddress, setNewPeerAddress] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const handleStartDm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    const trimmed = newPeerAddress.trim().toLowerCase();
-    if (!trimmed) return;
-
-    let targetAddress = "";
-    if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-      targetAddress = trimmed;
-    } else if (trimmed.endsWith(".sub") || trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
-      setError("Resolving SubScript DNS...");
-      try {
-        const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`);
-        const data = await res.json();
-        if (data.success && data.address) {
-          targetAddress = data.address.toLowerCase();
-        } else {
-          setError(`Could not resolve DNS name "${trimmed}"`);
-          return;
-        }
-      } catch (err) {
-        setError("DNS resolution failed. Try again.");
-        return;
-      }
-    } else {
-      setError("Please enter a valid Ethereum address or .sub DNS domain");
-      return;
-    }
-
-    setError(null);
-    onSelect(targetAddress);
-    setIsCreating(false);
-    setNewPeerAddress("");
-  };
-
   return (
     <div className="space-y-5">
-      <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-5 shadow-2xl relative">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">SubScript DMs</p>
-            <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Select a payment thread</h1>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsCreating(!isCreating)}
-            className="rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4] hover:bg-[#00d2b4] hover:text-black font-bold uppercase tracking-wider text-[10px] px-3.5 py-2 transition"
-          >
-            {isCreating ? "Cancel" : "+ New DM"}
-          </button>
+      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl relative">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">SubScript DMs</p>
+          <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Select a payment thread</h1>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-white/45">
-          DMs are automated payment, receipt, renewal, and request conversations. Enter a wallet to begin a new thread.
+          DMs are automated payment, receipt, renewal, and request conversations. Click on a thread to view messages.
         </p>
-
-        {isCreating && (
-          <form onSubmit={handleStartDm} className="mt-5 pt-5 border-t border-white/5 space-y-3">
-            <p className="text-[10px] uppercase tracking-wider text-white/35">Recipient Wallet Address</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newPeerAddress}
-                onChange={(e) => setNewPeerAddress(e.target.value)}
-                placeholder="0x..."
-                className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-2.5 text-sm font-mono text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition"
-              />
-              <button
-                type="submit"
-                className="rounded-xl bg-[#00d2b4] text-black font-bold text-xs px-4 py-2.5 hover:bg-[#00d2b4]/90 transition"
-              >
-                Start
-              </button>
-            </div>
-            {error && <p className="text-[10px] text-red-400 font-medium">{error}</p>}
-          </form>
-        )}
       </div>
 
       {threads.length === 0 ? (
@@ -1991,10 +1967,10 @@ function DmThreadSelect({
                 key={thread.peerAddress}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
-                className={`flex w-full items-center gap-4 rounded-[28px] border p-4 text-left shadow-xl transition active:scale-[0.99] ${
+                className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition active:scale-[0.99] ${
                   isSelected
                     ? "border-[#00d2b4] bg-[#00d2b4]/[0.06] shadow-[0_0_15px_rgba(0,210,180,0.1)]"
-                    : "border-white/10 bg-white/[0.04] hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/[0.04]"
+                    : "border-white/5 bg-black/25 hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/[0.04]"
                 }`}
               >
                 <Avatar profilePic={thread.peerProfilePic} />
@@ -2008,7 +1984,7 @@ function DmThreadSelect({
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[11px] text-white/45">{thread.latest.title || thread.latest.description || "SubScript payment message"}</p>
-                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-white/30">{thread.totalCount} system messages</p>
+                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#00d2b4]/50">{thread.totalCount} system messages</p>
                 </div>
                 {thread.pendingCount > 0 && (
                   <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#00d2b4] px-2 text-[10px] font-black text-black">

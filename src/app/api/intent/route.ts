@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
 import { ProtocolConfig } from "@/lib/payments/config";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 async function parseBody(request: Request) {
     try {
@@ -60,6 +61,10 @@ export async function POST(request: Request) {
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
         }
+        if (externalReference !== undefined && externalReference !== null &&
+            (typeof externalReference !== "string" || externalReference.trim().length === 0 || externalReference.length > 256)) {
+            return NextResponse.json({ error: "Bad Request: externalReference must be a non-empty string up to 256 characters" }, { status: 400 });
+        }
 
         let amountBigInt: bigint;
         try {
@@ -86,7 +91,7 @@ export async function POST(request: Request) {
                 where: { idempotencyKey }
             });
             if (existing) {
-                const origin = request.headers.get("origin") || "https://subscript.money";
+                const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
                 return NextResponse.json({
                     success: true,
                     intent: {
@@ -97,6 +102,10 @@ export async function POST(request: Request) {
                         merchantAddress: existing.merchantAddress,
                         receiverAddress: existing.receiverAddress,
                         status: existing.status,
+                        receiptToken: (await pgMaybeOne<{ receipt_token: string }>(
+                            "select receipt_token from payment_links where id = $1",
+                            [existing.id]
+                        ))?.receipt_token || null,
                         checkoutUrl: `${origin}/pay/${existing.id}`
                     }
                 }, { status: 200 });
@@ -161,18 +170,23 @@ export async function POST(request: Request) {
             }
         });
 
-        const origin = request.headers.get("origin") || "https://subscript.money";
+        const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
 
         return NextResponse.json({
             success: true,
             intent: {
                 id: newLink.id,
+                checkoutSessionId: newLink.id,
                 title: newLink.title,
                 description: newLink.description,
                 amountUsdc: newLink.amountUsdc.toString(),
                 merchantAddress: newLink.merchantAddress,
                 receiverAddress: newLink.receiverAddress,
                 status: newLink.status,
+                receiptToken: (await pgMaybeOne<{ receipt_token: string }>(
+                    "select receipt_token from payment_links where id = $1",
+                    [newLink.id]
+                ))?.receipt_token || null,
                 checkoutUrl: `${origin}/pay/${newLink.id}`
             }
         }, { status: 201 });

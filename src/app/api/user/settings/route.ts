@@ -4,14 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
 
 const unsupportedUserSettings = new Set([
-    "emailEnabled",
     "securityShieldEnabled",
     "securityMultiSigEnabled",
 ]);
 
 const unsupportedMerchantSettings = new Set([
     "pushEnabled",
-    "emailEnabled",
     "payoutSettlementEnabled",
     "disputeAlertsEnabled",
     "securityMultiSigEnabled",
@@ -56,7 +54,7 @@ export async function GET(request: Request) {
                         availableBalanceUsdc: BigInt(0),
                         reservedBalanceUsdc: BigInt(0),
                         pushEnabled: true,
-                        emailEnabled: false,
+                        emailEnabled: true,
                         payoutSettlementEnabled: false,
                         disputeAlertsEnabled: false,
                         securityMultiSigEnabled: false,
@@ -90,7 +88,7 @@ export async function GET(request: Request) {
                     data: {
                         walletAddress: normalizedUser,
                         pushEnabled: true,
-                        emailEnabled: false,
+                        emailEnabled: true,
                         debitSuccessEnabled: true,
                         expiryWarningEnabled: true,
                         securityShieldEnabled: false,
@@ -198,7 +196,7 @@ export async function POST(request: Request) {
             const updateData: any = {};
             if (profilePic !== undefined) updateData.profilePic = profilePic;
             if (pushEnabled !== undefined) updateData.pushEnabled = false;
-            if (emailEnabled !== undefined) updateData.emailEnabled = false;
+            if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
             if (payoutSettlementEnabled !== undefined) updateData.payoutSettlementEnabled = false;
             if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = false;
             if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
@@ -213,7 +211,7 @@ export async function POST(request: Request) {
                     availableBalanceUsdc: BigInt(0),
                     reservedBalanceUsdc: BigInt(0),
                     pushEnabled: false,
-                    emailEnabled: false,
+                    emailEnabled: emailEnabled !== undefined ? !!emailEnabled : true,
                     payoutSettlementEnabled: false,
                     disputeAlertsEnabled: false,
                     securityMultiSigEnabled: false,
@@ -230,7 +228,7 @@ export async function POST(request: Request) {
             const updateData: any = {};
             if (profilePic !== undefined) updateData.profilePic = profilePic;
             if (pushEnabled !== undefined) updateData.pushEnabled = !!pushEnabled;
-            if (emailEnabled !== undefined) updateData.emailEnabled = false;
+            if (emailEnabled !== undefined) updateData.emailEnabled = !!emailEnabled;
             if (debitSuccessEnabled !== undefined) updateData.debitSuccessEnabled = !!debitSuccessEnabled;
             if (expiryWarningEnabled !== undefined) updateData.expiryWarningEnabled = !!expiryWarningEnabled;
             if (securityShieldEnabled !== undefined) updateData.securityShieldEnabled = false;
@@ -253,7 +251,7 @@ export async function POST(request: Request) {
                     walletAddress: normalizedUser,
                     profilePic: profilePic || null,
                     pushEnabled: pushEnabled !== undefined ? !!pushEnabled : true,
-                    emailEnabled: false,
+                    emailEnabled: emailEnabled !== undefined ? !!emailEnabled : true,
                     debitSuccessEnabled: debitSuccessEnabled !== undefined ? !!debitSuccessEnabled : true,
                     expiryWarningEnabled: expiryWarningEnabled !== undefined ? !!expiryWarningEnabled : true,
                     securityShieldEnabled: false,

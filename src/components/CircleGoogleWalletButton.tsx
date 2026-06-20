@@ -4,14 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-import { SocialLoginProvider, type LoginCompleteCallback } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
+import { SocialLoginProvider, type LoginCompleteCallback, type LoginConfigs } from "@circle-fin/w3s-pw-web-sdk/dist/src/types";
 
 type CircleGoogleConfig = {
     appId: string;
     googleClientId: string;
     redirectUri: string;
-    deviceToken: string;
-    deviceEncryptionKey: string;
 };
 
 export default function CircleGoogleWalletButton() {
@@ -38,12 +36,17 @@ export default function CircleGoogleWalletButton() {
                         setError(loginError?.message || "Google login did not complete.");
                         return;
                     }
+                    const socialResult = result as any;
 
                     const challengeRes = await fetch("/api/auth/circle/wallet", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            circleAuth: result,
+                            // Device and encryption credentials remain inside the browser SDK session.
+                            circleAuth: {
+                                userToken: socialResult.userToken,
+                                oAuthInfo: socialResult.oAuthInfo,
+                            },
                             authIntent: window.location.pathname.includes("/signin") ? "signin" : "signup",
                         }),
                     });
@@ -57,8 +60,8 @@ export default function CircleGoogleWalletButton() {
                     }
 
                     sdk.setAuthentication({
-                        userToken: result.userToken,
-                        encryptionKey: result.encryptionKey,
+                        userToken: socialResult.userToken,
+                        encryptionKey: socialResult.encryptionKey,
                     });
 
                     sdk.execute(challenge.challengeId, async (challengeError, challengeResult) => {
@@ -73,8 +76,10 @@ export default function CircleGoogleWalletButton() {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
-                                    email: challenge.email,
-                                    circleAuth: result,
+                                    circleAuth: {
+                                        userToken: socialResult.userToken,
+                                        oAuthInfo: socialResult.oAuthInfo,
+                                    },
                                 }),
                             });
                             const completed = await completeRes.json();
@@ -99,15 +104,14 @@ export default function CircleGoogleWalletButton() {
 
             sdk = new W3SSdk({
                 appSettings: { appId: config.appId },
+                // Circle device credentials are per-device session material, never deployment secrets.
                 loginConfigs: {
                     google: {
                         clientId: config.googleClientId,
                         redirectUri: config.redirectUri,
                         selectAccountPrompt: true,
                     },
-                    deviceToken: config.deviceToken,
-                    deviceEncryptionKey: config.deviceEncryptionKey,
-                },
+                } as unknown as LoginConfigs,
             }, onLoginComplete);
 
             await sdk.performLogin(SocialLoginProvider.GOOGLE);

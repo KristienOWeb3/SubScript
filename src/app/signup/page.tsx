@@ -450,8 +450,11 @@ export default function SignupPage() {
                 className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
               >
                 <Mail className="w-4 h-4 text-[#ccff00]" />
-                Continue with Email
+                Continue with Email Wallet
               </button>
+              <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
+                Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody.
+              </p>
 
               <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
                 <CircleGoogleWalletButton />

@@ -1,5 +1,36 @@
 import crypto from "crypto";
 
+function formatUsdc(value: bigint | string | number) {
+    const amount = typeof value === "bigint" ? value : BigInt(value);
+    const unit = BigInt(1_000_000);
+    const whole = amount / unit;
+    const fraction = (amount % unit).toString().padStart(6, "0").replace(/0+$/, "");
+    return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+export function createPaymentSucceededWebhook(args: {
+    paymentId: string;
+    checkoutSessionId: string;
+    merchantReference: string | null;
+    amountUsdc: bigint | string | number;
+    receiptId: string | null;
+    txHash: string;
+}) {
+    return {
+        id: `evt_payment_${args.paymentId}`,
+        event: "payment.succeeded",
+        created: Math.floor(Date.now() / 1000),
+        data: {
+            checkout_session_id: args.checkoutSessionId,
+            merchant_reference: args.merchantReference,
+            amount_paid: formatUsdc(args.amountUsdc),
+            currency: "USDC",
+            receipt_id: args.receiptId,
+            transaction_hash: args.txHash,
+        },
+    };
+}
+
 /**
  * Dispatches a webhook payload to a destination URL.
  * Generates an HMAC-SHA256 signature in the 'x-subscript-signature' header.

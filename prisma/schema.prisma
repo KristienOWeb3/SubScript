@@ -79,6 +79,7 @@ model PaymentLink {
   active               Boolean              @default(true)
   expiresAt            DateTime?            @map("expires_at")
   externalReference    String?              @map("external_reference")
+  receiptToken         String?              @unique @map("receipt_token")
   idempotencyKey       String?              @unique @map("idempotency_key")
   merchantNameSnapshot String?              @map("merchant_name_snapshot")
   maxUses              Int?                 @map("max_uses")

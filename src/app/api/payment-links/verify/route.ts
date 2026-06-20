@@ -49,9 +49,10 @@ async function sweepEphemeralWallet(receiverPrivateKeyEncrypted: string, merchan
 import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
-import { sendWebhookRequest } from "@/lib/webhooks";
+import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhooks";
 import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
 import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
 
 const CCTP_MESSENGER_INTERFACE = new ethers.Interface([
     "event DepositForBurn(uint64 indexed nonce, address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller)"
@@ -160,6 +161,9 @@ export async function POST(request: Request) {
 
         if (linkError || !paymentLink) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
+        if (!isCctp && receiptId !== paymentLink.receipt_token) {
+            return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
         }
 
         /* Check circuit breakers */
@@ -548,6 +552,18 @@ export async function POST(request: Request) {
                                     });
                             }
 
+                            if (!isCctp && isReceiptId(receiptId)) {
+                                await sendPaymentReceiptEmails({
+                                    amountUsdc: paymentLink.amount_usdc,
+                                    receiptUrl: receiptUrl(receiptId),
+                                    receiptId,
+                                    merchantAddress: paymentLink.merchant_address,
+                                    payerAddress: normalizedPayer,
+                                    paymentTitle: paymentLink.title,
+                                    txHash: normalizedTx,
+                                });
+                            }
+
                             await supabase
                                 .from("idempotency_keys")
                                 .update({
@@ -565,8 +581,16 @@ export async function POST(request: Request) {
                                 .eq("active", true);
 
                             if (endpoints) {
+                                const webhookPayload = createPaymentSucceededWebhook({
+                                    paymentId: newPayment.id,
+                                    checkoutSessionId: paymentLink.id,
+                                    merchantReference: paymentLink.external_reference || null,
+                                    amountUsdc: paymentLink.amount_usdc,
+                                    receiptId: !isCctp && isReceiptId(receiptId) ? receiptId : null,
+                                    txHash: normalizedTx,
+                                });
                                 for (const endpoint of endpoints) {
-                                    sendWebhookRequest(endpoint.url, { event: "payment_link.payment_received", data: successPayload }, endpoint.secret).catch(() => {});
+                                    sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});
                                 }
                             }
 

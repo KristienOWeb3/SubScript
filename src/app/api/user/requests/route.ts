@@ -23,16 +23,20 @@ export async function POST(request: Request) {
         }
 
         const { receiverAddress, amountUsdc, title, description } = sanitizeInput(body);
-        if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
-            return NextResponse.json({ error: "Receiver address is invalid" }, { status: 400 });
+        
+        let normalizedReceiver: string | null = null;
+        if (receiverAddress) {
+            if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
+                return NextResponse.json({ error: "Receiver address is invalid" }, { status: 400 });
+            }
+            normalizedReceiver = receiverAddress.toLowerCase();
+            const normalizedRequester = requester.toLowerCase();
+            if (normalizedRequester === normalizedReceiver) {
+                return NextResponse.json({ error: "You cannot request USDC from yourself" }, { status: 400 });
+            }
         }
 
         const normalizedRequester = requester.toLowerCase();
-        const normalizedReceiver = receiverAddress.toLowerCase();
-        if (normalizedRequester === normalizedReceiver) {
-            return NextResponse.json({ error: "You cannot request USDC from yourself" }, { status: 400 });
-        }
-
         const amountMicros = parseUsdcToMicros(amountUsdc);
         if (amountMicros <= 0) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
@@ -65,29 +69,32 @@ export async function POST(request: Request) {
         });
 
         const amount = formatUsdcFromMicros(amountMicros);
-        const dm = await prisma.subscriptDm.create({
-            data: {
-                senderAddress: normalizedRequester,
-                receiverAddress: normalizedReceiver,
-                messageType: "PEER_REQUEST",
-                status: "PENDING",
-                amountUsdc: amountMicros,
-                title: `${amount} USDC requested`,
-                description: [
-                    cleanDescription,
-                    `Requester: ${normalizedRequester}`,
-                    `Amount: ${amount} USDC`,
-                    "This is a structured SubScript payment request, not a free-form chat.",
-                ].join("\n"),
-                paymentLinkId: paymentLink.id,
-            },
-        });
+        let dm = null;
+        if (normalizedReceiver) {
+            dm = await prisma.subscriptDm.create({
+                data: {
+                    senderAddress: normalizedRequester,
+                    receiverAddress: normalizedReceiver,
+                    messageType: "PEER_REQUEST",
+                    status: "PENDING",
+                    amountUsdc: amountMicros,
+                    title: `${amount} USDC requested`,
+                    description: [
+                        cleanDescription,
+                        `Requester: ${normalizedRequester}`,
+                        `Amount: ${amount} USDC`,
+                        "This is a structured SubScript payment request, not a free-form chat.",
+                    ].join("\n"),
+                    paymentLinkId: paymentLink.id,
+                },
+            });
+        }
 
         return NextResponse.json({
             success: true,
             paymentLinkId: paymentLink.id,
             payUrl: `/pay/${paymentLink.id}`,
-            dmId: dm.id,
+            dmId: dm?.id || null,
         }, { status: 201 });
     } catch (error: any) {
         console.error("Peer request creation failed:", error);

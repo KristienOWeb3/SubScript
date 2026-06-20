@@ -13,7 +13,10 @@ function parseBlock(value: unknown, fallback: number | "latest") {
 export async function POST(request: Request) {
     try {
         const indexerSecret = process.env.RECEIPT_INDEXER_SECRET;
-        if (indexerSecret && request.headers.get("x-indexer-secret") !== indexerSecret) {
+        if (!indexerSecret) {
+            return NextResponse.json({ error: "Receipt indexer is not configured" }, { status: 503 });
+        }
+        if (request.headers.get("x-indexer-secret") !== indexerSecret) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         if (!supabaseAdmin) {

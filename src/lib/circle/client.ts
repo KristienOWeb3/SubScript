@@ -2,7 +2,6 @@ const CIRCLE_API_BASE_URL = process.env.CIRCLE_API_BASE_URL || "https://api.circ
 
 export type CircleSocialAuth = {
     userToken: string;
-    encryptionKey: string;
     refreshToken?: string;
     oAuthInfo?: {
         socialUserUUID?: string;
@@ -12,6 +11,7 @@ export type CircleSocialAuth = {
             phone?: string;
         };
     };
+    encryptionKey?: string;
 };
 
 type CircleWallet = {

@@ -96,6 +96,8 @@ export default function PublicPayClient({
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
     const [receiptId, setReceiptId] = useState<string | null>(null);
     const [shareableReceiptUrl, setShareableReceiptUrl] = useState<string | null>(null);
+    const [payerRole, setPayerRole] = useState<string | null>(null);
+    const [isRoleMismatch, setIsRoleMismatch] = useState(false);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -206,6 +208,40 @@ export default function PublicPayClient({
 
         routeExistingUserToDm();
     }, [linkData?.id, linkData?.merchant_address, router]);
+
+    useEffect(() => {
+        if (!address) {
+            setPayerRole(null);
+            setIsRoleMismatch(false);
+            return;
+        }
+
+        const checkRole = async () => {
+            try {
+                const res = await fetch("/api/auth/check-account", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ address }),
+                });
+                const data = await res.json();
+                if (data.exists && data.role) {
+                    setPayerRole(data.role);
+                    if (data.role === "ENTERPRISE") {
+                        setIsRoleMismatch(true);
+                    } else {
+                        setIsRoleMismatch(false);
+                    }
+                } else {
+                    setPayerRole(null);
+                    setIsRoleMismatch(false);
+                }
+            } catch (err) {
+                console.error("Error checking account role:", err);
+            }
+        };
+
+        checkRole();
+    }, [address]);
 
     const handleConnect = () => {
         connect({ connector: injected() });
@@ -472,6 +508,21 @@ export default function PublicPayClient({
                 ) : (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
 
+                        {/* Role Mismatch Warning Banner */}
+                        {isRoleMismatch && (
+                            <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-start gap-3">
+                                    <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-bold text-red-300 uppercase tracking-wide">Role Mismatch</p>
+                                        <p className="text-[10px] text-white/50 leading-relaxed">
+                                            This wallet is registered as a Merchant (Enterprise) account. Only standard User accounts can use this payment link to pay and start a DM. Please switch to a user wallet to proceed.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Unverified Merchant Warning Banner */}
                         {merchantVerified === false && !unverifiedAccepted && (
                             <div className="bg-amber-500/[0.06] border border-amber-500/25 rounded-2xl p-4 space-y-3">
@@ -652,7 +703,15 @@ export default function PublicPayClient({
                                             </div>
                                         )}
 
-                                        {isLinkExhausted ? (
+                                        {isRoleMismatch ? (
+                                             <button
+                                                 type="button"
+                                                 disabled={true}
+                                                 className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
+                                             >
+                                                 Role Mismatch: Merchant Wallet
+                                             </button>
+                                         ) : isLinkExhausted ? (
                                             <button
                                                 type="button"
                                                 disabled={true}

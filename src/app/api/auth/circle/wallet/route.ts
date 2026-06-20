@@ -4,8 +4,7 @@ import { pgMaybeOne } from "@/lib/serverPg";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
-        typeof value.userToken === "string" &&
-        typeof value.encryptionKey === "string";
+        typeof value.userToken === "string";
 }
 
 export async function POST(request: Request) {

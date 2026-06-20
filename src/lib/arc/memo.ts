@@ -87,8 +87,9 @@ export function buildVaultDepositTx(args: {
     };
 }
 
-export function receiptUrl(receiptId: string, origin?: string | null) {
-    const base = origin || process.env.NEXT_PUBLIC_APP_URL || "https://subscript.app";
+export function receiptUrl(receiptId: string, _origin?: string | null) {
+    // Receipt URLs must be derived from controlled configuration, never a caller supplied Origin header.
+    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
     return `${base.replace(/\/$/, "")}/receipt/${encodeURIComponent(receiptId)}`;
 }
 

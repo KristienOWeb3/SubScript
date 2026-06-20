@@ -1,13 +1,27 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { Resend } from "resend";
+import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
-
 import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
+import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
 
-const resend = new Resend(process.env.RESEND_API_KEY || "re_build_placeholder");
+const OTP_TTL_MS = 10 * 60 * 1000;
+
+function otpSecret() {
+    const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
+    if (!secret) throw new Error("OTP_SECRET or JWT_SECRET must be configured");
+    return secret;
+}
+
+function hashOtp(email: string, code: string) {
+    return crypto.createHmac("sha256", otpSecret()).update(`${email}:${code}`).digest("hex");
+}
+
+function allowOfflineAuth() {
+    return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+}
 
 export async function POST(request: Request) {
     try {
@@ -31,15 +45,17 @@ export async function POST(request: Request) {
 
         const emailLower = email.toLowerCase();
 
-        const code = String(Math.floor(100000 + Math.random() * 900000));
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        const code = crypto.randomInt(100000, 1000000).toString();
+        const codeHash = hashOtp(emailLower, code);
+        const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
         if (!supabaseUrl || !supabaseServiceKey) {
-            // Fallback immediately if config is missing
-            console.warn("⚠️ Supabase config missing. Storing OTP code in offlineDb.");
-            saveOfflineOtpCode(emailLower, code, expiresAt);
+            if (!allowOfflineAuth()) {
+                return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+            }
+            saveOfflineOtpCode(emailLower, codeHash, expiresAt);
         } else {
             try {
                 const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -47,14 +63,16 @@ export async function POST(request: Request) {
                     .from("otp_codes")
                     .upsert({
                         email: emailLower,
-                        code,
+                        code: codeHash,
                         expires_at: expiresAt.toISOString()
                     }, { onConflict: "email" });
 
                 if (error) {
                     if (isConnectionError(error)) {
-                        console.warn("⚠️ Supabase is offline (API error). Storing OTP code in offlineDb.");
-                        saveOfflineOtpCode(emailLower, code, expiresAt);
+                        if (!allowOfflineAuth()) {
+                            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+                        }
+                        saveOfflineOtpCode(emailLower, codeHash, expiresAt);
                     } else {
                         console.error("Failed to store OTP code in Supabase:", error);
                         return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
@@ -62,8 +80,10 @@ export async function POST(request: Request) {
                 }
             } catch (err: any) {
                 if (isConnectionError(err)) {
-                    console.warn("⚠️ Supabase is offline (Exception). Storing OTP code in offlineDb.");
-                    saveOfflineOtpCode(emailLower, code, expiresAt);
+                    if (!allowOfflineAuth()) {
+                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+                    }
+                    saveOfflineOtpCode(emailLower, codeHash, expiresAt);
                 } else {
                     console.error("Failed to store OTP code (catch):", err);
                     return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
@@ -73,20 +93,15 @@ export async function POST(request: Request) {
 
 
         try {
-            await resend.emails.send({
-                from: "SubScript Auth <onboarding@resend.dev>",
-                to: emailLower,
-                subject: "Your SubScript Verification Code",
-                html: `<html><body><p>Your SubScript verification code is <strong>${code}</strong>. It will expire in 10 minutes.</p></body></html>`
-            });
+            await sendAuthenticationCodeEmail(emailLower, code);
         } catch (mailErr) {
-            console.error("Resend email send error:", mailErr);
+            console.error("Verification email send error:", mailErr instanceof Error ? mailErr.message : "Unknown error");
+            return NextResponse.json({ error: "We could not send a verification email. Please try again." }, { status: 502 });
         }
 
         return NextResponse.json({ 
             success: true, 
             message: "OTP code successfully generated.",
-            sandboxCode: code,
             email: emailLower
         });
     } catch (err: any) {
