@@ -150,7 +150,7 @@ export default function Navbar() {
     }, []);
 
     const navLinks = [
-        { name: "Sign in", href: "/dashboard", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Sign in", href: "/login", className: "text-[#9ca3af] hover:text-white" },
     ];
 
     return (
@@ -196,7 +196,7 @@ export default function Navbar() {
                             </button>
                         )}
                         <Link 
-                            href="/merchant"
+                            href="/login"
                             className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
                         >
                             Sign In

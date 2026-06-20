@@ -11,10 +11,16 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     }
 
     const isProduction = hostname && (hostname.includes("subscriptonarc.com") || hostname.includes("subscriptonarc"));
+    const isAuthPath = path === "/login"
+        || path === "/signin"
+        || path === "/signup"
+        || path.startsWith("/login?")
+        || path.startsWith("/signin?")
+        || path.startsWith("/signup?");
 
     if (isProduction) {
         // Sign-in / Sign-up routes live on the main landing domain
-        if (path === "/signin" || path === "/signup" || path.startsWith("/signin?") || path.startsWith("/signup?")) {
+        if (isAuthPath) {
             return `${protocol}//subscriptonarc.com${path}`;
         }
 
@@ -31,7 +37,7 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     }
 
     // Local / Development:
-    if (path === "/signin" || path === "/signup" || path.startsWith("/signin?") || path.startsWith("/signup?")) {
+    if (isAuthPath) {
         return path;
     }
 

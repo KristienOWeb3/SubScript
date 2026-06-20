@@ -25,7 +25,6 @@ import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import UserDashboardHeader from "@/components/UserDashboardHeader";
 import { getDashboardUrl } from "@/utils/navigation";
 import {
   AlertCircle,
@@ -115,6 +114,14 @@ const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
   { id: "links", label: "Links", icon: Link2 },
   { id: "batch", label: "Send Out", icon: Send },
+] as const;
+
+const userDesktopTabs = [
+  { id: "home", label: "Home Hub", icon: Home },
+  { id: "links", label: "Payment Links", icon: Link2 },
+  { id: "batch", label: "Send Out", icon: Send },
+  { id: "inbox", label: "Direct Messages", icon: MessageSquare },
+  { id: "dns", label: "Profile & DNS", icon: Globe },
 ] as const;
 
 const formatAddress = (addr: string | null) => {
@@ -952,57 +959,59 @@ export default function UserDashboard() {
     : null;
 
   return (
-    <div className="min-h-[100dvh] bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00]">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] lg:h-[100dvh] lg:overflow-hidden">
       <AnimatedGradientBg />
-      
-      {/* Desktop Header */}
-      {!isMobile && (
-        <UserDashboardHeader
-          userWallet={userWallet}
-          registeredDomain={registeredDomain}
-          profilePic={profilePic}
-          walletBalance={walletBalance}
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setSelectedDmPeer(null);
-            setActiveTab(tab);
-          }}
-          onLogout={handleLogout}
-        />
-      )}
 
-      {/* Mobile headers (only shown on small screens) */}
-      {isMobile && (
-        <div className="w-full">
-          {activeTab === "inbox" && selectedDmPeer ? (
-            <ChatHeader
-              peerName={activeThread?.peerName || formatAddress(selectedDmPeer)}
-              peerProfilePic={activeThread?.peerProfilePic || null}
-              peerAddress={selectedDmPeer}
-              isMerchant={subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")}
-              onBack={() => setSelectedDmPeer(null)}
-              onSendFunds={() => {
-                setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
-                setSendFundsOpen(true);
-              }}
-            />
-          ) : (
-            <HomeHeader
-              registeredDomain={registeredDomain}
-              profilePic={profilePic}
-              userWallet={userWallet}
-              onDns={() => setActiveTab("dns")}
-              onLogout={handleLogout}
-            />
+      <div className="relative z-10 lg:flex lg:h-[calc(100dvh-4px)] lg:min-h-0">
+        {!isMobile && (
+          <UserDesktopSidebar
+            activeTab={activeTab}
+            pendingDmCount={pendingDmCount}
+            userWallet={userWallet}
+            registeredDomain={registeredDomain}
+            profilePic={profilePic}
+            walletBalance={walletBalance}
+            onTabChange={(tab) => {
+              setSelectedDmPeer(null);
+              setActiveTab(tab);
+            }}
+            onLogout={handleLogout}
+          />
+        )}
+
+        <div className="min-w-0 flex-1 lg:h-full lg:overflow-y-auto">
+          {/* Mobile headers (only shown on small screens) */}
+          {isMobile && (
+            <div className="w-full">
+              {activeTab === "inbox" && selectedDmPeer ? (
+                <ChatHeader
+                  peerName={activeThread?.peerName || formatAddress(selectedDmPeer)}
+                  peerProfilePic={activeThread?.peerProfilePic || null}
+                  peerAddress={selectedDmPeer}
+                  isMerchant={subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")}
+                  onBack={() => setSelectedDmPeer(null)}
+                  onSendFunds={() => {
+                    setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
+                    setSendFundsOpen(true);
+                  }}
+                />
+              ) : (
+                <HomeHeader
+                  registeredDomain={registeredDomain}
+                  profilePic={profilePic}
+                  userWallet={userWallet}
+                  onDns={() => setActiveTab("dns")}
+                  onLogout={handleLogout}
+                />
+              )}
+            </div>
           )}
-        </div>
-      )}
 
       {/* Main Grid View Container */}
-      <main className="max-w-7xl mx-auto px-5 lg:px-6 pt-24 lg:pt-28 pb-[calc(8rem+env(safe-area-inset-bottom))] lg:pb-12">
+      <main className="mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 pb-[calc(8rem+env(safe-area-inset-bottom))] lg:pb-12">
         {/* Title Header (Desktop only) */}
         {!isMobile && (
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-10 pb-6 border-b border-white/5">
+          <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
             <div>
               <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
                 User Wallet <span className="font-serif italic lowercase font-normal text-[#ccff00]">hub</span>
@@ -1014,65 +1023,9 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
-          {/* Desktop Left Navigation (Matches Merchant Dashboard Sidebar) */}
-            <div className="hidden lg:block lg:col-span-1 space-y-2">
-              {[
-                { id: "home", label: "Home Hub", icon: Home },
-                { id: "links", label: "Payment Links", icon: Link2 },
-                { id: "batch", label: "Send Out", icon: Send },
-                { id: "dns", label: "DNS Settings", icon: Globe },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => {
-                      setSelectedDmPeer(null);
-                      setActiveTab(tab.id as any);
-                    }}
-                    className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                      isActive
-                        ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
-                        : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
-                    }`}
-                  >
-                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/40"}`} />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-
-              <button
-                onClick={() => {
-                  setSelectedDmPeer(null);
-                  setActiveTab("inbox");
-                }}
-                className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
-                  activeTab === "inbox"
-                    ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-white shadow-lg shadow-[#ccff00]/5"
-                    : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
-                }`}
-              >
-                <div className="flex items-center gap-3.5">
-                  <MessageSquare className={`h-4 w-4 shrink-0 ${activeTab === "inbox" ? "text-[#ccff00]" : "text-white/40"}`} />
-                  <span>Direct Messages</span>
-                </div>
-                {pendingDmCount > 0 && (
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                    activeTab === "inbox"
-                      ? "bg-[#ccff00]/10 border-[#ccff00]/20 text-[#ccff00]"
-                      : "bg-white/10 border-white/5 text-white/50"
-                  }`}>
-                    {pendingDmCount}
-                  </span>
-                )}
-              </button>
-            </div>
-
-          {/* Right main view content (spans 3 columns on desktop) */}
-          <div className="col-span-1 lg:col-span-3 min-h-[500px]">
+        <div className="grid grid-cols-1 gap-8 items-start">
+          {/* Right main view content */}
+          <div className="col-span-1 min-h-[500px]">
             <AnimatePresence mode="wait">
             {activeTab === "home" && (
               <motion.section
@@ -1906,6 +1859,8 @@ export default function UserDashboard() {
           </div>
         </div>
       </main>
+        </div>
+      </div>
 
       {/* Mobile-only Bottom Navigation Bar */}
       {isMobile && userWallet && (
@@ -1982,6 +1937,104 @@ export default function UserDashboard() {
         loadDms={loadDms}
       />
     </div>
+  );
+}
+
+function UserDesktopSidebar({
+  activeTab,
+  pendingDmCount,
+  userWallet,
+  registeredDomain,
+  profilePic,
+  walletBalance,
+  onTabChange,
+  onLogout,
+}: {
+  activeTab: UserTab;
+  pendingDmCount: number;
+  userWallet: string | null;
+  registeredDomain: string | null;
+  profilePic: string | null;
+  walletBalance: number;
+  onTabChange: (tab: UserTab) => void;
+  onLogout: () => void;
+}) {
+  return (
+    <aside className="hidden lg:flex h-full w-72 shrink-0 flex-col justify-between border-r border-white/5 bg-black/45 p-5 backdrop-blur-2xl">
+      <div className="space-y-8">
+        <div className="flex items-center gap-3 rounded-3xl border border-white/5 bg-white/[0.03] px-4 py-3">
+          <img
+            src="/logo.png"
+            alt="SubScript Logo"
+            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(204,255,0,0.35)]"
+          />
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
+            <p className="truncate text-xs font-bold text-white/55">User account</p>
+          </div>
+        </div>
+
+        <nav className="space-y-2" aria-label="User dashboard navigation">
+          {userDesktopTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTabChange(tab.id)}
+                className={`group flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left text-xs font-black uppercase tracking-[0.13em] transition-all ${
+                  isActive
+                    ? "border-[#ccff00]/30 bg-[#ccff00]/10 text-white shadow-[0_0_28px_rgba(204,255,0,0.08)]"
+                    : "border-white/5 bg-white/[0.015] text-white/45 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/35 group-hover:text-white/70"}`} />
+                  <span className="truncate">{tab.label}</span>
+                </span>
+                {tab.id === "inbox" && pendingDmCount > 0 && (
+                  <span className={`ml-3 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-black ${
+                    isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
+                  }`}>
+                    {pendingDmCount > 9 ? "9+" : pendingDmCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      <div className="space-y-4">
+        <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4">
+          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/35">Arc USDC Balance</p>
+          <p className="mt-2 text-2xl font-black tracking-tight text-white">${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
+          <button
+            type="button"
+            onClick={() => onTabChange("dns")}
+            className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-white/5 bg-black/25 px-3 py-3 text-left transition hover:border-[#ccff00]/20 hover:bg-[#ccff00]/5"
+          >
+            <Avatar profilePic={profilePic} size="xs" />
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-black uppercase tracking-[0.1em] text-white">
+                {registeredDomain || "Profile & DNS"}
+              </p>
+              <p className="mt-0.5 truncate text-[10px] font-mono text-white/35">{formatAddress(userWallet)}</p>
+            </div>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-red-500/25 hover:bg-red-500/10 hover:text-red-300"
+        >
+          <LogOut className="h-4 w-4" />
+          Log out
+        </button>
+      </div>
+    </aside>
   );
 }
 

@@ -53,8 +53,14 @@ const MAX_PAYLOAD_SIZE = 1048576;
 
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
-    const host = request.headers.get("host") || "";
-    const isProductionDomain = host.includes("subscriptonarc.com") || host.includes("subscriptonarc");
+    const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "")
+        .split(",")[0]
+        .trim()
+        .toLowerCase()
+        .replace(/:\d+$/, "");
+    const isProductionDomain = host === "subscriptonarc.com"
+        || host === "www.subscriptonarc.com"
+        || host === "dashboard.subscriptonarc.com";
 
     if (isProductionDomain) {
         // 1. Redirect dashboard paths on the main landing domain to the dashboard subdomain
@@ -81,26 +87,25 @@ export async function middleware(request: NextRequest) {
             }
 
             if (pathname === "/") {
-                const userUrl = request.nextUrl.clone();
-                userUrl.pathname = "/user";
-                return NextResponse.redirect(userUrl);
+                const merchantUrl = request.nextUrl.clone();
+                merchantUrl.pathname = "/merchant";
+                return NextResponse.redirect(merchantUrl);
             }
 
             if (pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
                 return NextResponse.redirect(`https://subscriptonarc.com${pathname}`);
             }
 
-            // Rewrite /user paths to /dashboard/user internally
-            if (pathname.startsWith("/user")) {
+            // Keep canonical subdomain URLs public while supporting old dashboard URLs.
+            if (pathname.startsWith("/dashboard/user")) {
                 const rewriteUrl = request.nextUrl.clone();
-                rewriteUrl.pathname = pathname.replace(/^\/user/, "/dashboard/user");
+                rewriteUrl.pathname = pathname.replace(/^\/dashboard\/user/, "/user");
                 return NextResponse.rewrite(rewriteUrl);
             }
 
-            // Rewrite /merchant paths to /dashboard internally
-            if (pathname.startsWith("/merchant")) {
+            if (pathname.startsWith("/dashboard")) {
                 const rewriteUrl = request.nextUrl.clone();
-                rewriteUrl.pathname = pathname.replace(/^\/merchant/, "/dashboard");
+                rewriteUrl.pathname = pathname.replace(/^\/dashboard/, "/merchant");
                 return NextResponse.rewrite(rewriteUrl);
             }
         }
