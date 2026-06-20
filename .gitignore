@@ -58,3 +58,7 @@ test-results/
 /subscript/
 snapshot_*.json
 .env*
+
+# Brand Documentation
+/brand_docs/
+
