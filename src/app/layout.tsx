@@ -204,6 +204,7 @@ export default async function RootLayout({
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
                     nonce={nonce}
+                    suppressHydrationWarning
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
                 />

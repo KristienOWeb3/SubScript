@@ -88,14 +88,32 @@ function createNonce() {
 }
 
 function createContentSecurityPolicy(nonce: string) {
+    const scriptSources = [
+        "'self'",
+        `'nonce-${nonce}'`,
+        ...(process.env.NODE_ENV !== "production" ? ["'unsafe-eval'"] : []),
+        "https://www.google.com",
+        "https://www.gstatic.com",
+        "https://us.i.posthog.com",
+        "https://us-assets.i.posthog.com",
+        "https://auth.privy.io",
+        "https://api.privy.io",
+        "https://relay.walletconnect.com",
+        "https://api.circle.com",
+        "https://iris-api-sandbox.circle.com",
+    ].join(" ");
+    const styleSources = process.env.NODE_ENV === "production"
+        ? ["'self'", `'nonce-${nonce}'`].join(" ")
+        : ["'self'", "'unsafe-inline'"].join(" ");
+
     return [
         "default-src 'self'",
         "base-uri 'self'",
         "frame-ancestors 'none'",
         "object-src 'none'",
         "form-action 'self'",
-        `script-src 'self' 'nonce-${nonce}' https://www.google.com https://www.gstatic.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com`,
-        `style-src 'self' 'nonce-${nonce}'`,
+        `script-src ${scriptSources}`,
+        `style-src ${styleSources}`,
         "style-src-attr 'unsafe-inline'",
         "img-src 'self' data: blob: https://subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network",
         "font-src 'self' data:",

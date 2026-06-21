@@ -181,6 +181,13 @@ export default function DashboardPage() {
             if (functionName === "cancelSubscription") {
                 action = "cancelSubscription";
                 serializedArgs = { subscriptionId: args[0].toString() };
+            } else if (functionName === "createSubscription") {
+                action = "createPremiumSubscription";
+                serializedArgs = {
+                    merchant: args[0],
+                    amount: args[1].toString(),
+                    period: args[2].toString(),
+                };
             } else if (functionName === "withdraw") {
                 action = "withdraw";
                 serializedArgs = {};
@@ -882,11 +889,13 @@ export default function DashboardPage() {
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
-                    if (data.email) {
+                    if (data.isEmbedded) {
                         setEmbeddedWallet({
                             wallet: data.wallet,
                             email: data.email
                         });
+                    } else {
+                        setEmbeddedWallet(null);
                     }
                 }
             } catch (err) {
@@ -917,7 +926,7 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn) {
-                    if (data.email) {
+                    if (data.isEmbedded) {
                         setEmbeddedWallet({
                             wallet: data.wallet,
                             email: data.email

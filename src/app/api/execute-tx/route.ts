@@ -14,6 +14,16 @@ import {
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 
 const isProdEnv = process.env.NODE_ENV === "production";
+const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
+const MERCHANT_SPONSORED_ACTIONS = new Set([
+    "approveUsdc",
+    "transferUsdc",
+    "createPremiumSubscription",
+    "withdraw",
+    "cancelSubscription",
+    "configurePayoutDestination",
+    "registerViewKey"
+]);
 
 const ERC20_ABI = [
     {
@@ -46,6 +56,17 @@ const ERC20_ABI = [
 ];
 
 const SUBSCRIPT_ABI = [
+    {
+        type: "function",
+        name: "createSubscription",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "merchant", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "period", type: "uint256" }
+        ],
+        outputs: []
+    },
     {
         type: "function",
         name: "withdraw",
@@ -108,6 +129,28 @@ export async function POST(request: Request) {
         }
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        const { data: roleData, error: roleError } = await supabase
+            .from("account_roles")
+            .select("role")
+            .eq("address", wallet.toLowerCase())
+            .maybeSingle();
+
+        if (roleError) {
+            console.error(`[execute-tx] Failed to query account role: ${roleError.message}`);
+            return NextResponse.json({ error: "Unable to verify account role" }, { status: 500 });
+        }
+
+        const accountRole = roleData?.role || null;
+        if (!accountRole) {
+            return NextResponse.json({ error: "Forbidden: Account role is required for sponsored execution." }, { status: 403 });
+        }
+        if (accountRole === "USER" && !USER_SPONSORED_ACTIONS.has(action)) {
+            return NextResponse.json({ error: "Forbidden: User accounts cannot execute merchant-sponsored actions." }, { status: 403 });
+        }
+        if (accountRole === "ENTERPRISE" && !MERCHANT_SPONSORED_ACTIONS.has(action)) {
+            return NextResponse.json({ error: "Forbidden: Merchant account action is not allowlisted for sponsorship." }, { status: 403 });
+        }
+
         /* Enforce Backend Tier Checks */
         const premiumActions = ["configurePayoutDestination"];
         if (premiumActions.includes(action)) {
@@ -143,12 +186,15 @@ export async function POST(request: Request) {
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
-            .select("encrypted_private_key")
+            .select("encrypted_private_key, provider")
             .eq("wallet_address", wallet.toLowerCase())
             .maybeSingle();
 
         if (walletError || !walletRecord) {
             return NextResponse.json({ error: "Embedded wallet not found for authenticated user" }, { status: 404 });
+        }
+        if (walletRecord.provider === "external_wallet" || !walletRecord.encrypted_private_key) {
+            return NextResponse.json({ error: "Server-sponsored execution is only available for embedded wallet sessions." }, { status: 403 });
         }
 
         const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
@@ -192,6 +238,24 @@ export async function POST(request: Request) {
                 contractAbi = ERC20_ABI;
                 functionName = "transfer";
                 finalArgs = [to, BigInt(amount)];
+                break;
+            }
+            case "createPremiumSubscription": {
+                const { merchant, amount, period } = args;
+                if (!merchant || typeof merchant !== "string") {
+                    return NextResponse.json({ error: "Invalid premium subscription recipient" }, { status: 400 });
+                }
+                if (merchant.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
+                    return NextResponse.json({ error: "Unauthorized subscription recipient. Sponsored subscriptions can only target the SubScript premium account." }, { status: 400 });
+                }
+                if (amount === undefined || period === undefined) {
+                    return NextResponse.json({ error: "amount and period are required" }, { status: 400 });
+                }
+
+                contractAddress = STANDARD_CONTRACT_ADDRESS;
+                contractAbi = SUBSCRIPT_ABI;
+                functionName = "createSubscription";
+                finalArgs = [merchant, BigInt(amount), BigInt(period)];
                 break;
             }
             case "withdraw": {

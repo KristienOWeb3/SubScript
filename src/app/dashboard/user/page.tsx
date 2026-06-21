@@ -428,7 +428,7 @@ export default function UserDashboard() {
         return;
       }
 
-      if (!data.email && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
+      if (!data.isEmbedded && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
         console.warn("Session wallet mismatch, logging out");
         await fetch("/api/auth/logout", { method: "POST" });
         redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");

@@ -13,6 +13,7 @@ export async function GET(request: Request) {
         }
 
         let email: string | null = null;
+        let provider: string | null = null;
         let isOfflineMode = false;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
                 const supabase = createClient(supabaseUrl, supabaseServiceKey);
                 const { data, error } = await supabase
                     .from("user_embedded_wallets")
-                    .select("email")
+                    .select("email, provider")
                     .eq("wallet_address", wallet.toLowerCase())
                     .maybeSingle();
 
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
                     }
                 } else if (data) {
                     email = data.email;
+                    provider = data.provider || null;
                 }
             } catch (err: any) {
                 if (isConnectionError(err)) {
@@ -52,15 +54,19 @@ export async function GET(request: Request) {
             const walletRecord = getOfflineUserEmbeddedWalletByAddress(wallet.toLowerCase());
             if (walletRecord) {
                 email = walletRecord.email;
+                provider = "circle_google";
             }
         }
 
         const role = await getAccountRole(wallet);
+        const isEmbedded = Boolean(provider && provider !== "external_wallet");
 
         return NextResponse.json({ 
             loggedIn: true, 
             wallet,
             email,
+            provider,
+            isEmbedded,
             role
         }, { status: 200 });
     } catch (error) {
