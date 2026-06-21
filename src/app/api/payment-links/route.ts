@@ -4,31 +4,41 @@ import { createClient } from "@supabase/supabase-js";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
+import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
+import { generateReceiptId } from "@/lib/arc/memo";
 
-async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
+async function authenticateRequest(request: Request): Promise<{
+    wallet: string | null;
+    error: string | null;
+    status: number;
+    apiKeyMode: ReturnType<typeof getSecretKeyMode> | null;
+}> {
     const sessionWallet = await getSessionWallet(request.headers);
     if (sessionWallet) {
-        return { wallet: sessionWallet.toLowerCase(), error: null, status: 200 };
+        return { wallet: sessionWallet.toLowerCase(), error: null, status: 200, apiKeyMode: null };
     }
     const authHeader = request.headers.get("Authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
         const secretKey = authHeader.substring(7).trim();
+        const apiKeyMode = getSecretKeyMode(secretKey);
         const keyRecord = await prisma.apiKey.findFirst({
             where: { secretKeyPlain: secretKey, revoked: false }
         });
         if (keyRecord) {
-            return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200 };
+            return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200, apiKeyMode };
         }
         return { 
             wallet: null, 
             error: "Unauthorized: Invalid or revoked API key", 
-            status: 401 
+            status: 401,
+            apiKeyMode
         };
     }
     return { 
         wallet: null, 
         error: "Unauthorized: Missing authentication credentials. Please provide a valid API Key in the Authorization header or log in.", 
-        status: 401 
+        status: 401,
+        apiKeyMode: null
     };
 }
 
@@ -39,6 +49,19 @@ async function parseBody(request: Request) {
     } catch {
         return null;
     }
+}
+
+function getAppOrigin() {
+    return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscriptonarc.com";
+}
+
+function formatPaymentLinkResponse(link: any) {
+    const origin = getAppOrigin().replace(/\/$/, "");
+    return {
+        ...link,
+        checkoutUrl: `${origin}/pay/${link.id}`,
+        receiptToken: link.receipt_token || link.receiptToken || null,
+    };
 }
 
 export async function GET(request: Request) {
@@ -147,7 +170,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name, max_uses } = body;
+        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name, max_uses, sandbox } = body;
+        const isSandboxRequest = sandbox === true || auth.apiKeyMode === "test";
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -190,7 +214,23 @@ export async function POST(request: Request) {
                 .maybeSingle();
 
             if (existingLink) {
-                return NextResponse.json({ link: existingLink }, { status: 200 });
+                let link = existingLink;
+                if (!link.receipt_token) {
+                    const receiptToken = generateReceiptId(link.title);
+                    const { data: updatedLink, error: receiptUpdateError } = await supabase
+                        .from("payment_links")
+                        .update({ receipt_token: receiptToken })
+                        .eq("id", link.id)
+                        .select("*")
+                        .single();
+
+                    if (receiptUpdateError) {
+                        console.error("Error backfilling payment link receipt token:", receiptUpdateError.message);
+                        return NextResponse.json({ error: "Failed to prepare checkout receipt token" }, { status: 500 });
+                    }
+                    link = updatedLink;
+                }
+                return NextResponse.json({ link: formatPaymentLinkResponse(link) }, { status: 200 });
             }
         }
 
@@ -198,7 +238,7 @@ export async function POST(request: Request) {
         const [merchantRes, countRes] = await Promise.all([
             supabase
                 .from("merchants")
-                .select("tier")
+                .select("tier, payout_destination")
                 .eq("wallet_address", merchantAddress.toLowerCase())
                 .maybeSingle(),
             supabase
@@ -212,6 +252,10 @@ export async function POST(request: Request) {
         if (merchantRes.error) {
             console.error("Error fetching merchant tier:", merchantRes.error.message);
             return NextResponse.json({ error: merchantRes.error.message }, { status: 500 });
+        }
+
+        if (auth.apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
+            return merchantPayoutWalletMissingResponse();
         }
 
         const tier = merchantRes.data ? merchantRes.data.tier : "FREE";
@@ -245,6 +289,7 @@ export async function POST(request: Request) {
                 external_reference: external_reference || null,
                 idempotency_key: idempotency_key || null,
                 merchant_name_snapshot: merchant_name || null,
+                receipt_token: generateReceiptId(title),
                 max_uses: maxUses
             })
             .select()
@@ -255,7 +300,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ link: newLink }, { status: 201 });
+        return NextResponse.json({ link: formatPaymentLinkResponse(newLink), sandbox: isSandboxRequest }, { status: 201 });
 
     } catch (error: any) {
         console.error("Payment links POST error:", error);

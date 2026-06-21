@@ -862,7 +862,7 @@ export default function PayrollPage() {
                                                     </p>
                                                 </div>
                                                 <Link
-                                                    href="/merchant?upgrade=true"
+                                                    href="/merchant/upgrade"
                                                     className="px-8 py-3 bg-[#d4a853] hover:bg-[#d4a853]/80 text-black rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(212,168,83,0.2)] font-sans"
                                                 >
                                                     <Crown className="w-4 h-4" />

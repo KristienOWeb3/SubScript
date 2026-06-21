@@ -176,6 +176,7 @@ export default function UserDashboard() {
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
   const [selectedDmPeer, setSelectedDmPeer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -400,30 +401,37 @@ export default function UserDashboard() {
     }
   };
 
+  const redirectTo = useCallback((url: string, message: string) => {
+    setRedirectMessage(message);
+    setLoading(false);
+    router.replace(url);
+  }, [router]);
+
   const verifySession = useCallback(async () => {
     try {
+      setRedirectMessage(null);
       const res = await fetch("/api/auth/session");
       const data = await res.json();
       if (!data.loggedIn) {
-        window.location.href = getDashboardUrl("USER", "/signup");
+        redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
         return;
       }
 
       if (!data.role) {
-        window.location.href = getDashboardUrl("USER", "/signup");
+        redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
         return;
       }
 
       if (data.role !== "USER") {
         console.warn("Unauthorized role for user dashboard, redirecting to merchant dashboard");
-        window.location.href = getDashboardUrl("ENTERPRISE", "/merchant");
+        redirectTo(getDashboardUrl("ENTERPRISE", "/merchant"), "Redirecting to merchant dashboard...");
         return;
       }
 
       if (accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
         console.warn("Session wallet mismatch, logging out");
         await fetch("/api/auth/logout", { method: "POST" });
-        window.location.href = "/signup";
+        redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
         return;
       }
 
@@ -432,11 +440,11 @@ export default function UserDashboard() {
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
-      window.location.href = getDashboardUrl("USER", "/signup");
+      redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
     } finally {
       setLoading(false);
     }
-  }, [router, accountAddress]);
+  }, [accountAddress, redirectTo]);
 
   useEffect(() => {
     verifySession();
@@ -470,7 +478,7 @@ export default function UserDashboard() {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     disconnect();
-    window.location.href = getDashboardUrl("USER", "/signup");
+    redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
   };
 
   const copyAddress = async () => {
@@ -936,6 +944,28 @@ export default function UserDashboard() {
             <div className="h-12 w-12 bg-white/10 rounded-full animate-pulse shrink-0" />
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (redirectMessage) {
+    return (
+      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
+        <AnimatedGradientBg />
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
+          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+          <div className="space-y-2">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">{redirectMessage}</p>
+            <p className="text-xs leading-5 text-white/50">If this takes more than a moment, use the button below.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.replace(getDashboardUrl("USER", "/signup"))}
+            className="subscript-primary-button w-full"
+          >
+            Go to Sign Up
+          </button>
+        </div>
       </div>
     );
   }

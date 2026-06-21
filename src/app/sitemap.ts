@@ -16,6 +16,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
             priority: 0.9,
         },
         {
+            url: `${baseUrl}/answers`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.9,
+        },
+        {
+            url: `${baseUrl}/compare`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.85,
+        },
+        {
             url: `${baseUrl}/signup`,
             lastModified: new Date(),
             changeFrequency: "weekly",

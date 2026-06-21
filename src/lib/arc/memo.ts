@@ -46,9 +46,10 @@ export function slugifyReceiptTitle(title: string) {
 }
 
 export function generateReceiptId(title: string) {
-    const suffix = crypto.getRandomValues(new Uint8Array(2));
-    const hex = Array.from(suffix, (byte) => byte.toString(16).padStart(2, "0")).join("");
-    return `${slugifyReceiptTitle(title)}-${hex}`;
+    void title;
+    const token = crypto.getRandomValues(new Uint8Array(16));
+    const hex = Array.from(token, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `rcpt-${hex}`;
 }
 
 export const ROUTER_DEPOSIT_ABI = [
@@ -94,7 +95,7 @@ export function receiptUrl(receiptId: string, _origin?: string | null) {
 }
 
 export function isReceiptId(value: unknown): value is string {
-    return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9-]{2,80}$/.test(value);
+    return typeof value === "string" && /^rcpt-[0-9a-f]{32}$/.test(value);
 }
 
 export function asHex(value: string): Hex {

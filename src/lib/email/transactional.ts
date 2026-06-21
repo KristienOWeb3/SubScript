@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { pgMaybeOne } from "@/lib/serverPg";
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
 type EmailMessage = {
     to: string;
@@ -47,6 +48,19 @@ function formatUsdc(value: bigint | string | number) {
 async function sendTransactionalEmail(message: EmailMessage) {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
+
+    assertProviderRateLimit({
+        provider: "resend",
+        key: "global",
+        limit: 120,
+        windowMs: 60 * 1000,
+    });
+    assertProviderRateLimit({
+        provider: "resend",
+        key: `recipient:${message.to.toLowerCase()}`,
+        limit: 5,
+        windowMs: 60 * 60 * 1000,
+    });
 
     const resend = new Resend(apiKey);
     const response = await resend.emails.send({

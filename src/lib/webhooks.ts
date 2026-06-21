@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
+import { validateWebhookUrl } from "@/lib/webhookUrls";
 
 function formatUsdc(value: bigint | string | number) {
     const amount = typeof value === "bigint" ? value : BigInt(value);
@@ -16,16 +18,23 @@ export function createPaymentSucceededWebhook(args: {
     receiptId: string | null;
     txHash: string;
 }) {
+    const amountPaid = formatUsdc(args.amountUsdc);
     return {
         id: `evt_payment_${args.paymentId}`,
-        event: "payment.succeeded",
+        event: "payment.success",
+        type: "payment.succeeded",
         created: Math.floor(Date.now() / 1000),
         data: {
+            intent_id: args.checkoutSessionId,
             checkout_session_id: args.checkoutSessionId,
+            merchantReference: args.merchantReference,
             merchant_reference: args.merchantReference,
-            amount_paid: formatUsdc(args.amountUsdc),
+            amount: amountPaid,
+            amount_paid: amountPaid,
             currency: "USDC",
+            receiptId: args.receiptId,
             receipt_id: args.receiptId,
+            txHash: args.txHash,
             transaction_hash: args.txHash,
         },
     };
@@ -51,7 +60,23 @@ export async function sendWebhookRequest(
     const signatureHeader = `t=${timestamp},v1=${signature}`;
     
     try {
-        const response = await fetch(url, {
+        const urlValidation = validateWebhookUrl(url);
+        if (!urlValidation.ok) {
+            return {
+                status: 400,
+                responseText: urlValidation.error,
+            };
+        }
+
+        const destinationHost = new URL(urlValidation.url).host.toLowerCase();
+        assertProviderRateLimit({
+            provider: "webhook-dispatch",
+            key: destinationHost,
+            limit: 120,
+            windowMs: 60 * 1000,
+        });
+
+        const response = await fetch(urlValidation.url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",

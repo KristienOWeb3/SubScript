@@ -186,11 +186,12 @@ export default function SignupPage() {
           setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; this email cannot create another account.");
           return;
         }
-        setOtpError("An account with this email already exists. Redirecting to Sign In...");
-        setTimeout(() => {
-          router.push(`/signin?email=${encodeURIComponent(email)}`);
-        }, 2000);
-        return;
+        if (checkData.onboardingComplete === false) {
+          setOtpError("This email already started signup but has not chosen an account type yet. Sending a verification code so you can finish setup.");
+        } else {
+          setOtpError("An account with this email already exists. Use Sign In below to access it.");
+          return;
+        }
       }
 
       // 2. Send OTP
@@ -274,10 +275,7 @@ export default function SignupPage() {
       });
       const checkData = await checkRes.json();
       if (checkData.exists) {
-        setSiweError("This wallet already has an account. Redirecting to Sign In...");
-        setTimeout(() => {
-          router.push("/signin");
-        }, 2000);
+        setSiweError("This wallet already has an account. Use Sign In below to access it.");
         return;
       }
 

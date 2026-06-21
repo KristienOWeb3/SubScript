@@ -695,7 +695,7 @@ export default function DashboardPage() {
     const [subName, setSubName] = useState("AI Agent Compute Limit");
     const [subCap, setSubCap] = useState("150.00");
     const [subInterval, setSubInterval] = useState("monthly");
-    const [subChain, setSubChain] = useState("base");
+    const [subChain, setSubChain] = useState("arc");
 
     const fetchPaymentLinks = async () => {
         setIsLinksLoading(true);
@@ -1884,31 +1884,21 @@ export default function DashboardPage() {
     };
 
     const merchantWalletAddress = activeMerchantAddress || "";
-    const billingPeriodSeconds = useMemo(() => {
-        if (subInterval === "weekly") return "604800";
-        if (subInterval === "yearly") return "31536000";
-        return "2592000";
-    }, [subInterval]);
+    const checkoutCode = useMemo(() => `import { SubScriptCheckoutButton } from "@/components/subscript/SubScriptCheckoutButton";
 
-    const activeKeyForSnippet = apiKeys.find(k => !k.revoked);
-    const publishableKeyForSnippet = activeKeyForSnippet ? activeKeyForSnippet.publishableKey : "pk_test_YOUR_PUBLISHABLE_KEY";
-
-    const checkoutCode = useMemo(() => `<SubScriptCheckout
-  publishableKey="${publishableKeyForSnippet}"
-  merchantAddress="${merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS"}"
-  planName="${subName}"
-  amountCap="${subCap}"
-  interval="${subInterval}"
-  fundingChain="${subChain}"
-  mode="${promptFlowMode}"
-/>`, [merchantWalletAddress, subCap, subChain, subInterval, subName, publishableKeyForSnippet, promptFlowMode]);
+<SubScriptCheckoutButton
+  amountUsdc="${subCap}"
+  title="${subName}"
+  description="${subInterval} access"
+  externalReference="user_or_order_id"
+/>`, [subCap, subInterval, subName]);
 
     const agentIntegrationPrompt = useMemo(() => {
         return `I want to integrate the SubScript Protocol into this codebase.
 Please inspect the workspace. If the initialization package has NOT been run yet, please run it in the terminal first:
 npx @subscript-protocol/create
 
-This initialization tool automatically installs the SubScript SDK, prompts for deployment parameters, sets up environment variables in .env.local, configures .cursorrules, and scaffolds a boilerplate webhook route.
+This initialization tool installs the SubScript SDK, prompts for deployment parameters, writes SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET into .env.local, configures .cursorrules, and scaffolds both a server-side checkout intent route and a signed webhook route.
 
 Once initialized, read .env.local and the .cursorrules file to find the plan parameters (merchant wallet address, plan name, plan cap, interval) and target framework.
 
@@ -1918,9 +1908,11 @@ Here are my project configuration specifications for this integration:
 - Session Persistence Mechanism: ${sessionProvider === "none" ? "None / Detect session pattern or recommend HTTP secure cookies or JWT" : sessionProvider}
 
 Please complete the following implementation tasks:
-1. Webhook Fulfillment: Locate the generated webhook route (e.g., src/app/api/webhooks/subscript/route.ts or express handler). Implement database order fulfillment and subscription state tracking using the selected database provider (${dbProvider === "none" ? "detected database" : dbProvider}). Ensure webhook signature verification is enabled and write robust idempotency checks using the event's paymentLinkId.
-2. User Authentication & Wallet Session: If the project lacks a Web3 login button, implement the selected wallet connection method (${walletProvider === "none" ? "standard Web3 connection" : walletProvider}) in the client-side UI. Set up session recreation/persistence using the selected session engine (${sessionProvider === "none" ? "standard session mechanism" : sessionProvider}) so that the frontend can dynamically identify if the logged-in user has an active, paid subscription. Ensure that the wallet connection is configured to the Arc Testnet for all payment transactions and contract interactions (Chain ID: 5042002, RPC URL: https://rpc.testnet.arc.network).
-3. Clean Code Practices: Ensure that all code comments use block formatting (/* ... */) exclusively. Never use double-slash comments. Do not add emojis in comments or logs.`;
+1. Checkout Intent Creation: Locate the generated server route (for example, src/app/api/subscript/checkout/route.ts). From the pricing page, call that route with amountUsdc, title, description, externalReference, and an idempotencyKey. Store the returned intentId beside the logged-in user/order/subscription before redirecting the user to checkoutUrl.
+2. Webhook Fulfillment: Locate the generated webhook route (for example, src/app/api/webhooks/subscript/route.ts or an Express router). Keep raw-body x-subscript-signature verification enabled. When event === "payment.success", use data.intent_id or data.checkout_session_id to find the local record, enforce idempotency with event.id, and unlock the matching plan exactly once using ${dbProvider === "none" ? "the detected database" : dbProvider}.
+3. User Session: Set up session recreation/persistence using ${sessionProvider === "none" ? "HTTP-only secure cookies or JWT" : sessionProvider} so the frontend can determine whether the logged-in user has an active paid subscription. Do not ask my app to know the payer wallet; SubScript maps wallet payment activity to the Checkout Intent.
+4. Payment Rail Boundary: Treat hosted checkout as Arc-native USDC only. Do not add Base, Solana, or CCTP checkout claims unless the SubScript docs in this repo explicitly say hosted CCTP memo settlement is live.
+5. Clean Code Practices: Keep SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET server-side only. Do not add emojis in comments or logs.`;
     }, [walletProvider, dbProvider, sessionProvider]);
 
     const cursorMcpConfig = useMemo(() => JSON.stringify({
@@ -3452,76 +3444,95 @@ Please complete the following implementation tasks:
                                                 </p>
                                             </div>
 
-                                            <div className="space-y-3">
-                                                <div className="flex gap-3">
-                                                    <div className="relative flex-1">
-                                                        <input
-                                                            type={showViewKey ? "text" : "password"}
-                                                            value={viewKey}
-                                                            readOnly
-                                                            placeholder="Click generate to create a View Key"
-                                                            className="w-full bg-black border border-white/10 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-white focus:outline-none placeholder:text-white/20"
-                                                        />
-                                                        {viewKey && (
-                                                            <button
-                                                                onClick={() => setShowViewKey(!showViewKey)}
-                                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-all"
-                                                            >
-                                                                {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    {viewKey ? (
+                                            <div className="flex gap-3">
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        type={showViewKey ? "text" : "password"}
+                                                        value={viewKey}
+                                                        readOnly
+                                                        disabled={!isPremium}
+                                                        placeholder="Click generate to create a View Key"
+                                                        className={`w-full bg-black border border-white/10 rounded-xl pl-4 pr-10 py-3 text-xs font-mono text-white focus:outline-none placeholder:text-white/20 ${
+                                                            !isPremium ? "opacity-50 cursor-not-allowed" : ""
+                                                        }`}
+                                                    />
+                                                    {viewKey && (
                                                         <button
-                                                            onClick={handleCopyViewKey}
-                                                            className="px-4 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all flex items-center justify-center animate-none"
+                                                            onClick={() => setShowViewKey(!showViewKey)}
+                                                            disabled={!isPremium}
+                                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
-                                                            {copiedViewKey ? <Check className="w-4 h-4 text-[#00d2b4]" /> : <Copy className="w-4 h-4" />}
+                                                            {showViewKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                         </button>
-                                                    ) : (
+                                                    )}
+                                                </div>
+                                                
+                                                {viewKey ? (
+                                                    <button
+                                                        onClick={handleCopyViewKey}
+                                                        disabled={!isPremium}
+                                                        className="px-4 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all flex items-center justify-center animate-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {copiedViewKey ? <Check className="w-4 h-4 text-[#00d2b4]" /> : <Copy className="w-4 h-4" />}
+                                                    </button>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        {!isPremium && <Lock className="w-3.5 h-3.5 text-white/45" />}
                                                         <button
                                                             onClick={handleGenerateViewKey}
-                                                            className="px-5 py-3 bg-[#d4a853]/10 hover:bg-[#d4a853]/20 border border-[#d4a853]/30 text-[#d4a853] font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-2"
+                                                            disabled={!isPremium}
+                                                            className={`px-5 py-3 border text-xs font-bold rounded-xl uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                                !isPremium 
+                                                                    ? "bg-white/5 border-white/10 text-white/40 cursor-not-allowed" 
+                                                                    : "bg-[#d4a853]/10 hover:bg-[#d4a853]/20 border-[#d4a853]/30 text-[#d4a853]"
+                                                            }`}
                                                         >
                                                             <Key className="w-3.5 h-3.5" />
                                                             Generate
                                                         </button>
-                                                    )}
-                                                </div>
-
-                                                {viewKey && !isViewKeyRegistered && (
-                                                    <div className="flex items-center justify-between pt-2">
-                                                        <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
-                                                            <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
-                                                        </span>
-                                                        <button
-                                                            onClick={handleSaveConfidentiality}
-                                                            disabled={isSavingConfidentiality}
-                                                            className="px-5 py-2.5 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                                                        >
-                                                            {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                                                            Register Key
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                {isViewKeyRegistered && (
-                                                    <div className="flex items-center justify-between pt-2">
-                                                        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                                                            <CheckCircle className="w-3.5 h-3.5" /> View Key is active and registered
-                                                        </span>
-                                                        <button
-                                                            onClick={handleSaveConfidentiality}
-                                                            disabled={isSavingConfidentiality}
-                                                            className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                                                        >
-                                                            {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                                            Update Settings
-                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {viewKey && !isViewKeyRegistered && (
+                                                <div className="flex items-center justify-between pt-2">
+                                                    <span className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3" /> Key generated but not registered on-chain
+                                                    </span>
+                                                    <button
+                                                        onClick={handleSaveConfidentiality}
+                                                        disabled={isSavingConfidentiality || !isPremium}
+                                                        className={`px-5 py-2.5 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                            !isPremium 
+                                                                ? "bg-white/5 border border-white/10 text-white/40 cursor-not-allowed" 
+                                                                : "bg-[#d4a853] text-black hover:brightness-110"
+                                                        }`}
+                                                    >
+                                                        {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                                        Register Key
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {isViewKeyRegistered && (
+                                                <div className="flex items-center justify-between pt-2">
+                                                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                                                        <CheckCircle className="w-3.5 h-3.5" /> View Key is active and registered
+                                                    </span>
+                                                    <button
+                                                        onClick={handleSaveConfidentiality}
+                                                        disabled={isSavingConfidentiality || !isPremium}
+                                                        className={`px-4 py-2 font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                                            !isPremium 
+                                                                ? "bg-white/5 border border-white/10 text-white/40 cursor-not-allowed" 
+                                                                : "bg-white/5 border border-white/10 hover:bg-white/10 text-white"
+                                                        }`}
+                                                    >
+                                                        {isSavingConfidentiality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                                        Update Settings
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -3903,15 +3914,13 @@ Please complete the following implementation tasks:
                                         {showCheckoutAdvanced && (
                                             <div className="pt-3 border-t border-white/5 space-y-4">
                                                 <div>
-                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Funding Chain</label>
+                                                    <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Settlement Rail</label>
                                                     <select 
                                                         value={subChain}
                                                         onChange={(e) => setSubChain(e.target.value)}
                                                         className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans text-xs"
                                                     >
-                                                        <option value="base">Base (CCTP Auto-Routing)</option>
-                                                        <option value="solana">Solana (CCTP Auto-Routing)</option>
-                                                        <option value="arc">Arc Network (Native)</option>
+                                                        <option value="arc">Arc Network (Hosted checkout live)</option>
                                                     </select>
                                                 </div>
                                                 <div>

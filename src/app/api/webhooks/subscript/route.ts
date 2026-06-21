@@ -44,14 +44,20 @@ export async function POST(request: Request) {
 
         /* Retrieve raw body text to maintain exact byte alignment for hashing */
         const rawBody = await request.text();
-        const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
+        const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET;
+        if (!secret) {
+            console.error("[Webhook Configuration Error] SUBSCRIPT_WEBHOOK_SECRET is not configured.");
+            return NextResponse.json({ error: "Internal Server Error: Webhook secret is not configured" }, { status: 500 });
+        }
 
         const signaturePayload = `${t}.${rawBody}`;
         const hmac = crypto.createHmac("sha256", secret);
         hmac.update(signaturePayload);
         const computedSignature = hmac.digest("hex");
 
-        if (computedSignature !== v1) {
+        const receivedBuffer = Buffer.from(v1, "hex");
+        const expectedBuffer = Buffer.from(computedSignature, "hex");
+        if (receivedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)) {
             return NextResponse.json({ error: "Unauthorized: Signature mismatch" }, { status: 401 });
         }
 

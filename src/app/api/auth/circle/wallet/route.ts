@@ -41,15 +41,13 @@ export async function POST(request: Request) {
 
         if (authIntent === "signup" && existingRole) {
             return NextResponse.json({
-                error: "An account with this Google email already exists. Continue from Sign In.",
-                redirectTo: `/signin?email=${encodeURIComponent(email)}`,
+                error: "An account with this Google email already exists. Use Sign In to access it.",
             }, { status: 409 });
         }
 
-        if (authIntent === "signin" && !existingRole) {
+        if (authIntent === "signin" && !existingWallet) {
             return NextResponse.json({
-                error: "No SubScript account exists for this Google email yet. Create one from Sign Up.",
-                redirectTo: `/signup?email=${encodeURIComponent(email)}`,
+                error: "No completed SubScript account exists for this Google email yet. Use Sign Up to create one.",
             }, { status: 404 });
         }
 
@@ -58,6 +56,7 @@ export async function POST(request: Request) {
                 requiresChallenge: false,
                 email,
                 role: existingRole?.role || null,
+                onboardingComplete: Boolean(existingRole?.role),
             });
         }
 

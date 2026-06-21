@@ -112,6 +112,15 @@ export async function POST(request: Request) {
         const isCctp = Number(chainId) in CCTP_CONFIG;
         const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
 
+        if (isCctp) {
+            return NextResponse.json(
+                {
+                    error: "CCTP checkout verification is not enabled for hosted payment links yet. Use direct Arc payment so the on-chain DepositWithMemo event binds merchant, amount, and receipt token.",
+                },
+                { status: 400 }
+            );
+        }
+
         if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
             return NextResponse.json({ error: "Bad Request: Missing or invalid txHash" }, { status: 400 });
         }

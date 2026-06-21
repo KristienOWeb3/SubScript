@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Redis } from "@upstash/redis";
+import { Redis } from "@upstash/redis/cloudflare";
 import { Ratelimit } from "@upstash/ratelimit";
 
 /* Initialize Upstash Redis REST client */
@@ -47,6 +47,122 @@ const cliTelemetryLimiter = new Ratelimit({
     analytics: true,
     prefix: "ratelimit:cli:telemetry",
 });
+
+/* In-memory rate limiting fallbacks & burst prevention */
+const memoryBans = new Map<string, number>(); // ip -> ban expiration timestamp
+const memoryViolations = new Map<string, number[]>(); // ip -> array of rate limit violation timestamps
+const memoryBurstLimiter = new Map<string, number[]>(); // ip -> timestamps within the last 10s
+
+class MemoryLimiter {
+    private store = new Map<string, number[]>();
+    private windowMs: number;
+    private maxRequests: number;
+
+    constructor(windowMs: number, maxRequests: number) {
+        this.windowMs = windowMs;
+        this.maxRequests = maxRequests;
+    }
+
+    limit(ip: string): boolean {
+        const now = Date.now();
+        let timestamps = this.store.get(ip) || [];
+        timestamps = timestamps.filter(t => now - t < this.windowMs);
+        if (timestamps.length >= this.maxRequests) {
+            return false;
+        }
+        timestamps.push(now);
+        this.store.set(ip, timestamps);
+        return true;
+    }
+}
+
+const authMemoryLimiter = new MemoryLimiter(60 * 1000, 20);
+const globalMemoryLimiter = new MemoryLimiter(60 * 1000, 150);
+const cliCreateSessionMemoryLimiter = new MemoryLimiter(60 * 1000, 60);
+const cliValidateSessionMemoryLimiter = new MemoryLimiter(60 * 1000, 180);
+const cliTelemetryMemoryLimiter = new MemoryLimiter(60 * 1000, 600);
+
+function createNonce() {
+    const nonceSource = crypto.randomUUID();
+    return btoa(nonceSource);
+}
+
+function createContentSecurityPolicy(nonce: string) {
+    return [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+        "form-action 'self'",
+        `script-src 'self' 'nonce-${nonce}' https://www.google.com https://www.gstatic.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com`,
+        `style-src 'self' 'nonce-${nonce}'`,
+        "style-src-attr 'unsafe-inline'",
+        "img-src 'self' data: blob: https://subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network",
+        "font-src 'self' data:",
+        "connect-src 'self' https://subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com wss://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com https://rpc.testnet.arc.network wss://ws.testnet.arc.network https://explorer.arc.network https://explorer.testnet.arc.network https://ethereum-rpc.publicnode.com https://ethereum-sepolia-rpc.publicnode.com https://rpc.ankr.com https://sepolia.gateway.tenderly.co https://1rpc.io https://5042002.rpc.thirdweb.com https://jkrlsjpsytzffwjpixue.supabase.co",
+        "frame-src 'self' https://www.google.com https://auth.privy.io https://relay.walletconnect.com https://api.circle.com",
+        "worker-src 'self' blob:",
+        "manifest-src 'self'",
+    ].join("; ");
+}
+
+function checkBurstLimit(ip: string): boolean {
+    const now = Date.now();
+    const windowMs = 10 * 1000; // 10 seconds
+    const maxBurst = 25; // Max 25 requests per 10 seconds per IP (protects Redis and backend from spikes)
+    
+    let timestamps = memoryBurstLimiter.get(ip) || [];
+    timestamps = timestamps.filter(t => now - t < windowMs);
+    
+    if (timestamps.length >= maxBurst) {
+        return false;
+    }
+    
+    timestamps.push(now);
+    memoryBurstLimiter.set(ip, timestamps);
+    return true;
+}
+
+function rateLimitResponse(message = "Too Many Requests") {
+    return new NextResponse(
+        JSON.stringify({ error: message }),
+        { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } }
+    );
+}
+
+async function handleRateLimitViolation(ip: string, isRedisConfigured: boolean) {
+    const violationWindowMs = 3600 * 1000; // 1 hour
+    const banDurationSeconds = 86400; // 24 hours
+    const maxViolationsBeforeBan = 5;
+    const now = Date.now();
+
+    if (isRedisConfigured) {
+        try {
+            const key = `violations:${ip}`;
+            const count = await redis.incr(key);
+            if (count === 1) {
+                await redis.expire(key, 3600);
+            }
+            if (count >= maxViolationsBeforeBan) {
+                await redis.setex(`ban:${ip}`, banDurationSeconds, "true");
+                console.warn(`[Rate Limit] IP ${ip} dynamically banned in Redis for 24 hours due to repeated rate limit violations.`);
+            }
+        } catch (err) {
+            console.error("Error updating rate limit violations in Redis:", err);
+        }
+    }
+
+    // In-memory tracking fallback
+    let list = memoryViolations.get(ip) || [];
+    list = list.filter(t => now - t < violationWindowMs);
+    list.push(now);
+    memoryViolations.set(ip, list);
+
+    if (list.length >= maxViolationsBeforeBan) {
+        memoryBans.set(ip, now + banDurationSeconds * 1000);
+        console.warn(`[Rate Limit] IP ${ip} temporarily banned in-memory for 24 hours.`);
+    }
+}
 
 /* Define strict payload size limit: 1MB in bytes */
 const MAX_PAYLOAD_SIZE = 1048576;
@@ -121,6 +237,11 @@ export async function middleware(request: NextRequest) {
     }
 
     const requestHeaders = new Headers(request.headers);
+    const nonce = createNonce();
+    const contentSecurityPolicy = createContentSecurityPolicy(nonce);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+
     const country = (request as any).geo?.country || request.headers.get("x-vercel-ip-country") || request.headers.get("cf-ipcountry") || "US";
     requestHeaders.set("x-user-country", country);
 
@@ -141,10 +262,54 @@ export async function middleware(request: NextRequest) {
     /* Apply rate limiting only to API endpoints */
     if (pathname.startsWith("/api")) {
         /* Read user's IP address */
-        const ip = (request as any).ip || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1";
+        const ip = (request as NextRequest & { ip?: string }).ip || request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1";
 
-        /* If Upstash Redis is not configured, bypass rate limiting (fail-open) */
+        /* 1. Env-based IP Ban Check */
+        const bannedIpsStr = process.env.BANNED_IPS || "";
+        const bannedIps = bannedIpsStr.split(",").map(item => item.trim());
+        if (bannedIps.includes(ip)) {
+            return new NextResponse(
+                JSON.stringify({ error: "Access Denied: Banned IP" }),
+                { status: 403, headers: { "Content-Type": "application/json" } }
+            );
+        }
+
+        /* 2. In-Memory IP Ban Check */
+        const banExpiry = memoryBans.get(ip);
+        if (banExpiry && banExpiry > Date.now()) {
+            return new NextResponse(
+                JSON.stringify({ error: "Access Denied: Banned IP" }),
+                { status: 403, headers: { "Content-Type": "application/json" } }
+            );
+        }
+
         const isRedisConfigured = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+
+        /* 3. Memory-based burst protection check before Redis so Redis cannot be hammered. */
+        if (!checkBurstLimit(ip)) {
+            await handleRateLimitViolation(ip, isRedisConfigured);
+            return rateLimitResponse("Too Many Requests (Burst limit exceeded)");
+        }
+
+        /* 4. Redis IP Ban Check */
+        if (isRedisConfigured) {
+            try {
+                const isBanned = await redis.get(`ban:${ip}`);
+                if (isBanned) {
+                    // Cache the ban in memory as well to avoid future redis queries
+                    memoryBans.set(ip, Date.now() + 3600 * 1000); // 1 hour memory cache
+                    return new NextResponse(
+                        JSON.stringify({ error: "Access Denied: Banned IP" }),
+                        { status: 403, headers: { "Content-Type": "application/json" } }
+                    );
+                }
+            } catch (err) {
+                console.error("Error checking IP ban in Redis:", err);
+            }
+        }
+
+        let rateLimitPassed = true;
+        let useMemoryFallback = !isRedisConfigured;
 
         if (isRedisConfigured) {
             try {
@@ -152,20 +317,10 @@ export async function middleware(request: NextRequest) {
                 if (pathname === "/api/cli/session") {
                     const limiter = request.method === "POST" ? cliSessionCreateLimiter : cliSessionValidateLimiter;
                     const { success } = await limiter.limit(ip);
-                    if (!success) {
-                        return new NextResponse(
-                            JSON.stringify({ error: "Too Many Requests" }),
-                            { status: 429, headers: { "Content-Type": "application/json" } }
-                        );
-                    }
+                    rateLimitPassed = success;
                 } else if (pathname === "/api/cli/analytics") {
                     const { success } = await cliTelemetryLimiter.limit(ip);
-                    if (!success) {
-                        return new NextResponse(
-                            JSON.stringify({ error: "Too Many Requests" }),
-                            { status: 429, headers: { "Content-Type": "application/json" } }
-                        );
-                    }
+                    rateLimitPassed = success;
                 } else {
                     /* Existing Web/Dashboard API Rate Limiting */
                     const isAuthRoute =
@@ -176,37 +331,67 @@ export async function middleware(request: NextRequest) {
                         pathname === "/api/auth/social";
 
                     if (isAuthRoute) {
-                        /* Execute the authLimiter rate limit check */
                         const { success } = await authLimiter.limit(ip);
-                        if (!success) {
-                            return new NextResponse(
-                                JSON.stringify({ error: "Too Many Requests" }),
-                                { status: 429, headers: { "Content-Type": "application/json" } }
-                            );
-                        }
+                        rateLimitPassed = success;
                     } else {
-                        /* Execute the globalLimiter rate limit check */
                         const { success } = await globalLimiter.limit(ip);
-                        if (!success) {
-                            return new NextResponse(
-                                JSON.stringify({ error: "Too Many Requests" }),
-                                { status: 429, headers: { "Content-Type": "application/json" } }
-                            );
-                        }
+                        rateLimitPassed = success;
                     }
                 }
             } catch (err) {
-                /* Fail-open on rate limiter error to prevent blocking users */
-                console.error("Rate limiting execution error:", err);
+                console.error("Redis rate limit check error, falling back to memory:", err);
+                useMemoryFallback = true;
+                rateLimitPassed = true;
             }
+        }
+
+        if (!rateLimitPassed) {
+            await handleRateLimitViolation(ip, isRedisConfigured);
+            return rateLimitResponse();
+        }
+
+        /* 5. In-Memory Fallback Rate Limiting (used only when Redis is unconfigured or errors) */
+        if (useMemoryFallback) {
+            if (pathname === "/api/cli/session") {
+                const limiter = request.method === "POST" ? cliCreateSessionMemoryLimiter : cliValidateSessionMemoryLimiter;
+                rateLimitPassed = limiter.limit(ip);
+            } else if (pathname === "/api/cli/analytics") {
+                rateLimitPassed = cliTelemetryMemoryLimiter.limit(ip);
+            } else {
+                const isAuthRoute =
+                    pathname === "/api/auth/login" ||
+                    pathname === "/api/auth/otp/verify" ||
+                    pathname === "/api/auth/verify-signature" ||
+                    pathname === "/api/auth/otp/send" ||
+                    pathname === "/api/auth/social";
+
+                const limiter = isAuthRoute ? authMemoryLimiter : globalMemoryLimiter;
+                rateLimitPassed = limiter.limit(ip);
+            }
+        }
+
+        if (!rateLimitPassed) {
+            await handleRateLimitViolation(ip, isRedisConfigured);
+            return rateLimitResponse();
+        }
+
+        if (pathname === "/api" || pathname === "/api/") {
+            const response = NextResponse.json({ error: "Not found" }, { status: 404 });
+            response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+            response.headers.set("X-Frame-Options", "DENY");
+            response.headers.set("X-Content-Type-Options", "nosniff");
+            response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+            return response;
         }
     }
 
-    return NextResponse.next({
+    const response = NextResponse.next({
         request: {
             headers: requestHeaders,
         },
     });
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+    return response;
 }
 
 export const config = {

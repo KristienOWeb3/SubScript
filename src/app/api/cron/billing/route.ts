@@ -7,7 +7,7 @@ import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
 
 const STANDARD_ABI = [
-    "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+    "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
     "function executePayment(uint256 _subId, uint256 _sequenceId) external",
     "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
     "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)"

@@ -22,6 +22,10 @@ async function checkMerchantPremium(supabase: any, walletAddress: string): Promi
     return merchant.tier === "PREMIUM";
 }
 
+function redactSecretKey(secretKey: string | null | undefined): string {
+    if (!secretKey) return "";
+    return `${secretKey.slice(0, 8)}...${secretKey.slice(-4)}`;
+}
 
 export async function GET(request: Request) {
     try {
@@ -52,7 +56,8 @@ export async function GET(request: Request) {
             id: k.id,
             walletAddress: k.wallet_address,
             publishableKey: k.publishable_key,
-            secretKeyPlain: k.secret_key_plain,
+            secretKeyPlain: redactSecretKey(k.secret_key_plain),
+            secretKeyAvailable: false,
             createdAt: k.created_at,
             revoked: k.revoked,
         }));
@@ -112,6 +117,7 @@ export async function POST(request: Request) {
             walletAddress: newKey.wallet_address,
             publishableKey: newKey.publishable_key,
             secretKeyPlain: newKey.secret_key_plain,
+            secretKeyAvailable: true,
             createdAt: newKey.created_at,
             revoked: newKey.revoked,
         };
@@ -173,7 +179,8 @@ export async function DELETE(request: Request) {
             id: updatedKey.id,
             walletAddress: updatedKey.wallet_address,
             publishableKey: updatedKey.publishable_key,
-            secretKeyPlain: updatedKey.secret_key_plain,
+            secretKeyPlain: redactSecretKey(updatedKey.secret_key_plain),
+            secretKeyAvailable: false,
             createdAt: updatedKey.created_at,
             revoked: updatedKey.revoked,
         };

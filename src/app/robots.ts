@@ -8,5 +8,6 @@ export default function robots(): MetadataRoute.Robots {
             disallow: ["/dashboard/", "/merchant/", "/user/", "/api/"],
         },
         sitemap: "https://subscriptonarc.com/sitemap.xml",
+        host: "https://subscriptonarc.com",
     };
 }

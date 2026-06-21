@@ -4,7 +4,8 @@ import { getSessionWallet } from "@/lib/auth";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { pgMaybeOne } from "@/lib/serverPg";
+import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
+import { generateReceiptId } from "@/lib/arc/memo";
 
 async function parseBody(request: Request) {
     try {
@@ -17,6 +18,7 @@ async function parseBody(request: Request) {
 export async function POST(request: Request) {
     try {
         let merchantAddress: string | null = null;
+        let apiKeyMode: ReturnType<typeof getSecretKeyMode> | null = null;
 
         // 1. Authenticate via Session or API Key
         const sessionWallet = await getSessionWallet(request.headers);
@@ -26,7 +28,8 @@ export async function POST(request: Request) {
             const authHeader = request.headers.get("Authorization");
             if (authHeader && authHeader.startsWith("Bearer ")) {
                 const secretKey = authHeader.substring(7).trim();
-                if (secretKey.startsWith("sk_test_")) {
+                apiKeyMode = getSecretKeyMode(secretKey);
+                if (apiKeyMode === "test" || apiKeyMode === "live") {
                     const keyRecord = await prisma.apiKey.findFirst({
                         where: { secretKeyPlain: secretKey, revoked: false }
                     });
@@ -55,8 +58,10 @@ export async function POST(request: Request) {
             externalReference,
             idempotencyKey,
             merchantName,
-            maxUses
+            maxUses,
+            sandbox
         } = body;
+        const isSandboxRequest = sandbox === true || apiKeyMode === "test";
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -92,6 +97,13 @@ export async function POST(request: Request) {
             });
             if (existing) {
                 const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
+                const receiptToken = existing.receiptToken || generateReceiptId(existing.title);
+                if (!existing.receiptToken) {
+                    await prisma.paymentLink.update({
+                        where: { id: existing.id },
+                        data: { receiptToken },
+                    });
+                }
                 return NextResponse.json({
                     success: true,
                     intent: {
@@ -102,10 +114,7 @@ export async function POST(request: Request) {
                         merchantAddress: existing.merchantAddress,
                         receiverAddress: existing.receiverAddress,
                         status: existing.status,
-                        receiptToken: (await pgMaybeOne<{ receipt_token: string }>(
-                            "select receipt_token from payment_links where id = $1",
-                            [existing.id]
-                        ))?.receipt_token || null,
+                        receiptToken,
                         checkoutUrl: `${origin}/pay/${existing.id}`
                     }
                 }, { status: 200 });
@@ -116,6 +125,9 @@ export async function POST(request: Request) {
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: merchantAddress }
         });
+        if (apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchant?.payoutDestination)) {
+            return merchantPayoutWalletMissingResponse();
+        }
         const tier = merchant?.tier || "FREE";
 
         const activeCount = await prisma.paymentLink.count({
@@ -163,6 +175,7 @@ export async function POST(request: Request) {
                 externalReference: externalReference || null,
                 idempotencyKey: idempotencyKey || null,
                 merchantNameSnapshot: merchantName || null,
+                receiptToken: generateReceiptId(title),
                 maxUses: parsedMaxUses,
                 receiverAddress,
                 receiverPrivateKey: encryptedKey,
@@ -183,12 +196,10 @@ export async function POST(request: Request) {
                 merchantAddress: newLink.merchantAddress,
                 receiverAddress: newLink.receiverAddress,
                 status: newLink.status,
-                receiptToken: (await pgMaybeOne<{ receipt_token: string }>(
-                    "select receipt_token from payment_links where id = $1",
-                    [newLink.id]
-                ))?.receipt_token || null,
+                receiptToken: newLink.receiptToken,
                 checkoutUrl: `${origin}/pay/${newLink.id}`
-            }
+            },
+            sandbox: isSandboxRequest
         }, { status: 201 });
 
     } catch (error: any) {

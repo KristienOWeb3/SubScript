@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
 export interface CaptchaData {
     code: string;
@@ -96,6 +97,13 @@ export async function verifyCaptchaToken(
     }
     
     try {
+        assertProviderRateLimit({
+            provider: "captcha-verification",
+            key: "global",
+            limit: 300,
+            windowMs: 60 * 1000,
+        });
+
         const secret = process.env.RECAPTCHA_SECRET_KEY || "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe";
         const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
             method: "POST",

@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
+
+export const dynamic = "force-dynamic";
 
 const inter = Inter({
     subsets: ["latin"],
@@ -30,7 +33,9 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL
         ? `https://${process.env.VERCEL_URL}`
         : "https://subscriptonarc.com";
 
-const siteDescription = "SubScript is an Arc Network payment protocol for programmable USDC subscriptions, checkout intents, human-readable receipts, privacy-aware billing, and Google-powered wallet onboarding.";
+const siteDescription = "SubScript is an Arc Network payment protocol for programmable USDC subscriptions, checkout intents, metered vault billing, human-readable receipts, privacy-aware billing, and Google-powered wallet onboarding.";
+const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
+const bingSiteVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 
 const structuredData = {
     "@context": "https://schema.org",
@@ -43,6 +48,16 @@ const structuredData = {
             logo: `${appUrl}/logo.png`,
             description: siteDescription,
             sameAs: ["https://x.com/subscript"],
+            knowsAbout: [
+                "Arc Network",
+                "USDC subscriptions",
+                "stablecoin checkout",
+                "crypto recurring billing",
+                "payment links",
+                "metered billing",
+                "merchant webhooks",
+                "human-readable crypto receipts",
+            ],
         },
         {
             "@type": "SoftwareApplication",
@@ -67,6 +82,14 @@ const structuredData = {
                 "Privacy-aware receipt access for payer, merchant, and SubScript",
                 "Webhook delivery with HMAC signatures",
                 "No-code payment links and QR checkout",
+                "Usage-based billing with prepaid metered vaults",
+                "Sponsored subscriptions for teams and families",
+            ],
+            sameAs: [
+                `${appUrl}/answers`,
+                `${appUrl}/compare`,
+                `${appUrl}/docs`,
+                `${appUrl}/llms.txt`,
             ],
             creator: {
                 "@id": `${appUrl}/#organization`,
@@ -101,6 +124,11 @@ export const metadata: Metadata = {
         "stablecoin checkout",
         "crypto recurring billing",
         "payment links",
+        "metered billing",
+        "usage based billing",
+        "prepaid vaults",
+        "sponsored subscriptions",
+        "SubScript DNS",
         "Circle wallet",
         "Continue with Google wallet",
         "human readable crypto receipts",
@@ -152,7 +180,8 @@ export const metadata: Metadata = {
         images: [`${appUrl}/og.png`],
     },
     verification: {
-        google: "google-site-verification-placeholder",
+        google: googleSiteVerification,
+        other: bingSiteVerification ? { "msvalidate.01": bingSiteVerification } : undefined,
     },
     icons: {
         icon: [
@@ -163,15 +192,18 @@ export const metadata: Metadata = {
     },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
     children,
 }: Readonly<{
     children: React.ReactNode;
 }>) {
+    const nonce = (await headers()).get("x-nonce") || undefined;
+
     return (
         <html lang="en">
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
+                    nonce={nonce}
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
                 />

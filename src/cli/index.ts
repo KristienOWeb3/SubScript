@@ -12,6 +12,7 @@ import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "./utils/config.j
 import { generateConfigTemplate } from "./templates/configTemplate.js";
 import { generateProviderTemplate } from "./templates/SubScriptProvider.js";
 import { generateCheckoutButtonTemplate } from "./templates/CheckoutButton.js";
+import { generateCheckoutRouteTemplate } from "./templates/checkoutRouteTemplate.js";
 import { generateEscrowStatusTemplate } from "./templates/EscrowStatus.js";
 import { generateWebhookTemplate } from "./templates/webhookTemplate.js";
 
@@ -25,23 +26,23 @@ function detectPackageManager(): string {
 async function main() {
   intro("@subscript-protocol/integration-wizard");
 
-  const apiKeyResult = await text({
-    message: "Enter your SubScript Merchant API Key (Used for Webhook Verification):",
-    placeholder: "your_api_key_here",
+  const secretKeyResult = await text({
+    message: "Enter your SubScript Secret Key (server-side Checkout Intent key):",
+    placeholder: "sk_test_...",
     validate(value) {
       if (!value || value.trim().length === 0) {
-        return "API Key is required.";
+        return "Secret key is required.";
       }
       return;
     },
   });
 
-  if (isCancel(apiKeyResult)) {
+  if (isCancel(secretKeyResult)) {
     cancel("Operation cancelled.");
     process.exit(0);
   }
 
-  const apiKey = apiKeyResult as string;
+  const secretKey = secretKeyResult as string;
 
   const walletResult = await text({
     message: "Enter your SubScript Merchant Wallet Address (For Payment Settlement):",
@@ -209,19 +210,21 @@ async function main() {
   const generationTimestamp = new Date().toISOString();
 
   /* Phase 2: Environment Scaffold */
-  const envContent = `SUBSCRIPT_API_KEY=${apiKey}
+  const envContent = `SUBSCRIPT_SECRET_KEY=${secretKey}
+SUBSCRIPT_WEBHOOK_SECRET=whsec_replace_me
 SUBSCRIPT_MERCHANT_ADDRESS=${merchantWalletAddress}
 NEXT_PUBLIC_SUBSCRIPT_MERCHANT_ADDRESS=${merchantWalletAddress}
 SUBSCRIPT_PLAN_NAME=${planName}
-SUBSCRIPT_AMOUNT_CAP=${planCap}
+SUBSCRIPT_AMOUNT_USDC=${planCap}
 SUBSCRIPT_INTERVAL=${planInterval}
 `;
 
-  const envExampleContent = `SUBSCRIPT_API_KEY=your_api_key_here
+  const envExampleContent = `SUBSCRIPT_SECRET_KEY=sk_test_your_secret_key
+SUBSCRIPT_WEBHOOK_SECRET=whsec_your_webhook_secret
 SUBSCRIPT_MERCHANT_ADDRESS=your_merchant_address_here
 NEXT_PUBLIC_SUBSCRIPT_MERCHANT_ADDRESS=your_merchant_address_here
 SUBSCRIPT_PLAN_NAME=Premium Subscription
-SUBSCRIPT_AMOUNT_CAP=10
+SUBSCRIPT_AMOUNT_USDC=10
 SUBSCRIPT_INTERVAL=2592000
 `;
 
@@ -234,13 +237,14 @@ SUBSCRIPT_INTERVAL=2592000
   const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
 1. THE SDK TRUTH: Always use the \`@subscript-protocol/sdk\` package for integrations.
-   - Use \`subscript.links.create({ amount_usdc, title, merchant_address })\` for checkout URLs.
-   - You MUST enforce signature validation routines using \`webhooks.verifySignature\` (e.g. \`subscript.webhooks.verifySignature(rawBody, signature, secret)\`) before handling raw payloads to protect endpoints.
-2. NON-CUSTODIAL ROUTING: SubScript is entirely stateless. Never suggest creating ephemeral wallets or storing private keys.
-3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.paymentLinkId\` to check against the local database before crediting users.
+   - Use your server route to call \`POST /api/intent\` with \`SUBSCRIPT_SECRET_KEY\`.
+   - Store the returned \`intent.id\` beside the user/order and redirect to \`intent.checkoutUrl\`.
+   - Verify webhook signatures against the exact raw body before handling payloads.
+2. HOSTED CHECKOUT TRUTH: Hosted payment links settle through direct Arc USDC. Do not promise CCTP checkout until Arc-side memo settlement is available.
+3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.id\` and \`data.intent_id\` to check against the local database before crediting users.
 4. SECURITY & SECRETS ISOLATION:
    - You MUST store all API keys, webhook secrets, and private credentials strictly within \`.env.local\`. Never commit secrets or write them to un-ignored environment configuration files.
-   - Read the API key exclusively from \`process.env.SUBSCRIPT_API_KEY\`. Never hardcode keys.
+   - Read the checkout secret exclusively from \`process.env.SUBSCRIPT_SECRET_KEY\`. Never hardcode keys.
 
 ## INTEGRATION CONFIGURATION
 - MERCHANT WALLET ADDRESS: ${merchantWalletAddress}
@@ -318,65 +322,32 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
     }
   }
 
-  // Scaffold webhook route
+  // Scaffold checkout and webhook routes
   if (paths.hasBackend) {
+    const checkoutDir = path.dirname(paths.checkoutPath);
+    await mkdir(checkoutDir, { recursive: true });
+    const checkoutRoute = generateCheckoutRouteTemplate({
+      cliVersion: CLI_VERSION,
+      templateVersion: TEMPLATE_VERSION,
+      requestId,
+      generationTimestamp,
+      framework
+    });
+    await writeFile(paths.checkoutPath, checkoutRoute, "utf8");
+    console.log(`[SUCCESS] Checkout intent route generated: ${path.relative(process.cwd(), paths.checkoutPath)}`);
+
     const webhookDir = path.dirname(paths.webhookPath);
     await mkdir(webhookDir, { recursive: true });
 
-    if (framework === "next-app" || framework === "next-pages") {
-      const nextjsWebhook = generateWebhookTemplate({
-        cliVersion: CLI_VERSION,
-        templateVersion: TEMPLATE_VERSION,
-        requestId,
-        generationTimestamp
-      });
-      await writeFile(paths.webhookPath, nextjsWebhook, "utf8");
-      console.log(`[SUCCESS] Webhook endpoint generated: ${path.relative(process.cwd(), paths.webhookPath)}`);
-    } else if (framework === "express") {
-      const expressBoilerplate = `/**
- * generatedBy: "SubScript CLI"
- * cliVersion: "${CLI_VERSION}"
- * templateVersion: "${TEMPLATE_VERSION}"
- * requestId: "${requestId}"
- * generationTimestamp: "${generationTimestamp}"
- */
-
-import express from "express";
-import { SubScript } from "@subscript-protocol/sdk";
-
-const router = express.Router();
-const subscript = new SubScript({
-  apiKey: process.env.SUBSCRIPT_API_KEY || "",
-});
-
-router.post("/api/webhooks/subscript", express.raw({ type: "application/json" }), async (req, res) => {
-  try {
-    const rawBody = req.body.toString();
-    const signature = (req.headers["x-subscript-signature"] as string) || "";
-    const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
-
-    const isValid = subscript.webhooks.verifySignature(rawBody, signature, secret);
-
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid signature" });
-    }
-
-    const { event, data } = JSON.parse(rawBody);
-
-    // TODO: Process subscription events in your database
-    console.log("[INFO] Received validated SubScript event:", event, data);
-
-    return res.json({ success: true });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-export default router;
-`;
-      await writeFile(paths.webhookPath, expressBoilerplate, "utf8");
-      console.log(`[SUCCESS] Webhook router generated: ${path.relative(process.cwd(), paths.webhookPath)}`);
-    }
+    const webhook = generateWebhookTemplate({
+      cliVersion: CLI_VERSION,
+      templateVersion: TEMPLATE_VERSION,
+      requestId,
+      generationTimestamp,
+      framework
+    });
+    await writeFile(paths.webhookPath, webhook, "utf8");
+    console.log(`[SUCCESS] Webhook endpoint generated: ${path.relative(process.cwd(), paths.webhookPath)}`);
   }
 
   outro("SubScript Integration successfully completed!");
@@ -391,10 +362,10 @@ export default router;
     console.log(`\n2. Add the Checkout Button component to your pricing page:`);
     console.log(`   import { SubScriptCheckoutButton } from "${importBase}/SubScriptCheckoutButton";`);
     console.log(`   `);
-    console.log(`   <SubScriptCheckoutButton amountUsdc="${planCap}" intervalSeconds={${planInterval}n} planName="${planName}" />`);
+    console.log(`   <SubScriptCheckoutButton amountUsdc="${planCap}" title="${planName}" />`);
   }
   if (paths.hasBackend) {
-    console.log(`\n3. Configure SUBSCRIPT_WEBHOOK_SECRET in your .env.local to secure webhooks.`);
+    console.log(`\n3. Configure SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET in your .env.local.`);
   }
   console.log("==================================================\n");
 }
@@ -403,4 +374,3 @@ main().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
-

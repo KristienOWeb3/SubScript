@@ -1,4 +1,4 @@
-import { writeFile, readFile } from "node:fs/promises";
+import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -6,6 +6,7 @@ import { detectFramework } from "../utils/framework.js";
 import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "../utils/config.js";
 import { sendTelemetry } from "../utils/api.js";
 import { generateCheckoutButtonTemplate } from "../templates/CheckoutButton.js";
+import { generateCheckoutRouteTemplate } from "../templates/checkoutRouteTemplate.js";
 import { generateEscrowStatusTemplate } from "../templates/EscrowStatus.js";
 export async function runAddCheckout(options) {
     const cwd = process.cwd();
@@ -43,6 +44,18 @@ export async function runAddCheckout(options) {
         const checkoutBtnPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
         await writeFile(checkoutBtnPath, checkoutContent, "utf8");
         console.log(`[SUCCESS] Generated checkout button: ${path.relative(cwd, checkoutBtnPath)}`);
+        if (paths.hasBackend) {
+            await mkdir(path.dirname(paths.checkoutPath), { recursive: true });
+            const routeContent = generateCheckoutRouteTemplate({
+                cliVersion: CLI_VERSION,
+                templateVersion: TEMPLATE_VERSION,
+                requestId,
+                generationTimestamp,
+                framework
+            });
+            await writeFile(paths.checkoutPath, routeContent, "utf8");
+            console.log(`[SUCCESS] Generated checkout intent route: ${path.relative(cwd, paths.checkoutPath)}`);
+        }
         // Scaffold Escrow tracker in ZK modes
         if (mode === "zk-routed") {
             const escrowContent = generateEscrowStatusTemplate({

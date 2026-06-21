@@ -40,7 +40,8 @@ export async function runAddWebhook(options) {
             cliVersion: CLI_VERSION,
             templateVersion: TEMPLATE_VERSION,
             requestId,
-            generationTimestamp
+            generationTimestamp,
+            framework
         });
         await writeFile(paths.webhookPath, webhookContent, "utf8");
         console.log(`[SUCCESS] Webhook handler generated: ${path.relative(cwd, paths.webhookPath)}`);

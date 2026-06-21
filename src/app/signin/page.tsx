@@ -72,10 +72,7 @@ function SignInContent() {
       });
       const checkData = await checkRes.json();
       if (!checkData.exists) {
-        setOtpError("No account found with this email. Redirecting to Sign Up...");
-        setTimeout(() => {
-          router.push(`/signup?email=${encodeURIComponent(email)}`);
-        }, 2000);
+        setOtpError("No completed account exists for this email yet. Use Sign Up below to create one.");
         return;
       }
       if (checkData.authMethod === "wallet") {

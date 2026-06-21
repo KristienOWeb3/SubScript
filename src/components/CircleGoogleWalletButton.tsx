@@ -183,10 +183,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                     });
                     const challenge = await challengeRes.json();
                     if (!challengeRes.ok) {
-                        if (challenge.redirectTo) {
-                            router.push(challenge.redirectTo);
-                            return;
-                        }
                         throw new Error(challenge.error || "Could not initialize your Arc wallet.");
                     }
 

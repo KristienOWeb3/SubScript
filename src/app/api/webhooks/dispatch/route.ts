@@ -96,7 +96,6 @@ export async function POST(request: Request) {
             const { error: insertError } = await supabase
                 .from("webhook_events")
                 .insert({
-                    id: eventId,
                     webhook_endpoint_id: endpoint.id,
                     event,
                     status,

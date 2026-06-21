@@ -43,6 +43,8 @@ The persistent database layer tracks off-chain state and audit trails.
 * **WebhookDelivery**: Audits webhook delivery attempts, retries, and errors.
 * **MerchantEmailTemplate**: Stores custom exit survey subject lines and bodies for churn recovery emails.
 * **PayrollCampaign & PayrollRecipient**: Stores campaign titles, payment frequencies, next paydays, Permit2 credentials, and employee wallets for Institutional Payroll.
+* **MeteredVault**: Stores prepaid usage balances, thresholds, top-up amounts, monthly velocity limits, and per-merchant customer consumption state.
+* **AddressAlias**: Stores SubScript DNS-style aliases that map human-readable names to user and merchant wallet addresses.
 
 ---
 
@@ -60,6 +62,15 @@ Next.js App Router API handlers power integration endpoints.
 * **Checkout Link Creation**: CRUD endpoints for payment checkout links.
 * **Idempotency Locks**: Automatically returns existing records for matching idempotency keys to prevent duplicate database writes.
 * **Merchant Snapshots**: Writes a merchant name snapshot to the link record to protect against retrospective name updates.
+
+### Metered Vaults (\`/api/user/vault/*\`)
+* **Flexible Usage-Based Billing**: Lets merchants report API token usage, AI model consumption, storage capacity, pay-per-view access, or other metered events against a user's prepaid vault.
+* **Automatic Top-Up Triggers**: Tracks thresholds and top-up amounts so low balances can initiate a replenishment flow without forcing static subscription tiers.
+* **Monthly Velocity Controls**: Enforces monthly spending limits for metered relationships.
+
+### DNS Alias Service (\`/api/merchant/alias\`)
+* **Human-Readable Payment Identities**: Allows users and merchants to register wallet aliases for easier recognition, transfer routing, and checkout display.
+* **Role-Aware Namespaces**: Supports user-facing `.sub` names and merchant-facing `.hq` / `.biz` names.
 
 ### Webhook Infrastructure (\`/api/webhooks\`)
 * **Webhook CRUD (\`/webhooks/endpoints\`)**: Allows Premium merchants to register webhook URLs.
@@ -91,6 +102,18 @@ A premium dark glassmorphic web dashboard designed for desktop screens.
 * **Campaign Manager**: Form to title payroll plans, set cycles, and upload recipient wallets.
 * **Permit2 Signature Flow**: Signs EIP-712 Permit2 typed data approvals allowing keepers to pull payroll funds.
 * **Tier-Lock Overlay**: Injects a glass lock card with a Lock icon for Standard tier merchants, covering all inputs and directing them to the upgrade screen.
+
+### Usage-Based Billing Surfaces
+* **Merchant Analytics Vault View**: Shows active customer prepaid vaults and lets merchants report usage through API-backed controls.
+* **User Vault Controls**: Lets users configure merchant vault thresholds, top-up amounts, and monthly limits.
+
+---
+
+## 4.5 Product Feature Positioning
+
+* **Pay for Me / Sponsored Subscriptions**: Designed for relationships where parents, employers, teams, or sponsors cover another user's costs while limiting unnecessary data exposure.
+* **Automated Notification Gateways**: Enterprise messaging surfaces combine webhooks, DMs, and managed notification delivery for high-volume payment operations.
+* **Quantum-Resilience Roadmap**: The protocol inherits Arc's roadmap for post-quantum wallet signatures, privacy-sector hybrid cryptography, and validator communication hardening.
 
 ---
 

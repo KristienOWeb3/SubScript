@@ -8,6 +8,7 @@ import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "../utils/config.
 import { fetchConfigAndVerify, sendTelemetry } from "../utils/api.js";
 import { generateProviderTemplate } from "../templates/SubScriptProvider.js";
 import { generateCheckoutButtonTemplate } from "../templates/CheckoutButton.js";
+import { generateCheckoutRouteTemplate } from "../templates/checkoutRouteTemplate.js";
 import { generateEscrowStatusTemplate } from "../templates/EscrowStatus.js";
 import { generateWebhookTemplate } from "../templates/webhookTemplate.js";
 async function backupFile(cwd, filePath, fileName) {
@@ -121,11 +122,20 @@ export async function runUpdate(options) {
         }
         // Update Webhook route
         if (paths.hasBackend) {
+            const checkoutRouteContent = generateCheckoutRouteTemplate({
+                cliVersion: CLI_VERSION,
+                templateVersion: TEMPLATE_VERSION,
+                requestId,
+                generationTimestamp,
+                framework
+            });
+            await updateFile(paths.checkoutPath, path.basename(paths.checkoutPath), checkoutRouteContent);
             const webhookContent = generateWebhookTemplate({
                 cliVersion: CLI_VERSION,
                 templateVersion: TEMPLATE_VERSION,
                 requestId,
-                generationTimestamp
+                generationTimestamp,
+                framework
             });
             await updateFile(paths.webhookPath, path.basename(paths.webhookPath), webhookContent);
         }

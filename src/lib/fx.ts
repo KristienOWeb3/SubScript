@@ -1,4 +1,5 @@
 /* Utility to fetch exchange rates from public API with Next.js Time-Based Revalidation */
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
 export interface FxRatesResponse {
     result: string;
@@ -13,6 +14,13 @@ export async function fetchExchangeRate(targetCurrency: string): Promise<number>
     }
 
     try {
+        assertProviderRateLimit({
+            provider: "fx",
+            key: "global",
+            limit: 60,
+            windowMs: 60 * 1000,
+        });
+
         /* Fetch rates with 900 seconds (15 minutes) revalidation */
         const res = await fetch("https://open.er-api.com/v6/latest/USD", {
             next: { revalidate: 900 },

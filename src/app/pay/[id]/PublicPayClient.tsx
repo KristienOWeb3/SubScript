@@ -10,7 +10,7 @@ import {
     Wallet, ExternalLink, ArrowRight, Lock, Zap, QrCode, Shield, ShieldAlert
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
@@ -140,9 +140,10 @@ export default function PublicPayClient({
 
     const cctpOriginChainId = expectedChainId === 5042001 ? 1 : 11155111;
     const cctpOriginChainName = expectedChainId === 5042001 ? "Ethereum Mainnet" : "Ethereum Sepolia";
+    const cctpCheckoutEnabled = false;
 
-    const isCctpMode = isConnected && !hasSufficientArcBalance;
-    const isCctpChain = isConnected && chainId === cctpOriginChainId;
+    const isCctpMode = cctpCheckoutEnabled && isConnected && !hasSufficientArcBalance;
+    const isCctpChain = cctpCheckoutEnabled && isConnected && chainId === cctpOriginChainId;
 
     const isWrongChain = isConnected && (isCctpMode ? chainId !== cctpOriginChainId : chainId !== expectedChainId);
     const requiredChainId = isCctpMode ? cctpOriginChainId : expectedChainId;
@@ -706,17 +707,17 @@ export default function PublicPayClient({
                                             </div>
                                         )}
                                         
-                                        {isCctpMode && (
-                                            <div className="liquid-glass border border-blue-500/20 bg-blue-500/[0.03] rounded-2xl p-5 space-y-3 shadow-lg">
+                                        {!hasSufficientArcBalance && (
+                                            <div className="liquid-glass border border-amber-500/20 bg-amber-500/[0.03] rounded-2xl p-5 space-y-3 shadow-lg">
                                                 <div className="flex items-start gap-3">
-                                                    <Zap className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                                                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                                                     <div className="space-y-1">
-                                                        <h3 className="text-xs font-bold text-white uppercase tracking-wide">CCTP Bridge Top-Up Required</h3>
+                                                        <h3 className="text-xs font-bold text-white uppercase tracking-wide">Arc USDC Required</h3>
                                                         <p className="text-[10px] text-white/60 leading-relaxed font-sans">
                                                             Your Arc Network balance ({parseFloat(formatUnits(arcUsdcBalance, 6)).toFixed(2)} USDC) is insufficient for this ${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC payment.
                                                         </p>
                                                         <p className="text-[10px] text-white/40 leading-relaxed font-sans">
-                                                            We will automatically burn USDC on <span className="text-blue-300 font-semibold">{cctpOriginChainName}</span> and mint it directly on Arc Network using Circle CCTP to complete your order.
+                                                            Cross-chain CCTP checkout is disabled until Arc-side memo settlement is live. Bridge or fund USDC on Arc, then complete this payment.
                                                         </p>
                                                     </div>
                                                 </div>
@@ -747,7 +748,7 @@ export default function PublicPayClient({
                                             >
                                                 <ShieldAlert className="w-4 h-4" /> Review Unverified Merchant Warning
                                             </button>
-                                        ) : isInsufficientBalance ? (
+                                        ) : isInsufficientBalance || !hasSufficientArcBalance ? (
                                             <button
                                                 type="button"
                                                 disabled={true}
@@ -825,6 +826,65 @@ export default function PublicPayClient({
                     </div>
                 )}
             </div>
+
+            <AnimatePresence>
+                {showUnverifiedWarning && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="w-full max-w-md liquid-glass border border-amber-500/30 rounded-3xl p-6 shadow-2xl space-y-6 bg-black/90 text-left relative overflow-hidden"
+                        >
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10" />
+                            <div className="flex items-center gap-3 pb-2 border-b border-white/5">
+                                <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                                    <ShieldAlert className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-white uppercase tracking-wider">Unverified Merchant</h3>
+                                    <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Security Advisory</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 font-sans text-xs text-white/70 leading-relaxed">
+                                <p>
+                                    You are about to make a payment to an <span className="font-semibold text-white">unverified merchant address</span>:
+                                </p>
+                                <div className="p-3 bg-white/5 border border-white/10 rounded-xl font-mono text-[10px] break-all text-white/80 select-all">
+                                    {linkData?.merchant_address}
+                                </div>
+                                <p>
+                                    This address has not completed the SubScript validation protocol. Please verify the identity of the recipient before proceeding.
+                                </p>
+                                <p className="text-amber-300/80 font-medium">
+                                    Funds sent to unverified addresses cannot be recovered or reversed.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowUnverifiedWarning(false)}
+                                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setUnverifiedAccepted(true);
+                                        setShowUnverifiedWarning(false);
+                                    }}
+                                    className="flex-1 py-3 bg-amber-500 text-black font-bold rounded-2xl text-xs uppercase tracking-wider hover:brightness-110 transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+                                >
+                                    Accept & Continue
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {showToast && (
                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">

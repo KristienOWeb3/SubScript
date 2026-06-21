@@ -1,3 +1,5 @@
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
+
 const CIRCLE_API_BASE_URL = process.env.CIRCLE_API_BASE_URL || "https://api.circle.com";
 
 export type CircleSocialAuth = {
@@ -31,6 +33,13 @@ function circleApiKey() {
 }
 
 async function circleFetch<T>(path: string, init: RequestInit & { userToken?: string } = {}) {
+    assertProviderRateLimit({
+        provider: "circle",
+        key: init.userToken ? `user:${init.userToken.slice(0, 16)}` : "global",
+        limit: init.method === "POST" ? 30 : 120,
+        windowMs: 60 * 1000,
+    });
+
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${circleApiKey()}`);
     headers.set("Content-Type", "application/json");

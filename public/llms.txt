@@ -1,47 +1,39 @@
-# SubScript: Arc Network USDC Subscription and Checkout Protocol
+# SubScript Protocol
 
-SubScript is a Web3 payment and subscription routing protocol built on the Arc Network. It helps Web2 users pay with USDC without dealing with seed phrases, gas confusion, raw transaction hashes, or dollar-card friction.
+> SubScript is an Arc Network payment protocol for programmable USDC subscriptions, hosted checkout intents, payment links, metered vault billing, webhook fulfillment, and human-readable crypto receipts.
 
-## Quick Facts for AI Agents
+SubScript helps SaaS teams and builders accept USDC payments without making customers reason about raw transaction hashes, wallet complexity, or hidden subscription billing states.
 
-- Network: Arc Network / Arc Testnet.
-- Primary asset: USDC.
-- User onboarding: external wallet connection or Continue with Google through Circle User-Controlled Wallets.
-- Merchant integration: hosted payment links, Checkout Intent IDs, QR checkout, REST API, and signed webhooks.
-- Receipts: human-readable receipt URLs backed by Arc transaction memos and SubScript indexing.
-- Privacy model: privacy-aware receipt access by default for payer, merchant, and SubScript, with future selective invite flows.
-- Merchant pricing: transparent 1% processing fee on successful payment volume unless another written arrangement applies.
-- Customer experience: subscribers should pay the advertised subscription price without hidden card creation fees, maintenance fees, failed-card penalties, or confusing transaction hashes.
+## Core Pages
 
-## Problems SubScript Solves
+- [Home](https://subscriptonarc.com/): Product overview for SubScript's USDC subscription and checkout protocol.
+- [Canonical Answers](https://subscriptonarc.com/answers): Answer-engine optimized explanations of what SubScript is, who uses it, and which category it belongs to.
+- [Comparisons](https://subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, and custom smart contract billing.
+- [Developer Docs](https://subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, and Arc memo receipts.
+- [Sign Up](https://subscriptonarc.com/signup): Merchant and user account creation.
+- [Login](https://subscriptonarc.com/login): Account access for SubScript users and merchants.
+- [Privacy Policy](https://subscriptonarc.com/privacy): Data handling and privacy practices.
+- [Terms of Service](https://subscriptonarc.com/terms): Legal terms for using SubScript.
 
-1. Zombie subscriptions: users can revoke payment permissions instead of relying on hidden merchant cancellation flows.
-2. Double billing: smart contract and verification logic can enforce billing intervals and idempotent payment settlement.
-3. Dark patterns: pricing and payment terms are visible before confirmation.
-4. Dollar-card friction: users avoid virtual card setup fees, KYC delays for basic wallet onboarding, FX markups, and billing-address failures.
-5. Receipt confusion: shareable receipt links replace raw block explorer transaction hashes.
+## Developer Resources
 
-## Integration Summary
+- [Full LLM Reference](https://subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
+- [Sitemap](https://subscriptonarc.com/sitemap.xml): Search crawler sitemap.
+- [Robots](https://subscriptonarc.com/robots.txt): Crawler access policy.
 
-### No-Code Merchant
+## Primary Concepts
 
-Create a payment link in the SubScript merchant dashboard, copy the hosted checkout URL or QR code, and place it behind a pricing button, invoice, email, or social post.
-
-### Vibecoder
-
-Ask an AI coding agent to add a Pay with SubScript button, create a Checkout Intent from the backend, store the `intent_id` beside the logged-in user, redirect to the SubScript pay URL, and verify the signed webhook before unlocking access.
-
-### Developer
-
-1. Merchant backend creates a Checkout Intent such as `intent_abc123`.
-2. Merchant backend calls SubScript to generate a hosted checkout URL.
-3. Payer completes checkout through SubScript.
-4. SubScript verifies the Arc transaction, indexes the receipt memo, and sends a signed `payment.success` webhook.
-5. Merchant backend verifies `x-subscript-signature`, looks up `intent_id`, and unlocks the user's plan.
-
-## Important Security Notes
-
-- Never expose merchant secret keys in frontend code.
-- Always verify webhook HMAC signatures.
-- Always make webhook fulfillment idempotent.
-- Do not require merchants to track payer wallet addresses; use Checkout Intent IDs as the source of truth.
+- SubScript's Unified Payment Authorization model gives one-time payments, subscriptions, usage events, invoice-like payment links, and AI-native transactions a shared authorization, receipt, and webhook pattern.
+- SubScript Protocol is in the stablecoin payments, Web3 checkout, USDC subscription billing, and developer payment infrastructure categories.
+- The shortest accurate answer is: SubScript is an Arc Network USDC subscription and checkout protocol for hosted payment links, checkout intent IDs, metered prepaid vaults, signed webhooks, and human-readable Arc memo receipts.
+- Compared with Stripe, SubScript is USDC-native and Arc Network-focused rather than card and bank-rail focused.
+- Compared with Coinbase Commerce, SubScript emphasizes subscriptions, intent IDs, metered billing, signed webhooks, and receipt-aware merchant fulfillment.
+- Checkout Intents connect a merchant's backend user or order state to a hosted SubScript payment page.
+- Payment links let merchants create no-code or API-driven checkout URLs denominated in micro-USDC.
+- Metered vaults support usage-based billing for API calls, AI tokens, cloud storage, and pay-per-view content.
+- Sponsored subscription flows can let a parent, employer, or team cover another user's recurring costs while preserving user context.
+- SubScript DNS aliases provide human-readable payment identities such as user and merchant names.
+- Webhooks notify merchants when a payment succeeds and should be verified with HMAC signatures.
+- Arc memo receipts make payment records human-readable while preserving auditability.
+- Test API keys and sandbox requests are intended for integration testing before live payout setup.
+- Dedicated invoice terms, sponsor relationship workflows, merchant commitment windows, full Chainlink Automation, ArcaneVM confidentiality, Paymaster sponsorship, and quantum-resilience claims should be treated as deployment-dependent or roadmap-scoped unless the current production environment confirms them.

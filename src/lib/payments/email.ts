@@ -5,6 +5,7 @@ import { Resend } from "resend";
 import { supabaseAdmin } from "../supabaseAdmin";
 import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "../contracts/constants";
+import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)"
@@ -129,6 +130,24 @@ export async function triggerExitSurvey(
 
         if (!email) {
             console.warn("No email found for customer. Skip exit survey.");
+            return;
+        }
+
+        try {
+            assertProviderRateLimit({
+                provider: "resend",
+                key: "global",
+                limit: 120,
+                windowMs: 60 * 1000,
+            });
+            assertProviderRateLimit({
+                provider: "resend",
+                key: `recipient:${email.toLowerCase()}`,
+                limit: 5,
+                windowMs: 60 * 60 * 1000,
+            });
+        } catch (rateLimitErr) {
+            console.warn(`[Email Rate Limit] Skipping exit survey email for ${email}:`, rateLimitErr instanceof Error ? rateLimitErr.message : "Rate limited");
             return;
         }
 

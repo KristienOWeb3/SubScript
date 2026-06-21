@@ -55,7 +55,8 @@ export async function runAddWebhook(options: { noTelemetry?: boolean }) {
       cliVersion: CLI_VERSION,
       templateVersion: TEMPLATE_VERSION,
       requestId,
-      generationTimestamp
+      generationTimestamp,
+      framework
     });
 
     await writeFile(paths.webhookPath, webhookContent, "utf8");

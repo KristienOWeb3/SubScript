@@ -15,7 +15,14 @@ export async function GET(request: Request) {
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
         if (!supabaseUrl || !supabaseServiceKey) {
-            return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+            return NextResponse.json({
+                tier: 0,
+                subscriptionId: null,
+                cancelAtPeriodEnd: false,
+                nextBillingDate: null,
+                status: null,
+                downgradeFailures: 0
+            }, { status: 200 });
         }
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -37,6 +44,9 @@ export async function GET(request: Request) {
         if (merchantRes.error) {
             console.error("Error querying merchant tier:", merchantRes.error);
             return NextResponse.json({ tier: 0, subscriptionId: null, cancelAtPeriodEnd: false, nextBillingDate: null, status: null, downgradeFailures: 0 }, { status: 200 });
+        }
+        if (subRes.error) {
+            console.error("Error querying premium subscription:", subRes.error);
         }
 
         const dbTierStr = merchantRes.data ? merchantRes.data.tier : "FREE";

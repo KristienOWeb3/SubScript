@@ -24,14 +24,21 @@ export async function POST(request: Request) {
                     "select role from account_roles where address = $1 limit 1",
                     [binding.walletAddress]
                 );
+                const onboardingComplete = Boolean(roleRecord?.role);
                 return NextResponse.json({
                     exists: true,
+                    hasWalletBinding: true,
+                    onboardingComplete,
                     wallet: binding.walletAddress,
                     role: roleRecord?.role || null,
                     authMethod: isWalletOnlyEmailBinding(binding) ? "wallet" : "email",
                 });
             }
-            return NextResponse.json({ exists: false });
+            return NextResponse.json({
+                exists: false,
+                hasWalletBinding: false,
+                onboardingComplete: false,
+            });
         }
 
         if (address) {
@@ -41,9 +48,14 @@ export async function POST(request: Request) {
                 [addressLower]
             );
             if (roleRecord) {
-                return NextResponse.json({ exists: true, wallet: addressLower, role: roleRecord.role });
+                return NextResponse.json({
+                    exists: true,
+                    onboardingComplete: true,
+                    wallet: addressLower,
+                    role: roleRecord.role,
+                });
             }
-            return NextResponse.json({ exists: false });
+            return NextResponse.json({ exists: false, onboardingComplete: false });
         }
 
         return NextResponse.json({ error: "Missing email or address parameter" }, { status: 400 });

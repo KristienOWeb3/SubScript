@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { validateWebhookUrl } from "@/lib/webhookUrls";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -22,6 +23,10 @@ async function checkMerchantPremium(supabase: any, walletAddress: string): Promi
     return merchant.tier === "PREMIUM";
 }
 
+function redactWebhookSecret(secret: string | null | undefined): string {
+    if (!secret) return "";
+    return `${secret.slice(0, 10)}...${secret.slice(-4)}`;
+}
 
 export async function GET(request: Request) {
     try {
@@ -51,7 +56,8 @@ export async function GET(request: Request) {
             id: e.id,
             walletAddress: e.wallet_address,
             url: e.url,
-            secret: e.secret,
+            secret: redactWebhookSecret(e.secret),
+            secretAvailable: false,
             active: e.active,
             createdAt: e.created_at,
         }));
@@ -82,11 +88,9 @@ export async function POST(request: Request) {
         }
 
         const { url } = body;
-
-        try {
-            new URL(url);
-        } catch (_) {
-            return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
+        const urlValidation = validateWebhookUrl(url);
+        if (!urlValidation.ok) {
+            return NextResponse.json({ error: urlValidation.error }, { status: 400 });
         }
 
         const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
@@ -95,7 +99,7 @@ export async function POST(request: Request) {
             .from("webhook_endpoints")
             .insert({
                 wallet_address: wallet.toLowerCase(),
-                url,
+                url: urlValidation.url,
                 secret,
                 active: true,
             })
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
             walletAddress: endpoint.wallet_address,
             url: endpoint.url,
             secret: endpoint.secret,
+            secretAvailable: true,
             active: endpoint.active,
             createdAt: endpoint.created_at,
         };

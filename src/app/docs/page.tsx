@@ -37,9 +37,11 @@ type Section = {
 const sections: Section[] = [
   { id: "overview", title: "Overview", icon: BookOpen },
   { id: "paths", title: "Choose a path", icon: Zap },
+  { id: "upa", title: "UPA model", icon: ShieldCheck },
   { id: "nocode", title: "No-code links", icon: Link2 },
   { id: "vibecoder", title: "Vibecoder prompt", icon: MessageSquare },
   { id: "developer", title: "Developer API", icon: Server },
+  { id: "usage", title: "Usage billing", icon: Terminal },
   { id: "webhooks", title: "Webhooks", icon: Webhook },
   { id: "receipts", title: "Receipts", icon: ReceiptText },
   { id: "contracts", title: "On-chain", icon: Code },
@@ -76,28 +78,39 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 }
 
 const checkoutIntentCode = `// Merchant backend: create a Checkout Intent with SubScript
-const response = await fetch("https://subscriptonarc.com/api/payment-links", {
+const response = await fetch("https://subscriptonarc.com/api/intent", {
   method: "POST",
   headers: {
-    "Authorization": "Bearer sk_live_your_subscript_secret_key",
+    "Authorization": "Bearer sk_test_your_subscript_secret_key",
     "Content-Type": "application/json"
   },
   body: JSON.stringify({
-    amountUsdc: "15.00",
     title: "Premium Plan",
+    amountUsdc: "15000000",
     description: "Monthly access for user_123",
-    intentId: "intent_abc123",
-    customerReference: "user_123",
-    webhookUrl: "https://yourapp.com/api/subscript-webhook"
+    externalReference: "user_123",
+    idempotencyKey: "intent_abc123",
+    sandbox: true
   })
 });
 
-const { payUrl, qrCodeUrl, receiptId } = await response.json();`;
+const payload = await response.json();
+
+if (!response.ok) {
+  if (payload.error === "merchant_payout_wallet_missing") {
+    throw new Error(payload.message);
+  }
+  throw new Error(payload.error || "SubScript checkout creation failed");
+}
+
+const checkoutUrl = payload.intent.checkoutUrl;
+const intentId = payload.intent.id;
+const receiptToken = payload.intent.receiptToken;`;
 
 const frontendEmbedCode = `// Frontend: send the customer to hosted checkout
-export function UpgradeButton({ payUrl }) {
+export function UpgradeButton({ checkoutUrl }) {
   return (
-    <a href={payUrl} className="subscript-button">
+    <a href={checkoutUrl} className="subscript-button">
       Pay with SubScript
     </a>
   );
@@ -110,6 +123,10 @@ export async function POST(req) {
   const signature = req.headers.get("x-subscript-signature");
   const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET;
 
+  if (!secret || !signature) {
+    return Response.json({ error: "Missing webhook configuration or signature" }, { status: 400 });
+  }
+
   const [timestampPart, digestPart] = signature.split(",");
   const timestamp = timestampPart.replace("t=", "");
   const digest = digestPart.replace("v1=", "");
@@ -119,12 +136,15 @@ export async function POST(req) {
     .update(\`\${timestamp}.\${rawBody}\`)
     .digest("hex");
 
-  if (!crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(expected))) {
+  const received = Buffer.from(digest, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (received.length !== expectedBuffer.length || !crypto.timingSafeEqual(received, expectedBuffer)) {
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   const event = JSON.parse(rawBody);
   if (event.event === "payment.success") {
+    // Use event.id for idempotency, then fulfill by intent_id.
     await unlockPlanForUser(event.data.intent_id);
   }
 
@@ -137,7 +157,8 @@ Goal:
 - Add a "Pay with SubScript" button to my pricing page.
 - My backend should create a Checkout Intent for the logged-in user.
 - Store intent_id in my database beside the user's account.
-- Redirect the user to the SubScript payUrl.
+- Store intent_id and receiptToken in my database beside the user's account or order.
+- Redirect the user to the SubScript checkoutUrl.
 - Add a webhook route that verifies x-subscript-signature.
 - When payment.success arrives, look up data.intent_id and unlock the plan.
 
@@ -150,43 +171,29 @@ Use:
 Important:
 - Do not ask the merchant to know the payer wallet.
 - Use intent_id as the source of truth.
+- Hosted checkout is Arc-native USDC only right now; do not add Base, Solana, or CCTP checkout unless the local docs say it is live.
 - Keep all secret keys server-side only.`;
 
-const viemMemoCode = `import { encodeFunctionData, parseUnits } from "viem";
+const viemMemoCode = `import { parseUnits } from "viem";
 
-const memoContract = "0x5294E9927c3306DcBaDb03fe70b92e01cCede505";
-const receiptId = "Premium-Plan-user-123-a8f2";
+const receiptToken = "rcpt-7e10c918a3aa672eb783f1b965914b12";
 
-const data = encodeFunctionData({
+await walletClient.writeContract({
+  address: SUBSCRIPT_ROUTER_ADDRESS,
   abi: [{
     type: "function",
-    name: "callWithMemo",
+    name: "depositForMerchant",
     stateMutability: "nonpayable",
     inputs: [
-      { name: "target", type: "address" },
-      { name: "data", type: "bytes" },
-      { name: "memo", type: "string" }
+      { name: "merchant", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "memo", type: "string" },
     ],
-    outputs: [{ name: "result", type: "bytes" }]
+    outputs: []
   }],
-  functionName: "callWithMemo",
-  args: [
-    SUBSCRIPT_ROUTER_ADDRESS,
-    encodeFunctionData({
-      abi: routerAbi,
-      functionName: "depositForMerchant",
-      args: [merchantAddress, parseUnits("15", 6), receiptId]
-    }),
-    JSON.stringify({
-      receipt_id: receiptId,
-      intent_id: "intent_abc123",
-      merchant: "yourapp.hq",
-      amount: "15000000"
-    })
-  ]
-});
-
-await walletClient.sendTransaction({ to: memoContract, data });`;
+  functionName: "depositForMerchant",
+  args: [merchantAddress, parseUnits("15", 6), receiptToken],
+});`;
 
 export default function DocsPage() {
   const [activeSection, setActiveSection] = useState("overview");
@@ -359,6 +366,29 @@ export default function DocsPage() {
               </div>
             </section>
 
+            <section id="upa" className="scroll-mt-24 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Unified Payment Authorization model</h2>
+              <p className="text-sm leading-relaxed text-white/70">
+                SubScript's Unified Payment Authorization model gives one-time payments, subscriptions, usage events, invoices, and AI-native transactions the same operational shape: a merchant creates a structured authorization, the payer approves a bounded USDC action, SubScript records the receipt, and signed webhooks tell the merchant what to unlock.
+              </p>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {[
+                  ["Consumer control", "Users authorize bounded payment flows and can avoid zombie subscriptions, hidden card fees, overdraft-style penalties, and opaque dispute trails.", ShieldCheck],
+                  ["Merchant certainty", "Merchants receive intent IDs, webhook events, retry-aware billing state, payment links, and audit-friendly Arc receipt records instead of raw wallet guesswork.", KeyRound],
+                  ["Protocol coverage", "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, premium privacy flows, and keeper-triggered renewals.", Globe],
+                ].map(([title, text, Icon]) => (
+                  <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-white">{title as string}</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text as string}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                Dedicated invoice terms, service lock windows, minimum commitment periods, and fully decentralized Chainlink Automation are protocol targets documented in the feature brief. The current app already provides the integration primitives those features build on: intents, subscriptions, retries, keeper routes, webhooks, receipts, and merchant dashboards.
+              </div>
+            </section>
+
             <section id="nocode" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">No-code setup: payment links and QR checkout</h2>
               <ol className="space-y-3 text-sm leading-relaxed text-white/70">
@@ -396,11 +426,37 @@ export default function DocsPage() {
               <CodeBlock code={frontendEmbedCode} language="tsx" />
             </section>
 
+            <section id="usage" className="scroll-mt-24 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Flexible usage-based billing</h2>
+              <p className="text-sm leading-relaxed text-white/70">
+                SubScript also supports metered products that do not fit fixed monthly plans. Customers can configure prepaid vaults for a merchant, and the merchant can report usage through the API as work is consumed.
+              </p>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {[
+                  ["API and AI tokens", "Bill for API calls, model tokens, or agent runs as they happen instead of forcing every customer into a static tier.", Terminal],
+                  ["Dynamic cloud storage", "Charge based on active capacity, such as gigabytes per day, while keeping customer balances and top-up rules transparent.", Server],
+                  ["Pay-per-view access", "Settle small purchases for individual articles, clips, data exports, or premium actions without requiring an all-access subscription.", FileText],
+                ].map(([title, text, Icon]) => (
+                  <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-white">{title as string}</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text as string}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                The metered vault API lets a merchant deduct micro-USDC usage, observe the remaining balance, and trigger customer top-up flows when balances fall below configured thresholds.
+              </div>
+            </section>
+
             <section id="webhooks" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Webhook fulfillment</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 Webhooks close the Web2/Web3 gap. The merchant does not need the payer wallet address. The merchant only needs to trust the signed event and use the `intent_id` to unlock the right Web2 account.
               </p>
+              <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+                Canonical successful checkout event: `payment.success`. Payloads also include `type: "payment.succeeded"` for teams that prefer Stripe-style naming. Use `data.intent_id` or `data.checkout_session_id` as the fulfillment key.
+              </div>
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-xs leading-relaxed text-white/75">
                 Keep `SUBSCRIPT_SECRET_KEY` and `SUBSCRIPT_WEBHOOK_SECRET` server-side only. Never expose them in React, mobile clients, public repositories, or browser bundles.
               </div>
@@ -410,7 +466,7 @@ export default function DocsPage() {
             <section id="receipts" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Human-readable receipts with Arc memos</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                SubScript receipts are designed for humans, not explorers. A payer can share a URL like `subscriptonarc.com/receipt/Dinner-With-Alex-8f2a`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
+                SubScript receipts are designed for humans, not explorers. A payer can share a URL like `subscriptonarc.com/receipt/rcpt-7e10c918a3aa672eb783f1b965914b12`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
@@ -429,7 +485,7 @@ export default function DocsPage() {
             <section id="contracts" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Advanced: Arc memo transaction payload</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                Advanced teams can attach memo metadata to a SubScript router call through Arc's predeployed memo contract. Use this only when you are building a custom wallet, checkout, or protocol integration.
+                Hosted payment links currently settle through direct Arc USDC payments. The receipt token is passed as the router memo, and the backend verifies the matching `DepositWithMemo` event before marking the payment paid. Cross-chain CCTP checkout is disabled for hosted payment links until Arc-side mint and memo settlement can be verified in one bound flow.
               </p>
               <CodeBlock code={viemMemoCode} language="typescript" />
             </section>
@@ -438,10 +494,15 @@ export default function DocsPage() {
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">FAQ</h2>
               {[
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
+                ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
+                ["Can SubScript handle usage-based products?", "Yes. Metered vaults let users pre-fund a merchant relationship while the merchant reports API calls, tokens, storage, or per-item access as usage is consumed."],
+                ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate."],
                 ["Does the merchant need to track wallets?", "No. The merchant should track Checkout Intent IDs. SubScript maps wallet payment activity to the off-chain intent and sends the signed result."],
                 ["What does the user pay?", "The user pays the advertised USDC price. SubScript is designed around predictable Arc USDC gas and sponsored-fee flows so users avoid hidden card-style fees."],
                 ["Why is this better than dollar cards?", "Users avoid virtual card setup fees, maintenance fees, failed transaction penalties, KYC delays for basic wallet setup, billing-address failures, and FX markup surprises."],
                 ["What problem does SubScript solve?", "It stops zombie subscriptions, double-billing, hidden cancellation traps, overdraft-style penalties, and opaque receipt disputes by moving billing state into transparent programmable payment logic."],
+                ["Does SubScript provide invoices?", "The current product supports payment links, Checkout Intents, receipt records, and external references that cover invoice-like collection. A dedicated invoice engine with custom due terms is documented as a protocol target."],
+                ["Does SubScript use decentralized keepers?", "The codebase has keeper-compatible contract and API surfaces today. Full Chainlink Automation as the default execution network should be treated as a roadmap or deployment configuration item until the production keeper network is wired."],
               ].map(([question, answer]) => (
                 <div key={question} className="rounded-2xl border border-white/5 bg-black/30 p-5">
                   <h3 className="text-xs font-black uppercase tracking-wider text-white">{question}</h3>
