@@ -917,7 +917,12 @@ export default function DashboardPage() {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
                 if (data.loggedIn) {
-                    if (data.wallet.toLowerCase() !== address.toLowerCase()) {
+                    if (data.email) {
+                        setEmbeddedWallet({
+                            wallet: data.wallet,
+                            email: data.email
+                        });
+                    } else if (data.wallet.toLowerCase() !== address.toLowerCase()) {
                         console.warn("Session wallet mismatch, logging out");
                         await fetch("/api/auth/logout", { method: "POST" });
                         window.location.href = "/signup";

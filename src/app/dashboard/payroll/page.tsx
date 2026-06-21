@@ -247,8 +247,17 @@ export default function PayrollPage() {
             try {
                 const res = await fetch("/api/auth/session");
                 const data = await res.json();
-                if (data.loggedIn && data.wallet.toLowerCase() === address.toLowerCase()) {
-                    setSessionWallet(data.wallet.toLowerCase());
+                if (data.loggedIn) {
+                    if (data.email) {
+                        setEmbeddedWallet({
+                            wallet: data.wallet,
+                            email: data.email
+                        });
+                    } else if (data.wallet.toLowerCase() === address.toLowerCase()) {
+                        setSessionWallet(data.wallet.toLowerCase());
+                    } else {
+                        setSessionWallet(null);
+                    }
                 } else {
                     setSessionWallet(null);
                 }
