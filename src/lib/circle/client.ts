@@ -24,12 +24,19 @@ type CircleWallet = {
     accountType?: string;
 };
 
+export function isUsableCircleApiKey(value: string | undefined): value is string {
+    if (!value) return false;
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return !/^(TEST_API_KEY|your_|changeme|mock_|placeholder|undefined|null)$/i.test(trimmed);
+}
+
 function circleApiKey() {
     const key = process.env.CIRCLE_API_KEY;
-    if (!key) {
-        throw new Error("CIRCLE_API_KEY is not configured");
+    if (!isUsableCircleApiKey(key)) {
+        throw new Error("CIRCLE_API_KEY is missing or still set to a placeholder");
     }
-    return key;
+    return key.trim();
 }
 
 async function circleFetch<T>(path: string, init: RequestInit & { userToken?: string } = {}) {

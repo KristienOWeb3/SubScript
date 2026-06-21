@@ -61,7 +61,7 @@ export async function runVerify(options: { noTelemetry?: boolean }) {
       try {
         const configContent = await readFile(paths.configPath, "utf8");
         const merchantMatch = configContent.match(/merchantAddress:\s*["'](0x[0-9a-fA-F]{40})["']/);
-        const modeMatch = configContent.match(/mode:\s*["'](standard|zk-routed)["']/);
+        const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
         const versionMatch = configContent.match(/protocolVersion:\s*["']([^"']+)["']/);
 
         const merchant = merchantMatch ? merchantMatch[1] : null;

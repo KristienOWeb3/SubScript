@@ -50,6 +50,8 @@ export default function SignupPage() {
   const [siweError, setSiweError] = useState<string | null>(null);
   const [walletAuthRequested, setWalletAuthRequested] = useState(false);
   const [walletSignupPrompt, setWalletSignupPrompt] = useState(false);
+  const [merchantSignupIntent, setMerchantSignupIntent] = useState(false);
+  const [merchantSignupCode, setMerchantSignupCode] = useState("");
 
   /* Role selection states */
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -126,7 +128,7 @@ export default function SignupPage() {
               setRequiresEmailLinking(true);
             }
             if (data.role) {
-              window.location.href = getDashboardUrl(data.role as any, "/dashboard");
+              setRoleError("This browser is already signed in. Use Sign In to open the existing dashboard, or log out before creating another account.");
             } else {
               setShowRoleSelector(true);
             }
@@ -138,7 +140,13 @@ export default function SignupPage() {
     };
     checkSession();
 
-    const initialEmail = new URLSearchParams(window.location.search).get("email");
+    const params = new URLSearchParams(window.location.search);
+    const initialEmail = params.get("email");
+    const roleHint = (params.get("role") || params.get("type") || params.get("account") || "").toLowerCase();
+    const merchantIntent = ["merchant", "enterprise", "business"].includes(roleHint);
+    setMerchantSignupIntent(merchantIntent);
+    setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
+
     if (initialEmail) {
       setEmail(initialEmail);
       setAuthMethod("email");
@@ -323,6 +331,10 @@ export default function SignupPage() {
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
+    if (selectedRole === "ENTERPRISE" && !merchantSignupIntent) {
+      setRoleError("Merchant onboarding is invite-only. Continue as an Individual User unless you have a merchant invite link.");
+      return;
+    }
     if (requiresEmailLinking) {
       if (!email || !email.includes("@")) {
         setRoleError("Please enter a valid email address.");
@@ -335,7 +347,11 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/register-role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: selectedRole, email: requiresEmailLinking ? email : undefined }),
+        body: JSON.stringify({
+          role: selectedRole,
+          email: requiresEmailLinking ? email : undefined,
+          merchantSignupCode: selectedRole === "ENTERPRISE" ? merchantSignupCode : undefined,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -412,10 +428,13 @@ export default function SignupPage() {
               {/* Enterprise Merchant Option */}
               <button
                 onClick={() => setSelectedRole("ENTERPRISE")}
+                disabled={!merchantSignupIntent}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "ENTERPRISE"
                     ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
+                    : merchantSignupIntent
+                      ? "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
+                      : "border-white/5 bg-white/[0.01] opacity-55 cursor-not-allowed"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -436,7 +455,9 @@ export default function SignupPage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
+                  {merchantSignupIntent
+                    ? "Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow."
+                    : "Merchant onboarding is invite-only. Use a merchant invite link to create this account type."}
                 </p>
               </button>
             </div>

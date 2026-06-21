@@ -1,41 +1,75 @@
 # SubScript Protocol
 
-SubScript is a fast, private, and reliable decentralized subscription platform built on the Arc Network.
+SubScript is a programmable payment layer for stablecoin commerce on Arc. It enables one-time payments, recurring billing, usage-based charging, invoicing, and AI-native transactions through a Unified Payment Authorization (UPA) framework.
 
-## Recent Updates & Architecture Changes
+The product is built around Arc-native USDC settlement, human-readable memo receipts, hosted payment links, Checkout Intent IDs, signed merchant webhooks, metered vault billing, and merchant/user dashboards.
 
-We have recently completely overhauled the SubScript protocol and its frontend integration. Here is a summary of the latest changes and fixes implemented in the project.
+## Core Positioning
 
-### 1. Zero-Knowledge (ZK) Proof Architecture
-We pivoted from a simple public ledger mapping to a Zero-Knowledge proof architecture. The frontend integration has been updated so that instead of calling a simple `createSubscription`, it now generates a cryptographic commitment and a ZK proof.
+- **For consumers:** fee-free, set-and-forget USDC subscriptions without dollar-card failures, hidden maintenance charges, failed-payment penalties, or international card restrictions.
+- **For merchants:** checkout, recurring billing, payment links, webhook fulfillment, metered billing, invoice-like collection, and privacy-ready commercial flows with a transparent 1% merchant fee target.
+- **For developers:** a single lifecycle for payment creation, bounded authorization, receipt binding, onchain verification, and webhook fulfillment.
 
-### 2. MCP Server Configuration & Smithery Integration
-To support the new ZK architecture with developer tooling (like Cursor), we updated the Node.js Model Context Protocol (MCP) server. 
-- **Smithery Registry Fix**: To allow Smithery to automatically scan our MCP server without hitting `405 Method Not Allowed` errors, we created a custom API route at `src/app/api/mcp-server-card/route.ts` that explicitly supports GET requests and provides the `server-card.json` static card.
-- **Vercel Routing**: Added a `vercel.json` and updated `next.config.mjs` to rewrite the `/.well-known/mcp/server-card.json` path to our custom API route. This bypasses Vercel's strict handling of static dot-folders.
+## Unified Payment Authorization
 
-### 3. Authentication & Wallet Dashboard
-- **Privy Removal**: The Privy sign-in/sign-up functionality was causing issues and has been disabled/removed to streamline the user experience.
-- **Dashboard & Wallet Integration**: We are implementing a new Dashboard. The connected wallet of the user is now automatically linked to the MCP and prepended to the provided prompts, making it significantly easier for merchants to implement SubScript without needing to manually copy and paste configurations.
+UPA gives one-time checkout, subscriptions, usage billing, invoice settlement, and AI-native payments the same operational shape:
 
-### 4. Waitlist & Database Reliability
-- **Waitlist Fixes**: Addressed the recurring submission errors on the waitlist forms for both Enterprises and Users.
-- **Supabase Integration**: The app connects to a Supabase PostgreSQL database using Prisma. We've verified database connectivity and set up automated test scripts (`test-waitlist.js` and `test-waitlist-enterprise.js`) to ensure end-to-end functionality for the waitlist flows.
+1. The merchant creates a structured intent or payment link.
+2. The payer authorizes a bounded USDC action.
+3. SubScript binds the payment to an Arc memo receipt token.
+4. The backend verifies settlement.
+5. The merchant receives a signed webhook and unlocks the user, order, or entitlement.
 
-### 5. Access & Middleware
-- **Password Gate Removal**: The application middleware (`src/middleware.ts`) was updated to bypass the password gate, unlocking all pages for easier testing and access.
+## Current Platform Surface
+
+- Checkout Intents via `/api/intent`.
+- Hosted payment links via `/api/payment-links` and `/pay/[id]`.
+- Arc memo receipt tokens and public receipt pages.
+- Signed webhook dispatch and replay routes.
+- Google-powered wallet onboarding.
+- Merchant/user dashboard routing.
+- Metered vault usage reporting for API, AI token, storage, media, and pay-per-use products.
+- DNS-style aliases for readable payment identities.
+- Privacy Premium and confidential payroll surfaces.
+- Keeper-compatible cron and trigger routes.
+
+## Protocol Targets
+
+The new product brief also defines protocol targets that must remain deployment-scoped until code, schema, contracts, and production configuration prove them live:
+
+- Direct fiat-to-USDC onramps.
+- Secure encrypted private-key export during Google onboarding.
+- Dedicated invoice objects with custom due terms.
+- Sponsor relationships for Pay for Me subscriptions.
+- Service lock windows, minimum commitments, and grace periods.
+- Configurable dunning schedules with email/SMS notification flows.
+- Chainlink Automation as the default decentralized execution layer.
+- Circle Paymaster/Gas Station production sponsorship.
+- ArcaneVM governed visibility for production confidentiality.
+- Arc post-quantum resilience inheritance.
+
+## Documentation
+
+- Product brief: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
+- Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
+- Developer docs: `/docs`
+- Protocol brief: `/protocol`
+- LLM index: `/llms.txt`
+- Full LLM reference: `/llms-full.txt`
 
 ## Tech Stack
-- Next.js (App Router)
+
+- Next.js App Router
 - React
+- TypeScript
 - Prisma
 - Supabase PostgreSQL
 - Tailwind CSS
-- MCP (Model Context Protocol)
+- Viem/Wagmi
+- Circle wallet/onboarding integration
+- Sentry and PostHog instrumentation
 
-## Getting Started
-
-To run the development server locally:
+## Local Development
 
 ```bash
 npm install
@@ -43,7 +77,11 @@ npx prisma generate
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-/* Initial Security Audit Trigger */
+## Verification
 
+```bash
+npx tsc --noEmit --pretty false
+npm run build
+```

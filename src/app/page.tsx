@@ -733,6 +733,8 @@ export default function Home() {
             <footer className="max-w-7xl mx-auto px-6 sm:px-12 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4 py-8 relative z-10">
                 <span>© 2026 SubScript Protocol. All rights reserved.</span>
                 <div className="flex gap-4">
+                    <Link href="/protocol" className="hover:text-white transition">Protocol</Link>
+                    <Link href="/docs" className="hover:text-white transition">Docs</Link>
                     <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
                     <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
                 </div>

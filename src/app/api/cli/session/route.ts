@@ -81,6 +81,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { merchantAddress, mode } = body;
+    const normalizedMode = mode === "zk-routed" ? "privacy-routed" : mode;
 
     if (!merchantAddress || !mode) {
       return NextResponse.json(
@@ -89,9 +90,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (mode !== "standard" && mode !== "zk-routed") {
+    if (normalizedMode !== "standard" && normalizedMode !== "privacy-routed") {
       return NextResponse.json(
-        { error: "Invalid mode. Must be 'standard' or 'zk-routed'" },
+        { error: "Invalid mode. Must be 'standard' or 'privacy-routed'" },
         { status: 400 }
       );
     }
@@ -114,9 +115,9 @@ export async function POST(request: Request) {
     const tier = merchants.tier;
 
     /* Enforce tier requirements */
-    if (mode === "zk-routed" && tier === "FREE") {
+    if (normalizedMode === "privacy-routed" && tier === "FREE") {
       return NextResponse.json(
-        { error: "ZK-routed mode requires Tier 1 Premium merchant tier" },
+        { error: "Privacy-routed mode requires Privacy Premium merchant tier" },
         { status: 403 }
       );
     }
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
         hash_version: "sha256",
         merchant_address: merchantAddress,
         tier: tier,
-        mode: mode,
+        mode: normalizedMode,
         expires_at: expiresAt,
         used: false,
       });

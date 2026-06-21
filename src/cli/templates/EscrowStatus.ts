@@ -69,7 +69,7 @@ export function EscrowStatusTracker() {
       color: "#ffffff",
       fontFamily: "system-ui, sans-serif"
     }}>
-      <h4 style={{ margin: "0 0 6px 0", fontSize: "14px", color: "#00d2b4" }}>Active ZK Escrow Pending Activation</h4>
+      <h4 style={{ margin: "0 0 6px 0", fontSize: "14px", color: "#00d2b4" }}>Active Privacy Premium Routing Pending Activation</h4>
       <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "rgba(255,255,255,0.6)", lineHeight: "1.4" }}>
         Your USDC deposit has been locked in the Escrow Router. Ready to submit ZK proof using a burner wallet.
       </p>

@@ -30,10 +30,11 @@ export async function runAddCheckout(options: { noTelemetry?: boolean }) {
     const configContent = await readFile(paths.configPath, "utf8");
     
     const merchantMatch = configContent.match(/merchantAddress:\s*["'](0x[0-9a-fA-F]{40})["']/);
-    const modeMatch = configContent.match(/mode:\s*["'](standard|zk-routed)["']/);
+    const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
     
     const merchantAddress = merchantMatch ? merchantMatch[1] : "";
-    const mode = modeMatch ? (modeMatch[1] as "standard" | "zk-routed") : "standard";
+    const parsedMode = modeMatch ? modeMatch[1] : "standard";
+    const mode = (parsedMode === "zk-routed" ? "privacy-routed" : parsedMode) as "standard" | "privacy-routed";
 
     if (!merchantAddress) {
       throw new Error("Could not parse merchantAddress from subscript.config.ts");
@@ -73,8 +74,8 @@ export async function runAddCheckout(options: { noTelemetry?: boolean }) {
       console.log(`[SUCCESS] Generated checkout intent route: ${path.relative(cwd, paths.checkoutPath)}`);
     }
 
-    // Scaffold Escrow tracker in ZK modes
-    if (mode === "zk-routed") {
+    // Scaffold status tracker in Privacy Premium modes
+    if (mode === "privacy-routed") {
       const escrowContent = generateEscrowStatusTemplate({
         cliVersion: CLI_VERSION,
         templateVersion: TEMPLATE_VERSION,
@@ -83,7 +84,7 @@ export async function runAddCheckout(options: { noTelemetry?: boolean }) {
       });
       const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
       await writeFile(escrowPath, escrowContent, "utf8");
-      console.log(`[SUCCESS] Generated ZK Escrow status tracker: ${path.relative(cwd, escrowPath)}`);
+      console.log(`[SUCCESS] Generated Privacy Premium status tracker: ${path.relative(cwd, escrowPath)}`);
     }
 
     console.log("\n[SUCCESS] Checkout component scaffolding completed successfully.");

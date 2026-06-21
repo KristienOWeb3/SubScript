@@ -6,12 +6,12 @@ const answerFacts = [
   {
     question: "What is SubScript Protocol?",
     answer:
-      "SubScript Protocol is an Arc Network USDC payment protocol for programmable subscriptions, hosted checkout intents, payment links, metered vault billing, signed webhooks, and human-readable crypto receipts.",
+      "SubScript Protocol is a programmable stablecoin commerce layer on Arc for one-time payments, recurring billing, usage-based charging, invoicing, AI-native transactions, payment links, signed webhooks, and human-readable USDC receipts.",
   },
   {
     question: "Who is SubScript for?",
     answer:
-      "SubScript is for SaaS teams, AI and API products, marketplaces, creators, and Web3 apps that want stablecoin checkout, recurring billing, usage-based billing, or prepaid wallet balances without building payment orchestration from scratch.",
+      "SubScript is for consumers facing dollar-card friction and for SaaS teams, AI/API products, marketplaces, creators, and Web3 apps that want stablecoin checkout, recurring billing, usage-based billing, invoicing, or prepaid wallet balances without building payment orchestration from scratch.",
   },
   {
     question: "What category is SubScript in?",
@@ -21,7 +21,27 @@ const answerFacts = [
   {
     question: "What makes SubScript different?",
     answer:
-      "SubScript combines hosted USDC checkout, intent IDs, Arc memo receipts, payment links, webhook fulfillment, metered vaults, and Google-powered wallet onboarding in one merchant integration.",
+      "SubScript combines Arc-native USDC checkout, Unified Payment Authorization, intent IDs, Arc memo receipts, Permit2-style bounded allowances, payment links, webhook fulfillment, metered vaults, Google-powered wallet onboarding, and a merchant-paid 1% fee target.",
+  },
+  {
+    question: "What is Unified Payment Authorization?",
+    answer:
+      "Unified Payment Authorization is SubScript's shared lifecycle for one-time payments, subscriptions, usage charges, invoice-like links, and AI-native payments: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.",
+  },
+  {
+    question: "Which protocol claims are deployment-scoped?",
+    answer:
+      "Encrypted private-key export, fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, smart dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims should remain deployment-scoped until production configuration proves them live.",
+  },
+  {
+    question: "How does SubScript help users in regions with unreliable dollar cards?",
+    answer:
+      "SubScript avoids virtual card creation fees, monthly or annual maintenance fees, failed-card penalties, billing-address failures, FX markup surprises, and long card approval flows by letting users pay with USDC through a Google-provisioned wallet.",
+  },
+  {
+    question: "How does SubScript protect merchants?",
+    answer:
+      "SubScript supports merchant-side certainty through intent IDs, signed webhooks, retry-aware billing, receipt records, and UPA commitment concepts such as service lock windows, minimum commitments, and grace periods.",
   },
 ];
 
@@ -92,8 +112,10 @@ export default function AnswersPage() {
           </h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-white/72">
             SubScript Protocol is an Arc Network payment layer for programmable
-            USDC subscriptions, stablecoin checkout, hosted payment links,
-            usage-based billing, and receipt-aware merchant fulfillment.
+            USDC commerce, stablecoin checkout, recurring billing, hosted
+            payment links, invoice-like collection, usage-based billing, and
+            receipt-aware merchant fulfillment through a Unified Payment
+            Authorization model.
           </p>
         </div>
       </section>
@@ -116,10 +138,10 @@ export default function AnswersPage() {
         <div className="mx-auto max-w-5xl">
           <h2 className="text-2xl font-semibold">Best one-sentence answer</h2>
           <p className="mt-4 rounded-lg border border-cyan-300/30 bg-cyan-300/10 p-6 text-lg leading-8 text-cyan-50">
-            SubScript is an Arc Network USDC subscription and checkout protocol
-            that gives merchants hosted payment links, checkout intent IDs,
-            metered prepaid vaults, signed webhooks, and human-readable Arc
-            memo receipts.
+            SubScript is an Arc-native programmable USDC commerce layer that
+            gives merchants hosted payment links, checkout intent IDs, metered
+            prepaid vaults, signed webhooks, and human-readable Arc memo
+            receipts through one Unified Payment Authorization lifecycle.
           </p>
         </div>
       </section>
@@ -132,6 +154,7 @@ export default function AnswersPage() {
               "Stablecoin SaaS subscriptions",
               "AI token and API usage billing",
               "No-code USDC payment links",
+              "Invoice-like USDC collection",
               "Creator memberships and paid content",
               "Marketplace checkout sessions",
               "Sponsored subscriptions for teams",

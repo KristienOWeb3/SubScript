@@ -1,133 +1,114 @@
 # SubScript Protocol - Features & Services Catalog
 
-SubScript is a fast, private, and reliable decentralized subscription platform built on the Arc Network. It allows merchants to create non-custodial recurring payment systems, checkout links, and institutional payroll streams using Uniswap's Permit2 standard and Arc's privacy precompiles.
-
----
+SubScript is a programmable stablecoin commerce layer built on Arc. It supports one-time payments, recurring billing, usage-based charging, invoice-like collection, AI-native transactions, payment links, and signed webhook fulfillment through a Unified Payment Authorization (UPA) framework.
 
 ## 1. Core Smart Contract Architecture
 
-The protocol layer operates completely non-custodially and transiently.
+The protocol layer is designed to be non-custodial and stateless across block boundaries.
 
 ### SubScriptRouter.sol
-* **Stateless Transient Vault**: Operates as a transient dispatcher that routes payouts to merchant-defined addresses instantly, holding zero balance across blocks.
-* **Tier-Gated Payout Destination**: Allows Premium merchants to configure custom payout addresses (`merchantPayoutDestination`), automatically rerouting standard on-chain settlements.
-* **Array-Size Hardening**: Restricts batch payouts using explicit requirements (\`recipients.length < 255\`) to prevent block gas limit exhaustion.
+
+- Routes Arc USDC deposits to merchant-defined destinations.
+- Emits memo-bound receipt events so backend verification can bind amount, merchant, and receipt token.
+- Targets zero protocol balance across block boundaries.
+- Supports premium payout destination configuration for merchant treasury routing.
 
 ### SubScriptPSA.sol
-* **Permit2 PSA subscriptions**: Leverages the Permit2 allowance standard for recurring subscription processing instead of legacy ERC-20 infinite approvals.
-* **Non-Custodial Pull Payments**: Enables keepers to pull recurring payments automatically from subscribers based on active sign-offs and signatures.
+
+- Uses Permit2-style bounded authorization for recurring billing.
+- Lets keeper/execution infrastructure process due payments without requiring a new wallet action every cycle.
+- Preserves user custody until the exact payment transaction executes.
 
 ### SubScriptConfidential.sol
-* **Confidential Batch Payouts**: Extends standard subscription flows by integrating Arc Network's native privacy precompiles (address \`0x88\`).
-* **Shielded Metadata**: Emits masked events for shielded batches (hiding counterparty addresses and exposing only aggregate amounts).
-* **View Key Governance**: Allows merchants to register a hash of their view key to decrypt and fetch historical plaintext logs, protecting transactional privacy on-chain.
 
----
+- Provides privacy-tier surfaces for confidential batch payouts and shielded metadata concepts.
+- Aligns with ArcaneVM / Arc Privacy Sector positioning for governed visibility and selective disclosure.
+- Requires production ArcaneVM verification before confidentiality claims are treated as live.
 
-## 2. Database Models (Prisma / PostgreSQL Schema)
+## 2. Database Models
 
-The persistent database layer tracks off-chain state and audit trails.
+The persistent database layer tracks offchain state and audit trails.
 
-* **WaitlistLead**: Captures waitlist submissions (emails, wallet addresses, and monthly volume).
-* **ApiKey**: Stores merchant publishable and secret keys for API authentication.
-* **WebhookEndpoint & WebhookEvent**: Manages registered listener URLs and events (logs event status, payload, and receiver responses).
-* **Session**: Tracks client sessions for wallet-based authentication.
-* **PaymentLink**: Stores generated checkout links (including newly added idempotency keys and merchant name snapshots).
-* **PaymentLinkPayment**: Tracks individual payments matching generated checkout links.
-* **Merchant**: Stores merchant tier levels (\`FREE\` vs. \`PREMIUM\`), payout destinations, balances, and view key hashes.
-* **Subscription**: Monitors subscription agreements, current nonces, next billing dates, and billing periods.
-* **PaymentSession**: Manages dynamic session cycles (pending, processing, completed, or reconciliation state).
-* **PayoutBatch, PayoutBatchChunk, PayoutBatchItem**: Tracks multi-transaction payroll executions and balances.
-* **IdempotencyKey**: Stores API request execution locks to prevent double-charging or duplicate entries.
-* **LedgerEntry**: Records non-custodial accounting logs.
-* **WebhookDelivery**: Audits webhook delivery attempts, retries, and errors.
-* **MerchantEmailTemplate**: Stores custom exit survey subject lines and bodies for churn recovery emails.
-* **PayrollCampaign & PayrollRecipient**: Stores campaign titles, payment frequencies, next paydays, Permit2 credentials, and employee wallets for Institutional Payroll.
-* **MeteredVault**: Stores prepaid usage balances, thresholds, top-up amounts, monthly velocity limits, and per-merchant customer consumption state.
-* **AddressAlias**: Stores SubScript DNS-style aliases that map human-readable names to user and merchant wallet addresses.
-
----
+- `WaitlistLead`: waitlist submissions.
+- `ApiKey`: merchant publishable and secret keys.
+- `WebhookEndpoint` and `WebhookEvent`: registered listener URLs, event payloads, delivery state, and receiver responses.
+- `Session`: wallet/session authentication state.
+- `PaymentLink`: hosted checkout link records, idempotency keys, merchant snapshots, receipt tokens, and status.
+- `PaymentLinkPayment`: payment attempts linked to hosted checkout.
+- `Merchant`: merchant tier, payout destinations, balances, aliases, and privacy settings.
+- `Subscription`: recurring agreement state, next billing dates, billing periods, and retry state.
+- `PaymentSession`: pending, processing, completed, and reconciliation states.
+- `LedgerEntry`: append-only accounting records.
+- `WebhookDelivery`: webhook delivery attempts and retry logs.
+- `MeteredVault`: prepaid usage balances, thresholds, top-up amounts, monthly velocity limits, and per-merchant usage state.
+- `AddressAlias`: SubScript DNS-style readable aliases for user and merchant wallet addresses.
 
 ## 3. Backend API Services
 
-Next.js App Router API handlers power integration endpoints.
+### Authentication and Sessions
 
-### Authentication & Sessions (\`/api/auth\`)
-* **Signature-Based Auth**: Validates wallet signatures to create secure session cookies.
+- Signature-based wallet auth.
+- Email/OTP and Google-powered embedded wallet flows.
+- Production target: enforce encrypted private-key export after Google wallet provisioning.
 
-### Developer API Keys (\`/api/keys\`)
-* **Key Management**: Allows Premium merchants to generate and revoke public/secret keys.
+### Checkout Intents and Payment Links
 
-### Payment Links Service (\`/api/payment-links\`)
-* **Checkout Link Creation**: CRUD endpoints for payment checkout links.
-* **Idempotency Locks**: Automatically returns existing records for matching idempotency keys to prevent duplicate database writes.
-* **Merchant Snapshots**: Writes a merchant name snapshot to the link record to protect against retrospective name updates.
+- `/api/intent` creates a developer-friendly checkout session.
+- `/api/payment-links` creates hosted payment links.
+- `/pay/[id]` hosts the public checkout experience.
+- Receipt tokens bind price, merchant, and memo for verification.
 
-### Metered Vaults (\`/api/user/vault/*\`)
-* **Flexible Usage-Based Billing**: Lets merchants report API token usage, AI model consumption, storage capacity, pay-per-view access, or other metered events against a user's prepaid vault.
-* **Automatic Top-Up Triggers**: Tracks thresholds and top-up amounts so low balances can initiate a replenishment flow without forcing static subscription tiers.
-* **Monthly Velocity Controls**: Enforces monthly spending limits for metered relationships.
+### Metered Vaults
 
-### DNS Alias Service (\`/api/merchant/alias\`)
-* **Human-Readable Payment Identities**: Allows users and merchants to register wallet aliases for easier recognition, transfer routing, and checkout display.
-* **Role-Aware Namespaces**: Supports user-facing `.sub` names and merchant-facing `.hq` / `.biz` names.
+- `/api/user/vault/*` supports prepaid usage billing for API calls, AI tokens, storage, media, and pay-per-use products.
+- Vault thresholds and top-up amounts support automatic recovery flows.
 
-### Webhook Infrastructure (\`/api/webhooks\`)
-* **Webhook CRUD (\`/webhooks/endpoints\`)**: Allows Premium merchants to register webhook URLs.
-* **Event Dispatcher (\`/webhooks/dispatch\`)**: Validates webhook signatures and enqueues events to all active merchant listener URLs.
-* **Subscript Sync (\`/webhooks/subscript\`)**: Syncs on-chain subscription events directly into the off-chain database.
+### DNS Alias Service
 
-### Automated Keepers & Cron Executors
-* **Billing Cron (\`/api/cron/billing\`)**: Automatically checks and triggers execution of due subscriptions.
-* **Payroll Cron (\`/api/internal/payroll\`)**: Loops over active payroll campaigns, checks due dates, transfers USDC from organization vaults, and calls the confidential batch payout contract.
+- `/api/merchant/alias` supports human-readable payment identities for users and merchants.
 
-### Institutional Payroll CRUD (\`/api/merchant/payroll\`)
-* **Premium Gated Operations**: Rejects non-premium merchants (returning 403 Forbidden) for GET, POST, PUT, and DELETE methods.
+### Webhook Infrastructure
 
----
+- Webhook endpoints, dispatch, event replay, and signed payload verification support merchant fulfillment.
+- Merchants should unlock by `intent_id` or checkout session ID, not by guessing payer wallet identity.
 
-## 4. Frontend Dashboards & UIs
+### Keepers and Cron Executors
 
-A premium dark glassmorphic web dashboard designed for desktop screens.
+- Billing and reconciliation routes support retry-aware execution.
+- Production target: register Chainlink Automation upkeeps and monitor decentralized execution.
+
+## 4. Frontend Dashboards and UI
 
 ### Merchant Portal
-* **Earnings & Balances**: Visualizes available and reserved USDC balances.
-* **API Configuration Panel**: Allows merchants to manage API keys, webhooks, and payout routing.
-* **Upgrade Portal**: Facilitates subscribing to the Premium tier.
 
-### Checkout Page (\`/pay/[id]\`)
-* **Permit2 Signature Checkout**: Dynamic payment links with Open Graph and Twitter Card relative image paths for optimized social previews.
+- Payment links, API keys, webhooks, balances, aliases, premium status, payroll, and analytics.
+- Premium/privacy surfaces should use the 10 USDC/month baseline target from the product brief unless pricing constants prove otherwise.
 
-### Institutional Payroll Panel (\`/dashboard/payroll\`)
-* **Campaign Manager**: Form to title payroll plans, set cycles, and upload recipient wallets.
-* **Permit2 Signature Flow**: Signs EIP-712 Permit2 typed data approvals allowing keepers to pull payroll funds.
-* **Tier-Lock Overlay**: Injects a glass lock card with a Lock icon for Standard tier merchants, covering all inputs and directing them to the upgrade screen.
+### Checkout Page
 
-### Usage-Based Billing Surfaces
-* **Merchant Analytics Vault View**: Shows active customer prepaid vaults and lets merchants report usage through API-backed controls.
-* **User Vault Controls**: Lets users configure merchant vault thresholds, top-up amounts, and monthly limits.
+- Hosted Arc USDC checkout with Google wallet onboarding, wallet connection, payment execution, verification status, and receipt creation.
+- Direct Arc USDC is the live hosted rail. CCTP remains disabled until Arc-side memo settlement can be verified in one bound flow.
 
----
+### Usage-Based Billing
 
-## 4.5 Product Feature Positioning
+- Merchant and user vault controls support prepaid balances, top-up thresholds, and usage reporting.
 
-* **Pay for Me / Sponsored Subscriptions**: Designed for relationships where parents, employers, teams, or sponsors cover another user's costs while limiting unnecessary data exposure.
-* **Automated Notification Gateways**: Enterprise messaging surfaces combine webhooks, DMs, and managed notification delivery for high-volume payment operations.
-* **Quantum-Resilience Roadmap**: The protocol inherits Arc's roadmap for post-quantum wallet signatures, privacy-sector hybrid cryptography, and validator communication hardening.
+## 5. Product Feature Positioning
 
----
+- **Unified Payment Authorization:** one lifecycle for one-time checkout, recurring subscriptions, usage billing, invoices, sponsor payments, and AI-native transactions.
+- **Dollar-card alternative:** avoids card creation fees, maintenance fees, failed-card penalties, FX markups, billing-address failures, and long basic setup flows.
+- **Pay for Me / Sponsored Subscriptions:** product target for parents, employers, teams, or sponsors to cover user costs with privacy boundaries.
+- **Fiat-to-USDC Onboarding:** product target for bank-transfer funding, automatic conversion, and wallet deposit reconciliation.
+- **Merchant Protection Layer:** product target for service lock windows, minimum commitments, and grace periods, with a 72-hour ceiling for digital goods and 30-day ceiling for SaaS seats.
+- **Smart Dunning Engine:** product target for configurable Day 1, Day 3, and Day 7 retries, top-up reminders, and final suspension events.
+- **Privacy Premium:** 10 USDC/month baseline target for high-volume merchants that need ArcaneVM-style governed visibility.
+- **Quantum-Resilience Roadmap:** inherited Arc positioning only; keep caveated until Arc documentation and deployment status prove it.
 
-## 5. Developer CLI & Integration Tooling
+## 6. Developer CLI and Integration Tooling
 
-A CLI tool for scaffolding SubScript integrations.
+- CLI scaffolding for checkout routes, webhook routes, config templates, and checkout buttons.
+- Integration templates should keep secret keys server-side and verify webhook signatures before fulfillment.
 
-* **Project Scaffolding**: Installs SDK packages, generates environment templates (\`.env.local\`), and scaffolds boilerplate Next.js webhook routes.
-* **Agent Integration Rules**: Generates a \`.cursorrules\` context file that mandates local environment key usage and webhook signature validation before handling raw payloads.
+## 7. Model Context Protocol Server
 
----
-
-## 6. Model Context Protocol (MCP) Server
-
-SubScript exposes a Model Context Protocol server to allow AI editors (such as Cursor or Claude) to interact with the project natively.
-
-* **Smithery Scanning Support**: A static card path (\`/.well-known/mcp/server-card.json\` routed via GET API) allows automated registries to scan capabilities cleanly without method restrictions.
+SubScript exposes MCP server metadata for AI editors and registries through `/.well-known/mcp/server-card.json`.

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { role, email } = sanitizedBody;
+        const { role, email, merchantSignupCode } = sanitizedBody;
 
         if (role !== "USER" && role !== "ENTERPRISE") {
             return NextResponse.json({ error: "Invalid role selected" }, { status: 400 });
@@ -44,6 +44,22 @@ export async function POST(request: Request) {
                         role: existingRole.role,
                         alreadyRegistered: true,
                     };
+                }
+
+                if (role === "ENTERPRISE") {
+                    const publicMerchantSignupEnabled = process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP === "true";
+                    const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
+                    const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
+                    const hasValidInviteCode = Boolean(requiredMerchantCode) && providedMerchantCode === requiredMerchantCode;
+
+                    if (!publicMerchantSignupEnabled && !hasValidInviteCode) {
+                        await client.query("rollback");
+                        return {
+                            role: "ENTERPRISE",
+                            alreadyRegistered: false,
+                            forbidden: true,
+                        };
+                    }
                 }
 
                 if (emailVal) {
@@ -104,6 +120,12 @@ export async function POST(request: Request) {
                 throw error;
             }
         });
+
+        if (accountRole.forbidden) {
+            return NextResponse.json({
+                error: "Merchant onboarding is invite-only. Sign up as a user or use a valid merchant invite link.",
+            }, { status: 403 });
+        }
 
         if (accountRole.alreadyRegistered) {
             if (accountRole.role !== role) {

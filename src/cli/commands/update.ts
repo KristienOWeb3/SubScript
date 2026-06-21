@@ -68,10 +68,11 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
     // Parse config settings
     const configContent = await readFile(paths.configPath, "utf8");
     const merchantMatch = configContent.match(/merchantAddress:\s*["'](0x[0-9a-fA-F]{40})["']/);
-    const modeMatch = configContent.match(/mode:\s*["'](standard|zk-routed)["']/);
+    const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
     
     const merchantAddress = merchantMatch ? merchantMatch[1] : "";
-    const mode = modeMatch ? (modeMatch[1] as "standard" | "zk-routed") : "standard";
+    const parsedMode = modeMatch ? modeMatch[1] : "standard";
+    const mode = (parsedMode === "zk-routed" ? "privacy-routed" : parsedMode) as "standard" | "privacy-routed";
 
     if (!merchantAddress) {
       throw new Error("Could not parse config settings from subscript.config.ts");
@@ -137,7 +138,7 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
     await updateFile(buttonPath, "SubScriptCheckoutButton.tsx", checkoutContent);
 
     // Update EscrowStatusTracker.tsx
-    if (mode === "zk-routed") {
+    if (mode === "privacy-routed") {
       const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
       const escrowContent = generateEscrowStatusTemplate({
         cliVersion: CLI_VERSION,

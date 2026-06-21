@@ -1,6 +1,6 @@
 export interface ConfigTemplateOptions {
   merchantAddress: string;
-  mode: "standard" | "zk-routed";
+  mode: "standard" | "privacy-routed";
   tier: number;
   chainId: number;
   routerAddress: string;

@@ -25,9 +25,10 @@ export async function runAddCheckout(options) {
         // Parse config settings safely using RegExp (Phase 3)
         const configContent = await readFile(paths.configPath, "utf8");
         const merchantMatch = configContent.match(/merchantAddress:\s*["'](0x[0-9a-fA-F]{40})["']/);
-        const modeMatch = configContent.match(/mode:\s*["'](standard|zk-routed)["']/);
+        const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
         const merchantAddress = merchantMatch ? merchantMatch[1] : "";
-        const mode = modeMatch ? modeMatch[1] : "standard";
+        const parsedMode = modeMatch ? modeMatch[1] : "standard";
+        const mode = parsedMode === "zk-routed" ? "privacy-routed" : parsedMode;
         if (!merchantAddress) {
             throw new Error("Could not parse merchantAddress from subscript.config.ts");
         }
@@ -56,8 +57,8 @@ export async function runAddCheckout(options) {
             await writeFile(paths.checkoutPath, routeContent, "utf8");
             console.log(`[SUCCESS] Generated checkout intent route: ${path.relative(cwd, paths.checkoutPath)}`);
         }
-        // Scaffold Escrow tracker in ZK modes
-        if (mode === "zk-routed") {
+        // Scaffold status tracker in Privacy Premium modes
+        if (mode === "privacy-routed") {
             const escrowContent = generateEscrowStatusTemplate({
                 cliVersion: CLI_VERSION,
                 templateVersion: TEMPLATE_VERSION,
@@ -66,7 +67,7 @@ export async function runAddCheckout(options) {
             });
             const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
             await writeFile(escrowPath, escrowContent, "utf8");
-            console.log(`[SUCCESS] Generated ZK Escrow status tracker: ${path.relative(cwd, escrowPath)}`);
+            console.log(`[SUCCESS] Generated Privacy Premium status tracker: ${path.relative(cwd, escrowPath)}`);
         }
         console.log("\n[SUCCESS] Checkout component scaffolding completed successfully.");
         await sendTelemetry("cli.addCheckout.completed", { merchantId: merchantAddress, cliVersion: CLI_VERSION, templateVersion: TEMPLATE_VERSION, mode, requestId }, noTelemetry);

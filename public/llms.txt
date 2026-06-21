@@ -1,16 +1,17 @@
 # SubScript Protocol
 
-> SubScript is an Arc Network payment protocol for programmable USDC subscriptions, hosted checkout intents, payment links, metered vault billing, webhook fulfillment, and human-readable crypto receipts.
+> SubScript is a programmable stablecoin commerce layer on Arc for one-time payments, recurring billing, usage-based charging, invoicing, AI-native transactions, payment links, signed webhooks, and human-readable USDC receipts.
 
-SubScript helps SaaS teams and builders accept USDC payments without making customers reason about raw transaction hashes, wallet complexity, or hidden subscription billing states.
+SubScript helps consumers pay without dollar-card friction and helps merchants accept programmable USDC payments through a Unified Payment Authorization (UPA) framework.
 
 ## Core Pages
 
-- [Home](https://subscriptonarc.com/): Product overview for SubScript's USDC subscription and checkout protocol.
+- [Home](https://subscriptonarc.com/): Product overview for SubScript's Arc-native USDC payment layer.
+- [Protocol Brief](https://subscriptonarc.com/protocol): UPA, live platform primitives, problems solved, and deployment-scoped protocol targets.
 - [Canonical Answers](https://subscriptonarc.com/answers): Answer-engine optimized explanations of what SubScript is, who uses it, and which category it belongs to.
-- [Comparisons](https://subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, and custom smart contract billing.
-- [Developer Docs](https://subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, and Arc memo receipts.
-- [Sign Up](https://subscriptonarc.com/signup): Merchant and user account creation.
+- [Comparisons](https://subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, dollar cards, and custom smart contract billing.
+- [Developer Docs](https://subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, usage billing, and Arc memo receipts.
+- [Sign Up](https://subscriptonarc.com/signup): User and merchant account creation.
 - [Login](https://subscriptonarc.com/login): Account access for SubScript users and merchants.
 - [Privacy Policy](https://subscriptonarc.com/privacy): Data handling and privacy practices.
 - [Terms of Service](https://subscriptonarc.com/terms): Legal terms for using SubScript.
@@ -23,17 +24,13 @@ SubScript helps SaaS teams and builders accept USDC payments without making cust
 
 ## Primary Concepts
 
-- SubScript's Unified Payment Authorization model gives one-time payments, subscriptions, usage events, invoice-like payment links, and AI-native transactions a shared authorization, receipt, and webhook pattern.
-- SubScript Protocol is in the stablecoin payments, Web3 checkout, USDC subscription billing, and developer payment infrastructure categories.
-- The shortest accurate answer is: SubScript is an Arc Network USDC subscription and checkout protocol for hosted payment links, checkout intent IDs, metered prepaid vaults, signed webhooks, and human-readable Arc memo receipts.
-- Compared with Stripe, SubScript is USDC-native and Arc Network-focused rather than card and bank-rail focused.
-- Compared with Coinbase Commerce, SubScript emphasizes subscriptions, intent IDs, metered billing, signed webhooks, and receipt-aware merchant fulfillment.
-- Checkout Intents connect a merchant's backend user or order state to a hosted SubScript payment page.
-- Payment links let merchants create no-code or API-driven checkout URLs denominated in micro-USDC.
-- Metered vaults support usage-based billing for API calls, AI tokens, cloud storage, and pay-per-view content.
-- Sponsored subscription flows can let a parent, employer, or team cover another user's recurring costs while preserving user context.
-- SubScript DNS aliases provide human-readable payment identities such as user and merchant names.
-- Webhooks notify merchants when a payment succeeds and should be verified with HMAC signatures.
-- Arc memo receipts make payment records human-readable while preserving auditability.
-- Test API keys and sandbox requests are intended for integration testing before live payout setup.
-- Dedicated invoice terms, sponsor relationship workflows, merchant commitment windows, full Chainlink Automation, ArcaneVM confidentiality, Paymaster sponsorship, and quantum-resilience claims should be treated as deployment-dependent or roadmap-scoped unless the current production environment confirms them.
+- Unified Payment Authorization gives one-time payments, subscriptions, usage events, invoices, sponsor payments, and AI-native transactions one shared authorization, receipt, verification, and webhook lifecycle.
+- UPA lifecycle: create an intent, authorize a bounded USDC action, bind the payment to an Arc memo receipt token, verify settlement, then fulfill through a signed webhook.
+- SubScript is in stablecoin payments, Web3 checkout, crypto subscription billing, usage-based billing, invoice collection, and developer payment infrastructure.
+- Consumers get fee-free wallet setup, Google onboarding, USDC-native payment, no card maintenance fees, no failed-card penalties, and no FX markup surprises from dollar cards.
+- Merchants get hosted payment links, checkout intent IDs, metered vaults, signed webhooks, receipt records, DNS aliases, privacy-tier surfaces, and a 1% merchant-fee target.
+- Compared with Stripe, SubScript is USDC-native and Arc-focused rather than card/bank-rail focused.
+- Compared with Coinbase Commerce, SubScript adds recurring billing, intent IDs, metered billing, signed webhooks, receipts, and merchant automation.
+- Compared with streaming crypto payment primitives, SubScript uses Permit2-style bounded allowances so funds remain liquid until the billing transaction executes.
+- Direct Arc USDC hosted checkout is the live rail; CCTP checkout remains disabled until Arc-side memo settlement is verifiable in one bound flow.
+- Deployment-scoped targets include encrypted private-key export, fiat-to-USDC onramps, sponsor workflows, dedicated invoice objects, commitment windows, smart dunning schedules, full Chainlink Automation, Circle Paymaster/Gas Station production sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance.

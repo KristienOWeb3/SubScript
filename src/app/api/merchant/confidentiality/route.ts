@@ -75,7 +75,7 @@ export async function POST(request: Request) {
         }
 
         if (!merchantData || merchantData.tier === "FREE") {
-            return NextResponse.json({ error: "Forbidden: Premium merchant tier required to modify ZK/Shielded settings" }, { status: 403 });
+            return NextResponse.json({ error: "Forbidden: Privacy Premium merchant tier required to modify ArcaneVM shielded settings" }, { status: 403 });
         }
 
         if (shieldedPayoutsEnabled === undefined && viewKeyHash === undefined) {

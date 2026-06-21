@@ -92,7 +92,7 @@ export const pushVsPullComparison: ComparisonRow[] = [
     {
         feature: "Cross-Chain Assets",
         legacy: "Manual bridge + drop-off",
-        subscript: "Invisible CCTP background routing",
+        subscript: "Arc USDC checkout now; CCTP is deployment-scoped",
     },
     {
         feature: "Settlement Timeline",

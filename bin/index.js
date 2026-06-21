@@ -137,8 +137,8 @@ async function main() {
             const modeChoice = await select({
                 message: "Select SubScript routing mode:",
                 options: [
-                    { value: "standard", label: "Standard (Direct transparent payments on-chain)" },
-                    { value: "zk-routed", label: "Privacy Premium (ZK-routed two-phase escrow)" },
+                    { value: "standard", label: "Standard (Direct transparent payments on Arc)" },
+                    { value: "privacy-routed", label: "Privacy Premium (ArcaneVM-routed confidential settlement)" },
                 ],
             });
             if (isCancel(modeChoice)) {
@@ -236,7 +236,7 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
         const configOpts = {
             merchantAddress: merchantWalletAddress,
             mode,
-            tier: mode === "zk-routed" ? 1 : 0,
+            tier: mode === "privacy-routed" ? 1 : 0,
             chainId: 5042002, // Arc Testnet
             routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
             standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
@@ -271,8 +271,8 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
         const checkoutBtnPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
         await writeFile(checkoutBtnPath, checkoutContent, "utf8");
         console.log(`[SUCCESS] Generated checkout button: ${path.relative(process.cwd(), checkoutBtnPath)}`);
-        // 4. EscrowStatusTracker.tsx (if ZK mode)
-        if (mode === "zk-routed") {
+        // 4. EscrowStatusTracker.tsx (if Privacy Premium mode)
+        if (mode === "privacy-routed") {
             const escrowContent = generateEscrowStatusTemplate({
                 cliVersion: CLI_VERSION,
                 templateVersion: TEMPLATE_VERSION,
@@ -281,7 +281,7 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
             });
             const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
             await writeFile(escrowPath, escrowContent, "utf8");
-            console.log(`[SUCCESS] Generated ZK Escrow status tracker: ${path.relative(process.cwd(), escrowPath)}`);
+            console.log(`[SUCCESS] Generated Privacy Premium status tracker: ${path.relative(process.cwd(), escrowPath)}`);
         }
     }
     // Scaffold checkout and webhook routes

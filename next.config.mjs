@@ -34,27 +34,7 @@ const nextConfig = {
     return [
       {
         source: '/premium',
-        destination: '/merchant',
-        permanent: true,
-      },
-      {
-        source: '/dashboard',
-        destination: '/merchant',
-        permanent: true,
-      },
-      {
-        source: '/dashboard/user',
-        destination: '/user',
-        permanent: true,
-      },
-      {
-        source: '/dashboard/upgrade',
-        destination: '/merchant/upgrade',
-        permanent: true,
-      },
-      {
-        source: '/dashboard/payroll',
-        destination: '/merchant/payroll',
+        destination: 'https://dashboard.subscriptonarc.com/merchant',
         permanent: true,
       },
     ];

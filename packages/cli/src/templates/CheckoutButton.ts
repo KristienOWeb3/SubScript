@@ -3,7 +3,7 @@ export interface CheckoutButtonTemplateOptions {
   templateVersion: string;
   requestId: string;
   generationTimestamp: string;
-  mode: "standard" | "zk-routed";
+  mode: "standard" | "privacy-routed";
 }
 
 export function generateCheckoutButtonTemplate(opts: CheckoutButtonTemplateOptions): string {

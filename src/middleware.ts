@@ -193,9 +193,29 @@ export async function middleware(request: NextRequest) {
         .trim()
         .toLowerCase()
         .replace(/:\d+$/, "");
+    const isDashboardHost = host === "dashboard.subscriptonarc.com";
+    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    const isDashboardPath =
+        pathname === "/dashboard" || pathname.startsWith("/dashboard/") ||
+        pathname === "/merchant" || pathname.startsWith("/merchant/") ||
+        pathname === "/user" || pathname.startsWith("/user/");
     const isProductionDomain = host === "subscriptonarc.com"
         || host === "www.subscriptonarc.com"
-        || host === "dashboard.subscriptonarc.com";
+        || isDashboardHost;
+
+    if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath) {
+        const subUrl = request.nextUrl.clone();
+        subUrl.protocol = "https:";
+        subUrl.host = "dashboard.subscriptonarc.com";
+        if (pathname === "/dashboard") {
+            subUrl.pathname = "/";
+        } else if (pathname.startsWith("/dashboard/user")) {
+            subUrl.pathname = pathname.replace(/^\/dashboard\/user/, "/user");
+        } else if (pathname.startsWith("/dashboard/merchant")) {
+            subUrl.pathname = pathname.replace(/^\/dashboard\/merchant/, "/merchant");
+        }
+        return NextResponse.redirect(subUrl);
+    }
 
     if (isProductionDomain && !isApiRoute) {
         // 1. Redirect dashboard paths on the main landing domain to the dashboard subdomain
@@ -204,9 +224,11 @@ export async function middleware(request: NextRequest) {
                 const subUrl = request.nextUrl.clone();
                 subUrl.host = "dashboard.subscriptonarc.com";
                 if (pathname === "/dashboard") {
-                    subUrl.pathname = "/merchant";
+                    subUrl.pathname = "/";
                 } else if (pathname.startsWith("/dashboard/user")) {
                     subUrl.pathname = pathname.replace(/^\/dashboard\/user/, "/user");
+                } else if (pathname.startsWith("/dashboard/merchant")) {
+                    subUrl.pathname = pathname.replace(/^\/dashboard\/merchant/, "/merchant");
                 }
                 return NextResponse.redirect(subUrl);
             }
@@ -221,7 +243,7 @@ export async function middleware(request: NextRequest) {
         }
 
         // 2. Manage dashboard subdomain routing
-        if (host === "dashboard.subscriptonarc.com") {
+        if (isDashboardHost) {
             const token = request.cookies.get("subscript_session_token")?.value;
 
             // If not logged in, redirect to landing sign-in page
@@ -229,10 +251,10 @@ export async function middleware(request: NextRequest) {
                 return NextResponse.redirect("https://subscriptonarc.com/login");
             }
 
-            if (pathname === "/") {
-                const merchantUrl = request.nextUrl.clone();
-                merchantUrl.pathname = "/merchant";
-                return NextResponse.redirect(merchantUrl);
+            if (pathname === "/" || pathname === "/dashboard") {
+                const routerUrl = request.nextUrl.clone();
+                routerUrl.pathname = "/dashboard-router";
+                return NextResponse.rewrite(routerUrl);
             }
 
             if (pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
@@ -246,7 +268,13 @@ export async function middleware(request: NextRequest) {
                 return NextResponse.rewrite(rewriteUrl);
             }
 
-            if (pathname.startsWith("/dashboard")) {
+            if (pathname.startsWith("/dashboard/merchant")) {
+                const rewriteUrl = request.nextUrl.clone();
+                rewriteUrl.pathname = pathname.replace(/^\/dashboard\/merchant/, "/merchant");
+                return NextResponse.rewrite(rewriteUrl);
+            }
+
+            if (pathname.startsWith("/dashboard/")) {
                 const rewriteUrl = request.nextUrl.clone();
                 rewriteUrl.pathname = pathname.replace(/^\/dashboard/, "/merchant");
                 return NextResponse.rewrite(rewriteUrl);

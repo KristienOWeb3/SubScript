@@ -33,7 +33,7 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL
         ? `https://${process.env.VERCEL_URL}`
         : "https://subscriptonarc.com";
 
-const siteDescription = "SubScript is an Arc Network payment protocol for programmable USDC subscriptions, checkout intents, metered vault billing, human-readable receipts, privacy-aware billing, and Google-powered wallet onboarding.";
+const siteDescription = "SubScript is an Arc-native programmable USDC commerce layer for one-time payments, recurring billing, usage-based charging, invoice-like collection, signed webhooks, human-readable receipts, and Google-powered wallet onboarding.";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
 const bingSiteVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 
@@ -50,9 +50,12 @@ const structuredData = {
             sameAs: ["https://x.com/subscript"],
             knowsAbout: [
                 "Arc Network",
+                "programmable stablecoin commerce",
                 "USDC subscriptions",
                 "stablecoin checkout",
                 "crypto recurring billing",
+                "usage-based billing",
+                "invoice collection",
                 "payment links",
                 "metered billing",
                 "merchant webhooks",
@@ -76,6 +79,7 @@ const structuredData = {
             featureList: [
                 "Continue with Google wallet onboarding",
                 "USDC subscription routing on Arc Network",
+                "Unified Payment Authorization for one-time, recurring, usage-based, invoice, sponsor, and AI-native payments",
                 "Checkout Intent IDs for merchant fulfillment",
                 "Human-readable digital dollar receipts",
                 "L1 memo indexing for auditability",
@@ -84,8 +88,11 @@ const structuredData = {
                 "No-code payment links and QR checkout",
                 "Usage-based billing with prepaid metered vaults",
                 "Sponsored subscriptions for teams and families",
+                "Dollar-card alternative for users facing setup fees, maintenance fees, FX markups, failed-card penalties, and billing-address failures",
+                "Deployment-scoped fiat-to-USDC onramps, merchant commitment windows, smart dunning, Chainlink Automation, and ArcaneVM confidentiality",
             ],
             sameAs: [
+                `${appUrl}/protocol`,
                 `${appUrl}/answers`,
                 `${appUrl}/compare`,
                 `${appUrl}/docs`,

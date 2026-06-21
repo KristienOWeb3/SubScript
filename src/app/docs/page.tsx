@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  ArrowRight,
   BookOpen,
   Check,
   Code,
@@ -36,6 +37,7 @@ type Section = {
 
 const sections: Section[] = [
   { id: "overview", title: "Overview", icon: BookOpen },
+  { id: "protocol", title: "Protocol brief", icon: ShieldCheck },
   { id: "paths", title: "Choose a path", icon: Zap },
   { id: "upa", title: "UPA model", icon: ShieldCheck },
   { id: "nocode", title: "No-code links", icon: Link2 },
@@ -172,6 +174,7 @@ Important:
 - Do not ask the merchant to know the payer wallet.
 - Use intent_id as the source of truth.
 - Hosted checkout is Arc-native USDC only right now; do not add Base, Solana, or CCTP checkout unless the local docs say it is live.
+- Treat fiat onramps, dedicated invoices, sponsor workflows, merchant commitment windows, and Chainlink Automation as deployment-scoped unless the local app explicitly implements them.
 - Keep all secret keys server-side only.`;
 
 const viemMemoCode = `import { parseUnits } from "viem";
@@ -332,7 +335,7 @@ export default function DocsPage() {
                 The easiest way to add programmable USDC subscriptions.
               </h1>
               <p className="max-w-3xl text-sm leading-relaxed text-white/70">
-                SubScript lets a platform accept recurring USDC payments without forcing users to understand wallets, gas, bridges, or raw transaction hashes. Merchants create Checkout Intents, users pay through SubScript, Arc memo receipts make the payment human-readable, and webhooks tell the merchant exactly which Web2 user to unlock.
+                SubScript lets a platform accept programmable USDC payments without forcing users to understand wallets, gas, bridges, dollar cards, or raw transaction hashes. Merchants create Checkout Intents, users pay through SubScript, Arc memo receipts make the payment human-readable, and webhooks tell the merchant exactly which Web2 user or order to unlock.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {[
@@ -345,6 +348,33 @@ export default function DocsPage() {
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section id="protocol" className="scroll-mt-24 space-y-6">
+              <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.06] p-6">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">
+                      Protocol brief
+                    </p>
+                    <h2 className="mt-3 text-2xl font-black uppercase tracking-tight text-white">
+                      UPA, live primitives, and deployment-scoped targets
+                    </h2>
+                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/70">
+                      The protocol brief translates the updated feature document into the platform boundary:
+                      what is live today, what problem each flow solves, and what should remain caveated until
+                      production deployment settings prove it.
+                    </p>
+                  </div>
+                  <Link
+                    href="/protocol"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-5 py-3 text-xs font-black uppercase tracking-wider text-cyan-100 transition hover:bg-cyan-300/15 hover:text-white"
+                  >
+                    Open brief
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
               </div>
             </section>
 
@@ -375,7 +405,7 @@ export default function DocsPage() {
                 {[
                   ["Consumer control", "Users authorize bounded payment flows and can avoid zombie subscriptions, hidden card fees, overdraft-style penalties, and opaque dispute trails.", ShieldCheck],
                   ["Merchant certainty", "Merchants receive intent IDs, webhook events, retry-aware billing state, payment links, and audit-friendly Arc receipt records instead of raw wallet guesswork.", KeyRound],
-                  ["Protocol coverage", "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, premium privacy flows, and keeper-triggered renewals.", Globe],
+                  ["Protocol coverage", "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, premium privacy flows, retries, reconciliation, and keeper-triggered renewals.", Globe],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
                     <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
@@ -385,7 +415,7 @@ export default function DocsPage() {
                 ))}
               </div>
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
-                Dedicated invoice terms, service lock windows, minimum commitment periods, and fully decentralized Chainlink Automation are protocol targets documented in the feature brief. The current app already provides the integration primitives those features build on: intents, subscriptions, retries, keeper routes, webhooks, receipts, and merchant dashboards.
+                Encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, service lock windows, minimum commitment periods, configurable dunning schedules, and fully decentralized Chainlink Automation are protocol targets documented in the feature brief. The current app already provides the integration primitives those features build on: intents, subscriptions, retries, keeper routes, webhooks, receipts, and merchant dashboards.
               </div>
             </section>
 
@@ -445,7 +475,7 @@ export default function DocsPage() {
                 ))}
               </div>
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
-                The metered vault API lets a merchant deduct micro-USDC usage, observe the remaining balance, and trigger customer top-up flows when balances fall below configured thresholds.
+                The metered vault API lets a merchant deduct micro-USDC usage, observe the remaining balance, and trigger customer top-up flows when balances fall below configured thresholds. Direct bank-transfer fiat-to-USDC funding is a product target and should remain provider/compliance-scoped until a live onramp is wired.
               </div>
             </section>
 
@@ -496,7 +526,11 @@ export default function DocsPage() {
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
                 ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
                 ["Can SubScript handle usage-based products?", "Yes. Metered vaults let users pre-fund a merchant relationship while the merchant reports API calls, tokens, storage, or per-item access as usage is consumed."],
-                ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate."],
+                ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate. Dedicated sponsor records, spending caps, and revocation policies are still deployment-scoped."],
+                ["Does SubScript require users to export their wallet key?", "The product target is to require a secure encrypted private-key export after Google wallet provisioning so users can recover wallet access independently. The app should not claim the onboarding is fully non-custodial permanent until that backup step is enforced."],
+                ["How does SubScript compare to streaming payment protocols?", "SubScript uses Permit2-style bounded allowances rather than continuous locked streaming liquidity, so funds can remain liquid in the user's wallet until a billing-cycle transaction executes."],
+                ["Can merchants enforce lock windows?", "The UPA model includes service lock windows, minimum commitments, and grace periods, with a ceiling of 72 hours for digital goods and 30 days for SaaS seats. These terms need explicit schema, contract enforcement, and UI disclosure before live use."],
+                ["Does SubScript have smart dunning?", "The platform has retry, reconciliation, billing, and notification primitives. Configurable Day 1, Day 3, and Day 7 schedules plus email/SMS top-up reminders should be formalized before calling it fully live."],
                 ["Does the merchant need to track wallets?", "No. The merchant should track Checkout Intent IDs. SubScript maps wallet payment activity to the off-chain intent and sends the signed result."],
                 ["What does the user pay?", "The user pays the advertised USDC price. SubScript is designed around predictable Arc USDC gas and sponsored-fee flows so users avoid hidden card-style fees."],
                 ["Why is this better than dollar cards?", "Users avoid virtual card setup fees, maintenance fees, failed transaction penalties, KYC delays for basic wallet setup, billing-address failures, and FX markup surprises."],

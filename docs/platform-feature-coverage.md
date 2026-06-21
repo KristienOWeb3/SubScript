@@ -1,40 +1,46 @@
 # SubScript Platform Feature Coverage
 
-Source reviewed: `C:\Users\Kristien\Downloads\SubScript Protocol_ Features and Problems Solved - Google Docs.pdf`
+Source reviewed: `C:\Users\Kristien\Downloads\Flawless.md`
 
-Generated companion Markdown: [subscript-protocol-features-and-problems-solved.md](./subscript-protocol-features-and-problems-solved.md)
+Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./subscript-protocol-features-and-problems-solved.md)
 
 ## Coverage Summary
 
-| PDF claim | Current platform coverage | Evidence |
+| Product claim | Current platform coverage | Evidence / next action |
 | --- | --- | --- |
-| Unified Payment Authorization for one-time payments, subscriptions, usage billing, invoicing, and AI-native transactions | Partial | Checkout Intents, payment links, subscriptions, metered vaults, webhooks, and receipts exist. Dedicated invoice terms and AI-native transaction wrappers are not first-class yet. |
-| Continue with Google wallet setup | Implemented | Circle Google auth and wallet routes exist under `src/app/api/auth/circle/*`, plus `CircleGoogleWalletButton`. |
-| Zero-fee customer experience and gas sponsorship | Partial | UX/docs describe user-facing predictable fees. Production paymaster/gas sponsorship wiring should be verified against Circle/Arc deployment settings before marketing as fully live. |
-| Fair merchant pricing at 1% | Documented | Global metadata and public docs mention the 1% merchant fee. |
-| Payment links and QR checkout | Implemented | `payment_links` schema, `/api/payment-links`, `/pay/[id]`, dashboard payment links, and docs are present. |
-| Checkout Intent IDs | Implemented | `/api/intent`, idempotency keys, external references, receipt tokens, and webhook payload mapping are present. |
-| Signed webhook fulfillment | Implemented | Webhook endpoint models, dispatch routes, HMAC helper logic, docs examples, and payment success dispatch are present. |
-| Digital dollar receipts and Arc memos | Implemented | Receipt schema/routes, Arc memo helpers, receipt pages, and payment verification receipt writes are present. |
-| Metered vault and usage-based billing | Implemented | `metered_vaults` schema and `/api/user/vault/*` routes exist, and docs describe API/token/storage/pay-per-view usage. |
-| Sponsored subscriptions or "Pay for Me" | Partial | Product positioning and docs mention the model. Dedicated sponsor relationship tables/workflows are not clearly complete. |
-| Permit2 integration | Partial | Payroll Permit2 signing/storage and internal payroll execution exist. General subscription UPA Permit2 flows need deployment-level verification. |
-| Absolute stateless router | Partial | Contracts and docs reference stateless routing, but this should be verified with a contract-level audit before being used as a security guarantee. |
-| Spam-proof communications / proof-of-transaction DMs | Partial | DM routes/models and payment request flows exist. A strict recent-transaction gate should be verified before calling it fully spam-proof. |
-| Privacy Premium / ArcaneVM | Partial | Premium tier, payroll, confidentiality routes, shielded payout settings, and UI gates exist. ArcaneVM production confidentiality needs external Arc deployment verification. |
-| DNS registration / human-readable aliases | Implemented | `address_aliases` schema, alias API, and dashboard/user profile UI exist. |
-| Automated notification gateways | Partial | Transactional email, webhooks, and merchant automation routes exist. Full multi-channel gateway/SMS support is not clearly complete. |
-| Invoice engine | Partial | Payment links, external references, receipts, and webhooks cover invoice-like collection. Dedicated invoice objects, due terms, and lifecycle states are not first-class yet. |
-| Decentralized keepers / Chainlink Automation | Partial | Keeper-compatible contract functions, cron/manual keeper routes, and retry/reconciliation routes exist. Chainlink Automation production wiring is not confirmed in code. |
-| Merchant commitment windows and grace periods | Partial | Subscription state, cancel-at-period-end, retries, and dunning-like failures exist. Service lock windows and minimum commitment terms need first-class schema/contract enforcement. |
-| Smart dunning engine | Partial | Billing cron, retry counters, reconciliation, notifications, and subscription failure handling exist. Configurable Day 1/3/7 schedules and SMS/email workflows should be formalized. |
-| Quantum resilience | External dependency | This is an Arc Network roadmap claim, not a SubScript app feature. It should be cited as inherited from Arc only after Arc documentation confirms it. |
+| Unified Payment Authorization for one-time payments, recurring billing, usage billing, invoicing, and AI-native transactions | Partial | Checkout Intents, payment links, subscriptions, metered vaults, receipts, webhooks, and API surfaces exist. Dedicated invoice objects and AI-native wrappers need first-class product surfaces. |
+| Arc-native USDC payment layer | Implemented for hosted checkout | Direct Arc USDC hosted checkout and receipt-token binding exist. CCTP remains disabled until Arc-side memo settlement is verifiable in one bound flow. |
+| Continue with Google wallet setup | Implemented | Circle Google config and wallet APIs exist under `src/app/api/auth/circle/*`, plus `CircleGoogleWalletButton`. |
+| Mandatory encrypted private-key export after onboarding | Not implemented | Add a required export/backup step after embedded wallet provisioning before describing onboarding as fully non-custodial permanent. |
+| Zero-fee customer experience | Partial | UX/docs target user-paid-price-only flows. Production Circle Paymaster/Gas Station configuration must be verified before presenting this as live on mainnet. |
+| Fair merchant pricing at flat 1% | Documented | Public docs and product pages mention merchant-paid 1% pricing. Billing enforcement should be verified against live settlement/accounting. |
+| Pay for Me / sponsored subscriptions | Partial | Product model is documented. Add sponsor relationship schema, spending caps, beneficiary privacy rules, and revocation policy before marking live. |
+| Fiat-to-USDC onboarding by bank transfer | Not implemented | Needs onramp provider integration, KYC/AML boundaries, funding state machine, and wallet deposit reconciliation. |
+| Permit2 integration | Partial | Payroll Permit2 signing/storage and internal execution paths exist. General subscription UPA Permit2 flows need contract/deployment verification. |
+| Absolute stateless router | Partial | Contracts/docs reference stateless routing. Confirm with contract tests/audit before treating as a security guarantee. |
+| Spam-proof proof-of-transaction DMs | Partial | DM routes and payment request flows exist. Enforce a strict recent valid transaction gate before calling this fully spam-proof. |
+| Privacy Premium at 10 USDC/month baseline | Partial | Premium tier, confidentiality routes, payroll, and settings exist. Ensure pricing copy says 10 USDC/month and verify ArcaneVM deployment before claiming production confidentiality. |
+| DNS aliases | Implemented | `address_aliases` schema, alias API, and dashboard/user UI exist. |
+| Automated notification gateways | Partial | Transactional email, webhooks, and merchant automation routes exist. SMS/multi-channel gateway support should be formalized. |
+| Payment links | Implemented | `payment_links` schema, `/api/payment-links`, `/pay/[id]`, receipt tokens, and dashboard flows exist. |
+| Flexible usage-based billing | Implemented baseline | Metered vault schema and `/api/user/vault/*` routes exist for API tokens, AI usage, storage, media, and pay-per-use scenarios. |
+| Invoice engine with custom terms | Partial | Payment links, external references, receipts, and webhooks support invoice-like collection. Add invoice number, due date, payer identity, terms, reminders, and lifecycle statuses. |
+| Decentralized keepers with Chainlink Automation | Partial | Keeper-compatible contract/API/cron routes exist. Production Chainlink upkeep registration and monitoring are not confirmed. |
+| Merchant lock windows and minimum commitments | Partial | Existing cancellation/retry state supports some commitment concepts. Add explicit UPA payload fields, UI disclosures, schema, and contract enforcement for 72-hour digital-good and 30-day SaaS ceilings. |
+| Smart dunning engine | Partial | Billing cron, retry counters, reconciliation, notifications, and subscription failure states exist. Add configurable Day 1/3/7 schedules and email/SMS templates. |
+| Legal/compliance for high-value B2B | Partial | Privacy/terms exist. AML/KYC and money-transmission posture must be tied to active jurisdictions and provider controls. |
+| Arc quantum-resilience roadmap inheritance | External dependency | Keep as Arc roadmap positioning only. Do not claim SubScript independently provides PQ security without Arc documentation/deployment confirmation. |
 
-## Recommended Next Platform Updates
+## Highest-Priority Product Gaps
 
-1. Add first-class invoice models: invoice number, due date, payer email/wallet, terms, status, and payment link/intent association.
-2. Add explicit sponsor relationships for "Pay for Me": sponsor wallet, beneficiary wallet, merchant, spending cap, revocation policy, and privacy boundaries.
-3. Formalize dunning schedules in the database instead of hard-coding retry behavior in cron routes.
-4. Add merchant commitment terms to subscription authorization payloads and make the UI disclose them before signing.
-5. Add deployment docs for keeper mode: manual cron, Vercel cron, or Chainlink Automation.
-6. Keep ArcaneVM, Paymaster, Gas Station, and quantum-resilience claims framed as deployment-dependent until external production configuration is verified.
+1. Add mandatory encrypted wallet export/backup after Google wallet provisioning.
+2. Add first-class invoice models: invoice number, due date, payer email/wallet, terms, status, payment link/intent association, and reminder state.
+3. Add sponsor relationships for Pay for Me: sponsor wallet, beneficiary wallet, merchant, spending cap, privacy boundaries, and revocation policy.
+4. Add dunning schedule configuration instead of hard-coded retry assumptions.
+5. Add UPA commitment terms to subscription authorization payloads and disclose lock windows before signing.
+6. Verify production Circle Paymaster/Gas Station, Chainlink Automation, and ArcaneVM settings before using live claims.
+7. Add fiat-to-USDC onramp integration only after compliance/provider boundaries are clear.
+
+## Current Messaging Rule
+
+Marketing, docs, and LLM references should say that SubScript provides the live primitives for UPA commerce today, while private-key export, fiat onramps, dedicated invoices, sponsor workflows, commitment windows, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, and quantum resilience are deployment-scoped until verified.

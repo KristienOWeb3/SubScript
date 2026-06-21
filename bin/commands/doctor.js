@@ -46,7 +46,7 @@ export async function runDoctor() {
                 fixes.push("Regenerate the config file by running: npx @subscript/cli init --session <TOKEN>");
             }
             // Check files existence based on mode
-            const modeMatch = configContent.match(/mode:\s*["'](standard|zk-routed)["']/);
+            const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
             const mode = modeMatch ? modeMatch[1] : "standard";
             const providerPath = path.join(paths.componentsDir, "SubScriptProvider.tsx");
             if (!existsSync(providerPath)) {
@@ -58,10 +58,10 @@ export async function runDoctor() {
                 issues.push("SubScriptCheckoutButton.tsx component file is missing.");
                 fixes.push("Re-run checkout scaffold: npx @subscript/cli add checkout");
             }
-            if (mode === "zk-routed") {
+            if (mode === "privacy-routed" || mode === "zk-routed") {
                 const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
                 if (!existsSync(escrowPath)) {
-                    issues.push("ZK Escrow routing mode is enabled, but EscrowStatusTracker.tsx is missing.");
+                    issues.push("Privacy Premium routing mode is enabled, but EscrowStatusTracker.tsx is missing.");
                     fixes.push("Re-run checkout scaffold to restore escrow components: npx @subscript/cli add checkout");
                 }
             }
