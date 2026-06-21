@@ -3,6 +3,34 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { prisma } from "@/lib/prisma";
+
+async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
+    const sessionWallet = await getSessionWallet(request.headers);
+    if (sessionWallet) {
+        return { wallet: sessionWallet.toLowerCase(), error: null, status: 200 };
+    }
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        const secretKey = authHeader.substring(7).trim();
+        const keyRecord = await prisma.apiKey.findFirst({
+            where: { secretKeyPlain: secretKey, revoked: false }
+        });
+        if (keyRecord) {
+            return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200 };
+        }
+        return { 
+            wallet: null, 
+            error: "Unauthorized: Invalid or revoked API key", 
+            status: 401 
+        };
+    }
+    return { 
+        wallet: null, 
+        error: "Unauthorized: Missing authentication credentials. Please provide a valid API Key in the Authorization header or log in.", 
+        status: 401 
+    };
+}
 
 /* Define parsing helper for request body */
 async function parseBody(request: Request) {
@@ -15,10 +43,11 @@ async function parseBody(request: Request) {
 
 export async function GET(request: Request) {
     try {
-        const merchantAddress = await getSessionWallet(request.headers);
-        if (!merchantAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        const auth = await authenticateRequest(request);
+        if (auth.error) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const merchantAddress = auth.wallet!;
         const roleCheck = await requireAccountRole(merchantAddress, "ENTERPRISE");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
@@ -103,10 +132,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        const merchantAddress = await getSessionWallet(request.headers);
-        if (!merchantAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        const auth = await authenticateRequest(request);
+        if (auth.error) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const merchantAddress = auth.wallet!;
         const roleCheck = await requireAccountRole(merchantAddress, "ENTERPRISE");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });

@@ -1,6 +1,34 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/prisma";
+
+async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
+    const sessionWallet = await getSessionWallet(request.headers);
+    if (sessionWallet) {
+        return { wallet: sessionWallet.toLowerCase(), error: null, status: 200 };
+    }
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        const secretKey = authHeader.substring(7).trim();
+        const keyRecord = await prisma.apiKey.findFirst({
+            where: { secretKeyPlain: secretKey, revoked: false }
+        });
+        if (keyRecord) {
+            return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200 };
+        }
+        return { 
+            wallet: null, 
+            error: "Unauthorized: Invalid or revoked API key", 
+            status: 401 
+        };
+    }
+    return { 
+        wallet: null, 
+        error: "Unauthorized: Missing authentication credentials. Please provide a valid API Key in the Authorization header or log in.", 
+        status: 401 
+    };
+}
 
 /* Helper to parse parameters in Next.js App Router */
 type RouteContext = {
@@ -55,7 +83,8 @@ export async function GET(request: Request, { params }: RouteContext) {
         const merchantVerified = merchant ? !!merchant.verified : false;
 
         /* Check authorization: if not owner, check active, expiration, and usage constraints */
-        const walletAddress = await getSessionWallet(request.headers);
+        const auth = await authenticateRequest(request);
+        const walletAddress = auth.wallet;
         const isOwner = walletAddress && walletAddress.toLowerCase() === link.merchant_address.toLowerCase();
 
         if (!isOwner) {
@@ -88,10 +117,11 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
-        const merchantAddress = await getSessionWallet(request.headers);
-        if (!merchantAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        const auth = await authenticateRequest(request);
+        if (auth.error) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const merchantAddress = auth.wallet!;
 
         const body = await parseBody(request);
         if (!body) {
@@ -166,10 +196,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
-        const merchantAddress = await getSessionWallet(request.headers);
-        if (!merchantAddress) {
-            return NextResponse.json({ error: "Unauthorized: Connect wallet" }, { status: 401 });
+        const auth = await authenticateRequest(request);
+        if (auth.error) {
+            return NextResponse.json({ error: auth.error }, { status: auth.status });
         }
+        const merchantAddress = auth.wallet!;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
