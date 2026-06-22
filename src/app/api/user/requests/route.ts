@@ -22,8 +22,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { receiverAddress, amountUsdc, title, description } = sanitizeInput(body);
-        
+        const { receiverAddress, amountUsdc, title, description, expiresInDays } = sanitizeInput(body);
+
+        let expiresAt: Date | null = null;
+        if (expiresInDays !== null && expiresInDays !== undefined) {
+            const days = Number(expiresInDays);
+            if (!Number.isNaN(days) && days > 0 && days <= 365) {
+                expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+            }
+        }
+
         let normalizedReceiver: string | null = null;
         if (receiverAddress) {
             if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
@@ -55,6 +63,7 @@ export async function POST(request: Request) {
             amountMicros,
             title: cleanTitle,
             description: cleanDescription,
+            expiresAt,
         });
 
         return NextResponse.json({

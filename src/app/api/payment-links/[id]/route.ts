@@ -91,6 +91,25 @@ export async function GET(request: Request, { params }: RouteContext) {
         const walletAddress = auth.wallet;
         const isOwner = walletAddress && walletAddress.toLowerCase() === link.merchant_address.toLowerCase();
 
+        /* User-to-user requests raised inside a DM are private — only the intended recipient may
+           view/pay them, never an arbitrary holder of the link. (The requester is the owner above.) */
+        const isPeerRequest = typeof link.external_reference === "string" && link.external_reference.startsWith("peer-request:");
+        if (isPeerRequest && !isOwner) {
+            const { data: dmRow } = await supabase
+                .from("subscript_dms")
+                .select("receiver_address")
+                .eq("payment_link_id", id)
+                .eq("message_type", "PEER_REQUEST")
+                .maybeSingle();
+            const intendedReceiver = dmRow?.receiver_address?.toLowerCase() || null;
+            if (!walletAddress || !intendedReceiver || walletAddress.toLowerCase() !== intendedReceiver) {
+                return NextResponse.json(
+                    { error: "This payment request is private to its recipient. Open it from your SubScript inbox." },
+                    { status: 403 }
+                );
+            }
+        }
+
         if (!isOwner) {
             const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
             if (!link.active || isExpired) {

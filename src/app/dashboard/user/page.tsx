@@ -443,6 +443,7 @@ export default function UserDashboard() {
   const [requestNote, setRequestNote] = useState("");
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestExpiry, setRequestExpiry] = useState("7");
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
   const [sendMode, setSendMode] = useState<"single" | "batch">("single");
@@ -748,6 +749,7 @@ export default function UserDashboard() {
           /* When raised from inside a DM, address the request at the peer so it lands as a request
              bubble in the thread instead of a bare link the requester has to copy out. */
           receiverAddress: selectedDmPeer || undefined,
+          expiresInDays: requestExpiry === "never" ? null : Number(requestExpiry),
         }),
       });
       const data = await res.json();
@@ -1305,7 +1307,7 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="space-y-7 max-w-2xl"
+                className="space-y-7 max-w-2xl mx-auto w-full"
               >
                 <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
@@ -1446,7 +1448,7 @@ export default function UserDashboard() {
                   /* Mobile View Thread Selection Toggle */
                   <div className="flex-1 flex flex-col justify-between">
                     {!selectedDmPeer ? (
-                      <div className="px-5 space-y-4 pb-20">
+                      <div className="px-5 space-y-4 pb-20 mx-auto w-full max-w-2xl">
                         <DmThreadSelect
                           threads={dmThreads}
                           onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -1454,7 +1456,7 @@ export default function UserDashboard() {
                       </div>
                     ) : (
                       <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100dvh-220px)]">
-                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-5 pb-24">
+                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-5 pb-24 mx-auto w-full max-w-2xl">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -1911,7 +1913,7 @@ export default function UserDashboard() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
-                className="space-y-6 pb-20 max-w-2xl"
+                className="space-y-6 pb-20 max-w-2xl mx-auto w-full"
               >
                 <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
                 
@@ -2456,22 +2458,37 @@ export default function UserDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5">Note (optional)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5">What's it for?</label>
                   <input
                     type="text" maxLength={200}
                     value={requestNote}
                     onChange={(e) => setRequestNote(e.target.value)}
-                    placeholder="What's this for?"
+                    placeholder="e.g. Design work, split bill, invoice #102"
                     className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#ccff00]/50 placeholder:text-white/20"
                   />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5">Request expires in</label>
+                  <select
+                    value={requestExpiry}
+                    onChange={(e) => setRequestExpiry(e.target.value)}
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#ccff00]/50 appearance-none"
+                  >
+                    <option value="1">24 hours</option>
+                    <option value="3">3 days</option>
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="never">No expiry</option>
+                  </select>
                 </div>
                 <button
                   type="submit"
                   disabled={loadingAction === "create-request" || !requestAmount}
-                  className="w-full rounded-2xl bg-[#ccff00]/15 border border-[#ccff00]/40 text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 hover:bg-[#ccff00]/25 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`relative overflow-hidden w-full rounded-2xl bg-[#ccff00]/15 border border-[#ccff00]/40 text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 hover:bg-[#ccff00]/25 transition disabled:opacity-60 disabled:cursor-not-allowed ${loadingAction === "create-request" ? "quick-action-loading" : ""}`}
                 >
-                  {loadingAction === "create-request" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {selectedDmPeer ? "Send Request" : "Create Request"}
+                  {loadingAction === "create-request"
+                    ? "Sending..."
+                    : selectedDmPeer ? "Send Request" : "Create Request"}
                 </button>
                 {requestStatus && (
                   <p className="text-[11px] text-white/60 leading-relaxed break-all">{requestStatus}</p>
@@ -2954,7 +2971,7 @@ function DmBubble({
       className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
     >
       {incoming && <Avatar profilePic={dm.senderProfilePic} />}
-      <div className={`max-w-[75%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
+      <div className={`max-w-[88%] sm:max-w-[80%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
         <div 
           className={`px-5 py-4 shadow-md select-none transition-all duration-200 ${
             incoming 

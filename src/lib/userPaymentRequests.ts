@@ -7,6 +7,7 @@ type CreateUserPaymentRequestInput = {
     amountMicros: bigint;
     title: string;
     description: string;
+    expiresAt?: Date | null;
 };
 
 export async function createUserPaymentRequest({
@@ -15,6 +16,7 @@ export async function createUserPaymentRequest({
     amountMicros,
     title,
     description,
+    expiresAt = null,
 }: CreateUserPaymentRequestInput) {
     return withPgClient(async (client) => {
         await client.query("begin");
@@ -36,8 +38,9 @@ export async function createUserPaymentRequest({
                     max_uses,
                     merchant_name_snapshot,
                     external_reference,
-                    receipt_token
-                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7)
+                    receipt_token,
+                    expires_at
+                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7, $8)
                 returning id`,
                 [
                     requester,
@@ -47,6 +50,7 @@ export async function createUserPaymentRequest({
                     "SubScript user request",
                     `peer-request:${requester}:${Date.now()}`,
                     generateReceiptId(title),
+                    expiresAt ? expiresAt.toISOString() : null,
                 ]
             );
 
