@@ -6,6 +6,7 @@ const BUILD_TIME_DATABASE_URL = ["postgresql:", "", "postgres:postgres@localhost
 
 type DatabaseUrlOptions = {
     allowBuildTimeFallback?: boolean;
+    forPrisma?: boolean;
 };
 
 function getPoolerHost(projectRef: string) {
@@ -67,6 +68,21 @@ export function normalizeDatabaseUrl(rawUrl: string | undefined | null) {
     return parsed.toString();
 }
 
+function addPrismaPoolerOptions(connectionString: string) {
+    let parsed: URL;
+    try {
+        parsed = new URL(connectionString);
+    } catch {
+        return connectionString;
+    }
+
+    if (parsed.hostname.includes("pooler.supabase.com")) {
+        parsed.searchParams.set("pgbouncer", "true");
+    }
+
+    return parsed.toString();
+}
+
 export function getDatabaseUrl(options: DatabaseUrlOptions = {}) {
     const connectionString =
         process.env.SUPABASE_POOLER_DATABASE_URL ||
@@ -81,5 +97,6 @@ export function getDatabaseUrl(options: DatabaseUrlOptions = {}) {
         throw new Error("DATABASE_URL is not configured");
     }
 
-    return normalizeDatabaseUrl(connectionString);
+    const normalized = normalizeDatabaseUrl(connectionString);
+    return options.forPrisma ? addPrismaPoolerOptions(normalized) : normalized;
 }

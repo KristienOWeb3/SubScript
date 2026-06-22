@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ethers } from "ethers";
 import { CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
-import { executeWithRpcFallback } from "@/lib/payments/rpc";
+import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import crypto from "crypto";
 
 /* USDC address and Permit2 address constants */
@@ -131,103 +131,102 @@ export async function POST(request: Request) {
                     recipientAmounts.push(recipient.salaryAmountUsdc);
                 }
 
-                /* Execute Web3 operations using RPC Fallback wrapper */
-                const txHash = await executeWithRpcFallback(async (provider) => {
-                    const wallet = new ethers.Wallet(adminPrivateKey, provider);
-                    const keeperAddress = wallet.address;
+                const { provider, rpcEndpoint } = await getRpcProviderForWrite();
+                const wallet = new ethers.Wallet(adminPrivateKey, provider);
+                const keeperAddress = wallet.address;
 
-                    const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
-                    const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, wallet);
-                    const confidentialContract = new ethers.Contract(
+                const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
+                const usdcContract = new ethers.Contract(USDC_ADDRESS, ERC20_ABI, wallet);
+                const confidentialContract = new ethers.Contract(
+                    CONFIDENTIAL_CONTRACT_ADDRESS,
+                    CONFIDENTIAL_CONTRACT_ABI,
+                    wallet
+                );
+
+                /* Step A: Check existing Permit2 allowance for the Keeper from the organization */
+                const allowanceResult = await permit2Contract.allowance(
+                    orgAddress,
+                    USDC_ADDRESS,
+                    keeperAddress
+                );
+
+                const existingAllowanceAmount = BigInt(allowanceResult.amount.toString());
+                const existingAllowanceExpiration = Number(allowanceResult.expiration);
+                const currentTimestamp = Math.floor(Date.now() / 1000);
+
+                if (
+                    existingAllowanceAmount < totalPayrollAmount ||
+                    existingAllowanceExpiration < currentTimestamp
+                ) {
+                    /* Allowance is insufficient or expired. Submit the signed Permit2 permit if available. */
+                    if (!campaign.permit2Signature) {
+                        throw new Error("Insufficient Permit2 allowance and no permit2Signature is saved.");
+                    }
+
+                    const expirationTime = campaign.permit2Expiration
+                        ? Math.floor(new Date(campaign.permit2Expiration).getTime() / 1000)
+                        : currentTimestamp + 86400 * 30;
+
+                    const sigDeadlineTime = campaign.permit2Deadline
+                        ? Math.floor(new Date(campaign.permit2Deadline).getTime() / 1000)
+                        : currentTimestamp + 86400;
+
+                    const permitSingleStruct = {
+                        details: {
+                            token: USDC_ADDRESS,
+                            amount: totalPayrollAmount * BigInt(100), /* Approve large amount for recurring usage */
+                            expiration: expirationTime,
+                            nonce: campaign.permit2Nonce || 0
+                        },
+                        spender: keeperAddress,
+                        sigDeadline: sigDeadlineTime
+                    };
+
+                    const permitTx = await permit2Contract.permit(
+                        orgAddress,
+                        permitSingleStruct,
+                        campaign.permit2Signature
+                    );
+                    await permitTx.wait();
+                }
+
+                /* Step B: Pull USDC tokens from organization into Keeper wallet */
+                const transferTx = await permit2Contract.transferFrom(
+                    orgAddress,
+                    keeperAddress,
+                    totalPayrollAmount,
+                    USDC_ADDRESS
+                );
+                await transferTx.wait();
+
+                /* Step C: Check and approve USDC allowance for Confidential contract if needed */
+                const contractAllowance = await usdcContract.allowance(
+                    keeperAddress,
+                    CONFIDENTIAL_CONTRACT_ADDRESS
+                );
+
+                if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
+                    const approveTx = await usdcContract.approve(
                         CONFIDENTIAL_CONTRACT_ADDRESS,
-                        CONFIDENTIAL_CONTRACT_ABI,
-                        wallet
+                        ethers.MaxUint256
                     );
+                    await approveTx.wait();
+                }
 
-                    /* Step A: Check existing Permit2 allowance for the Keeper from the organization */
-                    const allowanceResult = await permit2Contract.allowance(
-                        orgAddress,
-                        USDC_ADDRESS,
-                        keeperAddress
-                    );
+                const batchTx = await confidentialContract.executeBatchPayout(
+                    recipientAddresses,
+                    recipientAmounts,
+                    campaign.isShielded,
+                    ethers.ZeroHash
+                );
 
-                    const existingAllowanceAmount = BigInt(allowanceResult.amount.toString());
-                    const existingAllowanceExpiration = Number(allowanceResult.expiration);
-                    const currentTimestamp = Math.floor(Date.now() / 1000);
+                const receipt = await batchTx.wait();
+                if (receipt.status !== 1) {
+                    throw new Error("On-chain batch payout transaction execution reverted.");
+                }
+                console.log(`[payroll-cron] submitted campaign ${campaign.id} through ${rpcEndpoint}: ${batchTx.hash}`);
 
-                    if (
-                        existingAllowanceAmount < totalPayrollAmount ||
-                        existingAllowanceExpiration < currentTimestamp
-                    ) {
-                        /* Allowance is insufficient or expired. Submit the signed Permit2 permit if available. */
-                        if (!campaign.permit2Signature) {
-                            throw new Error("Insufficient Permit2 allowance and no permit2Signature is saved.");
-                        }
-
-                        const expirationTime = campaign.permit2Expiration 
-                            ? Math.floor(new Date(campaign.permit2Expiration).getTime() / 1000)
-                            : currentTimestamp + 86400 * 30;
-
-                        const sigDeadlineTime = campaign.permit2Deadline
-                            ? Math.floor(new Date(campaign.permit2Deadline).getTime() / 1000)
-                            : currentTimestamp + 86400;
-
-                        const permitSingleStruct = {
-                            details: {
-                                token: USDC_ADDRESS,
-                                amount: totalPayrollAmount * BigInt(100), /* Approve large amount for recurring usage */
-                                expiration: expirationTime,
-                                nonce: campaign.permit2Nonce || 0
-                            },
-                            spender: keeperAddress,
-                            sigDeadline: sigDeadlineTime
-                        };
-
-                        const permitTx = await permit2Contract.permit(
-                            orgAddress,
-                            permitSingleStruct,
-                            campaign.permit2Signature
-                        );
-                        await permitTx.wait();
-                    }
-
-                    /* Step B: Pull USDC tokens from organization into Keeper wallet */
-                    const transferTx = await permit2Contract.transferFrom(
-                        orgAddress,
-                        keeperAddress,
-                        totalPayrollAmount,
-                        USDC_ADDRESS
-                    );
-                    await transferTx.wait();
-
-                    /* Step C: Check and approve USDC allowance for Confidential contract if needed */
-                    const contractAllowance = await usdcContract.allowance(
-                        keeperAddress,
-                        CONFIDENTIAL_CONTRACT_ADDRESS
-                    );
-
-                    if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
-                        const approveTx = await usdcContract.approve(
-                            CONFIDENTIAL_CONTRACT_ADDRESS,
-                            ethers.MaxUint256
-                        );
-                        await approveTx.wait();
-                    }
-
-                    const batchTx = await confidentialContract.executeBatchPayout(
-                        recipientAddresses,
-                        recipientAmounts,
-                        campaign.isShielded,
-                        ethers.ZeroHash
-                    );
-                    
-                    const receipt = await batchTx.wait();
-                    if (receipt.status !== 1) {
-                        throw new Error("On-chain batch payout transaction execution reverted.");
-                    }
-
-                    return batchTx.hash as string;
-                });
+                const txHash = batchTx.hash as string;
 
                 /* Step E: Calculate next payday based on frequencyDays */
                 const nextPaydayDate = new Date(Date.now() + campaign.frequencyDays * 24 * 60 * 60 * 1000);
@@ -249,7 +248,7 @@ export async function POST(request: Request) {
                         resourceType: "PAYROLL_CAMPAIGN",
                         resourceId: campaign.id,
                         metadata: {
-                            txHash: txHash.result,
+                            txHash,
                             totalAmountUsdc: totalPayrollAmount.toString(),
                             recipientCount: recipientAddresses.length
                         }
@@ -259,7 +258,7 @@ export async function POST(request: Request) {
                 executionResults.push({
                     campaignId: campaign.id,
                     status: "SUCCESS",
-                    txHash: txHash.result,
+                    txHash,
                     totalAmountUsdc: totalPayrollAmount.toString()
                 });
 

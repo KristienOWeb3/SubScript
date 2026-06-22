@@ -7,6 +7,7 @@ import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
+import { setSessionCookie } from "@/lib/authCookies";
 import { 
     isConnectionError, 
     getOfflineUserEmbeddedWallet, 
@@ -162,13 +163,7 @@ export async function POST(request: Request) {
         });
 
         
-        response.cookies.set("subscript_session_token", jwt, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            expires: expiresAt,
-        });
+        setSessionCookie(response, request, jwt, expiresAt);
 
         return response;
     } catch (err: any) {

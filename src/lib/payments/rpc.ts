@@ -105,3 +105,36 @@ export async function executeWithRpcFallback<T>(
     console.error(`[ALERT] rpc_failovers count ${failoverCount} exceeded critical threshold. Primary and backup RPC endpoints are fully down.`);
     throw lastError || new Error("All configured RPC endpoints failed.");
 }
+
+/*
+ * Selects a healthy provider for a write transaction without wrapping the
+ * signed write itself in retry/failover logic. Retrying after a provider error
+ * can duplicate side effects if the first endpoint accepted the transaction
+ * but failed before returning cleanly.
+ */
+export async function getRpcProviderForWrite(): Promise<{ provider: ethers.JsonRpcProvider; rpcEndpoint: string }> {
+    let lastError: any = null;
+
+    for (const url of RPC_ENDPOINTS) {
+        for (let retryAttempt = 0; retryAttempt <= MAX_RATE_LIMIT_RETRIES; retryAttempt++) {
+            try {
+                const provider = new ethers.JsonRpcProvider(url);
+                await provider.getNetwork();
+                return { provider, rpcEndpoint: url };
+            } catch (err: any) {
+                lastError = err;
+
+                if (isRateLimitError(err) && retryAttempt < MAX_RATE_LIMIT_RETRIES) {
+                    const backoffMs = BASE_RATE_LIMIT_DELAY_MS * Math.pow(2, retryAttempt);
+                    const jitter = Math.floor(Math.random() * 500);
+                    await sleep(backoffMs + jitter);
+                    continue;
+                }
+
+                break;
+            }
+        }
+    }
+
+    throw lastError || new Error("No healthy RPC endpoint available for transaction submission.");
+}

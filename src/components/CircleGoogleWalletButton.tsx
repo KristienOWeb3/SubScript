@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getCookie, setCookie, deleteCookie } from "cookies-next/client";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
@@ -90,24 +89,11 @@ function getAuthIntent() {
         : "signup";
 }
 
-function getNextUrl(defaultRole?: string | null) {
-    const params = new URLSearchParams(window.location.search);
-    const explicitNext = params.get("next");
-    if (explicitNext) return explicitNext;
-
-    if (defaultRole === "ENTERPRISE") {
-        return getDashboardUrl("ENTERPRISE", "/merchant");
-    }
-
-    return getDashboardUrl("USER", "/user");
-}
-
 export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
-    const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const completeCircleLogin = async (session: CircleSession, roleHint?: string | null) => {
+    const completeCircleLogin = async (session: CircleSession) => {
         const completeRes = await fetch("/api/auth/circle/wallet/complete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -130,12 +116,9 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
 
         const destination = completed.role
             ? getDashboardUrl(completed.role as any, "/dashboard")
-            : getAuthIntent() === "signup"
-                ? `/signup?email=${encodeURIComponent(completed.email || "")}`
-                : getNextUrl(roleHint);
+            : `/signup?email=${encodeURIComponent(completed.email || "")}`;
 
-        router.push(destination);
-        router.refresh();
+        window.location.href = destination;
     };
 
     const handleContinue = async () => {
@@ -151,6 +134,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
 
             const deviceToken = getOrCreateCookie("circle_device_token");
             const deviceEncryptionKey = getOrCreateCookie("circle_device_encryption_key");
+            window.localStorage.setItem("subscript_circle_auth_intent", getAuthIntent());
 
             const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
                 try {
@@ -187,7 +171,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                     }
 
                     if (challenge.requiresChallenge === false) {
-                        await completeCircleLogin(session, challenge.role);
+                        await completeCircleLogin(session);
                         return;
                     }
 
@@ -209,7 +193,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                                 return;
                             }
 
-                            await completeCircleLogin(session, challenge.role);
+                            await completeCircleLogin(session);
                         } catch (err: any) {
                             setIsLoading(false);
                             setError(err.message || "Could not complete wallet setup.");

@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { setSiweNonceCookie } from "@/lib/authCookies";
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         const nonce = crypto.randomBytes(16).toString("hex");
         const response = NextResponse.json({ nonce });
 
-        response.cookies.set("subscript_siwe_nonce", nonce, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            maxAge: 300,
-        });
+        setSiweNonceCookie(response, request, nonce);
 
         return response;
     } catch (error) {

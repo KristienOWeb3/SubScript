@@ -14,13 +14,15 @@ if (!KEEPER_SECRET) {
 
 // 2. The ABI (Only the functions and events we need)
 const CONTRACT_ABI = [
-  "function executePayment(uint256 _subId) external",
-  "function subscriptions(uint256) view returns (address, address, uint256, uint256, uint256, bool)",
+  "function executePayment(uint256 _subId, uint256 _sequenceId) external",
+  "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+  "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+  "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)",
   "function nextSubscriptionId() view returns (uint256)",
   
   // Events we listen to
   "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)",
-  "event PaymentExecuted(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 timestamp)",
+  "event PaymentExecuted(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 sequenceId, uint256 timestamp)",
   "event SubscriptionCancelled(uint256 indexed subId, address cancelledBy)",
   "event SubscriptionModified(uint256 indexed subId, uint256 newAmount, uint256 newPeriod)",
   "event SubscriptionActivated(bytes32 indexed nullifierHash, address indexed merchant, uint256 amount, uint256 period)",
@@ -93,10 +95,11 @@ async function startKeeper() {
     });
   });
 
-  protocol.on("PaymentExecuted", async (subId, subscriber, merchant, amount, timestamp, event) => {
-    console.log(`🔔 Event captured: PaymentExecuted (#${subId})`);
+  protocol.on("PaymentExecuted", async (subId, subscriber, merchant, amount, sequenceId, timestamp, event) => {
+    console.log(`🔔 Event captured: PaymentExecuted (#${subId}, sequence ${sequenceId})`);
     await triggerWebhook(merchant, "subscription.payment.succeeded", {
       subscriptionId: `sub_${subId}`,
+      sequenceId: Number(sequenceId),
       subscriber,
       merchant,
       amount: ethers.formatUnits(amount, 6) + " USDC",
@@ -174,16 +177,18 @@ async function startKeeper() {
       console.log("Checking for due subscriptions...");
       
       const nextId = await protocol.nextSubscriptionId();
-      const currentTimestamp = Math.floor(Date.now() / 1000);
-
       for (let i = 1; i < nextId; i++) {
         const sub = await protocol.subscriptions(i);
         const isActive = sub[5];
-        const nextPayment = Number(sub[4]);
+        let sequenceId = 1;
+        while (await protocol.isSequenceExecuted(i, sequenceId)) {
+          sequenceId++;
+        }
 
-        if (isActive && currentTimestamp >= nextPayment) {
-          console.log(`⚡ Sub #${i} is DUE! Executing payment...`);
-          const tx = await protocol.executePayment(i);
+        const isDue = isActive && await protocol.isPaymentDue(i, sequenceId);
+        if (isDue) {
+          console.log(`⚡ Sub #${i} sequence ${sequenceId} is DUE! Executing payment...`);
+          const tx = await protocol.executePayment(i, sequenceId);
           console.log(`   Tx Sent: ${tx.hash}`);
           await tx.wait();
           console.log(`✅ Payment Executed for Sub #${i}`);

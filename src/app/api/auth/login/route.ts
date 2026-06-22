@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
 import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
+import { setSessionCookie } from "@/lib/authCookies";
 
 export async function POST(request: Request) {
     try {
@@ -73,13 +74,7 @@ export async function POST(request: Request) {
 
         const response = NextResponse.json({ success: true, wallet: address });
         
-        response.cookies.set("subscript_session_token", jwt, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            expires: expiresAt,
-        });
+        setSessionCookie(response, request, jwt, expiresAt);
 
         return response;
     } catch (error: any) {

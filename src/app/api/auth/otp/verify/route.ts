@@ -14,7 +14,7 @@ import {
     getOfflineUserEmbeddedWallet, 
     saveOfflineUserEmbeddedWallet
 } from "@/lib/offlineDb";
-import { prisma } from "@/lib/prisma";
+import { setSessionCookie } from "@/lib/authCookies";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -62,10 +62,13 @@ export async function POST(request: Request) {
         let isOfflineMode = false;
 
         try {
-            const rows = await prisma.$queryRaw<any[]>`
-                SELECT code, expires_at FROM otp_codes WHERE email = ${emailVal} LIMIT 1
-            `;
-            record = rows[0] || null;
+            record = await withPgClient(async (client) => {
+                const result = await client.query(
+                    "select code, expires_at from otp_codes where email = $1 limit 1",
+                    [emailVal]
+                );
+                return result.rows[0] || null;
+            });
         } catch (err: any) {
             console.error("OTP verify query error:", err);
             if (isConnectionError(err)) {
@@ -96,7 +99,9 @@ export async function POST(request: Request) {
                 deleteOfflineOtpCode(emailVal);
             } else {
                 try {
-                    await prisma.$executeRaw`DELETE FROM otp_codes WHERE email = ${emailVal}`;
+                    await withPgClient(async (client) => {
+                        await client.query("delete from otp_codes where email = $1", [emailVal]);
+                    });
                 } catch (e) {}
             }
             return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
@@ -106,7 +111,9 @@ export async function POST(request: Request) {
             deleteOfflineOtpCode(emailVal);
         } else {
             try {
-                await prisma.$executeRaw`DELETE FROM otp_codes WHERE email = ${emailVal}`;
+                await withPgClient(async (client) => {
+                    await client.query("delete from otp_codes where email = $1", [emailVal]);
+                });
             } catch (e) {}
         }
 
@@ -149,13 +156,17 @@ export async function POST(request: Request) {
                 saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
             } else {
                 try {
-                    await prisma.userEmbeddedWallet.create({
-                        data: {
-                            email: emailVal,
-                            walletAddress: walletAddress.toLowerCase(),
-                            encryptedPrivateKey: encryptedKey,
-                            provider: "circle_google"
-                        }
+                    await withPgClient(async (client) => {
+                        await client.query(
+                            `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, provider, updated_at)
+                             values ($1, $2, $3, 'email_otp', now())
+                             on conflict (email) do update set
+                                wallet_address = excluded.wallet_address,
+                                encrypted_private_key = excluded.encrypted_private_key,
+                                provider = excluded.provider,
+                                updated_at = now()`,
+                            [emailVal, walletAddress.toLowerCase(), encryptedKey]
+                        );
                     });
                 } catch (err: any) {
                     if (isConnectionError(err)) {
@@ -193,13 +204,7 @@ export async function POST(request: Request) {
             role
         });
 
-        response.cookies.set("subscript_session_token", jwt, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            expires: expiresAt,
-        });
+        setSessionCookie(response, request, jwt, expiresAt);
 
         return response;
     } catch (err: any) {

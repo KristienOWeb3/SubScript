@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
-import { injected } from "wagmi/connectors";
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
@@ -233,7 +232,12 @@ export default function PublicPayClient({
     }, [address]);
 
     const handleConnect = () => {
-        connect({ connector: injected() });
+        const connector = connectors.find((item) => item.id === "injected") || connectors[0];
+        if (!connector) {
+            setVerificationError("No browser wallet connector is available. Install or unlock a wallet extension, then try again.");
+            return;
+        }
+        connect({ connector });
     };
 
     const handleSwitchChain = async () => {

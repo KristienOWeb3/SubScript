@@ -3,7 +3,6 @@ import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
 import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
-import { prisma } from "@/lib/prisma";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
 
@@ -23,6 +22,10 @@ function hashOtp(email: string, code: string) {
 
 function allowOfflineAuth() {
     return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+}
+
+function allowDevOtpFallback() {
+    return process.env.NODE_ENV !== "production";
 }
 
 export async function POST(request: Request) {
@@ -67,22 +70,28 @@ export async function POST(request: Request) {
         const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
         try {
-            await prisma.$executeRaw`
-                INSERT INTO otp_codes (email, code, expires_at)
-                VALUES (${emailLower}, ${codeHash}, ${expiresAt})
-                ON CONFLICT (email)
-                DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at, created_at = NOW()
-            `;
+            await withPgClient(async (client) => {
+                await client.query(
+                    `insert into otp_codes (email, code, expires_at)
+                     values ($1, $2, $3)
+                     on conflict (email)
+                     do update set code = excluded.code, expires_at = excluded.expires_at, created_at = now()`,
+                    [emailLower, codeHash, expiresAt]
+                );
+            });
         } catch (err: any) {
-            console.error("OTP send Prisma insert error:", err);
+            console.error("OTP send database insert error:", err);
             if (isConnectionError(err)) {
                 if (!allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
                 saveOfflineOtpCode(emailLower, codeHash, expiresAt);
             } else {
-                console.error("Failed to store OTP code in database via Prisma:", err);
-                return NextResponse.json({ error: "Failed to send OTP code. Please try again." }, { status: 500 });
+                console.error("Failed to store OTP code in database:", err);
+                return NextResponse.json({
+                    error: "Failed to send OTP code. Please try again.",
+                    details: process.env.NODE_ENV === "production" ? undefined : err.message,
+                }, { status: 500 });
             }
         }
 
@@ -91,10 +100,18 @@ export async function POST(request: Request) {
             await sendAuthenticationCodeEmail(emailLower, code);
         } catch (mailErr) {
             console.error("Verification email send error:", mailErr instanceof Error ? mailErr.message : "Unknown error");
+            if (allowDevOtpFallback()) {
+                return NextResponse.json({
+                    success: true,
+                    message: "OTP code generated. Email delivery is not configured in this local environment.",
+                    email: emailLower,
+                    sandboxCode: code,
+                });
+            }
             return NextResponse.json({ error: "We could not send a verification email. Please try again." }, { status: 502 });
         }
 
-        return NextResponse.json({ 
+        return NextResponse.json({
             success: true, 
             message: "OTP code successfully generated.",
             email: emailLower

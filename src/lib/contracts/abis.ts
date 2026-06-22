@@ -233,6 +233,8 @@ export const STANDARD_SUBSCRIPT_ABI = [
             { name: "period", type: "uint256" },
             { name: "nextPayment", type: "uint256" },
             { name: "isActive", type: "bool" },
+            { name: "settlementToken", type: "address" },
+            { name: "paymentToken", type: "address" },
         ],
     },
     {
@@ -316,6 +318,7 @@ export const STANDARD_SUBSCRIPT_ABI = [
             { name: "subscriber", type: "address", indexed: true },
             { name: "merchant", type: "address", indexed: true },
             { name: "amount", type: "uint256", indexed: false },
+            { name: "sequenceId", type: "uint256", indexed: false },
             { name: "timestamp", type: "uint256", indexed: false },
         ],
         anonymous: false,

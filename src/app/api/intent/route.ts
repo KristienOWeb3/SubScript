@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
-import { encryptPrivateKey } from "@/lib/crypto";
-import { ethers } from "ethers";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
@@ -148,11 +146,6 @@ export async function POST(request: Request) {
             }, { status: 403 });
         }
 
-        // 5. Ephemeral Wallet Derivation
-        const randomWallet = ethers.Wallet.createRandom();
-        const receiverAddress = randomWallet.address.toLowerCase();
-        const encryptedKey = encryptPrivateKey(randomWallet.privateKey);
-
         let parsedExpiresAt: Date | null = null;
         if (expiresAt) {
             const num = Number(expiresAt);
@@ -177,8 +170,6 @@ export async function POST(request: Request) {
                 merchantNameSnapshot: merchantName || null,
                 receiptToken: generateReceiptId(title),
                 maxUses: parsedMaxUses,
-                receiverAddress,
-                receiverPrivateKey: encryptedKey,
                 status: "PENDING"
             }
         });

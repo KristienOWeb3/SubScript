@@ -34,6 +34,7 @@ import {
   CheckCircle2,
   Copy,
   CreditCard,
+  Download,
   ExternalLink,
   Globe,
   Home,
@@ -179,6 +180,7 @@ export default function UserDashboard() {
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
@@ -203,6 +205,10 @@ export default function UserDashboard() {
   const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+  const [walletBackupLoading, setWalletBackupLoading] = useState(false);
+  const [walletBackupError, setWalletBackupError] = useState<string | null>(null);
+  const [exportedPrivateKey, setExportedPrivateKey] = useState<string | null>(null);
+  const [privateKeyVisible, setPrivateKeyVisible] = useState(false);
 
   const [dailyLimitInput, setDailyLimitInput] = useState("");
   const [weeklyLimitInput, setWeeklyLimitInput] = useState("");
@@ -306,6 +312,54 @@ export default function UserDashboard() {
     } finally {
       setSavingSettingsField(null);
     }
+  };
+
+  const handleExportWallet = async () => {
+    setWalletBackupLoading(true);
+    setWalletBackupError(null);
+    setExportedPrivateKey(null);
+    setPrivateKeyVisible(false);
+    try {
+      const res = await fetch("/api/user/wallet/export", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Could not export this wallet key.");
+      }
+      setExportedPrivateKey(data.privateKey);
+      setPrivateKeyVisible(true);
+      triggerToast("Private key unlocked. Store it somewhere safe.");
+    } catch (err: any) {
+      setWalletBackupError(err.message || "Could not export this wallet key.");
+    } finally {
+      setWalletBackupLoading(false);
+    }
+  };
+
+  const handleCopyPrivateKey = async () => {
+    if (!exportedPrivateKey) return;
+    await navigator.clipboard.writeText(exportedPrivateKey);
+    triggerToast("Private key copied.");
+  };
+
+  const handleDownloadPrivateKey = () => {
+    if (!exportedPrivateKey || !userWallet) return;
+    const blob = new Blob([
+      [
+        "SubScript generated wallet private key backup",
+        `Wallet: ${userWallet}`,
+        `Created: ${new Date().toISOString()}`,
+        "",
+        exportedPrivateKey,
+        "",
+        "Store this offline. Anyone with this key can control this wallet.",
+      ].join("\n"),
+    ], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `subscript-wallet-${userWallet.slice(2, 10)}-backup.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const [requestAmount, setRequestAmount] = useState("");
@@ -437,6 +491,7 @@ export default function UserDashboard() {
 
       setUserWallet(data.wallet);
       setUserEmail(data.email);
+      setIsEmbeddedWalletSession(Boolean(data.isEmbedded));
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
@@ -486,6 +541,29 @@ export default function UserDashboard() {
     await navigator.clipboard.writeText(userWallet);
     setCopiedAddress(true);
     setTimeout(() => setCopiedAddress(false), 1600);
+  };
+
+  const isOwnWalletAddress = (address: string | null | undefined) => {
+    return Boolean(address && userWallet && address.toLowerCase() === userWallet.toLowerCase());
+  };
+
+  const sendFromEmbeddedWallet = async (payload: {
+    receiverAddress?: string;
+    amountUsdc?: string;
+    title?: string;
+    description?: string;
+    recipients?: { receiverAddress: string; amountUsdc: string; title?: string; description?: string }[];
+  }) => {
+    const res = await fetch("/api/user/wallet/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to send USDC from your generated wallet.");
+    }
+    return data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[];
   };
 
   const runAction = async (key: string, task: () => Promise<void>) => {
@@ -734,6 +812,10 @@ export default function UserDashboard() {
       setSingleSendStatus("Please provide a valid recipient wallet address or registered SubScript DNS name.");
       return;
     }
+    if (isOwnWalletAddress(singleResolved.address)) {
+      setSingleSendStatus("You cannot send USDC to your own connected wallet.");
+      return;
+    }
     if (!singleAmount || isNaN(Number(singleAmount)) || Number(singleAmount) <= 0) {
       setSingleSendStatus("Please provide a valid amount to send.");
       return;
@@ -741,6 +823,25 @@ export default function UserDashboard() {
 
     setSingleSendLoading(true);
     try {
+      if (isEmbeddedWalletSession) {
+        const transfers = await sendFromEmbeddedWallet({
+          receiverAddress: singleResolved.address,
+          amountUsdc: singleAmount,
+          title: `Sent ${singleAmount} USDC`,
+          description: `Direct transfer of ${singleAmount} USDC on-chain to ${singleRecipient}.`,
+        });
+        setSingleSendStatus(`Success! Transfer transaction submitted: ${transfers[0]?.txHash || "confirmed"}`);
+        setSingleRecipient("");
+        setSingleAmount("");
+        await Promise.all([refetchUsdc().catch(console.error), loadDms().catch(console.error)]);
+        return;
+      }
+
+      if (!accountAddress) {
+        setSingleSendStatus("Connect your browser wallet before sending from an external wallet account.");
+        return;
+      }
+
       const usdcAbi = [
         {
           type: "function",
@@ -791,10 +892,33 @@ export default function UserDashboard() {
         if (!addr) {
           throw new Error(`Recipient ${i + 1} ("${row.address}") is not a valid address or DNS name.`);
         }
+        if (isOwnWalletAddress(addr)) {
+          throw new Error(`Recipient ${i + 1} is your own connected wallet. Remove it before sending.`);
+        }
         if (!row.amount || isNaN(Number(row.amount)) || Number(row.amount) <= 0) {
           throw new Error(`Recipient ${i + 1} has an invalid amount.`);
         }
         resolvedRows.push({ address: addr, amount: row.amount });
+      }
+
+      if (isEmbeddedWalletSession) {
+        const transfers = await sendFromEmbeddedWallet({
+          recipients: resolvedRows.map((row) => ({
+            receiverAddress: row.address,
+            amountUsdc: row.amount,
+            title: `Sent ${row.amount} USDC`,
+            description: `Direct transfer of ${row.amount} USDC on-chain.`,
+          })),
+        });
+        setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
+        setBatchRows([{ address: "", amount: "" }]);
+        setBatchProgress(null);
+        await Promise.all([refetchUsdc().catch(console.error), loadDms().catch(console.error)]);
+        return;
+      }
+
+      if (!accountAddress) {
+        throw new Error("Connect your browser wallet before sending from an external wallet account.");
       }
 
       const usdcAbi = [
@@ -833,6 +957,11 @@ export default function UserDashboard() {
       setBatchSendLoading(false);
     }
   };
+
+  const singleSelfSend = Boolean(singleResolved?.address && isOwnWalletAddress(singleResolved.address));
+  const batchSelfSendRows = batchRows
+    .map((row, index) => ({ index, address: row.address.trim() }))
+    .filter((row) => /^0x[a-fA-F0-9]{40}$/.test(row.address) && isOwnWalletAddress(row.address));
 
   if (loading) {
     return (
@@ -1574,9 +1703,15 @@ export default function UserDashboard() {
                       </p>
                     )}
 
+                    {singleSelfSend && (
+                      <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                        This is your connected wallet address. Enter another recipient before sending.
+                      </div>
+                    )}
+
                     <button
                       type="submit"
-                      disabled={singleSendLoading || !singleResolved?.address}
+                      disabled={singleSendLoading || !singleResolved?.address || singleSelfSend}
                       className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
                         singleSendLoading ? "opacity-60 cursor-not-allowed" : ""
                       }`}
@@ -1636,6 +1771,12 @@ export default function UserDashboard() {
                       </div>
                     )}
 
+                    {batchSelfSendRows.length > 0 && (
+                      <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                        Recipient {batchSelfSendRows.map((row) => row.index + 1).join(", ")} uses your connected wallet address. Remove it before running the batch.
+                      </div>
+                    )}
+
                     <BalanceRoutingNotice
                       amount={batchRows.reduce((sum, row) => sum + (isNaN(Number(row.amount)) ? 0 : Number(row.amount)), 0)}
                       walletBalance={walletBalance}
@@ -1663,9 +1804,9 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={handleBatchSend}
-                      disabled={batchSendLoading}
+                      disabled={batchSendLoading || batchSelfSendRows.length > 0}
                       className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
-                        batchSendLoading ? "opacity-60 cursor-not-allowed" : ""
+                        batchSendLoading || batchSelfSendRows.length > 0 ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
                       {batchSendLoading ? (
@@ -1759,6 +1900,72 @@ export default function UserDashboard() {
                     </form>
                   )}
                 </div>
+
+                {userSettings?.walletBackup && (
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-2">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
+                        </h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed">
+                          Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
+                        userSettings.walletBackup.available
+                          ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
+                          : "border border-white/10 bg-white/5 text-white/45"
+                      }`}>
+                        {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                      </span>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
+                        <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
+                        <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
+                      </div>
+                    </div>
+
+                    {exportedPrivateKey && (
+                      <div className="space-y-3">
+                        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                          <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                            {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                            {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
+                          </button>
+                          <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                            <Copy className="h-4 w-4" /> Copy
+                          </button>
+                          <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                            <Download className="h-4 w-4" /> Download
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+
+                    <button
+                      type="button"
+                      onClick={handleExportWallet}
+                      disabled={walletBackupLoading || !userSettings.walletBackup.available}
+                      className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                    </button>
+                  </div>
+                )}
 
                 {/* Spending Limits Form */}
                 {userSettings && (
@@ -2052,6 +2259,8 @@ export default function UserDashboard() {
         onClose={() => setSendFundsOpen(false)}
         walletBalance={walletBalance}
         sepoliaUsdc={sepoliaUsdc}
+        userWallet={userWallet}
+        isEmbeddedWalletSession={isEmbeddedWalletSession}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
         loadDms={loadDms}
@@ -3233,6 +3442,8 @@ function SendFundsModal({
   onClose,
   walletBalance,
   sepoliaUsdc,
+  userWallet,
+  isEmbeddedWalletSession,
   writeContractAsync,
   refetchUsdc,
   loadDms,
@@ -3242,6 +3453,8 @@ function SendFundsModal({
   onClose: () => void;
   walletBalance: number;
   sepoliaUsdc: number;
+  userWallet: string | null;
+  isEmbeddedWalletSession: boolean;
   writeContractAsync: any;
   refetchUsdc: () => void;
   loadDms: () => void;
@@ -3251,6 +3464,7 @@ function SendFundsModal({
   const [resolving, setResolving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isSelfSend = Boolean(resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase());
 
   useEffect(() => {
     if (!open) return;
@@ -3282,6 +3496,10 @@ function SendFundsModal({
       setStatus("Recipient address is not resolved.");
       return;
     }
+    if (userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase()) {
+      setStatus("You cannot send USDC to your own connected wallet.");
+      return;
+    }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       setStatus("Please enter a valid amount.");
       return;
@@ -3295,6 +3513,28 @@ function SendFundsModal({
     setStatus(null);
 
     try {
+      if (isEmbeddedWalletSession) {
+        const response = await fetch("/api/user/wallet/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receiverAddress: resolvedAddress,
+            amountUsdc: amount,
+            title: `Sent ${amount} USDC`,
+            description: `Direct transfer of ${amount} USDC on-chain to ${recipient}.`,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Transfer execution failed.");
+        }
+        setStatus("success");
+        refetchUsdc();
+        loadDms();
+        setTimeout(() => onClose(), 2000);
+        return;
+      }
+
       const usdcAbi = [
         {
           type: "function",
@@ -3363,6 +3603,11 @@ function SendFundsModal({
                     <div className="text-[10px] text-white/40 mt-1 truncate">{resolvedAddress}</div>
                   )}
                 </div>
+                {resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase() && (
+                  <div className="mt-2 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+                    This is your connected wallet address. Choose another recipient.
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -3397,7 +3642,7 @@ function SendFundsModal({
 
               <button
                 type="submit"
-                disabled={loading || !resolvedAddress || status === "success"}
+                disabled={loading || !resolvedAddress || isSelfSend || status === "success"}
                 className="subscript-primary-button w-full mt-2"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send USDC"}

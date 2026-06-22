@@ -106,6 +106,9 @@ export async function POST(request: Request) {
             if (typeof receiverAddress !== "string" || !receiverAddress.startsWith("0x") || receiverAddress.length !== 42) {
                 return NextResponse.json({ error: "Invalid receiver address" }, { status: 400 });
             }
+            if (receiverAddress.toLowerCase() === wallet.toLowerCase()) {
+                return NextResponse.json({ error: "You cannot send USDC to your own connected wallet." }, { status: 400 });
+            }
             if (!amountUsdc || isNaN(Number(amountUsdc)) || Number(amountUsdc) <= 0) {
                 return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
             }

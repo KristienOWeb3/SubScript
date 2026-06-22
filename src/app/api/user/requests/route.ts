@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { parseUsdcToMicros, formatUsdcFromMicros } from "@/lib/dms/system";
+import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { createUserPaymentRequest } from "@/lib/userPaymentRequests";
 
 export async function POST(request: Request) {
     try {
@@ -49,52 +49,19 @@ export async function POST(request: Request) {
             ? description.trim().slice(0, 500)
             : "Peer USDC request through SubScript.";
 
-        await prisma.customer.upsert({
-            where: { walletAddress: normalizedRequester },
-            update: {},
-            create: { walletAddress: normalizedRequester },
+        const paymentRequest = await createUserPaymentRequest({
+            requester: normalizedRequester,
+            receiver: normalizedReceiver,
+            amountMicros,
+            title: cleanTitle,
+            description: cleanDescription,
         });
-
-        const paymentLink = await prisma.paymentLink.create({
-            data: {
-                merchantAddress: normalizedRequester,
-                title: cleanTitle,
-                description: cleanDescription,
-                amountUsdc: amountMicros,
-                active: true,
-                maxUses: 1,
-                merchantNameSnapshot: "SubScript user request",
-                externalReference: `peer-request:${normalizedRequester}:${Date.now()}`,
-            },
-        });
-
-        const amount = formatUsdcFromMicros(amountMicros);
-        let dm = null;
-        if (normalizedReceiver) {
-            dm = await prisma.subscriptDm.create({
-                data: {
-                    senderAddress: normalizedRequester,
-                    receiverAddress: normalizedReceiver,
-                    messageType: "PEER_REQUEST",
-                    status: "PENDING",
-                    amountUsdc: amountMicros,
-                    title: `${amount} USDC requested`,
-                    description: [
-                        cleanDescription,
-                        `Requester: ${normalizedRequester}`,
-                        `Amount: ${amount} USDC`,
-                        "This is a structured SubScript payment request, not a free-form chat.",
-                    ].join("\n"),
-                    paymentLinkId: paymentLink.id,
-                },
-            });
-        }
 
         return NextResponse.json({
             success: true,
-            paymentLinkId: paymentLink.id,
-            payUrl: `/pay/${paymentLink.id}`,
-            dmId: dm?.id || null,
+            paymentLinkId: paymentRequest.paymentLinkId,
+            payUrl: `/pay/${paymentRequest.paymentLinkId}`,
+            dmId: paymentRequest.dmId,
         }, { status: 201 });
     } catch (error: any) {
         console.error("Peer request creation failed:", error);

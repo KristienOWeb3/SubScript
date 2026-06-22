@@ -4,6 +4,7 @@ import { getAccountRole } from "@/lib/accounts/roles";
 import { withPgClient } from "@/lib/serverPg";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { getCircleEmail, listCircleUserWallets, selectArcEoaWallet, type CircleSocialAuth } from "@/lib/circle/client";
+import { setSessionCookie } from "@/lib/authCookies";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -104,13 +105,7 @@ export async function POST(request: Request) {
             role,
         });
 
-        response.cookies.set("subscript_session_token", jwt, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        });
+        setSessionCookie(response, request, jwt, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
         return response;
     } catch (error: any) {

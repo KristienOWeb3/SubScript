@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "lucide-react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { injected } from "wagmi/connectors";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -151,8 +150,6 @@ export default function DashboardHeader({
         const connector = connectors.find((c) => c.id === "injected") || connectors[0];
         if (connector) {
             connect({ connector });
-        } else {
-            connect({ connector: injected() });
         }
     };
 

@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { uploadProfilePicture } from "@/lib/storage";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 
 const unsupportedUserSettings = new Set([
@@ -39,6 +40,17 @@ export async function GET(request: Request) {
             where: { address: normalizedUser },
             select: { alias: true, isAnonymous: true },
         }).catch(() => null);
+        const embeddedWalletRecord = await pgMaybeOne<{
+            email: string | null;
+            provider: string | null;
+            encrypted_private_key: string | null;
+        }>(
+            `select email, provider, encrypted_private_key
+               from user_embedded_wallets
+              where wallet_address = $1
+              limit 1`,
+            [normalizedUser]
+        ).catch(() => null);
 
         let settings: any = {};
 
@@ -114,6 +126,11 @@ export async function GET(request: Request) {
                     spendingLimitDaily: customer.spendingLimitDaily ? customer.spendingLimitDaily.toString() : null,
                     spendingLimitWeekly: customer.spendingLimitWeekly ? customer.spendingLimitWeekly.toString() : null,
                     spendingLimitMonthly: customer.spendingLimitMonthly ? customer.spendingLimitMonthly.toString() : null,
+                    walletBackup: embeddedWalletRecord ? {
+                        email: embeddedWalletRecord.email,
+                        provider: embeddedWalletRecord.provider,
+                        available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                    } : null,
                 };
             }
         }

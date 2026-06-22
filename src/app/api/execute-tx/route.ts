@@ -11,7 +11,7 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { executeWithRpcFallback } from "@/lib/payments/rpc";
+import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 
 const isProdEnv = process.env.NODE_ENV === "production";
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
@@ -323,16 +323,15 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* Execute contract transaction with RPC redundancy failover wrapper */
-            const { result: tx } = await executeWithRpcFallback(async (provider) => {
-                const walletSigner = new ethers.Wallet(privateKey, provider);
-                const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
-                const method = contract[functionName] as any;
-                if (typeof method !== "function") {
-                    throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
-                }
-                return await method(...finalArgs);
-            });
+            const { provider, rpcEndpoint } = await getRpcProviderForWrite();
+            const walletSigner = new ethers.Wallet(privateKey, provider);
+            const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
+            const method = contract[functionName] as any;
+            if (typeof method !== "function") {
+                throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
+            }
+            const tx = await method(...finalArgs);
+            console.log(`[execute-tx] submitted ${functionName} through ${rpcEndpoint}: ${tx.hash}`);
 
             if (action === "withdraw") {
                 console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${tx.hash}, requestId: ${requestId}`);

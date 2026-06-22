@@ -3,9 +3,10 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { executeWithRpcFallback } from "@/lib/payments/rpc";
+import { executeWithRpcFallback, getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { repairMerchantBalance } from "@/lib/payments/repairBalances";
 import { addressToBuffer } from "@/lib/payments/address";
+import { CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 
 const USDC_ABI = [
     "function transfer(address to, uint256 amount) external returns (bool)",
@@ -290,67 +291,63 @@ export async function POST(request: Request) {
                             throw new Error("PRIVATE_KEY not configured on server");
                         }
 
-                        /* Execute batch transfer on-chain */
-                        const txResult = await executeWithRpcFallback(async (provider) => {
-                            const wallet = new ethers.Wallet(adminPrivateKey, provider);
-                            const usdcContract = new ethers.Contract(ProtocolConfig.USDC_ADDRESS, USDC_ABI, wallet);
-                            
-                            const spenderAddress = isShielded 
-                                ? "0x78E91a54B42A0dCd5Ac6153096B72b9a7A2Fbc1e" /* CONFIDENTIAL_CONTRACT_ADDRESS */
-                                : ProtocolConfig.ROUTER_ADDRESS;
+                        const { provider, rpcEndpoint } = await getRpcProviderForWrite();
+                        const wallet = new ethers.Wallet(adminPrivateKey, provider);
+                        const usdcContract = new ethers.Contract(ProtocolConfig.USDC_ADDRESS, USDC_ABI, wallet);
 
-                            /* Check and approve USDC allowance if necessary */
-                            const allowance = await usdcContract.allowance(wallet.address, spenderAddress);
-                            if (allowance < chunkTotal) {
-                                const approveTx = await usdcContract.approve(spenderAddress, ethers.MaxUint256);
-                                await approveTx.wait();
-                            }
+                        const spenderAddress = isShielded
+                            ? CONFIDENTIAL_CONTRACT_ADDRESS
+                            : ProtocolConfig.ROUTER_ADDRESS;
 
-                            if (isShielded) {
-                                const confidentialContract = new ethers.Contract(
-                                    spenderAddress,
-                                    [
-                                        "function executeBatchPayout(address[] calldata recipients, uint256[] calldata amounts, bool isShielded, bytes32 viewKey) external"
-                                    ],
-                                    wallet
-                                );
+                        /* Check and approve USDC allowance if necessary */
+                        const allowance = await usdcContract.allowance(wallet.address, spenderAddress);
+                        if (allowance < chunkTotal) {
+                            const approveTx = await usdcContract.approve(spenderAddress, ethers.MaxUint256);
+                            await approveTx.wait();
+                        }
 
-                                /* Ensure viewKey is padded to bytes32 format */
-                                const formattedViewKey = ethers.zeroPadValue(viewKey || ethers.ZeroHash, 32);
+                        let txHash: string;
+                        if (isShielded) {
+                            const confidentialContract = new ethers.Contract(
+                                spenderAddress,
+                                [
+                                    "function executeBatchPayout(address[] calldata recipients, uint256[] calldata amounts, bool isShielded, bytes32 viewKey) external"
+                                ],
+                                wallet
+                            );
 
-                                /* Static call check */
-                                await confidentialContract.executeBatchPayout.staticCall(
-                                    chunkItems.map((item: any) => item.recipient_address),
-                                    chunkItems.map((item: any) => BigInt(item.amount_usdc)),
-                                    true,
-                                    formattedViewKey
-                                );
+                            /* Ensure viewKey is padded to bytes32 format */
+                            const formattedViewKey = ethers.zeroPadValue(viewKey || ethers.ZeroHash, 32);
 
-                                const tx = await confidentialContract.executeBatchPayout(
-                                    chunkItems.map((item: any) => item.recipient_address),
-                                    chunkItems.map((item: any) => BigInt(item.amount_usdc)),
-                                    true,
-                                    formattedViewKey
-                                );
-                                return { hash: tx.hash };
-                            } else {
-                                const routerContract = new ethers.Contract(spenderAddress, ROUTER_ABI, wallet);
-                                
-                                /* Static call check */
-                                await routerContract.executeBatchPayout.staticCall(
-                                    chunkItems.map((item: any) => item.recipient_address),
-                                    chunkItems.map((item: any) => BigInt(item.amount_usdc))
-                                );
+                            await confidentialContract.executeBatchPayout.staticCall(
+                                chunkItems.map((item: any) => item.recipient_address),
+                                chunkItems.map((item: any) => BigInt(item.amount_usdc)),
+                                true,
+                                formattedViewKey
+                            );
 
-                                const tx = await routerContract.executeBatchPayout(
-                                    chunkItems.map((item: any) => item.recipient_address),
-                                    chunkItems.map((item: any) => BigInt(item.amount_usdc))
-                                );
-                                return { hash: tx.hash };
-                            }
-                        });
+                            const tx = await confidentialContract.executeBatchPayout(
+                                chunkItems.map((item: any) => item.recipient_address),
+                                chunkItems.map((item: any) => BigInt(item.amount_usdc)),
+                                true,
+                                formattedViewKey
+                            );
+                            txHash = tx.hash;
+                        } else {
+                            const routerContract = new ethers.Contract(spenderAddress, ROUTER_ABI, wallet);
 
-                        const txHash = txResult.result.hash;
+                            await routerContract.executeBatchPayout.staticCall(
+                                chunkItems.map((item: any) => item.recipient_address),
+                                chunkItems.map((item: any) => BigInt(item.amount_usdc))
+                            );
+
+                            const tx = await routerContract.executeBatchPayout(
+                                chunkItems.map((item: any) => item.recipient_address),
+                                chunkItems.map((item: any) => BigInt(item.amount_usdc))
+                            );
+                            txHash = tx.hash;
+                        }
+                        console.log(`[batch-payout] submitted chunk ${chunk.id} through ${rpcEndpoint}: ${txHash}`);
                         chunkTxHash = txHash;
 
                         /* Register transaction verification in SUBMITTED state */

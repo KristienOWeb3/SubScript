@@ -5,6 +5,7 @@ import { sanitizeInput } from "@/utils/security";
 import { getCookieValue } from "@/lib/auth";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
+import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
 
 export async function POST(request: Request) {
     try {
@@ -69,21 +70,8 @@ export async function POST(request: Request) {
 
         const response = NextResponse.json({ success: true, wallet: address, role });
         
-        response.cookies.set("subscript_session_token", jwt, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            expires: expiresAt,
-        });
-
-        response.cookies.set("subscript_siwe_nonce", "", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-            path: "/",
-            maxAge: 0,
-        });
+        setSessionCookie(response, request, jwt, expiresAt);
+        clearSiweNonceCookie(response, request);
 
         return response;
     } catch (error: any) {

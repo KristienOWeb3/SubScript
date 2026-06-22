@@ -243,6 +243,7 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         uint256 totalAmount = 0;
         for (uint256 i = 0; i < amounts.length; i++) {
             require(recipients[i] != address(0), "Invalid recipient address");
+            require(amounts[i] > 0, "Amount must be positive");
             totalAmount += amounts[i];
         }
 

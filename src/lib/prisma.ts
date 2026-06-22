@@ -16,7 +16,7 @@ const rawPrisma =
     new PrismaClient({
         datasources: {
             db: {
-                url: getDatabaseUrl({ allowBuildTimeFallback: true }),
+                url: getDatabaseUrl({ allowBuildTimeFallback: true, forPrisma: true }),
             },
         },
         log: ["query"],
@@ -24,11 +24,27 @@ const rawPrisma =
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = rawPrisma;
 
+function createDelegateProxy(delegate: any, overrides: Record<string, (...args: any[]) => Promise<any>>) {
+    return new Proxy(delegate, {
+        get(target, prop, receiver) {
+            if (typeof prop === "string" && overrides[prop]) {
+                return overrides[prop];
+            }
+
+            const value = Reflect.get(target, prop, receiver);
+            if (typeof value === "function") {
+                return value.bind(target);
+            }
+            return value;
+        },
+    });
+}
+
 function createPrismaProxy(client: any): any {
     return new Proxy(client, {
         get(target, prop, receiver) {
             if (prop === "accountRole") {
-                return {
+                return createDelegateProxy(target.accountRole, {
                     findUnique: async (args: any) => {
                         try {
                             return await target.accountRole.findUnique(args);
@@ -59,10 +75,10 @@ function createPrismaProxy(client: any): any {
                             throw err;
                         }
                     }
-                };
+                });
             }
             if (prop === "merchant") {
-                return {
+                return createDelegateProxy(target.merchant, {
                     findUnique: async (args: any) => {
                         try {
                             return await target.merchant.findUnique(args);
@@ -88,10 +104,10 @@ function createPrismaProxy(client: any): any {
                             throw err;
                         }
                     }
-                };
+                });
             }
             if (prop === "customer") {
-                return {
+                return createDelegateProxy(target.customer, {
                     findUnique: async (args: any) => {
                         try {
                             return await target.customer.findUnique(args);
@@ -117,7 +133,7 @@ function createPrismaProxy(client: any): any {
                             throw err;
                         }
                     }
-                };
+                });
             }
 
             const value = Reflect.get(target, prop, receiver);
