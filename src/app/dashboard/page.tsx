@@ -1812,6 +1812,28 @@ export default function DashboardPage() {
     };
 
 
+    const [safeVerifying, setSafeVerifying] = useState(false);
+    const [safeResult, setSafeResult] = useState<any>(null);
+
+    const handleVerifySafe = async () => {
+        if (!rerouteAddress) return;
+        setSafeVerifying(true);
+        setSafeResult(null);
+        try {
+            const res = await fetch("/api/merchant/multisig", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ safeAddress: rerouteAddress }),
+            });
+            const data = await res.json();
+            setSafeResult({ ok: res.ok, ...data });
+        } catch (err: any) {
+            setSafeResult({ ok: false, error: err?.message || "Verification failed" });
+        } finally {
+            setSafeVerifying(false);
+        }
+    };
+
     const handleReroute = async () => {
         if (!rerouteAddress || !rerouteAddress.startsWith("0x") || rerouteAddress.length !== 42) {
             setPremiumError("Please enter a valid Ethereum address (0x...).");
@@ -3517,6 +3539,42 @@ Please complete the following implementation tasks:
                                             )}
                                             {premiumError && (
                                                 <p className="text-red-400 text-xs mt-3 font-mono break-all">{premiumError}</p>
+                                            )}
+                                        </div>
+
+                                        {/* Safe multisig verification */}
+                                        <div className="bg-black/40 border border-white/5 rounded-2xl p-5 space-y-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-2">
+                                                        <Shield className="w-3.5 h-3.5 text-[#d4a853]" /> Safe Multisig
+                                                    </h4>
+                                                    <p className="text-[10px] text-white/50 leading-normal max-w-md">
+                                                        Verify the destination above is a Gnosis Safe you own before routing payouts to it. No custom contracts — funds are guarded by your Safe&apos;s M-of-N approvals.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={handleVerifySafe}
+                                                    disabled={safeVerifying || !rerouteAddress}
+                                                    className="px-4 py-2.5 bg-white/5 border border-white/10 text-white font-bold rounded-xl text-[11px] uppercase tracking-wider hover:bg-white/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
+                                                >
+                                                    {safeVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+                                                    Verify Safe
+                                                </button>
+                                            </div>
+                                            {safeResult && (
+                                                safeResult.ok ? (
+                                                    <div className="bg-emerald-400/10 border border-emerald-400/25 rounded-xl p-3 text-[11px] text-emerald-200/90 flex items-start gap-2">
+                                                        <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                                        <span>
+                                                            Verified {safeResult.safe?.threshold}-of-{safeResult.safe?.ownerCount} Safe and your wallet is an owner. Payouts are now multisig-secured — click <span className="font-bold">Reroute</span> to apply it on-chain.
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 text-[11px] text-red-300">
+                                                        {safeResult.error || "Could not verify this Safe."}
+                                                    </div>
+                                                )
                                             )}
                                         </div>
                                     </div>
