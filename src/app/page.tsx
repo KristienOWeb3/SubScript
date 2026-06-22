@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3 } from "lucide-react";
+import { ArrowRight, Building2, BarChart3, Zap, ShieldCheck, Webhook, Link2, ReceiptText, Wallet, Code, Users } from "lucide-react";
 import Navbar from "@/components/Navbar";
 
 const subscriptions = [
@@ -163,474 +163,111 @@ function MockupDashboardCard() {
     );
 }
 
-function SuccessMessage({ message }: { message: string }) {
-    const parts = message.split(/\b(X)\b/);
+function LandingSections() {
+    const stats = [
+        ["1%", "Merchant fee per successful payment"],
+        ["$0", "Hidden fees for subscribers"],
+        ["<1s", "Arc settlement finality"],
+        ["USDC", "Native gas — no volatile fees"],
+    ];
+
+    const features: { icon: typeof Zap; title: string; text: string }[] = [
+        { icon: Zap, title: "Programmable subscriptions", text: "Bounded USDC authorizations via Permit2, with an on-chain kill switch users control. No locked liquidity, no zombie charges." },
+        { icon: Wallet, title: "Continue with Google", text: "Mainstream onboarding with embedded wallets — no seed phrases, no extensions. Users can pay in one tap when signed in." },
+        { icon: Code, title: "Checkout Intents", text: "Create an intent server-side, redirect to hosted checkout, and reconcile by intent ID. No SDK required — plain REST." },
+        { icon: Webhook, title: "Signed webhooks", text: "HMAC-signed payment.success events tell your backend exactly which order or user to unlock. Idempotent by design." },
+        { icon: ReceiptText, title: "Human-readable receipts", text: "Every payment binds to an Arc memo receipt — shareable, auditable, and readable without a block explorer." },
+        { icon: Link2, title: "No-code payment links & QR", text: "Spin up branded payment links and QR codes from the dashboard. Paste them anywhere and get paid in USDC." },
+        { icon: BarChart3, title: "Usage-based billing", text: "Prepaid metered vaults for API calls, AI tokens, storage, or pay-per-view — bill exactly what's consumed." },
+        { icon: ShieldCheck, title: "Privacy & multisig", text: "Confidential merchant transactions by default and Safe-multisig payout destinations — institutional-grade controls." },
+    ];
+
+    const steps = [
+        ["Create a Checkout Intent", "Your backend calls POST /api/intent with your secret key and gets a hosted checkout URL."],
+        ["The customer pays in USDC", "SubScript handles wallet onboarding, approval, and settlement on Arc — the payer just confirms."],
+        ["A signed webhook unlocks access", "Verify the HMAC signature, match the intent ID, and fulfill the order. Done."],
+    ];
 
     return (
-        <span className="break-words">
-            {parts.map((part, index) =>
-                part === "X" ? (
-                    <a
-                        key={index}
-                        href="https://x.com/subscript"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[#00d2b4] hover:text-white underline underline-offset-2 transition-colors font-bold"
-                    >
-                        X
-                    </a>
-                ) : (
-                    <span key={index}>{part}</span>
-                )
-            )}
-        </span>
-    );
-}
-
-function WaitlistForm() {
-    const [step, setStep] = useState<"button" | "selectType" | "email" | "company" | "useCase" | "monthlyVolume" | "success" | "error">("button");
-    const [userType, setUserType] = useState<"user" | "enterprise" | "">("");
-    const [email, setEmail] = useState("");
-    const [companyName, setCompanyName] = useState("");
-    const [useCase, setUseCase] = useState("");
-    const [monthlyVolume, setMonthlyVolume] = useState("");
-    const [honeypot, setHoneypot] = useState("");
-    const [message, setMessage] = useState("");
-    const [error, setError] = useState<string | null>(null);
-    const [debugError, setDebugError] = useState<string | null>(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const showTransientError = (nextMessage: string, fallbackStep: typeof step) => {
-        setMessage(nextMessage);
-        setStep("error");
-        window.setTimeout(() => {
-            setStep(fallbackStep);
-            setError(null);
-            setDebugError(null);
-        }, 2800);
-    };
-
-    const handleEmailSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(null);
-        setDebugError(null);
-        if (!email.trim() || !email.includes("@")) {
-            showTransientError("Enter a valid email address to join the priority list.", "email");
-            return;
-        }
-
-        if (userType === "user") {
-            /* User path: submit directly after email */
-            submitToApi();
-        } else {
-            /* Enterprise path: continue multi-step */
-            setStep("company");
-        }
-    };
-
-    const handleCompanySubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(null);
-        setDebugError(null);
-        if (companyName.trim()) {
-            setStep("useCase");
-        }
-    };
-
-    const handleUseCaseSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(null);
-        setDebugError(null);
-        if (useCase) {
-            setStep("monthlyVolume");
-        }
-    };
-
-    const submitToApi = () => {
-        if (isSubmitting) return;
-
-        setIsSubmitting(true);
-        setError(null);
-        setDebugError(null);
-        (async () => {
-            const fallbackStep = userType === "user" ? "email" : "monthlyVolume";
-
-            const payload: Record<string, string> = {
-                email: email.trim(),
-                userType: userType as string,
-                honeypot,
-            };
-
-            if (userType === "enterprise") {
-                payload.companyName = companyName.trim();
-                payload.useCase = useCase;
-                payload.monthlyVolume = monthlyVolume;
-            }
-
-            try {
-                const response = await fetch("/api/waitlist", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                });
-
-                const data = await response.json().catch(() => ({}));
-
-                if (!response.ok || data?.success === false) {
-                    const errorMsg = data?.error || data?.details?.message || "Failed to save submission";
-                    setError(errorMsg);
-                    setDebugError(errorMsg);
-                    showTransientError(errorMsg, fallbackStep);
-                    return;
-                }
-
-                setMessage(data?.message || "Spot secured. SubScript makes USDC subscriptions fast, private, and reliable.");
-                setStep("success");
-            } catch (err: any) {
-                console.error("Submission error:", err);
-                const errorMsg = err?.message || "Connection failed";
-                setError(errorMsg);
-                setDebugError(errorMsg);
-                showTransientError(errorMsg, fallbackStep);
-            } finally {
-                setIsSubmitting(false);
-            }
-        })();
-    };
-
-    const handleEnterpriseSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(null);
-        setDebugError(null);
-        if (!email || !companyName || !useCase || !monthlyVolume) {
-            showTransientError("Please complete all sections.", "monthlyVolume");
-            return;
-        }
-        submitToApi();
-    };
-
-    return (
-        <div className="w-full flex flex-col items-center lg:items-start gap-3">
-            <div className="min-h-[36px] w-full flex justify-center lg:justify-start">
-                <AnimatePresence mode="wait">
-                {step === "button" && (
-                    <motion.div
-                        key="button"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        <motion.button
-                            onClick={() => { setStep("selectType"); setError(null); setDebugError(null); }}
-                            className="liquid-glass rounded-full px-6 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 transition-all duration-200 h-9 flex items-center"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            Join Waitlist <span className="text-[#00d2b4] ml-1">&gt;</span>
-                        </motion.button>
-                    </motion.div>
-                )}
-
-                {step === "selectType" && (
-                    <motion.div
-                        key="selectType"
-                        className="flex items-center gap-2 w-full max-w-sm"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <button
-                            type="button"
-                            onClick={() => { setStep("button"); setError(null); setDebugError(null); }}
-                            className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0"
-                            aria-label="Go back"
-                        >
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                        </button>
-                        <motion.button
-                            onClick={() => { setUserType("user"); setStep("email"); setError(null); setDebugError(null); }}
-                            className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#00d2b4]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                        >
-                            <Mail className="w-3 h-3 text-[#00d2b4]" />
-                            For Users
-                        </motion.button>
-                        <motion.button
-                            onClick={() => { setUserType("enterprise"); setStep("email"); setError(null); setDebugError(null); }}
-                            className="liquid-glass rounded-full px-4 py-2 text-white text-xs font-bold uppercase tracking-wider hover:bg-white/5 hover:border-[#d4a853]/30 transition-all duration-200 h-9 flex items-center gap-2 border border-white/5"
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                        >
-                            <Building2 className="w-3 h-3 text-[#d4a853]" />
-                            Enterprise
-                        </motion.button>
-                    </motion.div>
-                )}
-
-                {step === "email" && (
-                    <div className="flex flex-col w-full max-w-sm gap-2">
-                        <motion.form
-                            key="email"
-                            onSubmit={handleEmailSubmit}
-                            className="liquid-glass rounded-full px-2 flex items-center justify-between w-full shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
-                            initial={{ opacity: 0, y: 15 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -15 }}
-                            transition={{ duration: 0.3 }}
-                        >
-                            <div className="flex items-center flex-1 min-w-0 h-full">
-                                <button
-                                    type="button"
-                                    onClick={() => { setStep("selectType"); setError(null); setDebugError(null); }}
-                                    className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
-                                    aria-label="Go back"
-                                >
-                                    <ArrowLeft className="w-3 h-3" />
-                                </button>
-                                <Mail className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                                <input
-                                    type="email"
-                                    value={email}
-                                    onChange={(e) => { setEmail(e.target.value); setError(null); setDebugError(null); }}
-                                    placeholder={userType === "user" ? "Enter your email..." : "Enter your business email..."}
-                                    required
-                                    className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
-                                />
-                            </div>
-                            <motion.button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 transition-all flex-shrink-0"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                aria-label={userType === "user" ? "Submit" : "Next step"}
-                            >
-                                {isSubmitting ? (
-                                    <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
-                                ) : userType === "user" ? (
-                                    <Check className="w-3 h-3 stroke-[2.5]" />
-                                ) : (
-                                    <ArrowRight className="w-3 h-3 stroke-[2.5]" />
-                                )}
-                            </motion.button>
-                        </motion.form>
-                        {debugError && (
-                            <div className="text-red-500 text-xs px-2 font-medium">
-                                {debugError}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {step === "company" && (
-                    <motion.form
-                        key="company"
-                        onSubmit={handleCompanySubmit}
-                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div className="flex items-center flex-1 min-w-0 h-full">
-                            <button
-                                type="button"
-                                onClick={() => setStep("email")}
-                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
-                                aria-label="Go back"
-                            >
-                                <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <Building2 className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                            <input
-                                type="text"
-                                value={companyName}
-                                onChange={(e) => { setCompanyName(e.target.value); setError(null); }}
-                                placeholder="Company name..."
-                                required
-                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full"
-                            />
+        <div className="relative z-10">
+            {/* Stats bar */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-12">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {stats.map(([value, label]) => (
+                        <div key={label} className="liquid-glass border border-white/5 bg-black/30 rounded-2xl p-5 text-center">
+                            <p className="text-2xl sm:text-3xl font-black text-[#00d2b4]">{value}</p>
+                            <p className="mt-1.5 text-[11px] text-white/50 leading-snug">{label}</p>
                         </div>
-                        <motion.button
-                            type="submit"
-                            disabled={!companyName.trim()}
-                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            aria-label="Next step"
-                        >
-                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
-                        </motion.button>
-                    </motion.form>
-                )}
-
-                {step === "useCase" && (
-                    <motion.form
-                        key="useCase"
-                        onSubmit={handleUseCaseSubmit}
-                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div className="flex items-center flex-1 min-w-0 h-full relative">
-                            <button
-                                type="button"
-                                onClick={() => setStep("company")}
-                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1"
-                                aria-label="Go back"
-                            >
-                                <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <HelpCircle className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                            <select
-                                value={useCase}
-                                onChange={(e) => { setUseCase(e.target.value); setError(null); }}
-                                required
-                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8"
-                                style={{ colorScheme: "dark" }}
-                            >
-                                <option value="" disabled className="bg-[#121212] text-white/40">Select use case...</option>
-                                <option value="AI Agents/Tooling" className="bg-[#121212] text-white">AI Agents/Tooling</option>
-                                <option value="Global SaaS" className="bg-[#121212] text-white">Global SaaS</option>
-                                <option value="API Provider" className="bg-[#121212] text-white">API Provider</option>
-                                <option value="Web3 Infrastructure" className="bg-[#121212] text-white">Web3 Infrastructure</option>
-                            </select>
-                            <span className="absolute right-3 pointer-events-none text-white/40 text-[9px]">&#9662;</span>
-                        </div>
-                        <motion.button
-                            type="submit"
-                            disabled={!useCase}
-                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            aria-label="Next step"
-                        >
-                            <ArrowRight className="w-3 h-3 stroke-[2.5]" />
-                        </motion.button>
-                    </motion.form>
-                )}
-
-                {step === "monthlyVolume" && (
-                    <motion.form
-                        key="monthlyVolume"
-                        onSubmit={handleEnterpriseSubmit}
-                        className="liquid-glass rounded-full px-2 flex items-center justify-between w-full max-w-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/5 h-9"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        {/* Honeypot field */}
-                        <input
-                            type="text"
-                            value={honeypot}
-                            onChange={(e) => setHoneypot(e.target.value)}
-                            className="hidden"
-                            tabIndex={-1}
-                            autoComplete="off"
-                        />
-                        <div className="flex items-center flex-1 min-w-0 h-full relative">
-                            <button
-                                type="button"
-                                onClick={() => setStep("useCase")}
-                                disabled={isSubmitting}
-                                className="ml-0.5 p-1 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors flex-shrink-0 mr-1 disabled:opacity-50"
-                                aria-label="Go back"
-                            >
-                                <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <BarChart3 className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                            <select
-                                value={monthlyVolume}
-                                onChange={(e) => { setMonthlyVolume(e.target.value); setError(null); }}
-                                required
-                                disabled={isSubmitting}
-                                className="w-full bg-transparent px-2.5 text-white placeholder-white/40 focus:outline-none text-xs h-full cursor-pointer appearance-none pr-8 disabled:opacity-50"
-                                style={{ colorScheme: "dark" }}
-                            >
-                                <option value="" disabled className="bg-[#121212] text-white/40">Select volume...</option>
-                                <option value="< $10k" className="bg-[#121212] text-white">&lt; $10k</option>
-                                <option value="$10k - $50k" className="bg-[#121212] text-white">$10k - $50k</option>
-                                <option value="$50k+" className="bg-[#121212] text-white">$50k+</option>
-                            </select>
-                            <span className="absolute right-3 pointer-events-none text-white/40 text-[9px]">&#9662;</span>
-                        </div>
-                        <motion.button
-                            type="submit"
-                            disabled={isSubmitting || !monthlyVolume}
-                            className="bg-white text-black w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/90 disabled:bg-white/50 transition-all flex-shrink-0"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            aria-label="Submit"
-                        >
-                            {isSubmitting ? (
-                                <Loader2 className="w-3 h-3 animate-spin stroke-[2.5]" />
-                            ) : (
-                                <Check className="w-3 h-3 stroke-[2.5]" />
-                            )}
-                        </motion.button>
-                    </motion.form>
-                )}
-
-                {step === "success" && (
-                    <motion.div
-                        key="success"
-                        className="liquid-glass rounded-3xl p-5 flex items-start gap-4 w-full max-w-md shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-emerald-500/10 text-emerald-400"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div className="p-2 bg-emerald-500/10 rounded-full flex-shrink-0 mt-0.5 border border-emerald-500/20">
-                            <Check className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">Spot Secured</h4>
-                            <p className="text-xs text-white/60 leading-relaxed">
-                                <SuccessMessage message={message} />
-                            </p>
-                        </div>
-                    </motion.div>
-                )}
-
-                {step === "error" && (
-                    <motion.div
-                        key="error"
-                        className="liquid-glass rounded-3xl p-5 flex items-start gap-4 w-full max-w-md shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-red-500/10 text-red-400"
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div className="p-2 bg-red-500/10 rounded-full flex-shrink-0 mt-0.5 border border-red-500/20">
-                            <AlertCircle className="w-4 h-4 text-red-400 stroke-[2.5]" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-bold text-white mb-1 uppercase tracking-wider">Submission Error</h4>
-                            <p className="text-xs text-white/60 leading-relaxed">{message}</p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            </div>
-            {error && (
-                <div className="text-red-400 text-[11px] mt-1 font-sans font-medium text-center lg:text-left">
-                    {error}
+                    ))}
                 </div>
-            )}
-            {step !== "success" && step !== "button" && (
-                <p className="text-[10px] text-white/30 font-sans tracking-wide">
-                    By joining, you agree to our{" "}
-                    <Link href="/terms" className="underline hover:text-white transition">Terms of Service</Link>{" "}
-                    and{" "}
-                    <Link href="/privacy" className="underline hover:text-white transition">Privacy Policy</Link>.
-                </p>
-            )}
+            </section>
+
+            {/* Features */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="text-center mb-12">
+                    <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">The programmable payment layer</span>
+                    <h2 className="mt-3 text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-white">Everything you need to accept USDC</h2>
+                    <p className="mt-3 text-sm text-white/50 max-w-2xl mx-auto leading-relaxed">One-time payments, recurring billing, usage-based charging, and invoicing — through a single Unified Payment Authorization framework on Arc.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {features.map(({ icon: Icon, title, text }) => (
+                        <div key={title} className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 hover:border-[#00d2b4]/30 transition-colors">
+                            <Icon className="w-6 h-6 text-[#00d2b4] mb-4" />
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white">{title}</h3>
+                            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* How it works */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="text-center mb-12">
+                    <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Integrate in minutes</span>
+                    <h2 className="mt-3 text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-white">How it works</h2>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {steps.map(([title, text], i) => (
+                        <div key={title} className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] text-sm font-black mb-4">{i + 1}</span>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white">{title}</h3>
+                            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Who it serves */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-8">
+                        <Users className="w-7 h-7 text-[#00d2b4] mb-4" />
+                        <h3 className="text-lg font-black uppercase tracking-tight text-white">For consumers</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-white/55">Fee-free, set-and-forget USDC subscriptions. No dollar-card failures, no hidden maintenance charges, no failed-payment penalties — and an on-chain kill switch so you stay in control.</p>
+                    </div>
+                    <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-8">
+                        <Building2 className="w-7 h-7 text-[#00d2b4] mb-4" />
+                        <h3 className="text-lg font-black uppercase tracking-tight text-white">For businesses</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-white/55">Checkout, recurring billing, payment links, metered usage, invoicing, and signed webhooks — a complete commercial billing stack with sub-second settlement and a transparent 1% fee.</p>
+                    </div>
+                </div>
+            </section>
+
+            {/* Final CTA */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
+                <div className="liquid-glass border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] rounded-[2rem] p-10 sm:p-14 text-center">
+                    <h2 className="text-2xl sm:text-4xl font-extrabold uppercase tracking-tight text-white">Start accepting USDC today</h2>
+                    <p className="mt-4 text-sm text-white/55 max-w-xl mx-auto leading-relaxed">Create a merchant account, generate a payment link or Checkout Intent, and get paid in stablecoins on Arc — no card networks, no chargebacks.</p>
+                    <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+                        <Link href="/signup" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
+                            Get Started Free <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                        </Link>
+                        <Link href="/docs" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all">
+                            Explore the Docs
+                        </Link>
+                    </div>
+                </div>
+            </section>
         </div>
     );
 }
@@ -681,7 +318,7 @@ export default function Home() {
             <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] bg-[#d4a853]/3 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
-            <section id="waitlist" className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
+            <section id="get-started" className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
                 <div className="max-w-7xl mx-auto w-full px-6 sm:px-12">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
                         
@@ -723,11 +360,30 @@ export default function Home() {
                                 SubScript gives platforms programmable USDC subscriptions, Continue with Google wallet onboarding, Checkout Intent IDs, signed webhooks, and human-readable receipt links on Arc Network. Users pay the advertised price without dollar-card friction, hidden maintenance fees, or confusing transaction hashes.
                             </motion.p>
 
-                            <WaitlistForm />
+                            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                                <Link
+                                    href="/signup"
+                                    className="group inline-flex items-center justify-center gap-2 px-7 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
+                                >
+                                    Get Started Free
+                                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                                </Link>
+                                <Link
+                                    href="/docs"
+                                    className="inline-flex items-center justify-center gap-2 px-7 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
+                                >
+                                    Read the Docs
+                                </Link>
+                            </div>
+                            <p className="mt-4 text-[11px] text-white/35 font-sans">
+                                Live on Arc · 1% merchant fee · zero fees for subscribers
+                            </p>
                         </div>
                     </div>
                 </div>
             </section>
+
+            <LandingSections />
 
             {/* Footer */}
             <footer className="max-w-7xl mx-auto px-6 sm:px-12 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4 py-8 relative z-10">
