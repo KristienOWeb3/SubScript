@@ -24,7 +24,9 @@ model ApiKey {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   walletAddress  String   @map("wallet_address")
   publishableKey String   @unique @map("publishable_key")
-  secretKeyPlain String   @map("secret_key_plain")
+  secretKeyPlain String?  @map("secret_key_plain")
+  secretKeyHash  String?  @unique @map("secret_key_hash")
+  secretKeyHint  String?  @map("secret_key_hint")
   createdAt      DateTime @default(now()) @map("created_at")
   revoked        Boolean  @default(false)
 

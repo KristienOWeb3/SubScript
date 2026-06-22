@@ -5,6 +5,7 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { hashSecretKey } from "@/lib/apiKeys";
 
 async function parseBody(request: Request) {
     try {
@@ -30,7 +31,10 @@ export async function POST(request: Request) {
                 apiKeyMode = getSecretKeyMode(secretKey);
                 if (apiKeyMode === "test" || apiKeyMode === "live") {
                     const keyRecord = await prisma.apiKey.findFirst({
-                        where: { secretKeyPlain: secretKey, revoked: false }
+                        where: {
+                            revoked: false,
+                            OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+                        }
                     });
                     if (keyRecord) {
                         merchantAddress = keyRecord.walletAddress.toLowerCase();

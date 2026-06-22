@@ -209,6 +209,10 @@ export default function UserDashboard() {
   const [walletBackupError, setWalletBackupError] = useState<string | null>(null);
   const [exportedPrivateKey, setExportedPrivateKey] = useState<string | null>(null);
   const [privateKeyVisible, setPrivateKeyVisible] = useState(false);
+  /* Step-up verification state for private key export. */
+  const [exportOtpStage, setExportOtpStage] = useState(false);
+  const [exportOtpCode, setExportOtpCode] = useState("");
+  const [exportOtpSending, setExportOtpSending] = useState(false);
 
   const [dailyLimitInput, setDailyLimitInput] = useState("");
   const [weeklyLimitInput, setWeeklyLimitInput] = useState("");
@@ -314,19 +318,58 @@ export default function UserDashboard() {
     }
   };
 
+  /* Step 1: exporting a private key is the single most destructive action available, so it
+     requires a fresh email verification code before the key is disclosed. */
+  const requestExportOtp = async () => {
+    const email = userSettings?.walletBackup?.email || userEmail;
+    if (!email) {
+      setWalletBackupError("No verified email is linked to this wallet, so the key cannot be exported here.");
+      return;
+    }
+    setExportOtpSending(true);
+    setWalletBackupError(null);
+    setExportedPrivateKey(null);
+    setPrivateKeyVisible(false);
+    try {
+      const res = await fetch("/api/auth/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Could not send a verification code. Try again.");
+      }
+      setExportOtpStage(true);
+      setExportOtpCode("");
+      triggerToast(`Verification code sent to ${email}.`);
+    } catch (err: any) {
+      setWalletBackupError(err.message || "Could not send a verification code.");
+    } finally {
+      setExportOtpSending(false);
+    }
+  };
+
+  /* Step 2: confirm the code and reveal the key. */
   const handleExportWallet = async () => {
     setWalletBackupLoading(true);
     setWalletBackupError(null);
     setExportedPrivateKey(null);
     setPrivateKeyVisible(false);
     try {
-      const res = await fetch("/api/user/wallet/export", { method: "POST" });
+      const res = await fetch("/api/user/wallet/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otpCode: exportOtpCode.trim() }),
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Could not export this wallet key.");
       }
       setExportedPrivateKey(data.privateKey);
       setPrivateKeyVisible(true);
+      setExportOtpStage(false);
+      setExportOtpCode("");
       triggerToast("Private key unlocked. Store it somewhere safe.");
     } catch (err: any) {
       setWalletBackupError(err.message || "Could not export this wallet key.");
@@ -1955,15 +1998,60 @@ export default function UserDashboard() {
 
                     {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
 
-                    <button
-                      type="button"
-                      onClick={handleExportWallet}
-                      disabled={walletBackupLoading || !userSettings.walletBackup.available}
-                      className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
-                    </button>
+                    {exportOtpStage ? (
+                      <div className="space-y-3">
+                        <p className="text-[10px] text-white/50 leading-relaxed">
+                          For your security, enter the 6-digit verification code we emailed you to reveal your private key.
+                        </p>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={exportOtpCode}
+                          onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder="000000"
+                          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleExportWallet}
+                            disabled={walletBackupLoading || exportOtpCode.length !== 6}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            Confirm & Reveal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
+                            disabled={walletBackupLoading}
+                            className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={requestExportOtp}
+                          disabled={exportOtpSending}
+                          className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
+                        >
+                          {exportOtpSending ? "Resending…" : "Resend code"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={requestExportOtp}
+                        disabled={exportOtpSending || !userSettings.walletBackup.available}
+                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                      </button>
+                    )}
                   </div>
                 )}
 

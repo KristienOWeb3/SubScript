@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
             id: k.id,
             walletAddress: k.wallet_address,
             publishableKey: k.publishable_key,
-            secretKeyPlain: redactSecretKey(k.secret_key_plain),
+            secretKeyPlain: k.secret_key_hint || redactSecretKey(k.secret_key_plain),
             secretKeyAvailable: false,
             createdAt: k.created_at,
             revoked: k.revoked,
@@ -101,7 +102,9 @@ export async function POST(request: Request) {
             .insert({
                 wallet_address: walletLower,
                 publishable_key: publishableKey,
-                secret_key_plain: secretKeyPlain,
+                /* Persist only the hash + display hint; the cleartext is returned once below. */
+                secret_key_hash: hashSecretKey(secretKeyPlain),
+                secret_key_hint: secretKeyHint(secretKeyPlain),
                 revoked: false,
             })
             .select()
@@ -116,7 +119,8 @@ export async function POST(request: Request) {
             id: newKey.id,
             walletAddress: newKey.wallet_address,
             publishableKey: newKey.publishable_key,
-            secretKeyPlain: newKey.secret_key_plain,
+            /* One-time reveal of the full secret. After this response it cannot be retrieved again. */
+            secretKeyPlain,
             secretKeyAvailable: true,
             createdAt: newKey.created_at,
             revoked: newKey.revoked,
@@ -179,7 +183,7 @@ export async function DELETE(request: Request) {
             id: updatedKey.id,
             walletAddress: updatedKey.wallet_address,
             publishableKey: updatedKey.publishable_key,
-            secretKeyPlain: redactSecretKey(updatedKey.secret_key_plain),
+            secretKeyPlain: updatedKey.secret_key_hint || redactSecretKey(updatedKey.secret_key_plain),
             secretKeyAvailable: false,
             createdAt: updatedKey.created_at,
             revoked: updatedKey.revoked,

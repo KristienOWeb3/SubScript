@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
@@ -237,8 +237,12 @@ export async function POST(request: Request) {
             throw new Error(`Failed to insert batch items: ${itemsError?.message}`);
         }
 
-        /* Spawn the async payout job in the background (Non-Blocking Phase 2) */
-        (async () => {
+        /* Spawn the async payout job in the background (Non-Blocking Phase 2).
+           Registered with after() so the serverless runtime keeps the instance alive until the
+           on-chain payout + ledger finalization completes. A bare fire-and-forget IIFE could be
+           frozen/terminated right after the 202, leaving batches stuck PROCESSING and the
+           merchant's reserved balance permanently locked. */
+        const payoutJob = (async () => {
             try {
                 /* Update batch status to PROCESSING */
                 await supabase
@@ -579,6 +583,8 @@ export async function POST(request: Request) {
                 await repairMerchantBalance(supabase, merchantAddress.toLowerCase());
             }
         })();
+
+        after(payoutJob);
 
         return NextResponse.json({
             success: true,

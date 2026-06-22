@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
+import { hashSecretKey } from "@/lib/apiKeys";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -12,7 +13,10 @@ async function authenticateRequest(request: Request): Promise<{ wallet: string |
     if (authHeader && authHeader.startsWith("Bearer ")) {
         const secretKey = authHeader.substring(7).trim();
         const keyRecord = await prisma.apiKey.findFirst({
-            where: { secretKeyPlain: secretKey, revoked: false }
+            where: {
+                revoked: false,
+                OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+            }
         });
         if (keyRecord) {
             return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200 };

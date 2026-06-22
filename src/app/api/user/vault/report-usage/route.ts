@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
+import { hashSecretKey } from "@/lib/apiKeys";
 
 export async function POST(request: Request) {
     try {
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
         const secretKey = authHeader.replace("Bearer ", "");
         
         const apiKeyRecord = await prisma.apiKey.findFirst({
-            where: { secretKeyPlain: secretKey }
+            where: { OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }] }
         });
         if (!apiKeyRecord || apiKeyRecord.revoked) {
             return NextResponse.json({ error: "Unauthorized: Invalid or revoked API Key" }, { status: 401 });
