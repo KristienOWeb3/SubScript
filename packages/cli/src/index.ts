@@ -23,6 +23,20 @@ import { runDoctor } from "./commands/doctor.js";
 import { runVerify } from "./commands/verify.js";
 import { runUpdate } from "./commands/update.js";
 
+function printAsciiBanner() {
+  console.log(String.raw`
+   _____       _     _____           _       _
+  / ____|     | |   / ____|         (_)     | |
+ | (___  _   _| |__| (___   ___ _ __ _ _ __ | |_
+  \___ \| | | | '_ \\___ \ / __| '__| | '_ \| __|
+  ____) | |_| | |_) |___) | (__| |  | | |_) | |_
+ |_____/ \__,_|_.__/_____/ \___|_|  |_| .__/ \__|
+                                      | |
+                                      |_|
+`);
+  console.log(" Arc-native USDC checkout, payment links, and webhooks.\n");
+}
+
 function detectPackageManager(): string {
   if (existsSync(path.join(process.cwd(), "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(path.join(process.cwd(), "yarn.lock"))) return "yarn";
@@ -31,6 +45,7 @@ function detectPackageManager(): string {
 }
 
 async function runWizard() {
+  printAsciiBanner();
   intro("@subscript-protocol/integration-wizard");
 
   const secretKeyResult = await text({

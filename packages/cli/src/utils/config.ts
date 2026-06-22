@@ -2,8 +2,8 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { Framework } from "./framework.js";
 
-export const CLI_VERSION = "1.3.1";
-export const TEMPLATE_VERSION = "1.3.1";
+export const CLI_VERSION = "1.3.2";
+export const TEMPLATE_VERSION = "1.3.2";
 
 export interface PathMap {
   configPath: string;
