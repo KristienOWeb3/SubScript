@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3 } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Mail, Loader2, AlertCircle, Building2, HelpCircle, BarChart3, Zap, ShieldCheck, Webhook, Link2, ReceiptText, Wallet, Code, Users } from "lucide-react";
 import Navbar from "@/components/Navbar";
 
 const subscriptions = [
@@ -635,6 +635,115 @@ function WaitlistForm() {
     );
 }
 
+function LandingSections() {
+    const stats = [
+        ["1%", "Merchant fee per successful payment"],
+        ["$0", "Hidden fees for subscribers"],
+        ["<1s", "Arc settlement finality"],
+        ["USDC", "Native gas — no volatile fees"],
+    ];
+
+    const features: { icon: typeof Zap; title: string; text: string }[] = [
+        { icon: Zap, title: "Programmable subscriptions", text: "Bounded USDC authorizations via Permit2, with an on-chain kill switch users control. No locked liquidity, no zombie charges." },
+        { icon: Wallet, title: "Continue with Google", text: "Mainstream onboarding with embedded wallets — no seed phrases, no extensions. Users can pay in one tap when signed in." },
+        { icon: Code, title: "Checkout Intents", text: "Create an intent server-side, redirect to hosted checkout, and reconcile by intent ID. No SDK required — plain REST." },
+        { icon: Webhook, title: "Signed webhooks", text: "HMAC-signed payment.success events tell your backend exactly which order or user to unlock. Idempotent by design." },
+        { icon: ReceiptText, title: "Human-readable receipts", text: "Every payment binds to an Arc memo receipt — shareable, auditable, and readable without a block explorer." },
+        { icon: Link2, title: "No-code payment links & QR", text: "Spin up branded payment links and QR codes from the dashboard. Paste them anywhere and get paid in USDC." },
+        { icon: BarChart3, title: "Usage-based billing", text: "Prepaid metered vaults for API calls, AI tokens, storage, or pay-per-view — bill exactly what's consumed." },
+        { icon: ShieldCheck, title: "Privacy & multisig", text: "Confidential merchant transactions by default and Safe-multisig payout destinations — institutional-grade controls." },
+    ];
+
+    const steps = [
+        ["Create a Checkout Intent", "Your backend calls POST /api/intent with your secret key and gets a hosted checkout URL."],
+        ["The customer pays in USDC", "SubScript handles wallet onboarding, approval, and settlement on Arc — the payer just confirms."],
+        ["A signed webhook unlocks access", "Verify the HMAC signature, match the intent ID, and fulfill the order. Done."],
+    ];
+
+    return (
+        <div className="relative z-10">
+            {/* Stats bar */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-12">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {stats.map(([value, label]) => (
+                        <div key={label} className="liquid-glass border border-white/5 bg-black/30 rounded-2xl p-5 text-center">
+                            <p className="text-2xl sm:text-3xl font-black text-[#00d2b4]">{value}</p>
+                            <p className="mt-1.5 text-[11px] text-white/50 leading-snug">{label}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Features */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="text-center mb-12">
+                    <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">The programmable payment layer</span>
+                    <h2 className="mt-3 text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-white">Everything you need to accept USDC</h2>
+                    <p className="mt-3 text-sm text-white/50 max-w-2xl mx-auto leading-relaxed">One-time payments, recurring billing, usage-based charging, and invoicing — through a single Unified Payment Authorization framework on Arc.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {features.map(({ icon: Icon, title, text }) => (
+                        <div key={title} className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 hover:border-[#00d2b4]/30 transition-colors">
+                            <Icon className="w-6 h-6 text-[#00d2b4] mb-4" />
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white">{title}</h3>
+                            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* How it works */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="text-center mb-12">
+                    <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Integrate in minutes</span>
+                    <h2 className="mt-3 text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-white">How it works</h2>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {steps.map(([title, text], i) => (
+                        <div key={title} className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00d2b4]/10 text-[#00d2b4] text-sm font-black mb-4">{i + 1}</span>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white">{title}</h3>
+                            <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Who it serves */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-8">
+                        <Users className="w-7 h-7 text-[#00d2b4] mb-4" />
+                        <h3 className="text-lg font-black uppercase tracking-tight text-white">For consumers</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-white/55">Fee-free, set-and-forget USDC subscriptions. No dollar-card failures, no hidden maintenance charges, no failed-payment penalties — and an on-chain kill switch so you stay in control.</p>
+                    </div>
+                    <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-8">
+                        <Building2 className="w-7 h-7 text-[#00d2b4] mb-4" />
+                        <h3 className="text-lg font-black uppercase tracking-tight text-white">For businesses</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-white/55">Checkout, recurring billing, payment links, metered usage, invoicing, and signed webhooks — a complete commercial billing stack with sub-second settlement and a transparent 1% fee.</p>
+                    </div>
+                </div>
+            </section>
+
+            {/* Final CTA */}
+            <section className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
+                <div className="liquid-glass border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] rounded-[2rem] p-10 sm:p-14 text-center">
+                    <h2 className="text-2xl sm:text-4xl font-extrabold uppercase tracking-tight text-white">Start accepting USDC today</h2>
+                    <p className="mt-4 text-sm text-white/55 max-w-xl mx-auto leading-relaxed">Create a merchant account, generate a payment link or Checkout Intent, and get paid in stablecoins on Arc — no card networks, no chargebacks.</p>
+                    <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+                        <Link href="/signup" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
+                            Get Started Free <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                        </Link>
+                        <Link href="/docs" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all">
+                            Explore the Docs
+                        </Link>
+                    </div>
+                </div>
+            </section>
+        </div>
+    );
+}
+
 export default function Home() {
     const [isMobile, setIsMobile] = useState(true);
     const [mounted, setMounted] = useState(false);
@@ -723,11 +832,30 @@ export default function Home() {
                                 SubScript gives platforms programmable USDC subscriptions, Continue with Google wallet onboarding, Checkout Intent IDs, signed webhooks, and human-readable receipt links on Arc Network. Users pay the advertised price without dollar-card friction, hidden maintenance fees, or confusing transaction hashes.
                             </motion.p>
 
-                            <WaitlistForm />
+                            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                                <Link
+                                    href="/signup"
+                                    className="group inline-flex items-center justify-center gap-2 px-7 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]"
+                                >
+                                    Get Started Free
+                                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                                </Link>
+                                <Link
+                                    href="/docs"
+                                    className="inline-flex items-center justify-center gap-2 px-7 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider transition-all"
+                                >
+                                    Read the Docs
+                                </Link>
+                            </div>
+                            <p className="mt-4 text-[11px] text-white/35 font-sans">
+                                Live on Arc · 1% merchant fee · zero fees for subscribers
+                            </p>
                         </div>
                     </div>
                 </div>
             </section>
+
+            <LandingSections />
 
             {/* Footer */}
             <footer className="max-w-7xl mx-auto px-6 sm:px-12 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center text-[10px] text-white/40 gap-4 py-8 relative z-10">
