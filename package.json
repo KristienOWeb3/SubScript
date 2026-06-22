@@ -8,10 +8,15 @@
     "bin": {
         "subscript": "bin/index.js"
     },
+    "files": [
+        "bin"
+    ],
     "scripts": {
-        "dev": "node bin/index.js && next dev",
+        "dev": "next dev",
+        "wizard": "node bin/index.js",
         "build": "prisma generate && next build",
         "build:cli": "tsc --project tsconfig.cli.json",
+        "prepublishOnly": "npm run build:cli",
         "start": "next start",
         "integration:smoke": "node scripts/subscript-integration-smoke.mjs",
         "load:test": "node scripts/load-test.mjs",

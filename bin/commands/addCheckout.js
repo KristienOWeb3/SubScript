@@ -28,7 +28,7 @@ export async function runAddCheckout(options) {
         const modeMatch = configContent.match(/mode:\s*["'](standard|privacy-routed|zk-routed)["']/);
         const merchantAddress = merchantMatch ? merchantMatch[1] : "";
         const parsedMode = modeMatch ? modeMatch[1] : "standard";
-        const mode = parsedMode === "zk-routed" ? "privacy-routed" : parsedMode;
+        const mode = (parsedMode === "zk-routed" ? "privacy-routed" : parsedMode);
         if (!merchantAddress) {
             throw new Error("Could not parse merchantAddress from subscript.config.ts");
         }

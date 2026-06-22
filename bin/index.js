@@ -148,25 +148,15 @@ async function main() {
             mode = modeChoice;
         }
     }
-    /* Install SubScript SDK */
+    /* SubScript integrates over a plain REST API (POST /api/intent) — there is no SDK to install.
+       The generated server route and checkout button use the built-in fetch, so a standard hosted
+       checkout integration adds zero runtime dependencies. */
     const pm = detectPackageManager();
-    console.log(`[INFO] Installing @subscript-protocol/sdk via ${pm}...`);
-    try {
-        const installCmd = pm === "pnpm"
-            ? "pnpm add @subscript-protocol/sdk"
-            : pm === "yarn"
-                ? "yarn add @subscript-protocol/sdk"
-                : pm === "bun"
-                    ? "bun add @subscript-protocol/sdk"
-                    : "npm install @subscript-protocol/sdk";
-        execSync(installCmd, { stdio: "inherit" });
-    }
-    catch (err) {
-        console.warn(`[WARNING] Failed to install SDK automatically. Please install manually.`);
-    }
-    /* Install peer dependencies if scaffolding frontend */
-    if (scaffoldFrontend) {
-        console.log(`[INFO] Installing frontend peer dependencies (viem, wagmi, @tanstack/react-query) via ${pm}...`);
+    /* On-chain client libraries are only needed for Privacy Premium mode, where the generated
+       SubScriptProvider + EscrowStatusTracker read confidential settlement state directly from Arc.
+       Standard hosted checkout never touches them, so we don't install them in that case. */
+    if (scaffoldFrontend && mode === "privacy-routed") {
+        console.log(`[INFO] Installing on-chain client libraries (viem, wagmi, @tanstack/react-query) via ${pm} for Privacy Premium mode...`);
         try {
             const installDepsCmd = pm === "pnpm"
                 ? "pnpm add viem wagmi @tanstack/react-query"
@@ -178,7 +168,7 @@ async function main() {
             execSync(installDepsCmd, { stdio: "inherit" });
         }
         catch (err) {
-            console.warn(`[WARNING] Peer dependencies installation failed. Please install manually.`);
+            console.warn(`[WARNING] On-chain library installation failed. Install viem, wagmi and @tanstack/react-query manually.`);
         }
     }
     const requestId = crypto.randomUUID();
@@ -207,10 +197,12 @@ SUBSCRIPT_INTERVAL=2592000
     /* Agent Context Injection (.cursorrules) */
     const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
-1. THE SDK TRUTH: Always use the \`@subscript-protocol/sdk\` package for integrations.
-   - Use your server route to call \`POST /api/intent\` with \`SUBSCRIPT_SECRET_KEY\`.
-   - Store the returned \`intent.id\` beside the user/order and redirect to \`intent.checkoutUrl\`.
-   - Verify webhook signatures against the exact raw body before handling payloads.
+1. THE REST TRUTH: SubScript integrates over a plain REST API — there is no SDK package. Do not
+   install or import \`@subscript-protocol/sdk\`; it does not exist.
+   - From a server route, call \`POST {SUBSCRIPT_BASE_URL}/api/intent\` with a
+     \`Authorization: Bearer \${SUBSCRIPT_SECRET_KEY}\` header (plain \`fetch\`).
+   - Store the returned \`intentId\` beside the user/order and redirect the browser to \`checkoutUrl\`.
+   - Verify webhook signatures against the exact raw request body before handling payloads.
 2. HOSTED CHECKOUT TRUTH: Hosted payment links settle through direct Arc USDC. Do not promise CCTP checkout until Arc-side memo settlement is available.
 3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.id\` and \`data.intent_id\` to check against the local database before crediting users.
 4. SECURITY & SECRETS ISOLATION:
@@ -232,35 +224,7 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
     // Scaffold frontend components
     if (scaffoldFrontend) {
         await mkdir(paths.componentsDir, { recursive: true });
-        // 1. subscript.config.ts
-        const configOpts = {
-            merchantAddress: merchantWalletAddress,
-            mode,
-            tier: mode === "privacy-routed" ? 1 : 0,
-            chainId: 5042002, // Arc Testnet
-            routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
-            standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
-            usdcAddress: "0x3600000000000000000000000000000000000000",
-            feeBps: 100,
-            cliVersion: CLI_VERSION,
-            templateVersion: TEMPLATE_VERSION,
-            requestId,
-            generationTimestamp
-        };
-        const configContent = generateConfigTemplate(configOpts);
-        await writeFile(paths.configPath, configContent, "utf8");
-        console.log(`[SUCCESS] Generated config: ${path.relative(process.cwd(), paths.configPath)}`);
-        // 2. SubScriptProvider.tsx
-        const providerContent = generateProviderTemplate({
-            cliVersion: CLI_VERSION,
-            templateVersion: TEMPLATE_VERSION,
-            requestId,
-            generationTimestamp
-        });
-        const providerPath = path.join(paths.componentsDir, "SubScriptProvider.tsx");
-        await writeFile(providerPath, providerContent, "utf8");
-        console.log(`[SUCCESS] Generated provider: ${path.relative(process.cwd(), providerPath)}`);
-        // 3. SubScriptCheckoutButton.tsx
+        // SubScriptCheckoutButton.tsx — standalone, dependency-free (uses fetch + hosted checkout).
         const checkoutContent = generateCheckoutButtonTemplate({
             cliVersion: CLI_VERSION,
             templateVersion: TEMPLATE_VERSION,
@@ -271,8 +235,35 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
         const checkoutBtnPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
         await writeFile(checkoutBtnPath, checkoutContent, "utf8");
         console.log(`[SUCCESS] Generated checkout button: ${path.relative(process.cwd(), checkoutBtnPath)}`);
-        // 4. EscrowStatusTracker.tsx (if Privacy Premium mode)
+        /* The config, wagmi Provider, and EscrowStatusTracker read confidential on-chain state and are
+           only required for Privacy Premium mode. Standard hosted checkout needs none of them. */
         if (mode === "privacy-routed") {
+            const configOpts = {
+                merchantAddress: merchantWalletAddress,
+                mode,
+                tier: 1,
+                chainId: 5042002, // Arc Testnet
+                routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
+                standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
+                usdcAddress: "0x3600000000000000000000000000000000000000",
+                feeBps: 100,
+                cliVersion: CLI_VERSION,
+                templateVersion: TEMPLATE_VERSION,
+                requestId,
+                generationTimestamp
+            };
+            const configContent = generateConfigTemplate(configOpts);
+            await writeFile(paths.configPath, configContent, "utf8");
+            console.log(`[SUCCESS] Generated config: ${path.relative(process.cwd(), paths.configPath)}`);
+            const providerContent = generateProviderTemplate({
+                cliVersion: CLI_VERSION,
+                templateVersion: TEMPLATE_VERSION,
+                requestId,
+                generationTimestamp
+            });
+            const providerPath = path.join(paths.componentsDir, "SubScriptProvider.tsx");
+            await writeFile(providerPath, providerContent, "utf8");
+            console.log(`[SUCCESS] Generated provider: ${path.relative(process.cwd(), providerPath)}`);
             const escrowContent = generateEscrowStatusTemplate({
                 cliVersion: CLI_VERSION,
                 templateVersion: TEMPLATE_VERSION,
@@ -313,17 +304,20 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
     console.log("\n==================================================");
     console.log("   Next Steps to complete integration:             ");
     console.log("==================================================");
+    let step = 1;
     if (scaffoldFrontend) {
         const importBase = hasSrc ? "@/components/subscript" : "../components/subscript";
-        console.log(`1. Wrap your root layout or app with <SubScriptProvider>:`);
-        console.log(`   import { SubScriptProvider } from "${importBase}/SubScriptProvider";`);
-        console.log(`\n2. Add the Checkout Button component to your pricing page:`);
+        console.log(`${step++}. Add the Checkout Button component to your pricing page:`);
         console.log(`   import { SubScriptCheckoutButton } from "${importBase}/SubScriptCheckoutButton";`);
         console.log(`   `);
         console.log(`   <SubScriptCheckoutButton amountUsdc="${planCap}" title="${planName}" />`);
+        if (mode === "privacy-routed") {
+            console.log(`\n${step++}. Privacy Premium only — wrap your root layout with <SubScriptProvider> for on-chain status:`);
+            console.log(`   import { SubScriptProvider } from "${importBase}/SubScriptProvider";`);
+        }
     }
     if (paths.hasBackend) {
-        console.log(`\n3. Configure SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET in your .env.local.`);
+        console.log(`\n${step++}. Configure SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET in your .env.local.`);
     }
     console.log("==================================================\n");
 }
