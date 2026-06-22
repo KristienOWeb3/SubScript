@@ -7,9 +7,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "./bin",
-    "rootDir": "./src/cli",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": false,
     "noEmit": false
   },
-  "include": ["src/cli/**/*"]
+  "include": ["src/**/*"]
 }
