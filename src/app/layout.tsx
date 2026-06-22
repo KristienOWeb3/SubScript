@@ -204,12 +204,14 @@ export const metadata: Metadata = {
         google: googleSiteVerification,
         other: bingSiteVerification ? { "msvalidate.01": bingSiteVerification } : undefined,
     },
+    manifest: "/manifest.webmanifest",
     icons: {
         icon: [
-            { url: "/logo.png", type: "image/png" }
+            { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+            { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
         ],
         shortcut: "/logo.png",
-        apple: "/logo-colored.png",
+        apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
     },
 };
 

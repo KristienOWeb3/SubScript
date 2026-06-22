@@ -15,7 +15,9 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
+    // camera=(self) lets first-party pages use getUserMedia for the QR scanner. Previously camera=()
+    // disabled it document-wide, so scanning failed as "permission denied" even when the user allowed it.
+    value: "camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), fullscreen=(self)",
   },
 ];
 
