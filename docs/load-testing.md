@@ -9,7 +9,7 @@ npm run load:test -- --url http://127.0.0.1:3000/ --requests 1000 --concurrency 
 For a fixed-duration run:
 
 ```bash
-npm run load:test -- --url https://subscriptonarc.com/ --duration 60 --concurrency 50 --rps 200
+npm run load:test -- --url https://www.subscriptonarc.com/ --duration 60 --concurrency 50 --rps 200
 ```
 
 ## How to Model 50 Million Users

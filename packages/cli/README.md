@@ -1,6 +1,6 @@
 # @subscript-protocol/cli
 
-The integration CLI for [SubScript](https://subscriptonarc.com) — programmable USDC payments on Arc.
+The integration CLI for [SubScript](https://www.subscriptonarc.com) — programmable USDC payments on Arc.
 Scaffold a working checkout intent route, a signed webhook receiver, and a checkout button in seconds.
 
 SubScript integrates over a plain REST API — **there is no SDK to install**. The generated server

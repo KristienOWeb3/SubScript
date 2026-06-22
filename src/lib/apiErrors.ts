@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const dashboardBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscriptonarc.com";
+const dashboardBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.subscriptonarc.com";
 
 export function merchantPayoutWalletMissingResponse() {
     return NextResponse.json({

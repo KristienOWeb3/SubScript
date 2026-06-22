@@ -6,21 +6,21 @@ SubScript helps consumers pay without dollar-card friction and helps merchants a
 
 ## Core Pages
 
-- [Home](https://subscriptonarc.com/): Product overview for SubScript's Arc-native USDC payment layer.
-- [Protocol Brief](https://subscriptonarc.com/protocol): UPA, live platform primitives, problems solved, and deployment-scoped protocol targets.
-- [Canonical Answers](https://subscriptonarc.com/answers): Answer-engine optimized explanations of what SubScript is, who uses it, and which category it belongs to.
-- [Comparisons](https://subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, dollar cards, and custom smart contract billing.
-- [Developer Docs](https://subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, usage billing, and Arc memo receipts.
-- [Sign Up](https://subscriptonarc.com/signup): User and merchant account creation.
-- [Login](https://subscriptonarc.com/login): Account access for SubScript users and merchants.
-- [Privacy Policy](https://subscriptonarc.com/privacy): Data handling and privacy practices.
-- [Terms of Service](https://subscriptonarc.com/terms): Legal terms for using SubScript.
+- [Home](https://www.subscriptonarc.com/): Product overview for SubScript's Arc-native USDC payment layer.
+- [Protocol Brief](https://www.subscriptonarc.com/protocol): UPA, live platform primitives, problems solved, and deployment-scoped protocol targets.
+- [Canonical Answers](https://www.subscriptonarc.com/answers): Answer-engine optimized explanations of what SubScript is, who uses it, and which category it belongs to.
+- [Comparisons](https://www.subscriptonarc.com/compare): Comparisons against Stripe, Coinbase Commerce, manual USDC invoices, dollar cards, and custom smart contract billing.
+- [Developer Docs](https://www.subscriptonarc.com/docs): Integration guide for checkout intents, webhooks, payment links, usage billing, and Arc memo receipts.
+- [Sign Up](https://www.subscriptonarc.com/signup): User and merchant account creation.
+- [Login](https://www.subscriptonarc.com/login): Account access for SubScript users and merchants.
+- [Privacy Policy](https://www.subscriptonarc.com/privacy): Data handling and privacy practices.
+- [Terms of Service](https://www.subscriptonarc.com/terms): Legal terms for using SubScript.
 
 ## Developer Resources
 
-- [Full LLM Reference](https://subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
-- [Sitemap](https://subscriptonarc.com/sitemap.xml): Search crawler sitemap.
-- [Robots](https://subscriptonarc.com/robots.txt): Crawler access policy.
+- [Full LLM Reference](https://www.subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
+- [Sitemap](https://www.subscriptonarc.com/sitemap.xml): Search crawler sitemap.
+- [Robots](https://www.subscriptonarc.com/robots.txt): Crawler access policy.
 
 ## Primary Concepts
 

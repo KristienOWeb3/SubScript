@@ -3,10 +3,22 @@ import { ethers } from "ethers";
 const DEFAULT_API_URL = "https://jkrlsjpsytzffwjpixue.supabase.co"; // REST URL fallback
 const LOCAL_API_URL = "http://localhost:3000";
 
+function normalizeBaseUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "subscriptonarc.com") {
+      parsed.hostname = "www.subscriptonarc.com";
+    }
+    return parsed.origin;
+  } catch {
+    return url.replace(/\/$/, "");
+  }
+}
+
 function getBaseUrl(): string {
   // If we are developing locally or running in local dev server environment
   if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL;
+    return normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
   }
   return LOCAL_API_URL;
 }

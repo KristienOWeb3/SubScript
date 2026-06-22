@@ -1,8 +1,20 @@
-const DEFAULT_PUBLIC_ORIGIN = "https://subscriptonarc.com";
+const DEFAULT_PUBLIC_ORIGIN = "https://www.subscriptonarc.com";
+
+function normalizePublicOrigin(origin: string) {
+    try {
+        const url = new URL(origin.replace(/\/$/, ""));
+        if (url.hostname === "subscriptonarc.com") {
+            url.hostname = "www.subscriptonarc.com";
+        }
+        return url.origin;
+    } catch {
+        return origin.replace(/\/$/, "");
+    }
+}
 
 export function getCheckoutOrigin(currentOrigin?: string | null) {
     const configuredOrigin = process.env.NEXT_PUBLIC_CHECKOUT_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || "";
-    const normalizedConfigured = configuredOrigin.replace(/\/$/, "");
+    const normalizedConfigured = normalizePublicOrigin(configuredOrigin);
 
     if (currentOrigin) {
         try {

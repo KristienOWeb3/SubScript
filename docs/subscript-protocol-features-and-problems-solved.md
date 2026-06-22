@@ -130,7 +130,7 @@ SubScript includes notification gateway concepts for high-volume commercial thro
 
 ### 3.14 Payment Links
 
-Merchants can create branded hosted payment links such as `subscriptonarc.com/pay/abc123` for instant non-subscription payments that share the same receipt, authorization, and verification model.
+Merchants can create branded hosted payment links such as `www.subscriptonarc.com/pay/abc123` for instant non-subscription payments that share the same receipt, authorization, and verification model.
 
 ### 3.15 Flexible Usage-Based Billing
 

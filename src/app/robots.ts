@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
             allow: "/",
             disallow: ["/dashboard/", "/merchant/", "/user/", "/api/"],
         },
-        sitemap: "https://subscriptonarc.com/sitemap.xml",
-        host: "https://subscriptonarc.com",
+        sitemap: "https://www.subscriptonarc.com/sitemap.xml",
+        host: "https://www.subscriptonarc.com",
     };
 }

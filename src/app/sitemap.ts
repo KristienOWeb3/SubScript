@@ -1,7 +1,7 @@
 import { MetadataRoute } from "next";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-    const baseUrl = "https://subscriptonarc.com";
+    const baseUrl = "https://www.subscriptonarc.com";
     return [
         {
             url: baseUrl,

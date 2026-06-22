@@ -16,7 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://subscriptonarc.com";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.subscriptonarc.com";
 
 const liveCapabilities = [
   {

@@ -10,7 +10,7 @@ export interface CheckoutRouteTemplateOptions {
 
 function checkoutRequestLogic(): string {
   return `  const secretKey = process.env.SUBSCRIPT_SECRET_KEY;
-  const baseUrl = process.env.SUBSCRIPT_BASE_URL || "https://subscriptonarc.com";
+  const baseUrl = process.env.SUBSCRIPT_BASE_URL || "https://www.subscriptonarc.com";
 
   if (!secretKey) {
     return { status: 500, body: { error: "SUBSCRIPT_SECRET_KEY is not configured" } };

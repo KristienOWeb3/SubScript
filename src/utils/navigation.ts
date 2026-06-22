@@ -21,7 +21,7 @@ export function getDashboardUrl(role: "USER" | "ENTERPRISE", path: string, curre
     if (isProduction) {
         // Sign-in / Sign-up routes live on the main landing domain
         if (isAuthPath) {
-            return `${protocol}//subscriptonarc.com${path}`;
+            return `${protocol}//www.subscriptonarc.com${path}`;
         }
 
         // Dashboard routes live on the dashboard subdomain

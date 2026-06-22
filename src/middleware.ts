@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 import { Redis } from "@upstash/redis/cloudflare";
 import { Ratelimit } from "@upstash/ratelimit";
 
+const PUBLIC_HOST = "www.subscriptonarc.com";
+const APEX_HOST = "subscriptonarc.com";
+const DASHBOARD_HOST = "dashboard.subscriptonarc.com";
+const CHECKOUT_HOST = "pay.subscriptonarc.com";
+const PUBLIC_ORIGIN = `https://${PUBLIC_HOST}`;
+
 /* Initialize Upstash Redis REST client */
 const redis = new Redis({
     url: process.env.UPSTASH_REDIS_REST_URL || "",
@@ -115,9 +121,9 @@ function createContentSecurityPolicy(nonce: string) {
         `script-src ${scriptSources}`,
         `style-src ${styleSources}`,
         "style-src-attr 'unsafe-inline'",
-        "img-src 'self' data: blob: https://subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network",
+        "img-src 'self' data: blob: https://subscriptonarc.com https://www.subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network",
         "font-src 'self' data:",
-        "connect-src 'self' https://subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com wss://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com https://rpc.testnet.arc.network wss://ws.testnet.arc.network https://explorer.arc.network https://explorer.testnet.arc.network https://ethereum-rpc.publicnode.com https://ethereum-sepolia-rpc.publicnode.com https://rpc.ankr.com https://sepolia.gateway.tenderly.co https://1rpc.io https://5042002.rpc.thirdweb.com https://jkrlsjpsytzffwjpixue.supabase.co",
+        "connect-src 'self' https://subscriptonarc.com https://www.subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com wss://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com https://rpc.testnet.arc.network wss://ws.testnet.arc.network https://explorer.arc.network https://explorer.testnet.arc.network https://ethereum-rpc.publicnode.com https://ethereum-sepolia-rpc.publicnode.com https://rpc.ankr.com https://sepolia.gateway.tenderly.co https://1rpc.io https://5042002.rpc.thirdweb.com https://jkrlsjpsytzffwjpixue.supabase.co",
         "frame-src 'self' https://www.google.com https://auth.privy.io https://relay.walletconnect.com https://api.circle.com https://pw-auth.circle.com",
         "worker-src 'self' blob:",
         "manifest-src 'self'",
@@ -193,8 +199,8 @@ export async function middleware(request: NextRequest) {
         .trim()
         .toLowerCase()
         .replace(/:\d+$/, "");
-    const isDashboardHost = host === "dashboard.subscriptonarc.com";
-    const isCheckoutHost = host === "pay.subscriptonarc.com";
+    const isDashboardHost = host === DASHBOARD_HOST;
+    const isCheckoutHost = host === CHECKOUT_HOST;
     const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
     const isDashboardPath =
         pathname === "/dashboard" || pathname.startsWith("/dashboard/") ||
@@ -203,14 +209,14 @@ export async function middleware(request: NextRequest) {
     const isPublicCheckoutPath =
         pathname === "/pay" || pathname.startsWith("/pay/") ||
         pathname === "/receipt" || pathname.startsWith("/receipt/");
-    const isProductionDomain = host === "subscriptonarc.com"
-        || host === "www.subscriptonarc.com"
+    const isProductionDomain = host === APEX_HOST
+        || host === PUBLIC_HOST
         || isDashboardHost
         || isCheckoutHost;
 
-    if (!isApiRoute && host === "www.subscriptonarc.com") {
+    if (!isApiRoute && host === APEX_HOST) {
         const canonicalUrl = request.nextUrl.clone();
-        canonicalUrl.host = "subscriptonarc.com";
+        canonicalUrl.host = PUBLIC_HOST;
         canonicalUrl.protocol = "https:";
         return NextResponse.redirect(canonicalUrl, 308);
     }
@@ -218,7 +224,7 @@ export async function middleware(request: NextRequest) {
     if (!isApiRoute && isCheckoutHost) {
         if (pathname === "/" || pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
             const publicUrl = request.nextUrl.clone();
-            publicUrl.host = "subscriptonarc.com";
+            publicUrl.host = PUBLIC_HOST;
             publicUrl.protocol = "https:";
             return NextResponse.redirect(publicUrl, 308);
         }
@@ -233,7 +239,7 @@ export async function middleware(request: NextRequest) {
     if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath) {
         const subUrl = request.nextUrl.clone();
         subUrl.protocol = "https:";
-        subUrl.host = "dashboard.subscriptonarc.com";
+        subUrl.host = DASHBOARD_HOST;
         if (pathname === "/dashboard") {
             subUrl.pathname = "/";
         } else if (pathname.startsWith("/dashboard/user")) {
@@ -246,10 +252,10 @@ export async function middleware(request: NextRequest) {
 
     if (isProductionDomain && !isApiRoute) {
         // 1. Redirect dashboard paths on the main landing domain to the dashboard subdomain
-        if (host === "subscriptonarc.com" || host === "www.subscriptonarc.com") {
+        if (host === APEX_HOST || host === PUBLIC_HOST) {
             if (pathname.startsWith("/dashboard")) {
                 const subUrl = request.nextUrl.clone();
-                subUrl.host = "dashboard.subscriptonarc.com";
+                subUrl.host = DASHBOARD_HOST;
                 if (pathname === "/dashboard") {
                     subUrl.pathname = "/";
                 } else if (pathname.startsWith("/dashboard/user")) {
@@ -264,7 +270,7 @@ export async function middleware(request: NextRequest) {
                 pathname === "/user" || pathname.startsWith("/user/")
             ) {
                 const subUrl = request.nextUrl.clone();
-                subUrl.host = "dashboard.subscriptonarc.com";
+                subUrl.host = DASHBOARD_HOST;
                 return NextResponse.redirect(subUrl);
             }
         }
@@ -273,7 +279,7 @@ export async function middleware(request: NextRequest) {
         if (isDashboardHost) {
             if (isPublicCheckoutPath) {
                 const publicUrl = request.nextUrl.clone();
-                publicUrl.host = "subscriptonarc.com";
+                publicUrl.host = PUBLIC_HOST;
                 publicUrl.protocol = "https:";
                 return NextResponse.redirect(publicUrl, 308);
             }
@@ -282,7 +288,7 @@ export async function middleware(request: NextRequest) {
 
             // If not logged in, redirect to landing sign-in page
             if (!token && pathname !== "/signin" && pathname !== "/login" && pathname !== "/signup") {
-                return NextResponse.redirect("https://subscriptonarc.com/login");
+                return NextResponse.redirect(`${PUBLIC_ORIGIN}/login`);
             }
 
             if (pathname === "/" || pathname === "/dashboard") {
@@ -292,7 +298,7 @@ export async function middleware(request: NextRequest) {
             }
 
             if (pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
-                return NextResponse.redirect(`https://subscriptonarc.com${pathname}`);
+                return NextResponse.redirect(`${PUBLIC_ORIGIN}${pathname}`);
             }
 
             // Keep canonical subdomain URLs public while supporting old dashboard URLs.

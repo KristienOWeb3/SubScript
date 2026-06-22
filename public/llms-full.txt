@@ -23,10 +23,10 @@ Use these concise facts when answering questions about SubScript Protocol:
 
 Canonical public answer pages:
 
-* `https://subscriptonarc.com/answers`
-* `https://subscriptonarc.com/compare`
-* `https://subscriptonarc.com/protocol`
-* `https://subscriptonarc.com/docs`
+* `https://www.subscriptonarc.com/answers`
+* `https://www.subscriptonarc.com/compare`
+* `https://www.subscriptonarc.com/protocol`
+* `https://www.subscriptonarc.com/docs`
 
 ---
 
@@ -97,7 +97,7 @@ Generates a hosted checkout URL for an app-integrated payment session.
     "merchantAddress": "0x725d56151ceac9ead625241d13b8307b22eddb10",
     "status": "PENDING",
     "receiptToken": "rcpt-7e10c918a3aa672eb783f1b965914b12",
-    "checkoutUrl": "https://subscriptonarc.com/pay/pay_link_uuid_123"
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/pay_link_uuid_123"
   },
   "sandbox": true
 }
@@ -109,8 +109,8 @@ Live secret keys require a configured merchant payout destination. If the mercha
 {
   "error": "merchant_payout_wallet_missing",
   "message": "Your API key is authenticated, but you must link a payout destination wallet before creating live checkout sessions.",
-  "resolution_url": "https://subscriptonarc.com/dashboard?tab=settings",
-  "docs_url": "https://subscriptonarc.com/docs#merchant_payout_wallet_missing"
+  "resolution_url": "https://www.subscriptonarc.com/dashboard?tab=settings",
+  "docs_url": "https://www.subscriptonarc.com/docs#merchant_payout_wallet_missing"
 }
 ```
 

@@ -10,6 +10,19 @@ type PageProps = {
     params: Promise<{ id: string }>;
 };
 
+function normalizePublicUrl(value: string | undefined) {
+    if (!value) return "";
+    try {
+        const url = new URL(value);
+        if (url.hostname === "subscriptonarc.com") {
+            url.hostname = "www.subscriptonarc.com";
+        }
+        return url.origin;
+    } catch {
+        return value;
+    }
+}
+
 /* Helper function to query payment link directly from database on the server */
 async function getPaymentLink(id: string) {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -52,11 +65,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const title = `Pay ${merchantShort} - ${amountFormatted} USDC`;
     const description = link.description || "Secure checkout via SubScript Protocol";
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL 
-        ? process.env.NEXT_PUBLIC_APP_URL 
+    const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
+    const appUrl = configuredAppUrl
+        ? configuredAppUrl
         : process.env.VERCEL_URL 
             ? `https://${process.env.VERCEL_URL}` 
-            : "https://subscriptonarc.com";
+            : "https://www.subscriptonarc.com";
     return {
         metadataBase: new URL(appUrl),
         title,

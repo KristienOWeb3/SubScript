@@ -80,7 +80,7 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 }
 
 const checkoutIntentCode = `// Merchant backend: create a Checkout Intent with SubScript
-const response = await fetch("https://subscriptonarc.com/api/intent", {
+const response = await fetch("https://www.subscriptonarc.com/api/intent", {
   method: "POST",
   headers: {
     "Authorization": "Bearer sk_test_your_subscript_secret_key",
@@ -496,7 +496,7 @@ export default function DocsPage() {
             <section id="receipts" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Human-readable receipts with Arc memos</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                SubScript receipts are designed for humans, not explorers. A payer can share a URL like `subscriptonarc.com/receipt/rcpt-7e10c918a3aa672eb783f1b965914b12`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
+                SubScript receipts are designed for humans, not explorers. A payer can share a URL like `www.subscriptonarc.com/receipt/rcpt-7e10c918a3aa672eb783f1b965914b12`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/5 bg-black/30 p-5">

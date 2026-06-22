@@ -19,6 +19,19 @@ const instrumentSerif = Instrument_Serif({
     variable: "--font-instrument",
 });
 
+function normalizePublicUrl(value: string | undefined) {
+    if (!value) return "";
+    try {
+        const url = new URL(value);
+        if (url.hostname === "subscriptonarc.com") {
+            url.hostname = "www.subscriptonarc.com";
+        }
+        return url.origin;
+    } catch {
+        return value;
+    }
+}
+
 export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
@@ -27,11 +40,12 @@ export const viewport: Viewport = {
     viewportFit: "cover",
 };
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
+const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
+const appUrl = configuredAppUrl
+    ? configuredAppUrl
     : process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
-        : "https://subscriptonarc.com";
+        : "https://www.subscriptonarc.com";
 
 const siteDescription = "SubScript is an Arc-native programmable USDC commerce layer for one-time payments, recurring billing, usage-based charging, invoice-like collection, signed webhooks, human-readable receipts, and Google-powered wallet onboarding.";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
