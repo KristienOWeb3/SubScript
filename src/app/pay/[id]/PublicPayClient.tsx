@@ -101,6 +101,11 @@ export default function PublicPayClient({
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
 
+    /* Logged-in SubScript session (embedded wallet) so a signed-in user can pay without reconnecting. */
+    const [sessionWallet, setSessionWallet] = useState<string | null>(null);
+    const [sessionIsEmbedded, setSessionIsEmbedded] = useState(false);
+    const [isAccountPaying, setIsAccountPaying] = useState(false);
+
     /* Inbox DM creation states */
     const [isCreatingDm, setIsCreatingDm] = useState(false);
     const [dmError, setDmError] = useState<string | null>(null);
@@ -230,6 +235,103 @@ export default function PublicPayClient({
 
         checkRole();
     }, [address]);
+
+    /* Detect an existing SubScript login so we can offer a one-tap "pay with your account" path. */
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                const data = await res.json();
+                if (cancelled) return;
+                if (data?.loggedIn && data?.wallet) {
+                    setSessionWallet(String(data.wallet).toLowerCase());
+                    setSessionIsEmbedded(Boolean(data.isEmbedded));
+                } else {
+                    setSessionWallet(null);
+                    setSessionIsEmbedded(false);
+                }
+            } catch {
+                /* not logged in / offline — fall back to wallet connect */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    /* Pay with the logged-in embedded wallet (no browser-wallet reconnect). The server signs the
+       deposit; we then run the same verification pipeline as the connected-wallet path. */
+    const handlePayWithAccount = async () => {
+        if (!linkData) return;
+        setVerificationError(null);
+        setVerificationStatus(null);
+        setIsAccountPaying(true);
+        try {
+            const res = await fetch("/api/pay/checkout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ paymentLinkId: linkData.id }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Payment failed");
+
+            const hash = data.txHash as string;
+            const payer = data.payerAddress as string;
+            const rcpt = data.receiptId as string;
+
+            setReceiptId(rcpt);
+            setSuccessTxHash(hash);
+            setShareableReceiptUrl(receiptUrl(rcpt, window.location.origin));
+            setVerifiedHash(hash);
+            setIsVerifying(true);
+            setToastMessage("Payment Confirmed");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4000);
+
+            const verifyRes = await fetch("/api/payment-links/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ txHash: hash, paymentLinkId: linkData.id, payerAddress: payer, receiptId: rcpt }),
+            });
+            if (!verifyRes.ok) {
+                const verifyData = await verifyRes.json();
+                throw new Error(verifyData.error || "Failed to initiate verification");
+            }
+
+            const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${hash}`);
+            eventSource.addEventListener("status", (event: MessageEvent) => {
+                try {
+                    const sd = JSON.parse(event.data);
+                    if (sd.status === "PENDING_CONFIRMATIONS") {
+                        setVerificationStatus(`Confirming: Received ${sd.confirmations} block confirmations...`);
+                    } else if (sd.status === "VERIFYING") {
+                        setVerificationStatus("Transaction confirmed. Verifying parameters...");
+                    } else if (sd.status === "CONFIRMED") {
+                        setVerificationStatus("Payment confirmed and settled successfully!");
+                        setIsVerifying(false);
+                        setIsAccountPaying(false);
+                        eventSource.close();
+                    } else if (sd.status === "FAILED") {
+                        setVerificationError(sd.errorMessage || "Payment verification failed");
+                        setIsVerifying(false);
+                        setIsAccountPaying(false);
+                        eventSource.close();
+                    }
+                } catch (e) {
+                    console.error("Error parsing event data:", e);
+                }
+            });
+            eventSource.onerror = () => {
+                eventSource.close();
+                setVerificationError("Real-time stream disconnected. Please verify on explorer.");
+                setIsVerifying(false);
+                setIsAccountPaying(false);
+            };
+        } catch (err: any) {
+            setVerificationError(err.message || "Payment failed");
+            setIsVerifying(false);
+            setIsAccountPaying(false);
+        }
+    };
 
     const handleConnect = () => {
         const connector = connectors.find((item) => item.id === "injected") || connectors[0];
@@ -598,18 +700,75 @@ export default function PublicPayClient({
 
 
                         {!isConnected ? (
-                            <div className="space-y-4">
-                                <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
-                                    Connect your browser wallet (e.g. MetaMask, Rabby) on the Arc Testnet to complete the payment.
-                                </p>
-                                <button
-                                    onClick={handleConnect}
-                                    className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
-                                >
-                                    <Wallet className="w-4 h-4" />
-                                    Connect Wallet
-                                </button>
-                            </div>
+                            (isAccountPaying || (isVerifying && sessionWallet) || (verificationStatus && sessionWallet) || (verificationError && sessionWallet)) ? (
+                                <div className="space-y-4">
+                                    {verificationStatus ? (
+                                        <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
+                                            <CheckCircle className="w-8 h-8 text-emerald-400" />
+                                            <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
+                                            {shareableReceiptUrl && (
+                                                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
+                                                    Share receipt <ExternalLink className="w-3 h-3" />
+                                                </a>
+                                            )}
+                                            {successTxHash && (
+                                                <a href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
+                                                    View Tx on Explorer <ExternalLink className="w-3 h-3" />
+                                                </a>
+                                            )}
+                                            {verificationStatus === "Payment confirmed and settled successfully!" && (
+                                                <div className="w-full pt-4 border-t border-white/5 space-y-3">
+                                                    {dmError && (<p className="text-[10px] font-mono text-red-400 text-center">{dmError}</p>)}
+                                                    <button type="button" onClick={handleGoToDms} disabled={isCreatingDm} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                                                        {isCreatingDm ? (<><Loader2 className="w-4 h-4 animate-spin text-black" />Opening Inbox DMs...</>) : (<>Go to Inbox DMs <ArrowRight className="w-4 h-4" /></>)}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : verificationError ? (
+                                        <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left">
+                                            <span className="text-red-400 text-[9px] font-bold uppercase tracking-wide block">Payment Failed</span>
+                                            <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{verificationError}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-[#00d2b4]/5 border border-[#00d2b4]/15 rounded-2xl p-5 text-center flex flex-col items-center gap-3">
+                                            <Loader2 className="w-7 h-7 animate-spin text-[#00d2b4]" />
+                                            <p className="text-xs font-semibold text-white/80">Processing your payment...</p>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {sessionWallet && sessionIsEmbedded && !isUserRequest && (
+                                        <>
+                                            <button
+                                                onClick={handlePayWithAccount}
+                                                disabled={isAccountPaying}
+                                                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                <Wallet className="w-4 h-4" />
+                                                Pay with your SubScript account
+                                            </button>
+                                            <p className="text-[10px] text-white/40 text-center font-sans">
+                                                Signed in as {sessionWallet.slice(0, 6)}...{sessionWallet.slice(-4)}
+                                            </p>
+                                            <div className="flex items-center gap-3 text-[9px] uppercase tracking-widest text-white/25">
+                                                <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
+                                            </div>
+                                        </>
+                                    )}
+                                    <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
+                                        Connect your browser wallet (e.g. MetaMask, Rabby) on the Arc Testnet to complete the payment.
+                                    </p>
+                                    <button
+                                        onClick={handleConnect}
+                                        className={`w-full py-4 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${sessionWallet && sessionIsEmbedded ? "bg-white/5 hover:bg-white/10 text-white border border-white/10" : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black shadow-[0_0_20px_rgba(0,210,180,0.2)]"}`}
+                                    >
+                                        <Wallet className="w-4 h-4" />
+                                        Connect Wallet
+                                    </button>
+                                </div>
+                            )
                         ) : (
                             <div className="space-y-6">
 
