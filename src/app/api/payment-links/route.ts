@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { hashSecretKey } from "@/lib/apiKeys";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -23,7 +24,10 @@ async function authenticateRequest(request: Request): Promise<{
         const secretKey = authHeader.substring(7).trim();
         const apiKeyMode = getSecretKeyMode(secretKey);
         const keyRecord = await prisma.apiKey.findFirst({
-            where: { secretKeyPlain: secretKey, revoked: false }
+            where: {
+                revoked: false,
+                OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+            }
         });
         if (keyRecord) {
             return { wallet: keyRecord.walletAddress.toLowerCase(), error: null, status: 200, apiKeyMode };

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, formatUnits } from "viem";
+import crypto from "crypto";
 import { arcTestnet } from "@/lib/wagmi";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
+
+function hashSecretKey(secretKey: string): string {
+    return crypto.createHash("sha256").update(secretKey).digest("hex");
+}
 
 const SUBSCRIPT_ABI = [
     {
@@ -55,12 +60,25 @@ export async function GET(request: Request) {
         }
 
         const supabase = getSupabase();
-        const { data: keyRecord, error: keyError } = await supabase
+        /* Hash-first lookup. During the rollout (before plaintext is nulled in Phase B) we fall back
+           to a plaintext match so keys created by older code still authenticate. */
+        let { data: keyRecord, error: keyError } = await supabase
             .from("api_keys")
             .select("wallet_address")
-            .eq("secret_key_plain", secretKey)
+            .eq("secret_key_hash", hashSecretKey(secretKey))
             .eq("revoked", false)
             .maybeSingle();
+
+        if (!keyError && !keyRecord) {
+            const fallback = await supabase
+                .from("api_keys")
+                .select("wallet_address")
+                .eq("secret_key_plain", secretKey)
+                .eq("revoked", false)
+                .maybeSingle();
+            keyRecord = fallback.data;
+            keyError = fallback.error;
+        }
 
         if (keyError || !keyRecord) {
             return NextResponse.json({ error: "Unauthorized: Active secret key not found" }, { status: 401 });

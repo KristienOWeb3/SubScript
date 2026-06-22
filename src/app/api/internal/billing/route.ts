@@ -1,24 +1,37 @@
 /* API route for internal webhook and cron execution of merchant premium billing */
 
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { verifyWebhookSignature } from "@/lib/webhooks";
 
 /*
  * GET handler: Cron execution to synchronize billing state and downgrade delinquent merchants.
  */
 export async function GET(request: Request) {
     try {
+        /* Authenticate with the keeper secret, matching the cron/billing and cron/reconcile routes.
+           Without this, anyone could trigger the premium downgrade sweep. */
+        const authHeader = request.headers.get("Authorization");
+        const expectedSecret = process.env.KEEPER_SECRET;
+        if (!expectedSecret) {
+            return NextResponse.json({ error: "Internal Server Error: Keeper secret key configuration missing" }, { status: 500 });
+        }
+        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Database not available" }, { status: 500 });
         }
 
-        /* 1. Fetch all premium merchants */
+        /* 1. Fetch all premium merchants.
+           tier is a TEXT column ('FREE' | 'PREMIUM') since migration 20260611000000; the prior
+           `.eq("tier", 1)` matched zero rows, so delinquent merchants were never downgraded. */
         const { data: premiumMerchants, error: merchantError } = await supabaseAdmin
             .from("merchants")
             .select("wallet_address")
-            .eq("tier", 1);
+            .eq("tier", "PREMIUM");
 
         if (merchantError) {
             console.error("Failed to query premium merchants:", merchantError);
@@ -100,36 +113,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Database not available" }, { status: 500 });
         }
 
-        /* 1. Enforce signature verification to authenticate calls */
+        /* 1. Enforce signature verification to authenticate calls.
+           Uses the shared verifyWebhookSignature helper: constant-time (timingSafeEqual)
+           comparison, rejection of an empty/unconfigured secret, and a 5-minute replay window. */
         const signatureHeader = request.headers.get("x-subscript-signature");
         if (!signatureHeader) {
             return NextResponse.json({ error: "Unauthorized: Missing signature" }, { status: 400 });
         }
 
-        const match = signatureHeader.match(/t=(\d+),v1=([a-f0-9]+)/);
-        if (!match) {
-            return NextResponse.json({ error: "Unauthorized: Invalid signature format" }, { status: 400 });
-        }
-
-        const t = match[1];
-        const v1 = match[2];
-
-        /* Replay attack prevention: max 5 minutes */
-        const now = Math.floor(Date.now() / 1000);
-        if (Math.abs(now - parseInt(t, 10)) > 300) {
-            return NextResponse.json({ error: "Unauthorized: Expired signature" }, { status: 400 });
+        const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
+        if (!secret) {
+            console.error("[internal/billing] SUBSCRIPT_WEBHOOK_SECRET is not configured");
+            return NextResponse.json({ error: "Internal Server Error: Webhook secret not configured" }, { status: 500 });
         }
 
         const rawBody = await request.text();
-        const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET || "";
-
-        const signaturePayload = `${t}.${rawBody}`;
-        const hmac = crypto.createHmac("sha256", secret);
-        hmac.update(signaturePayload);
-        const computedSignature = hmac.digest("hex");
-
-        if (computedSignature !== v1) {
-            return NextResponse.json({ error: "Unauthorized: Signature mismatch" }, { status: 401 });
+        if (!verifyWebhookSignature(rawBody, signatureHeader, secret, 300)) {
+            return NextResponse.json({ error: "Unauthorized: Signature verification failed" }, { status: 401 });
         }
 
         /* 2. Parse payload */
