@@ -442,6 +442,7 @@ export default function UserDashboard() {
   const [requestAmount, setRequestAmount] = useState("");
   const [requestNote, setRequestNote] = useState("");
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
   const [sendMode, setSendMode] = useState<"single" | "batch">("single");
@@ -744,14 +745,18 @@ export default function UserDashboard() {
           amountUsdc: requestAmount,
           title: "USDC request",
           description: requestNote || "SubScript user payment request",
+          /* When raised from inside a DM, address the request at the peer so it lands as a request
+             bubble in the thread instead of a bare link the requester has to copy out. */
+          receiverAddress: selectedDmPeer || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create request");
-      setRequestStatus(`Request created: ${window.location.origin}${data.payUrl}`);
+      setRequestStatus(selectedDmPeer ? "Request sent to this chat." : `Request created: ${window.location.origin}${data.payUrl}`);
       setRequestAmount("");
       setRequestNote("");
       await loadDms();
+      if (selectedDmPeer) setTimeout(() => setRequestModalOpen(false), 900);
     }).catch((err) => setRequestStatus(err.message));
   };
 
@@ -1342,7 +1347,8 @@ export default function UserDashboard() {
                     <div className="flex flex-row sm:flex-col justify-center gap-4">
                       <RoundAction icon={ArrowDown} label="Deposit" onClick={() => setReceiveOpen(true)} />
                       <RoundAction icon={Send} label="Send" onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }} />
-                      <RoundAction icon={QrCode} label="Scan QR" onClick={() => setScannerOpen(true)} />
+                      {/* QR scanning needs a rear camera — only meaningful on mobile. */}
+                      {isMobile && <RoundAction icon={QrCode} label="Scan QR" onClick={() => setScannerOpen(true)} />}
                     </div>
                   </div>
                 </section>
@@ -1484,9 +1490,7 @@ export default function UserDashboard() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveTab("links");
-                              }}
+                              onClick={() => { setRequestStatus(null); setRequestModalOpen(true); }}
                               className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
                             >
                               REQUEST
@@ -2329,8 +2333,9 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      {/* Mobile-only Bottom Navigation Bar */}
-      {isMobile && userWallet && (
+      {/* Mobile-only Bottom Navigation Bar — hidden while inside a DM thread so the chat composer
+          and request actions have the full screen. */}
+      {isMobile && userWallet && !(activeTab === "inbox" && selectedDmPeer) && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
           <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] liquid-glass bg-black/30 backdrop-blur-lg">
@@ -2413,7 +2418,70 @@ export default function UserDashboard() {
           triggerToast("Scanned. Review the recipient before sending.");
         }}
       />
-      
+
+      {/* Request pop-out — raise a payment request to the current chat peer without leaving the DM. */}
+      <AnimatePresence>
+        {requestModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-5 backdrop-blur-xl"
+            onClick={() => setRequestModalOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 40, scale: 0.98 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 40, scale: 0.98 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-sm liquid-glass border border-white/10 rounded-t-3xl sm:rounded-3xl bg-black/60 backdrop-blur-xl p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                  Request USDC{selectedDmPeer ? ` from ${activeThread?.peerName || formatAddress(selectedDmPeer)}` : ""}
+                </h3>
+                <button type="button" onClick={() => setRequestModalOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <form onSubmit={handleCreateRequest} className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5">Amount (USDC)</label>
+                  <input
+                    type="number" step="0.01" min="0" inputMode="decimal" required
+                    value={requestAmount}
+                    onChange={(e) => setRequestAmount(e.target.value)}
+                    placeholder="10.00"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#ccff00]/50 placeholder:text-white/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5">Note (optional)</label>
+                  <input
+                    type="text" maxLength={200}
+                    value={requestNote}
+                    onChange={(e) => setRequestNote(e.target.value)}
+                    placeholder="What's this for?"
+                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#ccff00]/50 placeholder:text-white/20"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loadingAction === "create-request" || !requestAmount}
+                  className="w-full rounded-2xl bg-[#ccff00]/15 border border-[#ccff00]/40 text-white py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 hover:bg-[#ccff00]/25 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingAction === "create-request" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {selectedDmPeer ? "Send Request" : "Create Request"}
+                </button>
+                {requestStatus && (
+                  <p className="text-[11px] text-white/60 leading-relaxed break-all">{requestStatus}</p>
+                )}
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <SendFundsModal
         open={sendFundsOpen}
         recipient={sendFundsRecipient}

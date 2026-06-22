@@ -63,3 +63,4 @@ snapshot_*.json
 # Brand Documentation
 /brand_docs/
 
+tsconfig.tsbuildinfo
