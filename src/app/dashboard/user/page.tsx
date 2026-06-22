@@ -1,7 +1,8 @@
 /* Mobile-first user dashboard: wallet home, system-DM chat, DNS, payment links, and batch send. */
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { enablePush, disablePush, isPushEnabled, pushSupported } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
@@ -189,6 +190,39 @@ export default function UserDashboard() {
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  /* Browser Web Push registration state for this device. */
+  const [browserPushOn, setBrowserPushOn] = useState(false);
+  const [browserPushBusy, setBrowserPushBusy] = useState(false);
+  const [browserPushSupported, setBrowserPushSupported] = useState(true);
+
+  useEffect(() => {
+    const supported = pushSupported();
+    setBrowserPushSupported(supported);
+    if (supported) {
+      isPushEnabled().then(setBrowserPushOn).catch(() => {});
+    }
+  }, []);
+
+  const handleToggleBrowserPush = async () => {
+    setBrowserPushBusy(true);
+    try {
+      if (browserPushOn) {
+        await disablePush();
+        setBrowserPushOn(false);
+        triggerToast("Browser push disabled on this device.");
+      } else {
+        const res = await enablePush();
+        if (res.ok) {
+          setBrowserPushOn(true);
+          triggerToast("Browser push enabled on this device.");
+        } else {
+          triggerToast(res.error || "Could not enable browser push.");
+        }
+      }
+    } finally {
+      setBrowserPushBusy(false);
+    }
+  };
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [sendFundsOpen, setSendFundsOpen] = useState(false);
@@ -2132,6 +2166,24 @@ export default function UserDashboard() {
                         </button>
                       </div>
 
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <p className="text-white font-bold">Browser Push (This Device)</p>
+                          <p className="text-[9px] text-white/40">
+                            {browserPushSupported
+                              ? "Receive alerts even when SubScript is closed"
+                              : "Not supported in this browser"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleToggleBrowserPush}
+                          disabled={browserPushBusy || !browserPushSupported}
+                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                        >
+                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
+                        </button>
+                      </div>
+
                       <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
                         <div className="space-y-0.5">
                           <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
@@ -2339,7 +2391,28 @@ export default function UserDashboard() {
           refetchMainnet().catch(console.error);
         }}
       />
-      <ScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} />
+      <ScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={(value) => {
+          const raw = value.trim();
+          /* A hosted payment link: take the payer straight to checkout. */
+          if (/\/pay\//.test(raw) && /^https?:\/\//i.test(raw)) {
+            window.location.href = raw;
+            return;
+          }
+          /* EIP-681 (ethereum:0x...) or a bare address -> autofill the send recipient. */
+          const addrMatch = raw.match(/0x[a-fA-F0-9]{40}/);
+          if (addrMatch) {
+            setSingleRecipient(addrMatch[0]);
+            triggerToast("Recipient address scanned.");
+            return;
+          }
+          /* Otherwise treat it as a DNS alias / handle and let the send box resolve it. */
+          setSingleRecipient(raw);
+          triggerToast("Scanned. Review the recipient before sending.");
+        }}
+      />
       
       <SendFundsModal
         open={sendFundsOpen}
@@ -3769,7 +3842,75 @@ function SendFundsModal({
   );
 }
 
-function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () => void; onScan?: (value: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [supported, setSupported] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let stream: MediaStream | null = null;
+    let detector: any = null;
+    let rafId = 0;
+    let stopped = false;
+
+    async function start() {
+      try {
+        const BarcodeDetectorCtor = (globalThis as any).BarcodeDetector;
+        if (!BarcodeDetectorCtor || !navigator.mediaDevices?.getUserMedia) {
+          setSupported(false);
+          return;
+        }
+        detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (stopped) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+
+        const tick = async () => {
+          if (stopped || !videoRef.current) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            if (codes && codes.length > 0 && codes[0].rawValue) {
+              const value = String(codes[0].rawValue).trim();
+              stopped = true;
+              onScan?.(value);
+              onClose();
+              return;
+            }
+          } catch {
+            /* transient detect errors are ignored; keep scanning */
+          }
+          rafId = requestAnimationFrame(tick);
+        };
+        rafId = requestAnimationFrame(tick);
+      } catch (err: any) {
+        if (err?.name === "NotAllowedError") {
+          setError("Camera permission was denied. Allow camera access to scan a QR code.");
+        } else {
+          setError(err?.message || "Could not start the camera.");
+        }
+      }
+    }
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [open, onScan, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -3783,8 +3924,7 @@ function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void })
             <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
             <div className="flex items-center justify-between mb-4 relative z-10">
               <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
-                QR Scanner
-                <span className="text-[9px] text-black font-black uppercase bg-[#ccff00] px-1.5 py-0.5 rounded">Coming Soon</span>
+                Scan to Pay
               </h3>
               <button
                 type="button"
@@ -3795,12 +3935,27 @@ function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void })
               </button>
             </div>
 
-            <div className="flex flex-col items-center text-center py-4 relative z-10">
-              <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00] mb-4">
-                <QrCode className="h-9 w-9" />
-              </div>
-              <p className="text-xs text-white/65 leading-relaxed">
-                Live QR scanning will be available soon. SubScript is tuning the scanner so payments feel instant when it launches.
+            <div className="relative z-10">
+              {supported && !error ? (
+                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black aspect-square">
+                  <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+                  {/* Reticle */}
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="h-44 w-44 rounded-2xl border-2 border-[#ccff00]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center text-center py-6">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00] mb-4">
+                    <QrCode className="h-9 w-9" />
+                  </div>
+                  <p className="text-xs text-white/65 leading-relaxed">
+                    {error || "This browser can't access a live QR scanner. Open SubScript in Chrome/Edge on desktop or Android, or paste the address manually."}
+                  </p>
+                </div>
+              )}
+              <p className="mt-3 text-center text-[11px] text-white/45">
+                Point your camera at a SubScript wallet address or payment-link QR.
               </p>
             </div>
 
@@ -3810,7 +3965,7 @@ function ScannerModal({ open, onClose }: { open: boolean; onClose: () => void })
                 onClick={onClose}
                 className="subscript-primary-button w-full flex items-center justify-center gap-2"
               >
-                Got it <ArrowRight className="h-4 w-4" />
+                {supported && !error ? "Cancel" : "Got it"} <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </motion.div>
