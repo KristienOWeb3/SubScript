@@ -39,16 +39,65 @@ const sections: Section[] = [
   { id: "overview", title: "Overview", icon: BookOpen },
   { id: "protocol", title: "Protocol brief", icon: ShieldCheck },
   { id: "paths", title: "Choose a path", icon: Zap },
+  { id: "cli", title: "CLI quickstart", icon: Terminal },
   { id: "upa", title: "UPA model", icon: ShieldCheck },
   { id: "nocode", title: "No-code links", icon: Link2 },
   { id: "vibecoder", title: "Vibecoder prompt", icon: MessageSquare },
   { id: "developer", title: "Developer API", icon: Server },
+  { id: "apiref", title: "API reference", icon: Code },
   { id: "usage", title: "Usage billing", icon: Terminal },
   { id: "webhooks", title: "Webhooks", icon: Webhook },
   { id: "receipts", title: "Receipts", icon: ReceiptText },
   { id: "contracts", title: "On-chain", icon: Code },
   { id: "faq", title: "FAQ", icon: HelpCircle },
 ];
+
+const METHOD_STYLES: Record<string, string> = {
+  GET: "border-cyan-300/30 bg-cyan-300/10 text-cyan-200",
+  POST: "border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00]",
+  DELETE: "border-red-400/30 bg-red-400/10 text-red-300",
+};
+
+function Endpoint({ method, path }: { method: "GET" | "POST" | "DELETE"; path: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5">
+      <span className={`rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${METHOD_STYLES[method]}`}>
+        {method}
+      </span>
+      <code className="font-mono text-xs text-white/80">{path}</code>
+    </div>
+  );
+}
+
+type ParamRow = { name: string; type: string; required?: boolean; desc: string };
+
+function ParamTable({ rows }: { rows: ParamRow[] }) {
+  return (
+    <div className="my-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+      <table className="w-full border-collapse text-left text-xs">
+        <thead className="bg-white/[0.03] text-[10px] font-black uppercase tracking-[0.16em] text-white/40">
+          <tr>
+            <th className="px-4 py-2.5 font-black">Field</th>
+            <th className="px-4 py-2.5 font-black">Type</th>
+            <th className="px-4 py-2.5 font-black">Description</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {rows.map((row) => (
+            <tr key={row.name} className="align-top">
+              <td className="whitespace-nowrap px-4 py-3 font-mono text-[#ccff00]">
+                {row.name}
+                {row.required && <span className="ml-1.5 text-[9px] uppercase tracking-wider text-white/35">required</span>}
+              </td>
+              <td className="whitespace-nowrap px-4 py-3 font-mono text-white/50">{row.type}</td>
+              <td className="px-4 py-3 leading-relaxed text-white/65">{row.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
@@ -197,6 +246,22 @@ await walletClient.writeContract({
   functionName: "depositForMerchant",
   args: [merchantAddress, parseUnits("15", 6), receiptToken],
 });`;
+
+const cliQuickstartCode = `# Scaffold a working SubScript integration (no SDK to install)
+npx @subscript-protocol/cli
+
+# Or run individual generators in an existing project
+npx @subscript-protocol/cli add checkout   # checkout intent route + button
+npx @subscript-protocol/cli add webhook     # signed webhook receiver
+npx @subscript-protocol/cli doctor          # diagnose an integration`;
+
+const intentResponseCode = `{
+  "intent": {
+    "id": "intent_abc123",
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/abc123",
+    "receiptToken": "rcpt-7e10c918a3aa672eb783f1b965914b12"
+  }
+}`;
 
 export default function DocsPage() {
   const [activeSection, setActiveSection] = useState("overview");
@@ -396,6 +461,26 @@ export default function DocsPage() {
               </div>
             </section>
 
+            <section id="cli" className="scroll-mt-24 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">CLI quickstart</h2>
+              <p className="text-sm leading-relaxed text-white/70">
+                The fastest backend integration. The CLI detects your framework (Next.js App or Pages Router, React SPA, Express) and scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript integrates over a plain REST API, so a standard hosted checkout adds <span className="text-white font-semibold">zero runtime dependencies</span> — there is no SDK to install.
+              </p>
+              <CodeBlock code={cliQuickstartCode} language="bash" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {[
+                  ["Run the wizard", "npx @subscript-protocol/cli walks you through keys, plan, and framework, then writes the files and a .env.local."],
+                  ["Generates real code", "A fetch-based checkout route + button and an HMAC-verifying webhook route — the same patterns documented below."],
+                  ["Stays in sync", "subscript verify and subscript update keep generated files aligned with the latest protocol templates."],
+                ].map(([title, text]) => (
+                  <div key={title} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-white">{title}</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <section id="upa" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Unified Payment Authorization model</h2>
               <p className="text-sm leading-relaxed text-white/70">
@@ -454,6 +539,58 @@ export default function DocsPage() {
               </div>
               <CodeBlock code={checkoutIntentCode} language="javascript" />
               <CodeBlock code={frontendEmbedCode} language="tsx" />
+            </section>
+
+            <section id="apiref" className="scroll-mt-24 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase tracking-tight text-white">API reference</h2>
+                <p className="mt-3 text-sm leading-relaxed text-white/70">
+                  Authenticate every server-side request with your secret key:
+                  <code className="mx-1 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-white/85">Authorization: Bearer sk_test_…</code>.
+                  Secret keys are server-side only.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <Endpoint method="POST" path="/api/intent" />
+                <p className="text-xs leading-relaxed text-white/60">Create a Checkout Intent and receive a hosted checkout URL.</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Request body</p>
+                <ParamTable
+                  rows={[
+                    { name: "title", type: "string", required: true, desc: "Product or plan name shown on the hosted checkout." },
+                    { name: "amountUsdc", type: "string", required: true, desc: "Amount in micro-USDC (6 decimals). 15 USDC = \"15000000\"." },
+                    { name: "description", type: "string", desc: "Optional line shown to the payer." },
+                    { name: "externalReference", type: "string", desc: "Your user/order ID. Echoed back in the webhook for fulfillment." },
+                    { name: "idempotencyKey", type: "string", desc: "Dedupes retries so a repeated call returns the same intent." },
+                    { name: "sandbox", type: "boolean", desc: "Use the sandbox flow while developing. Implied by sk_test_ keys." },
+                  ]}
+                />
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Response</p>
+                <ParamTable
+                  rows={[
+                    { name: "intent.id", type: "string", desc: "Store this beside your user/order; it is the fulfillment key." },
+                    { name: "intent.checkoutUrl", type: "string", desc: "Redirect the payer here to complete the hosted checkout." },
+                    { name: "intent.receiptToken", type: "string", desc: "Arc memo receipt token bound to this payment." },
+                  ]}
+                />
+                <CodeBlock code={intentResponseCode} language="json" />
+              </div>
+
+              <div className="space-y-4">
+                <Endpoint method="GET" path="/api/v1/subscriptions" />
+                <p className="text-xs leading-relaxed text-white/60">Look up a subscription by id, or list a subscriber&apos;s subscriptions to your merchant wallet.</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Query parameters</p>
+                <ParamTable
+                  rows={[
+                    { name: "id", type: "string", desc: "A subscription id (e.g. sub_12). Provide either id or subscriber." },
+                    { name: "subscriber", type: "address", desc: "0x payer address to list active subscriptions to your wallet." },
+                  ]}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+                Need keys? Generate publishable and secret API keys from the merchant dashboard. Rotate or revoke them any time — secret keys are stored hashed and shown in full only once at creation.
+              </div>
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">
