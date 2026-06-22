@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 
-const dashboardBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.subscriptonarc.com";
+function normalizePublicUrl(value: string | undefined) {
+    if (!value) return "";
+    try {
+        const url = new URL(value);
+        if (url.hostname === "subscriptonarc.com") {
+            url.hostname = "www.subscriptonarc.com";
+        }
+        return url.origin;
+    } catch {
+        return value;
+    }
+}
+
+const dashboardBaseUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL) || "https://www.subscriptonarc.com";
 
 export function merchantPayoutWalletMissingResponse() {
     return NextResponse.json({

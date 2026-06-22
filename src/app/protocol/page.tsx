@@ -16,7 +16,20 @@ import {
   Zap,
 } from "lucide-react";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.subscriptonarc.com";
+function normalizePublicUrl(value: string | undefined) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    if (url.hostname === "subscriptonarc.com") {
+      url.hostname = "www.subscriptonarc.com";
+    }
+    return url.origin;
+  } catch {
+    return value;
+  }
+}
+
+const appUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL) || "https://www.subscriptonarc.com";
 
 const liveCapabilities = [
   {

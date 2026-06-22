@@ -90,7 +90,17 @@ export function buildMerchantPaymentTx(args: {
 
 export function receiptUrl(receiptId: string, _origin?: string | null) {
     // Receipt URLs must be derived from controlled configuration, never a caller supplied Origin header.
-    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
+    const configuredBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.subscriptonarc.com";
+    let base = configuredBase;
+    try {
+        const url = new URL(configuredBase);
+        if (url.hostname === "subscriptonarc.com") {
+            url.hostname = "www.subscriptonarc.com";
+        }
+        base = url.origin;
+    } catch {
+        base = configuredBase.replace(/\/$/, "");
+    }
     return `${base.replace(/\/$/, "")}/receipt/${encodeURIComponent(receiptId)}`;
 }
 
