@@ -1017,26 +1017,26 @@ export default function UserDashboard() {
             <div className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/5 rounded-2xl">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-sm font-black text-white/20">S</span>
               <div className="space-y-1.5 flex-1">
-                <div className="h-3 w-16 bg-white/10 rounded-full animate-pulse" />
-                <div className="h-2 w-20 bg-white/5 rounded-full animate-pulse" />
+                <div className="h-3 w-16 subscript-skeleton rounded-full" />
+                <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
             </div>
 
             <nav className="space-y-1.5">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="w-full flex items-center gap-3.5 px-5 py-4 bg-white/[0.01] border border-white/5 rounded-2xl">
-                  <div className="h-4 w-4 bg-white/10 rounded-lg animate-pulse" />
-                  <div className="h-3 w-24 bg-white/10 rounded-full animate-pulse" />
+                  <div className="h-4 w-4 subscript-skeleton rounded-lg" />
+                  <div className="h-3 w-24 subscript-skeleton rounded-full" />
                 </div>
               ))}
             </nav>
           </div>
           <div className="space-y-4 pt-4 border-t border-white/5">
             <div className="flex items-center gap-3 px-2">
-              <div className="h-10 w-10 bg-white/10 rounded-full animate-pulse shrink-0" />
+              <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
               <div className="space-y-1.5 flex-1">
-                <div className="h-2.5 w-20 bg-white/10 rounded-full animate-pulse" />
-                <div className="h-2 w-12 bg-white/5 rounded-full animate-pulse" />
+                <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
+                <div className="h-2 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
             </div>
           </div>
@@ -1046,10 +1046,10 @@ export default function UserDashboard() {
         {isMobile && (
           <div className="fixed top-5 left-0 right-0 z-40 px-4 flex justify-center pointer-events-none">
             <div className="w-full max-w-md liquid-glass rounded-full px-5 py-3 pointer-events-auto bg-black/30 backdrop-blur-lg border border-white/5 flex items-center justify-between">
-              <div className="h-7 w-7 bg-white/10 rounded-full animate-pulse" />
+              <div className="h-7 w-7 subscript-skeleton rounded-full" />
               <div className="flex gap-2">
-                <div className="h-7 w-12 bg-white/5 rounded-full animate-pulse" />
-                <div className="h-7 w-20 bg-white/10 rounded-full animate-pulse" />
+                <div className="h-7 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                <div className="h-7 w-20 subscript-skeleton rounded-full" />
               </div>
             </div>
           </div>
@@ -1060,23 +1060,23 @@ export default function UserDashboard() {
           {/* Desktop Header Skeleton */}
           <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
             <div className="space-y-2">
-              <div className="h-4.5 w-28 bg-white/10 rounded-full animate-pulse" />
-              <div className="h-2.5 w-44 bg-white/5 rounded-full animate-pulse" />
+              <div className="h-4.5 w-28 subscript-skeleton rounded-full" />
+              <div className="h-2.5 w-44 subscript-skeleton subscript-skeleton--faint rounded-full" />
             </div>
-            <div className="h-9 w-44 bg-white/10 rounded-full animate-pulse" />
+            <div className="h-9 w-44 subscript-skeleton rounded-full" />
           </header>
 
           <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
             {/* Balance Card Skeleton */}
             <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
               <div className="flex-1 space-y-4">
-                <div className="h-2.5 w-32 bg-white/10 rounded-full animate-pulse" />
-                <div className="h-10 w-44 bg-white/10 rounded-xl animate-pulse" />
-                <div className="h-3 w-20 bg-white/5 rounded-full animate-pulse" />
+                <div className="h-2.5 w-32 subscript-skeleton rounded-full" />
+                <div className="h-10 w-44 subscript-skeleton rounded-xl" />
+                <div className="h-3 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
               <div className="flex sm:flex-col gap-4 justify-center">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 w-12 bg-white/10 rounded-full animate-pulse" />
+                  <div key={i} className="h-12 w-12 subscript-skeleton rounded-full" />
                 ))}
               </div>
             </div>
@@ -1084,20 +1084,20 @@ export default function UserDashboard() {
             {/* List Skeleton */}
             <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl space-y-6">
               <div className="flex items-center justify-between">
-                <div className="h-3 w-32 bg-white/10 rounded-full animate-pulse" />
-                <div className="h-5 w-16 bg-white/10 rounded-full animate-pulse" />
+                <div className="h-3 w-32 subscript-skeleton rounded-full" />
+                <div className="h-5 w-16 subscript-skeleton rounded-full" />
               </div>
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="flex justify-between items-center py-3 border-b border-white/5">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 bg-white/10 rounded-full animate-pulse" />
+                      <div className="h-10 w-10 subscript-skeleton rounded-full" />
                       <div className="space-y-1.5">
-                        <div className="h-3 w-28 bg-white/10 rounded-full animate-pulse" />
-                        <div className="h-2 w-16 bg-white/5 rounded-full animate-pulse" />
+                        <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                        <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
                       </div>
                     </div>
-                    <div className="h-5 w-16 bg-white/10 rounded-full animate-pulse" />
+                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
                   </div>
                 ))}
               </div>
@@ -1110,10 +1110,10 @@ export default function UserDashboard() {
           <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
             <div className="flex-1 flex items-center justify-around rounded-full px-3 py-3.5 border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-6 w-6 bg-white/10 rounded-full animate-pulse" />
+                <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
               ))}
             </div>
-            <div className="h-12 w-12 bg-white/10 rounded-full animate-pulse shrink-0" />
+            <div className="h-12 w-12 subscript-skeleton rounded-full shrink-0" />
           </div>
         )}
       </div>
