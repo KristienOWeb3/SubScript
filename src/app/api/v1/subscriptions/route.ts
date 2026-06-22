@@ -55,7 +55,7 @@ export async function GET(request: Request) {
         }
 
         const secretKey = authHeader.substring(7).trim();
-        if (!secretKey.startsWith("sk_test_")) {
+        if (!secretKey.startsWith("sk_test_") && !secretKey.startsWith("sk_live_")) {
             return NextResponse.json({ error: "Unauthorized: Invalid secret API key format" }, { status: 401 });
         }
 

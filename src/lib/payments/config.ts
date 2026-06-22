@@ -1,7 +1,7 @@
 /* Protocol Configuration Registry */
 
 import {
-    ARC_TESTNET_CHAIN_ID,
+    ACTIVE_CHAIN_ID,
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
@@ -20,7 +20,7 @@ export const ProtocolConfig = {
     MIN_CONFIRMATIONS: 3,
     USDC_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
     ROUTER_ADDRESS: SUBSCRIPT_ROUTER_ADDRESS,
-    CHAIN_ID: ARC_TESTNET_CHAIN_ID,
+    CHAIN_ID: ACTIVE_CHAIN_ID,
 
     /* Idempotency Constraints */
     IDEMPOTENCY_TTL: 86400, /* 24 hours in seconds */
