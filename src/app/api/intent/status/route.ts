@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPaymentLinkUnavailable } from "@/lib/dms/system";
+import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 
 export async function GET(request: Request) {
     try {
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
                 useCount: link.useCount,
                 active: link.active,
                 expiresAt: link.expiresAt,
-                checkoutUrl: `${origin}/pay/${link.id}`,
+                checkoutUrl: buildCheckoutUrl(link.id, origin),
                 latestPayment: latestPayment
                     ? {
                         id: latestPayment.id,

@@ -2662,6 +2662,59 @@ function DmBubble({
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
   const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionItems: Array<{
+    key: string;
+    label: string;
+    onClick?: () => void;
+    loadingKey?: string;
+    href?: string;
+  }> = [];
+
+  if (canPay) {
+    actionItems.push({
+      key: "pay",
+      label: dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm",
+      onClick: onPay,
+      loadingKey: `pay-${dm.id}`,
+    });
+  }
+  if (canDecline) {
+    actionItems.push({
+      key: "decline",
+      label: dm.messageType === "EXPIRY_WARNING" ? "Cancel Plan" : "Decline",
+      onClick: onDecline,
+      loadingKey: `decline-${dm.id}`,
+    });
+  }
+  if (dm.messageType === "DEBIT_SUCCESS" && isPending) {
+    actionItems.push({ key: "dismiss", label: "Thanks", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
+  }
+  if (dm.messageType === "PEER_TRANSFER" && onThanks) {
+    actionItems.push({ key: "thanks", label: "Thanks", onClick: onThanks, loadingKey: `thanks-${dm.id}` });
+  }
+  if (dm.messageType === "PEER_REQUEST" && isPending && !incoming && onNudge) {
+    actionItems.push({ key: "nudge", label: "Nudge", onClick: onNudge, loadingKey: `nudge-${dm.id}` });
+  }
+  if (dm.messageType === "PAYMENT_REQUEST" && isPending && incoming && onCancelPlan) {
+    actionItems.push({ key: "cancel", label: "Cancel Plan", onClick: onCancelPlan, loadingKey: `cancel-${dm.id}` });
+  }
+  if (dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit) {
+    actionItems.push(
+      { key: "survey-expensive", label: "Too Expensive", onClick: () => onSurveySubmit(dm, "TOO_EXPENSIVE"), loadingKey: `survey-${dm.id}-TOO_EXPENSIVE` },
+      { key: "survey-features", label: "Lack Features", onClick: () => onSurveySubmit(dm, "LACK_OF_FEATURES"), loadingKey: `survey-${dm.id}-LACK_OF_FEATURES` },
+      { key: "survey-technical", label: "Tech Issues", onClick: () => onSurveySubmit(dm, "TECHNICAL_ISSUES"), loadingKey: `survey-${dm.id}-TECHNICAL_ISSUES` },
+      { key: "survey-other", label: "Other", onClick: () => onSurveySubmit(dm, "OTHER"), loadingKey: `survey-${dm.id}-OTHER` },
+    );
+  }
+  if (dm.txHash) {
+    actionItems.push({
+      key: "tx",
+      label: "View Tx",
+      href: `https://explorer.testnet.arc.network/tx/${dm.txHash}`,
+    });
+  }
+  const hasActionMenu = actionItems.length > 1;
 
   return (
     <motion.div
@@ -2746,133 +2799,106 @@ function DmBubble({
           </div>
         </div>
 
-        <div className={`flex flex-wrap gap-2 ${incoming ? "justify-start" : "justify-end"}`}>
-          {canPay && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onPay} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `pay-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              {dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm"}
-            </motion.button>
-          )}
-          {canDecline && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onDecline} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `decline-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              {dm.messageType === "EXPIRY_WARNING" ? "Cancel Plan" : "Decline"}
-            </motion.button>
-          )}
-          {dm.messageType === "DEBIT_SUCCESS" && isPending && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onDismiss} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `dismiss-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              Thanks
-            </motion.button>
-          )}
-          
-          {dm.messageType === "PEER_TRANSFER" && onThanks && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onThanks} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `thanks-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              Thanks ❤️
-            </motion.button>
-          )}
-          {dm.messageType === "PEER_REQUEST" && isPending && !incoming && onNudge && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onNudge} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `nudge-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              Nudge 🔔
-            </motion.button>
-          )}
-          {dm.messageType === "PAYMENT_REQUEST" && isPending && incoming && onCancelPlan && (
-            <motion.button 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              type="button" 
-              onClick={onCancelPlan} 
-              className={`dm-quick-button relative overflow-hidden ${loadingAction === `cancel-${dm.id}` ? "quick-action-loading" : ""}`}
-            >
-              Cancel Plan
-            </motion.button>
-          )}
-
-          {dm.messageType === "CHURN_SURVEY" && isPending && onSurveySubmit && (
+        <div className={`w-full ${incoming ? "items-start" : "items-end"} flex flex-col gap-2`}>
+          {hasActionMenu ? (
             <>
-              <motion.button 
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                type="button" 
-                onClick={() => onSurveySubmit(dm, "TOO_EXPENSIVE")} 
-                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-TOO_EXPENSIVE` ? "quick-action-loading" : ""}`}
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                type="button"
+                onClick={() => setActionMenuOpen((open) => !open)}
+                className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${actionMenuOpen ? "dm-action-menu-trigger-open" : ""}`}
               >
-                Too Expensive
+                {actionMenuOpen ? "Close" : `${actionItems.length} Actions`}
               </motion.button>
-              <motion.button 
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                type="button" 
-                onClick={() => onSurveySubmit(dm, "LACK_OF_FEATURES")} 
-                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-LACK_OF_FEATURES` ? "quick-action-loading" : ""}`}
-              >
-                Lack of Features
-              </motion.button>
-              <motion.button 
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                type="button" 
-                onClick={() => onSurveySubmit(dm, "TECHNICAL_ISSUES")} 
-                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-TECHNICAL_ISSUES` ? "quick-action-loading" : ""}`}
-              >
-                Technical Issues
-              </motion.button>
-              <motion.button 
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                type="button" 
-                onClick={() => onSurveySubmit(dm, "OTHER")} 
-                className={`dm-quick-button relative overflow-hidden ${loadingAction === `survey-${dm.id}-OTHER` ? "quick-action-loading" : ""}`}
-              >
-                Other
-              </motion.button>
+              <AnimatePresence>
+                {actionMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.92 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.94 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 24, mass: 0.7 }}
+                    className={`dm-action-menu-grid ${incoming ? "origin-top-left" : "origin-top-right"}`}
+                  >
+                    {actionItems.map((action, index) => {
+                      const className = `dm-quick-button dm-action-menu-button relative overflow-hidden ${action.loadingKey && loadingAction === action.loadingKey ? "quick-action-loading" : ""}`;
+                      if (action.href) {
+                        return (
+                          <motion.a
+                            key={action.key}
+                            initial={{ opacity: 0, y: -4, scale: 0.94 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 420, damping: 22, delay: index * 0.025 }}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            href={action.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={className}
+                          >
+                            {action.label} <ExternalLink className="h-3 w-3" />
+                          </motion.a>
+                        );
+                      }
+                      return (
+                        <motion.button
+                          key={action.key}
+                          initial={{ opacity: 0, y: -4, scale: 0.94 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ type: "spring", stiffness: 420, damping: 22, delay: index * 0.025 }}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          type="button"
+                          onClick={action.onClick}
+                          className={className}
+                        >
+                          {action.label}
+                        </motion.button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </>
+          ) : (
+            <div className={`flex flex-wrap gap-2 ${incoming ? "justify-start" : "justify-end"}`}>
+              {actionItems.map((action) => {
+                const className = `dm-quick-button relative overflow-hidden ${action.loadingKey && loadingAction === action.loadingKey ? "quick-action-loading" : ""}`;
+                if (action.href) {
+                  return (
+                    <motion.a
+                      key={action.key}
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.96 }}
+                      href={action.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={className}
+                    >
+                      {action.label} <ExternalLink className="h-3 w-3" />
+                    </motion.a>
+                  );
+                }
+                return (
+                  <motion.button
+                    key={action.key}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    type="button"
+                    onClick={action.onClick}
+                    className={className}
+                  >
+                    {action.label}
+                  </motion.button>
+                );
+              })}
+            </div>
           )}
 
           {dm.messageType === "CHURN_SURVEY" && !isPending && (
             <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
               Response: {dm.status.replace(/_/g, " ")}
             </span>
-          )}
-
-          {dm.txHash && (
-            <motion.a 
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              href={`https://explorer.testnet.arc.network/tx/${dm.txHash}`} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="dm-quick-button"
-            >
-              View Tx <ExternalLink className="h-3 w-3" />
-            </motion.a>
           )}
         </div>
       </div>

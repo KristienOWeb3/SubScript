@@ -243,6 +243,35 @@ body {
   text-transform: uppercase;
 }
 
+.dm-action-menu-trigger {
+  min-width: 7.5rem;
+  border-color: rgba(204, 255, 0, 0.24);
+  background: rgba(204, 255, 0, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 24px rgba(204, 255, 0, 0.06);
+}
+
+.dm-action-menu-trigger-open {
+  background: rgba(204, 255, 0, 0.16);
+  border-color: rgba(204, 255, 0, 0.38);
+  color: #ccff00;
+}
+
+.dm-action-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: min(18rem, 100%);
+}
+
+.dm-action-menu-button {
+  min-width: 0;
+  width: 100%;
+  padding-inline: 0.75rem;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+}
+
 .subscript-primary-button:active,
 .dm-quick-button:active {
   transform: scale(0.97);
@@ -259,7 +288,8 @@ body {
     rgba(255, 255, 255, 0.55) 48%,
     transparent 100%
   );
-  animation: subscript-action-shimmer 700ms ease-out;
+  animation: subscript-action-shimmer 1.1s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes subscript-action-shimmer {

@@ -128,7 +128,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { title, description, active, expires_at, external_reference } = body;
+        const { title, description, active, expires_at, external_reference, max_uses } = body;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -172,6 +172,17 @@ export async function PATCH(request: Request, { params }: RouteContext) {
                 : null;
         }
         if (external_reference !== undefined) updates.external_reference = external_reference;
+        if (max_uses !== undefined) {
+            if (max_uses === null || max_uses === "") {
+                updates.max_uses = null;
+            } else {
+                const parsedMaxUses = Number(max_uses);
+                if (!Number.isInteger(parsedMaxUses) || parsedMaxUses <= 0 || parsedMaxUses > 10_000) {
+                    return NextResponse.json({ error: "Bad Request: max_uses must be a positive integer" }, { status: 400 });
+                }
+                updates.max_uses = parsedMaxUses;
+            }
+        }
 
         const { data: updatedLink, error: updateError } = await supabase
             .from("payment_links")

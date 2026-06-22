@@ -194,20 +194,40 @@ export async function middleware(request: NextRequest) {
         .toLowerCase()
         .replace(/:\d+$/, "");
     const isDashboardHost = host === "dashboard.subscriptonarc.com";
+    const isCheckoutHost = host === "pay.subscriptonarc.com";
     const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "::1";
     const isDashboardPath =
         pathname === "/dashboard" || pathname.startsWith("/dashboard/") ||
         pathname === "/merchant" || pathname.startsWith("/merchant/") ||
         pathname === "/user" || pathname.startsWith("/user/");
+    const isPublicCheckoutPath =
+        pathname === "/pay" || pathname.startsWith("/pay/") ||
+        pathname === "/receipt" || pathname.startsWith("/receipt/");
     const isProductionDomain = host === "subscriptonarc.com"
         || host === "www.subscriptonarc.com"
-        || isDashboardHost;
+        || isDashboardHost
+        || isCheckoutHost;
 
     if (!isApiRoute && host === "www.subscriptonarc.com") {
         const canonicalUrl = request.nextUrl.clone();
         canonicalUrl.host = "subscriptonarc.com";
         canonicalUrl.protocol = "https:";
         return NextResponse.redirect(canonicalUrl, 308);
+    }
+
+    if (!isApiRoute && isCheckoutHost) {
+        if (pathname === "/" || pathname === "/signin" || pathname === "/login" || pathname === "/signup") {
+            const publicUrl = request.nextUrl.clone();
+            publicUrl.host = "subscriptonarc.com";
+            publicUrl.protocol = "https:";
+            return NextResponse.redirect(publicUrl, 308);
+        }
+
+        if (!isPublicCheckoutPath) {
+            const checkoutUrl = request.nextUrl.clone();
+            checkoutUrl.pathname = `/pay${pathname}`;
+            return NextResponse.rewrite(checkoutUrl);
+        }
     }
 
     if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath) {
@@ -251,6 +271,13 @@ export async function middleware(request: NextRequest) {
 
         // 2. Manage dashboard subdomain routing
         if (isDashboardHost) {
+            if (isPublicCheckoutPath) {
+                const publicUrl = request.nextUrl.clone();
+                publicUrl.host = "subscriptonarc.com";
+                publicUrl.protocol = "https:";
+                return NextResponse.redirect(publicUrl, 308);
+            }
+
             const token = request.cookies.get("subscript_session_token")?.value;
 
             // If not logged in, redirect to landing sign-in page

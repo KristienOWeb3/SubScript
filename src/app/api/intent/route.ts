@@ -4,6 +4,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
+import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 
 async function parseBody(request: Request) {
     try {
@@ -94,7 +95,6 @@ export async function POST(request: Request) {
                 where: { idempotencyKey }
             });
             if (existing) {
-                const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
                 const receiptToken = existing.receiptToken || generateReceiptId(existing.title);
                 if (!existing.receiptToken) {
                     await prisma.paymentLink.update({
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
                         receiverAddress: existing.receiverAddress,
                         status: existing.status,
                         receiptToken,
-                        checkoutUrl: `${origin}/pay/${existing.id}`
+                        checkoutUrl: buildCheckoutUrl(existing.id)
                     }
                 }, { status: 200 });
             }
@@ -174,8 +174,6 @@ export async function POST(request: Request) {
             }
         });
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscript.app";
-
         return NextResponse.json({
             success: true,
             intent: {
@@ -188,7 +186,7 @@ export async function POST(request: Request) {
                 receiverAddress: newLink.receiverAddress,
                 status: newLink.status,
                 receiptToken: newLink.receiptToken,
-                checkoutUrl: `${origin}/pay/${newLink.id}`
+                checkoutUrl: buildCheckoutUrl(newLink.id)
             },
             sandbox: isSandboxRequest
         }, { status: 201 });

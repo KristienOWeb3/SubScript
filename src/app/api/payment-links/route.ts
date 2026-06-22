@@ -6,6 +6,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
+import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -51,15 +52,10 @@ async function parseBody(request: Request) {
     }
 }
 
-function getAppOrigin() {
-    return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://subscriptonarc.com";
-}
-
 function formatPaymentLinkResponse(link: any) {
-    const origin = getAppOrigin().replace(/\/$/, "");
     return {
         ...link,
-        checkoutUrl: `${origin}/pay/${link.id}`,
+        checkoutUrl: buildCheckoutUrl(link.id),
         receiptToken: link.receipt_token || link.receiptToken || null,
     };
 }
@@ -145,7 +141,7 @@ export async function GET(request: Request) {
             }
         }
 
-        return NextResponse.json({ links }, { status: 200 });
+        return NextResponse.json({ links: (links || []).map(formatPaymentLinkResponse) }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment links GET error:", error);

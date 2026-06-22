@@ -10,6 +10,7 @@ import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
+import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
@@ -122,12 +123,12 @@ export default function DashboardPage() {
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
-    const [createdLinkInfo, setCreatedLinkInfo] = useState<{ id: string; title: string } | null>(null);
+    const [createdLinkInfo, setCreatedLinkInfo] = useState<{ id: string; title: string; checkoutUrl: string } | null>(null);
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
     const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
-    const [showLinkAdvanced, setShowLinkAdvanced] = useState(false);
+    const [showLinkAdvanced, setShowLinkAdvanced] = useState(true);
     const [showCheckoutAdvanced, setShowCheckoutAdvanced] = useState(false);
     const [walletProvider, setWalletProvider] = useState("none");
     const [dbProvider, setDbProvider] = useState("none");
@@ -757,7 +758,11 @@ export default function DashboardPage() {
                 throw new Error(data.error || "Failed to create payment link");
             }
 
-            setCreatedLinkInfo({ id: data.link.id, title: data.link.title });
+            setCreatedLinkInfo({
+                id: data.link.id,
+                title: data.link.title,
+                checkoutUrl: data.link.checkoutUrl || buildCheckoutUrl(data.link.id, window.location.origin),
+            });
             setLinkSuccess("Payment link created successfully!");
             setToastMessage("Link Created Successfully");
             setShowToast(true);
@@ -794,6 +799,37 @@ export default function DashboardPage() {
         }
     };
 
+    const handleUpdateLinkRules = async (linkId: string, durationMinutes: number, maxUses: string | null) => {
+        try {
+            const expiresAt = durationMinutes > 0
+                ? Math.floor(Date.now() / 1000) + durationMinutes * 60
+                : null;
+
+            const res = await fetch(`/api/payment-links/${linkId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    expires_at: expiresAt,
+                    max_uses: maxUses,
+                }),
+            });
+
+            if (res.ok) {
+                setToastMessage("Payment link rules updated");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 3000);
+                await fetchPaymentLinks();
+            } else {
+                const data = await res.json();
+                console.error("Failed to update payment link rules:", data.error);
+                setLinkError(data.error || "Failed to update payment link rules");
+            }
+        } catch (err) {
+            console.error("Error updating payment link rules:", err);
+            setLinkError("Failed to update payment link rules");
+        }
+    };
+
     const handleDeleteLink = async (linkId: string) => {
         if (!confirm("Are you sure you want to delete this payment link?")) return;
         try {
@@ -811,8 +847,12 @@ export default function DashboardPage() {
         }
     };
 
-    const handleCopyLink = (linkId: string) => {
-        const url = `${window.location.origin}/pay/${linkId}`;
+    const getPublicCheckoutUrl = (linkId: string, checkoutUrl?: string | null) => {
+        return checkoutUrl || buildCheckoutUrl(linkId, typeof window !== "undefined" ? window.location.origin : undefined);
+    };
+
+    const handleCopyLink = (linkId: string, checkoutUrl?: string | null) => {
+        const url = getPublicCheckoutUrl(linkId, checkoutUrl);
         navigator.clipboard.writeText(url);
         setLinkCopyFeedback(prev => ({ ...prev, [linkId]: true }));
         setTimeout(() => {
@@ -2081,12 +2121,45 @@ Please complete the following implementation tasks:
 
                         {showLinkAdvanced && (
                             <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setLinkDurationMinutes(1440);
+                                            setLinkMaxUses("1");
+                                        }}
+                                        className="px-3 py-2 rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider hover:bg-[#00d2b4]/20 transition-colors"
+                                    >
+                                        One-Time 24H
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setLinkDurationMinutes(7 * 24 * 60);
+                                            setLinkMaxUses("");
+                                        }}
+                                        className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                    >
+                                        Reusable 7D
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setLinkDurationMinutes(0);
+                                            setLinkMaxUses("");
+                                        }}
+                                        className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                    >
+                                        No Expiry
+                                    </button>
+                                </div>
                                 <div className="space-y-1 col-span-2">
-                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Link Duration</label>
+                                    <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Expiration Window</label>
                                     <DurationPicker
                                         value={linkDurationMinutes}
                                         onChange={(mins) => setLinkDurationMinutes(mins)}
                                     />
+                                    <p className="text-[10px] text-white/35">Set duration to 00:00 for a link that does not expire automatically.</p>
                                 </div>
 
                                 <div className="space-y-1 col-span-2">
@@ -2106,12 +2179,12 @@ Please complete the following implementation tasks:
                                         type="number"
                                         min="1"
                                         step="1"
-                                        placeholder="1"
+                                        placeholder="Unlimited"
                                         value={linkMaxUses}
                                         onChange={(e) => setLinkMaxUses(e.target.value)}
                                         className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
                                     />
-                                    <p className="text-[10px] text-white/35">Use 1 for one-time checkout links. Increase only for reusable campaigns.</p>
+                                    <p className="text-[10px] text-white/35">Use 1 for one-time checkout links. Leave blank for unlimited reusable links.</p>
                                 </div>
                             </div>
                         )}
@@ -2127,14 +2200,13 @@ Please complete the following implementation tasks:
                                 {createdLinkInfo && (
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
                                         <span className="text-[11px] font-mono text-white/70 truncate flex-1">
-                                            {`${window.location.origin}/pay/${createdLinkInfo.id}`}
+                                            {createdLinkInfo.checkoutUrl}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0">
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const url = `${window.location.origin}/pay/${createdLinkInfo.id}`;
-                                                    setActiveQrCodeLink(url);
+                                                    setActiveQrCodeLink(createdLinkInfo.checkoutUrl);
                                                     setActiveQrCodeTitle(createdLinkInfo.title);
                                                 }}
                                                 className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white transition-all flex items-center justify-center"
@@ -2144,7 +2216,7 @@ Please complete the following implementation tasks:
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={() => handleCopyLink(createdLinkInfo.id)}
+                                                onClick={() => handleCopyLink(createdLinkInfo.id, createdLinkInfo.checkoutUrl)}
                                                 className="px-3 py-1.5 rounded-lg bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase tracking-wider transition-all"
                                             >
                                                 {linkCopyFeedback[createdLinkInfo.id] ? "Copied!" : "Copy Link"}
@@ -2257,7 +2329,7 @@ Please complete the following implementation tasks:
                                                         <td className="py-4 pl-4 text-right">
                                                             <div className="flex gap-2 justify-end items-center font-sans">
                                                                 <button
-                                                                    onClick={() => handleCopyLink(link.id)}
+                                                                    onClick={() => handleCopyLink(link.id, link.checkoutUrl)}
                                                                     className="p-2 md:px-4 md:py-2 rounded-xl bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 text-[#00d2b4] text-[10px] font-bold uppercase transition-all shadow-sm shadow-[#00d2b4]/5 flex items-center gap-1.5"
                                                                     title={linkCopyFeedback[link.id] ? "Copied!" : "Copy Link"}
                                                                 >
@@ -2266,7 +2338,7 @@ Please complete the following implementation tasks:
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
-                                                                        const url = `${window.location.origin}/pay/${link.id}`;
+                                                                        const url = getPublicCheckoutUrl(link.id, link.checkoutUrl);
                                                                         setActiveQrCodeLink(url);
                                                                         setActiveQrCodeTitle(link.title);
                                                                     }}
@@ -2319,6 +2391,39 @@ Please complete the following implementation tasks:
                                                                     <div className="flex justify-between items-center">
                                                                         <span className="text-white font-bold text-xs uppercase tracking-wider">Link Stats & Payments</span>
                                                                         <span className="text-[10px] text-white/40">Total Payments: {link.payments?.length || 0}</span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start border border-white/5 rounded-xl bg-black/20 p-3">
+                                                                        <div className="space-y-1">
+                                                                            <div className="text-[10px] text-white/45 uppercase tracking-wider font-bold">Link Rules</div>
+                                                                            <div className="text-[11px] text-white/65">
+                                                                                {link.max_uses != null ? `Uses ${link.use_count || 0}/${link.max_uses}` : "Unlimited uses"}
+                                                                                {" · "}
+                                                                                {link.expires_at ? `Expires ${new Date(link.expires_at).toLocaleString()}` : "No automatic expiry"}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-3 gap-2">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleUpdateLinkRules(link.id, 1440, "1")}
+                                                                                className="px-3 py-2 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] text-[9px] font-bold uppercase tracking-wider hover:bg-[#00d2b4]/20 transition-colors"
+                                                                            >
+                                                                                One-Time
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleUpdateLinkRules(link.id, 7 * 24 * 60, null)}
+                                                                                className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-white/70 text-[9px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                                                            >
+                                                                                7D Reuse
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleUpdateLinkRules(link.id, 0, null)}
+                                                                                className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-white/70 text-[9px] font-bold uppercase tracking-wider hover:bg-white/10 hover:text-white transition-colors"
+                                                                            >
+                                                                                No Expiry
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
                                                                     {!link.payments || link.payments.length === 0 ? (
                                                                         <div className="py-4 text-center text-[11px] text-white/30 border border-dashed border-white/5 rounded-xl">
