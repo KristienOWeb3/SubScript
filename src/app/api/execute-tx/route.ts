@@ -295,18 +295,8 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid view key hash. Expected bytes32 hex." }, { status: 400 });
                 }
 
-                const { data: merchantData, error: merchantErr } = await supabase
-                    .from("merchants")
-                    .select("tier")
-                    .eq("wallet_address", wallet.toLowerCase())
-                    .maybeSingle();
-
-                if (merchantErr) {
-                    console.error(`[execute-tx] Failed to query merchant for view key registration: ${merchantErr.message}`);
-                }
-                if (!merchantData || merchantData.tier === "FREE") {
-                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required to register a view key." }, { status: 403 });
-                }
+                /* Confidential-by-default: registering a view key is part of baseline (free)
+                   transaction confidentiality, so it is no longer gated on Privacy Premium. */
 
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
                 contractAbi = CONFIDENTIAL_ABI;

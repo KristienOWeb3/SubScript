@@ -62,21 +62,10 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { shieldedPayoutsEnabled, viewKeyHash } = body;
 
-        /* Verify that the merchant's tier equals PREMIUM */
-        const { data: merchantData, error: tierError } = await supabaseAdmin
-            .from("merchants")
-            .select("tier")
-            .eq("wallet_address", normalizedUser)
-            .maybeSingle();
-
-        if (tierError) {
-            console.error("Database query for tier failed:", tierError);
-            return NextResponse.json({ error: "Database error verifying tier" }, { status: 500 });
-        }
-
-        if (!merchantData || merchantData.tier === "FREE") {
-            return NextResponse.json({ error: "Forbidden: Privacy Premium merchant tier required to modify ArcaneVM shielded settings" }, { status: 403 });
-        }
+        /* Confidential-by-default: baseline transaction confidentiality (enabling shielding +
+           registering a view key) is free for every merchant. Privacy Premium remains the paid tier
+           for advanced controls (trust domains, selective disclosure, confidential payroll, batch
+           payouts), which are gated on their own routes. */
 
         if (shieldedPayoutsEnabled === undefined && viewKeyHash === undefined) {
             return NextResponse.json({ error: "Missing fields to update" }, { status: 400 });
