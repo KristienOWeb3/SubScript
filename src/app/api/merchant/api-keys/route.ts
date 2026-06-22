@@ -64,8 +64,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
-        const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
+        /* Live keys (pk_live_/sk_live_) on mainnet, test keys otherwise. */
+        const keyEnv = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet" ? "live" : "test";
+        const publishableKey = `pk_${keyEnv}_${crypto.randomBytes(24).toString("hex")}`;
+        const secretKeyPlain = `sk_${keyEnv}_${crypto.randomBytes(32).toString("hex")}`;
 
         const supabase = getSupabase();
         const { data: newKey, error } = await supabase
