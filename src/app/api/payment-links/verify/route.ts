@@ -53,6 +53,7 @@ import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhook
 import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
 import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
+import { sendPushToWallet } from "@/lib/push";
 
 export const maxDuration = 120;
 
@@ -571,6 +572,14 @@ export async function POST(request: Request) {
                                         tx_hash: normalizedTx,
                                         payment_link_id: paymentLink.id,
                                     });
+
+                                /* Best-effort browser/native push for the same event. */
+                                sendPushToWallet(normalizedPayer, {
+                                    title: "Payment confirmed",
+                                    body: `Your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment to ${paymentLink.merchant_name_snapshot || "the merchant"} settled.`,
+                                    url: shareUrl,
+                                    tag: `payment-${normalizedTx}`,
+                                }).catch((pushErr) => console.error("[verify] push send failed:", pushErr));
                             }
 
                             await sendPaymentReceiptEmails({
