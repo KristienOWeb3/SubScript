@@ -99,6 +99,11 @@ export async function POST(request: Request) {
 
         const isShielded = !!merchant.shielded_payouts_enabled;
         if (isShielded) {
+            /* Fail closed: a merchant marked confidential but without a registered view key must NOT
+               be silently downgraded to a public payout. Block and prompt them to finish setup. */
+            if (!merchant.view_key_hash) {
+                return NextResponse.json({ error: "Confidential payouts are enabled but no view key is registered. Register a view key before sending a shielded payout." }, { status: 409 });
+            }
             if (!viewKey || typeof viewKey !== "string") {
                 return NextResponse.json({ error: "Bad Request: viewKey is required for shielded payouts" }, { status: 400 });
             }
