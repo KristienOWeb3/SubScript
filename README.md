@@ -1,75 +1,89 @@
-# SubScript Protocol
+<div align="center">
 
-SubScript is a programmable payment layer for stablecoin commerce on Arc. It enables one-time payments, recurring billing, usage-based charging, invoicing, and AI-native transactions through a Unified Payment Authorization (UPA) framework.
+<img src="assets/brand/logo-transparent.png" alt="SubScript" width="120" />
 
-The product is built around Arc-native USDC settlement, human-readable memo receipts, hosted payment links, Checkout Intent IDs, signed merchant webhooks, metered vault billing, and merchant/user dashboards.
+# SubScript
 
-## Core Positioning
+### Programmable USDC payments for modern commerce
 
-- **For consumers:** fee-free, set-and-forget USDC subscriptions without dollar-card failures, hidden maintenance charges, failed-payment penalties, or international card restrictions.
-- **For merchants:** checkout, recurring billing, payment links, webhook fulfillment, metered billing, invoice-like collection, and privacy-ready commercial flows with a transparent 1% merchant fee target.
-- **For developers:** a single lifecycle for payment creation, bounded authorization, receipt binding, onchain verification, and webhook fulfillment.
+Set‑and‑forget subscriptions, one‑tap checkout, usage billing, and peer payments —
+settled in stablecoin USDC on [Arc](https://www.circle.com/arc), with no card declines,
+hidden fees, or chargebacks.
 
-## Unified Payment Authorization
+[**Live site**](https://subscriptonarc.com) · [**Dashboard**](https://dashboard.subscriptonarc.com) · [**Docs**](https://subscriptonarc.com/docs)
 
-UPA gives one-time checkout, subscriptions, usage billing, invoice settlement, and AI-native payments the same operational shape:
+![License](https://img.shields.io/badge/license-Proprietary-111827)
+![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?logo=nextdotjs)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Settlement](https://img.shields.io/badge/settlement-USDC_on_Arc-2775CA)
 
-1. The merchant creates a structured intent or payment link.
-2. The payer authorizes a bounded USDC action.
-3. SubScript binds the payment to an Arc memo receipt token.
-4. The backend verifies settlement.
-5. The merchant receives a signed webhook and unlocks the user, order, or entitlement.
+</div>
 
-## Current Platform Surface
+---
 
-- Checkout Intents via `/api/intent`.
-- Hosted payment links via `/api/payment-links` and `/pay/[id]`.
-- Arc memo receipt tokens and public receipt pages.
-- Signed webhook dispatch and replay routes.
-- Google-powered wallet onboarding.
-- Merchant/user dashboard routing.
-- Metered vault usage reporting for API, AI token, storage, media, and pay-per-use products.
-- DNS-style aliases for readable payment identities.
-- Privacy Premium and confidential payroll surfaces.
-- Keeper-compatible cron and trigger routes.
+## What is SubScript?
 
-## Protocol Targets
+SubScript is a **payments product** for businesses and people who want to move money in
+stablecoin without the friction of cards. Merchants get checkout, recurring billing, payment
+links, and webhooks; customers get a wallet that just works — fund it once and let payments
+run on autopilot.
 
-The new product brief also defines protocol targets that must remain deployment-scoped until code, schema, contracts, and production configuration prove them live:
+It is **not just a subscription tool.** A single framework — Unified Payment Authorization (UPA)
+— powers one‑time checkout, recurring plans, usage‑based charges, invoice‑style collection,
+sponsored payments, and AI‑native transactions, all with the same predictable lifecycle.
 
-- Direct fiat-to-USDC onramps.
-- Secure encrypted private-key export during Google onboarding.
-- Dedicated invoice objects with custom due terms.
-- Sponsor relationships for Pay for Me subscriptions.
-- Service lock windows, minimum commitments, and grace periods.
-- Configurable dunning schedules with email/SMS notification flows.
-- Chainlink Automation as the default decentralized execution layer.
-- Circle Paymaster/Gas Station production sponsorship.
-- ArcaneVM governed visibility for production confidentiality.
-- Arc post-quantum resilience inheritance.
+## Why it's better
 
-## Documentation
+| The card world | SubScript |
+| --- | --- |
+| Declines, expirations, and re‑auth loops | Fund once; bounded authorizations keep paying |
+| 2.9% + fixed fees, surprise charges | Transparent **1%** merchant fee, no hidden costs |
+| Chargebacks and fraud risk | On‑chain settlement with signed, verifiable receipts |
+| Opaque international restrictions | Borderless USDC, same experience everywhere |
+| "Trust us" reporting | Every payment carries an Arc memo receipt you can verify |
 
-- Product brief: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
-- Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
-- Developer docs: `/docs`
-- Protocol brief: `/protocol`
-- LLM index: `/llms.txt`
-- Full LLM reference: `/llms-full.txt`
+## Features
 
-## Tech Stack
+**For customers**
+- Fee‑free, set‑and‑forget USDC subscriptions — no card declines or maintenance charges
+- One‑tap checkout and peer‑to‑peer transfers from an in‑app wallet
+- Built‑in messaging with payment requests, receipts, and status — right in the thread
+- Google onboarding; your wallet is created for you
 
-- Next.js App Router
-- React
-- TypeScript
-- Prisma
-- Supabase PostgreSQL
-- Tailwind CSS
-- Viem/Wagmi
-- Circle wallet/onboarding integration
-- Sentry and PostHog instrumentation
+**For merchants**
+- Hosted checkout, payment links, and recurring billing
+- Signed webhooks for reliable order fulfillment
+- Metered/usage billing for API, AI tokens, storage, and pay‑per‑use products
+- Invoice‑style collection and a transparent 1% fee
+- Privacy Premium surfaces for confidential commercial flows
 
-## Local Development
+**For developers**
+- One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
+- Checkout Intents (`/api/intent`), payment links (`/api/payment-links`), and a typed CLI
+- DNS‑style aliases for human‑readable payment identities
+
+## How a payment works
+
+1. The merchant creates a structured **Checkout Intent** or payment link.
+2. The payer authorizes a **bounded** USDC action.
+3. SubScript binds the payment to an **Arc memo receipt** token.
+4. The backend **verifies settlement** on‑chain.
+5. The merchant receives a **signed webhook** and unlocks the order, user, or entitlement.
+
+## A look inside
+
+<div align="center">
+<img src="assets/screenshots/dashboard-mobile.png" alt="SubScript dashboard" width="30%" />
+&nbsp;&nbsp;
+<img src="assets/screenshots/chat-mobile.png" alt="In‑app payments chat" width="30%" />
+</div>
+
+## Tech stack
+
+Next.js (App Router) · React · TypeScript · Prisma · Supabase PostgreSQL · Tailwind CSS ·
+Viem/Wagmi · Circle wallet onboarding · Sentry & PostHog instrumentation.
+
+## Local development
 
 ```bash
 npm install
@@ -77,11 +91,31 @@ npx prisma generate
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Then open <http://localhost:3000>. Copy `.env.example` to `.env.local` and fill in the
+required keys (Supabase, Circle, JWT secret, etc.) before running the full flow.
 
-## Verification
+### Verify a change
 
 ```bash
 npx tsc --noEmit --pretty false
 npm run build
 ```
+
+## Documentation
+
+- Developer docs: [`/docs`](https://subscriptonarc.com/docs)
+- Product overview: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
+- Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
+- LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt)
+
+## On the roadmap
+
+Capabilities that stay deployment‑scoped until code, contracts, and production config prove
+them live: direct fiat‑to‑USDC on‑ramps, encrypted private‑key export, dedicated invoice
+objects with custom terms, sponsored "Pay for Me" relationships, configurable dunning,
+Chainlink Automation execution, Circle Paymaster gas sponsorship, ArcaneVM governed
+confidentiality, and Arc post‑quantum resilience.
+
+## License
+
+© 2026 SubScript. All Rights Reserved. This is proprietary software — see [LICENSE](LICENSE).

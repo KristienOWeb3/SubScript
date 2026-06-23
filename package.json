@@ -2,6 +2,13 @@
     "name": "@subscript-protocol/app",
     "version": "1.2.3",
     "private": true,
+    "description": "Programmable USDC payments for modern commerce — subscriptions, checkout, usage billing, and peer payments settled on Arc.",
+    "license": "UNLICENSED",
+    "homepage": "https://subscriptonarc.com",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/KristienOWeb3/SubScript.git"
+    },
     "workspaces": [
         "mcp-server",
         "packages/*"
