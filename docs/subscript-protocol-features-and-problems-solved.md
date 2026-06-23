@@ -132,14 +132,21 @@ SubScript includes notification gateway concepts for high-volume commercial thro
 
 Merchants can create branded hosted payment links such as `www.subscriptonarc.com/pay/abc123` for instant non-subscription payments that share the same receipt, authorization, and verification model.
 
-### 3.15 Flexible Usage-Based Billing
+### 3.15 Pay-Per-Use Billing with Commit Vaults
 
-Arc's low-latency finality lets SubScript support event-driven billing beyond static subscription tiers.
+Arc's low-latency finality lets SubScript support event-driven billing beyond static subscription tiers, settled through on-chain **commit vaults**.
+
+Model:
+
+- The merchant sets a required commit amount for their service.
+- The customer escrows that amount once into a `(customer, merchant)` vault; the service stays active for the 30-day cycle.
+- The merchant reports usage via the metered usage API (`/api/user/vault/report-usage`), which accrues the charge and gates access (an inactive vault is refused until the customer re-commits).
+- At cycle end SubScript's keeper draws the accrued total from escrow; the merchant claims the settled funds. Usage beyond the commit is recorded as owed and pauses the service until re-commit — funds are never pulled from the customer's main wallet.
 
 Examples:
 
 - API token consumption: bill for API calls, AI model tokens, or agent runs.
-- Dynamic cloud storage: bill by active gigabyte/day instead of preallocated blocks.
+- Per-session access: charge per session, render, or job, gated on vault status.
 - Pay-per-view or article access: settle micropayments for individual media or content items.
 
 ### 3.16 Invoice Engine

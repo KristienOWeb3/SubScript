@@ -198,6 +198,37 @@ await walletClient.writeContract({
   args: [merchantAddress, parseUnits("15", 6), receiptToken],
 });`;
 
+const meteredUsageCode = `// Merchant backend: charge per session (or per call / token / item) and
+// gate access in one request. The customer commits to your vault once;
+// report-usage both ACCRUES the charge and tells you if access is allowed.
+
+const res = await fetch("https://www.subscriptonarc.com/api/user/vault/report-usage", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\`, // server-side only
+  },
+  body: JSON.stringify({
+    userAddress: "0xCustomerWallet...",
+    amountUsdc: "0.50", // price of this session / unit of work
+  }),
+});
+
+if (res.status === 402) {
+  // Vault inactive: the customer owes a balance or dropped below your
+  // required commit. Block the session and ask them to re-commit.
+  const { owedUsdc, commitUsdc } = await res.json();
+  return denySession({ owedUsdc, commitUsdc });
+}
+
+const usage = await res.json();
+// usage.active === true, usage.accruedUsageUsdc grows over the 30-day cycle.
+grantSession();
+
+// You don't collect per call. At cycle end SubScript's keeper draws the
+// accrued total from the customer's escrow; you withdraw it with merchantClaim
+// (Merchant dashboard -> Vault, or POST /api/merchant/vault/claim).`;
+
 export default function DocsPage() {
   const [activeSection, setActiveSection] = useState("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -457,15 +488,15 @@ export default function DocsPage() {
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Flexible usage-based billing</h2>
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Pay-per-use billing with commit vaults</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                SubScript also supports metered products that do not fit fixed monthly plans. Customers can configure prepaid vaults for a merchant, and the merchant can report usage through the API as work is consumed.
+                For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. You set a commit amount; the customer escrows it once; their service stays active for the cycle while you report usage. Funds are guaranteed up to the committed balance — you are not chasing per-call card charges.
               </p>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 {[
-                  ["API and AI tokens", "Bill for API calls, model tokens, or agent runs as they happen instead of forcing every customer into a static tier.", Terminal],
-                  ["Dynamic cloud storage", "Charge based on active capacity, such as gigabytes per day, while keeping customer balances and top-up rules transparent.", Server],
-                  ["Pay-per-view access", "Settle small purchases for individual articles, clips, data exports, or premium actions without requiring an all-access subscription.", FileText],
+                  ["API & AI tokens", "Bill API calls, model tokens, or agent runs as they happen instead of forcing every customer into a static tier.", Terminal],
+                  ["Per-session access", "Charge per session, render, or job — gate each one on the vault status in a single request.", Server],
+                  ["Pay-per-view items", "Settle small purchases for articles, clips, data exports, or premium actions without an all-access plan.", FileText],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
                     <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
@@ -474,8 +505,16 @@ export default function DocsPage() {
                   </div>
                 ))}
               </div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white pt-2">How a developer integrates pay-per-session</h3>
+              <ol className="space-y-2 text-xs leading-relaxed text-white/65 list-decimal pl-5">
+                <li><span className="font-bold text-white/85">Set your commit.</span> In Merchant dashboard → Vault (or <span className="font-mono">POST /api/merchant/vault/commit-config</span>) set the USDC a customer must escrow to use your service.</li>
+                <li><span className="font-bold text-white/85">Customer commits once.</span> They escrow ≥ the commit from their SubScript wallet; the vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
+                <li><span className="font-bold text-white/85">Report each session.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key at session start. It accrues the charge and returns the vault status — a <span className="font-mono">402</span> means the customer must re-commit, so gate access on the response.</li>
+                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. If usage exceeded the commit, the overage is recorded as owed and the service pauses until the customer re-commits — funds are never pulled from their main wallet.</li>
+              </ol>
+              <CodeBlock code={meteredUsageCode} language="javascript" />
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
-                The metered vault API lets a merchant deduct micro-USDC usage, observe the remaining balance, and trigger customer top-up flows when balances fall below configured thresholds. Direct bank-transfer fiat-to-USDC funding is a product target and should remain provider/compliance-scoped until a live onramp is wired.
+                Keep <span className="font-mono">SUBSCRIPT_SECRET_KEY</span> server-side only. Usage accrues off-chain during the cycle and settles on-chain at cycle end; the customer's escrow guarantees you payment up to the committed amount. Direct bank-transfer fiat-to-USDC funding remains provider/compliance-scoped until a live onramp is wired.
               </div>
             </section>
 
@@ -525,7 +564,7 @@ export default function DocsPage() {
               {[
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
                 ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
-                ["Can SubScript handle usage-based products?", "Yes. Metered vaults let users pre-fund a merchant relationship while the merchant reports API calls, tokens, storage, or per-item access as usage is consumed."],
+                ["Can SubScript handle usage-based products?", "Yes. Commit vaults let a customer escrow a merchant-set amount once; the merchant reports API calls, tokens, sessions, or per-item access via the usage API, which accrues the charges and gates access. SubScript draws the accrued total from escrow at the end of each 30-day cycle."],
                 ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate. Dedicated sponsor records, spending caps, and revocation policies are still deployment-scoped."],
                 ["Does SubScript require users to export their wallet key?", "The product target is to require a secure encrypted private-key export after Google wallet provisioning so users can recover wallet access independently. The app should not claim the onboarding is fully non-custodial permanent until that backup step is enforced."],
                 ["How does SubScript compare to streaming payment protocols?", "SubScript uses Permit2-style bounded allowances rather than continuous locked streaming liquidity, so funds can remain liquid in the user's wallet until a billing-cycle transaction executes."],

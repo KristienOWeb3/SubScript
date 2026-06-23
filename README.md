@@ -53,13 +53,13 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing
 - Signed webhooks for reliable order fulfillment
-- Metered/usage billing for API, AI tokens, storage, and pay‑per‑use products
+- **Pay‑per‑use commit vaults** — customers escrow a merchant‑set commit once; usage (API calls, tokens, sessions, per‑item) accrues and is drawn from escrow each cycle
 - Invoice‑style collection and a transparent 1% fee
 - Privacy Premium surfaces for confidential commercial flows
 
 **For developers**
 - One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
-- Checkout Intents (`/api/intent`), payment links (`/api/payment-links`), and a typed CLI
+- Checkout Intents (`/api/intent`), payment links (`/api/payment-links`), a metered usage API (`/api/user/vault/report-usage`), and a typed CLI
 - DNS‑style aliases for human‑readable payment identities
 
 ## How a payment works
