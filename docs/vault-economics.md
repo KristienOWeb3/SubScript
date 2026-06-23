@@ -85,10 +85,23 @@ events, and (b) `report-usage` incrementing `accrued_usage_usdc`.
 6. Wire the UI; verify the full commit → use → draw → negative → re-commit loop on testnet.
 7. Audit before mainnet.
 
-## Decisions needed before step 2
+## Confirmed decisions
 
-- **Draw trigger**: keeper-run at cycle end (recommended, hands-off) vs merchant-triggered.
-- **Cycle anchor**: rolling 30 days from last commit/draw (assumed) vs calendar month.
-- **Commit scope**: one commit per `(user, merchant)` (assumed) vs per service/product.
-- **Embedded-wallet commits**: server-signed from the user's embedded key (matches current
-  send flow) — confirm acceptable for escrow deposits.
+- **Draw trigger**: SubScript **keeper** calls `drawUsageFor()` at cycle end (hands-off).
+- **Cycle anchor**: **rolling 30 days** from the last commit/draw, per vault.
+- **Commit scope**: **per `(user, merchant)`** — one commit covers all of that merchant's
+  metered usage.
+- **Embedded-wallet commits**: **server-signed** from the user's embedded key (same as the
+  Send Funds flow). Caveat: Circle-managed Google wallets (null stored key) can't sign until
+  Circle's wallet API is wired — those users would need an external wallet to commit until then.
+
+The draft contract already supports all four (keeper via `authorizedDrawers`/`drawUsageFor`,
+rolling cycle via `cycleStart`/`cycleLength`, per-merchant vault keying; signing is off-chain).
+
+## What's left for me to build (after you deploy)
+
+`test/SubScriptVault.t.sol` covers the commit/draw/owed/withdraw/resume/keeper logic — run
+`forge test` to validate before deploying. Once the proxy is deployed on Arc testnet and an
+authorized keeper drawer is set, I'll implement: the `metered_vaults` migration, the
+accrue+gate rewrite of `report-usage`, the keeper draw job, merchant commit config, the
+server-signed commit/withdraw routes, and the user/merchant UI — then verify the full loop.
