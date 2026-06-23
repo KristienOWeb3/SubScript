@@ -9,7 +9,9 @@ import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 
 export const maxDuration = 300;
 
-const CYCLE_SECONDS = 30 * 24 * 60 * 60;
+/* Minimum vault age before the keeper draws. 30 days in production; override with
+   VAULT_DRAW_MIN_AGE_SECONDS (e.g. 60) on testnet to exercise the draw quickly. */
+const CYCLE_SECONDS = Number(process.env.VAULT_DRAW_MIN_AGE_SECONDS) || 30 * 24 * 60 * 60;
 
 export async function POST(request: Request) {
     try {
