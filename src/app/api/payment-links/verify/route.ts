@@ -50,8 +50,8 @@ import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { addressToBuffer } from "@/lib/payments/address";
 import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhooks";
-import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, isProd } from "@/lib/contracts/constants";
-import { ROUTER_DEPOSIT_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, isProd } from "@/lib/contracts/constants";
+import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
 import { sendPushToWallet } from "@/lib/push";
 
@@ -96,6 +96,12 @@ async function parseBody(request: Request) {
     } catch {
         return null;
     }
+}
+
+function isUserPaymentLink(link: any) {
+    return link?.merchant_name_snapshot === "SubScript user request" ||
+        (typeof link?.external_reference === "string" &&
+            (link.external_reference.startsWith("peer-request:") || link.external_reference.startsWith("dm-peer-request:")));
 }
 
 export async function POST(request: Request) {
@@ -182,6 +188,7 @@ export async function POST(request: Request) {
         if (linkError || !paymentLink) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
+        const settlesDirectlyToUser = isUserPaymentLink(paymentLink);
         const paymentLinkReceiptId = isReceiptId(paymentLink.receipt_token) ? paymentLink.receipt_token : null;
         const finalReceiptId = paymentLinkReceiptId || submittedReceiptId;
         if (!finalReceiptId) {
@@ -239,19 +246,21 @@ export async function POST(request: Request) {
                 updated_at: new Date().toISOString()
             });
 
-        /* Create pending credit ledger entry with binary bytea address representation */
-        const merchantBuf = addressToBuffer(paymentLink.merchant_address);
-        await supabase
-            .from("ledger_entries")
-            .insert({
-                merchant_address: merchantBuf,
-                entry_type: "CREDIT_PAYMENT_LINK",
-                status: "PENDING",
-                amount_usdc: paymentLink.amount_usdc.toString(),
-                reference_type: "PAYMENT_LINK",
-                reference_id: paymentLink.id,
-                tx_hash: normalizedTx
-            });
+        if (!settlesDirectlyToUser) {
+            /* Merchant links credit withdrawable router balances; peer links settle directly on-chain. */
+            const merchantBuf = addressToBuffer(paymentLink.merchant_address);
+            await supabase
+                .from("ledger_entries")
+                .insert({
+                    merchant_address: merchantBuf,
+                    entry_type: "CREDIT_PAYMENT_LINK",
+                    status: "PENDING",
+                    amount_usdc: paymentLink.amount_usdc.toString(),
+                    reference_type: "PAYMENT_LINK",
+                    reference_id: paymentLink.id,
+                    tx_hash: normalizedTx
+                });
+        }
 
         /* Schedule the async verification job after the submit response. */
         after(async () => {
@@ -326,51 +335,97 @@ export async function POST(request: Request) {
                                     throw new Error("On-chain transaction reverted");
                                 }
 
-                                if (!nativeTx.to || nativeTx.to.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
-                                    throw new Error("Target contract is not SubScript Router contract");
-                                }
-
-                                const parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
-                                    data: nativeTx.data,
-                                    value: nativeTx.value
-                                });
-                                if (
-                                    !parsedRouterCall ||
-                                    parsedRouterCall.name !== "depositForMerchant" ||
-                                    parsedRouterCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
-                                    BigInt(parsedRouterCall.args[1]) !== BigInt(paymentLink.amount_usdc) ||
-                                    parsedRouterCall.args[2] !== finalReceiptId
-                                ) {
-                                    throw new Error("SubScript Router deposit call does not match receipt parameters");
-                                }
-
-                                /* Verify log event DepositWithMemo from SubScriptRouter */
-                                let logFound = false;
-                                for (const log of receipt.logs) {
-                                    if (log.address.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) continue;
-                                    try {
-                                        const parsed = ROUTER_DEPOSIT_INTERFACE.parseLog({
-                                            topics: log.topics,
-                                            data: log.data
-                                        });
-                                        if (
-                                            parsed &&
-                                            parsed.name === "DepositWithMemo" &&
-                                            parsed.args.payer.toLowerCase() === normalizedPayer &&
-                                            parsed.args.merchant.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
-                                            BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
-                                            parsed.args.memo === finalReceiptId
-                                        ) {
-                                            logFound = true;
-                                            break;
-                                        }
-                                    } catch {
-                                        /* ignore */
+                                if (settlesDirectlyToUser) {
+                                    if (!nativeTx.to || nativeTx.to.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) {
+                                        throw new Error("Target contract is not Arc USDC for peer payment");
                                     }
-                                }
 
-                                if (!logFound) {
-                                    throw new Error("SubScript Router DepositWithMemo event not found");
+                                    const parsedTransferCall = USDC_TRANSFER_INTERFACE.parseTransaction({
+                                        data: nativeTx.data,
+                                        value: nativeTx.value
+                                    });
+                                    if (
+                                        !parsedTransferCall ||
+                                        parsedTransferCall.name !== "transfer" ||
+                                        parsedTransferCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
+                                        BigInt(parsedTransferCall.args[1]) !== BigInt(paymentLink.amount_usdc)
+                                    ) {
+                                        throw new Error("Direct USDC transfer does not match payment link parameters");
+                                    }
+
+                                    let transferFound = false;
+                                    for (const log of receipt.logs) {
+                                        if (log.address.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) continue;
+                                        try {
+                                            const parsed = USDC_TRANSFER_INTERFACE.parseLog({
+                                                topics: log.topics,
+                                                data: log.data
+                                            });
+                                            if (
+                                                parsed &&
+                                                parsed.name === "Transfer" &&
+                                                parsed.args.from.toLowerCase() === normalizedPayer &&
+                                                parsed.args.to.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
+                                                BigInt(parsed.args.value) === BigInt(paymentLink.amount_usdc)
+                                            ) {
+                                                transferFound = true;
+                                                break;
+                                            }
+                                        } catch {
+                                            /* ignore */
+                                        }
+                                    }
+
+                                    if (!transferFound) {
+                                        throw new Error("Matching Arc USDC Transfer event not found");
+                                    }
+                                } else {
+                                    if (!nativeTx.to || nativeTx.to.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
+                                        throw new Error("Target contract is not SubScript Router contract");
+                                    }
+
+                                    const parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
+                                        data: nativeTx.data,
+                                        value: nativeTx.value
+                                    });
+                                    if (
+                                        !parsedRouterCall ||
+                                        parsedRouterCall.name !== "depositForMerchant" ||
+                                        parsedRouterCall.args[0].toLowerCase() !== paymentLink.merchant_address.toLowerCase() ||
+                                        BigInt(parsedRouterCall.args[1]) !== BigInt(paymentLink.amount_usdc) ||
+                                        parsedRouterCall.args[2] !== finalReceiptId
+                                    ) {
+                                        throw new Error("SubScript Router deposit call does not match receipt parameters");
+                                    }
+
+                                    /* Verify log event DepositWithMemo from SubScriptRouter */
+                                    let logFound = false;
+                                    for (const log of receipt.logs) {
+                                        if (log.address.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) continue;
+                                        try {
+                                            const parsed = ROUTER_DEPOSIT_INTERFACE.parseLog({
+                                                topics: log.topics,
+                                                data: log.data
+                                            });
+                                            if (
+                                                parsed &&
+                                                parsed.name === "DepositWithMemo" &&
+                                                parsed.args.payer.toLowerCase() === normalizedPayer &&
+                                                parsed.args.merchant.toLowerCase() === paymentLink.merchant_address.toLowerCase() &&
+                                                BigInt(parsed.args.amount) === BigInt(paymentLink.amount_usdc) &&
+                                                parsed.args.memo === finalReceiptId
+                                            ) {
+                                                logFound = true;
+                                                break;
+                                            }
+                                        } catch {
+                                            /* ignore */
+                                        }
+                                    }
+
+                                    if (!logFound) {
+                                        throw new Error("SubScript Router DepositWithMemo event not found");
+                                    }
                                 }
                             } else {
                                 /* CCTP Cross-chain transaction verification */
@@ -427,13 +482,15 @@ export async function POST(request: Request) {
                             }
 
                             /* Verification successful: Transition to Phase 2 (FINALIZED) */
-                            await supabase.rpc("lock_merchant_row", {
-                                p_wallet_address: paymentLink.merchant_address.toLowerCase()
-                            });
+                            if (!settlesDirectlyToUser) {
+                                await supabase.rpc("lock_merchant_row", {
+                                    p_wallet_address: paymentLink.merchant_address.toLowerCase()
+                                });
+                            }
 
                             /* Sweep funds if using ephemeral wallet */
                             let sweepTxHash: string | null = null;
-                            if (paymentLink.receiver_address && paymentLink.receiver_private_key) {
+                            if (!settlesDirectlyToUser && paymentLink.receiver_address && paymentLink.receiver_private_key) {
                                 console.log(`[verify] Running sweep for ephemeral wallet: ${paymentLink.receiver_address}`);
                                 sweepTxHash = await sweepEphemeralWallet(
                                     paymentLink.receiver_private_key,
@@ -484,7 +541,7 @@ export async function POST(request: Request) {
                                     status: "PAID",
                                     paid_at: new Date().toISOString(),
                                     verified_tx_hash: normalizedTx,
-                                    settlement_reference: sweepTxHash
+                                    settlement_reference: settlesDirectlyToUser ? "direct-usdc-transfer" : sweepTxHash
                                 })
                                 .eq("id", paymentLink.id);
 
@@ -505,11 +562,13 @@ export async function POST(request: Request) {
                                 .select()
                                 .single();
 
-                            /* Finalize pending ledger entry */
-                            await supabase
-                                .from("ledger_entries")
-                                .update({ status: "FINALIZED" })
-                                .eq("tx_hash", normalizedTx);
+                            if (!settlesDirectlyToUser) {
+                                /* Finalize pending merchant ledger entry */
+                                await supabase
+                                    .from("ledger_entries")
+                                    .update({ status: "FINALIZED" })
+                                    .eq("tx_hash", normalizedTx);
+                            }
 
                             /* Update transaction status */
                             await supabase
@@ -547,6 +606,8 @@ export async function POST(request: Request) {
                                     chain_id: Number(chainId),
                                     memo_contract: isCctp
                                         ? CCTP_CONFIG[Number(chainId)].tokenMessenger.toLowerCase()
+                                        : settlesDirectlyToUser
+                                        ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
                                         : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
                                     payer_address: normalizedPayer,
                                     merchant_address: paymentLink.merchant_address.toLowerCase(),
@@ -615,24 +676,26 @@ export async function POST(request: Request) {
                                 })
                                 .eq("execution_key", executionKey);
 
-                            /* Dispatch webhooks */
-                            const { data: endpoints } = await supabase
-                                .from("webhook_endpoints")
-                                .select("*")
-                                .eq("wallet_address", paymentLink.merchant_address.toLowerCase())
-                                .eq("active", true);
+                            if (!settlesDirectlyToUser) {
+                                /* Dispatch merchant webhooks */
+                                const { data: endpoints } = await supabase
+                                    .from("webhook_endpoints")
+                                    .select("*")
+                                    .eq("wallet_address", paymentLink.merchant_address.toLowerCase())
+                                    .eq("active", true);
 
-                            if (endpoints) {
-                                const webhookPayload = createPaymentSucceededWebhook({
-                                    paymentId: newPayment.id,
-                                    checkoutSessionId: paymentLink.id,
-                                    merchantReference: paymentLink.external_reference || null,
-                                    amountUsdc: paymentLink.amount_usdc,
-                                    receiptId: finalReceiptId,
-                                    txHash: normalizedTx,
-                                });
-                                for (const endpoint of endpoints) {
-                                    sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});
+                                if (endpoints) {
+                                    const webhookPayload = createPaymentSucceededWebhook({
+                                        paymentId: newPayment.id,
+                                        checkoutSessionId: paymentLink.id,
+                                        merchantReference: paymentLink.external_reference || null,
+                                        amountUsdc: paymentLink.amount_usdc,
+                                        receiptId: finalReceiptId,
+                                        txHash: normalizedTx,
+                                    });
+                                    for (const endpoint of endpoints) {
+                                        sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});
+                                    }
                                 }
                             }
 

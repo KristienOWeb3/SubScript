@@ -37,6 +37,11 @@ export const USDC_TRANSFER_FROM_INTERFACE = new Interface([
     "event Transfer(address indexed from, address indexed to, uint256 value)",
 ]);
 
+export const USDC_TRANSFER_INTERFACE = new Interface([
+    "function transfer(address to, uint256 value) returns (bool)",
+    "event Transfer(address indexed from, address indexed to, uint256 value)",
+]);
+
 export function slugifyReceiptTitle(title: string) {
     return title
         .trim()

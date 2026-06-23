@@ -554,7 +554,7 @@ export default function DocsPage() {
             <section id="contracts" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-black uppercase tracking-tight text-white">Advanced: Arc memo transaction payload</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                Hosted payment links currently settle through direct Arc USDC payments. The receipt token is passed as the router memo, and the backend verifies the matching `DepositWithMemo` event before marking the payment paid. Cross-chain CCTP checkout is disabled for hosted payment links until Arc-side mint and memo settlement can be verified in one bound flow.
+                Merchant hosted links settle through the SubScript Router: the receipt token is passed as the router memo, and the backend verifies the matching `DepositWithMemo` event before marking the payment paid. User-created receive links settle as direct Arc USDC transfers to the requester, with the backend verifying the ERC-20 `Transfer` call and event. Cross-chain CCTP checkout is disabled for hosted payment links until Arc-side mint and memo settlement can be verified in one bound flow.
               </p>
               <CodeBlock code={viemMemoCode} language="typescript" />
             </section>

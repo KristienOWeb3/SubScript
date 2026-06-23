@@ -259,7 +259,7 @@ export default function PublicPayClient({
                 const data = await res.json();
                 if (data.exists && data.role) {
                     setPayerRole(data.role);
-                    if (data.role === "ENTERPRISE") {
+                    if (data.role === "ENTERPRISE" && !isUserRequest) {
                         setIsRoleMismatch(true);
                     } else {
                         setIsRoleMismatch(false);
@@ -274,7 +274,7 @@ export default function PublicPayClient({
         };
 
         checkRole();
-    }, [address]);
+    }, [address, isUserRequest]);
 
     const handleConnect = () => {
         const connector = connectors.find((item) => item.id === "injected") || connectors[0];
@@ -397,48 +397,64 @@ export default function PublicPayClient({
                 const nextReceiptId = receiptId || checkoutReceiptId;
                 setReceiptId(nextReceiptId);
 
-                const currentAllowance = publicClient
-                    ? await publicClient.readContract({
+                if (isUserRequest) {
+                    setVerificationStatus("Sending USDC directly to the requester...");
+                    const hash = await writeContractAsync({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
                         abi: USDC_ERC20_ABI,
-                        functionName: "allowance",
-                        args: [address as `0x${string}`, SUBSCRIPT_ROUTER_ADDRESS],
-                    })
-                    : BigInt(0);
-
-                if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
-                    setVerificationStatus("Approving merchant payment route...");
-                    const approvalHash = await writeContractAsync({
-                        address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-                        abi: USDC_ERC20_ABI,
-                        functionName: "approve",
-                        args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
+                        functionName: "transfer",
+                        args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
                     });
 
-                    if (publicClient) {
-                        const approvalReceipt = await publicClient.waitForTransactionReceipt({
-                            hash: approvalHash,
-                            timeout: 120_000,
+                    setTxHash(hash);
+                    setSuccessTxHash(hash);
+                    setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
+                    setIsVerifying(true);
+                    setVerificationStatus("Direct transfer submitted. Waiting for confirmation on the Arc Network...");
+                } else {
+                    const currentAllowance = publicClient
+                        ? await publicClient.readContract({
+                            address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+                            abi: USDC_ERC20_ABI,
+                            functionName: "allowance",
+                            args: [address as `0x${string}`, SUBSCRIPT_ROUTER_ADDRESS],
+                        })
+                        : BigInt(0);
+
+                    if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
+                        setVerificationStatus("Approving merchant payment route...");
+                        const approvalHash = await writeContractAsync({
+                            address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+                            abi: USDC_ERC20_ABI,
+                            functionName: "approve",
+                            args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
                         });
-                        if (approvalReceipt.status !== "success") {
-                            throw new Error("USDC approval for merchant payment reverted.");
+
+                        if (publicClient) {
+                            const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                                hash: approvalHash,
+                                timeout: 120_000,
+                            });
+                            if (approvalReceipt.status !== "success") {
+                                throw new Error("USDC approval for merchant payment reverted.");
+                            }
                         }
                     }
+
+                    setVerificationStatus("Routing payment to merchant...");
+                    const hash = await writeContractAsync({
+                        address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
+                        abi: ROUTER_DEPOSIT_ABI,
+                        functionName: "depositForMerchant",
+                        args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc), nextReceiptId],
+                    });
+
+                    setTxHash(hash);
+                    setSuccessTxHash(hash);
+                    setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
+                    setIsVerifying(true);
+                    setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
                 }
-
-                setVerificationStatus("Routing payment to merchant...");
-                const hash = await writeContractAsync({
-                    address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
-                    abi: ROUTER_DEPOSIT_ABI,
-                    functionName: "depositForMerchant",
-                    args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc), nextReceiptId],
-                });
-
-                setTxHash(hash);
-                setSuccessTxHash(hash);
-                setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
-                setIsVerifying(true);
-                setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
 
             } catch (err: any) {
                 setVerificationError(err.message || "Payment transaction failed");
