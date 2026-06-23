@@ -59,7 +59,7 @@ const structuredData = {
             "@id": `${appUrl}/#organization`,
             name: "SubScript Protocol",
             url: appUrl,
-            logo: `${appUrl}/logo.png`,
+            logo: `${appUrl}/icon-512.png`,
             description: siteDescription,
             sameAs: ["https://x.com/subscript"],
             knowsAbout: [
@@ -206,10 +206,14 @@ export const metadata: Metadata = {
     },
     icons: {
         icon: [
-            { url: "/logo.png", type: "image/png" }
+            { url: "/favicon.ico", sizes: "any" },
+            { url: "/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+            { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
         ],
-        shortcut: "/logo.png",
-        apple: "/logo-colored.png",
+        shortcut: "/favicon.ico",
+        apple: [
+            { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+        ],
     },
 };
 
