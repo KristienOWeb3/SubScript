@@ -22,7 +22,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { receiverAddress, amountUsdc, title, description } = sanitizeInput(body);
+        const { receiverAddress, amountUsdc, title, description, expiresInHours, dmOnly } = sanitizeInput(body);
         
         let normalizedReceiver: string | null = null;
         if (receiverAddress) {
@@ -48,6 +48,16 @@ export async function POST(request: Request) {
         const cleanDescription = typeof description === "string" && description.trim()
             ? description.trim().slice(0, 500)
             : "Peer USDC request through SubScript.";
+        const parsedExpiresInHours = expiresInHours === undefined || expiresInHours === null || expiresInHours === ""
+            ? null
+            : Number(expiresInHours);
+        if (parsedExpiresInHours !== null && (!Number.isFinite(parsedExpiresInHours) || parsedExpiresInHours < 1 || parsedExpiresInHours > 24 * 30)) {
+            return NextResponse.json({ error: "Expiry must be between 1 hour and 30 days" }, { status: 400 });
+        }
+        const expiresAt = parsedExpiresInHours
+            ? new Date(Date.now() + parsedExpiresInHours * 60 * 60 * 1000)
+            : null;
+        const isDmOnly = Boolean(dmOnly) && Boolean(normalizedReceiver);
 
         const paymentRequest = await createUserPaymentRequest({
             requester: normalizedRequester,
@@ -55,14 +65,21 @@ export async function POST(request: Request) {
             amountMicros,
             title: cleanTitle,
             description: cleanDescription,
+            expiresAt,
+            dmOnly: isDmOnly,
         });
 
-        return NextResponse.json({
+        const responseBody: Record<string, unknown> = {
             success: true,
             paymentLinkId: paymentRequest.paymentLinkId,
-            payUrl: `/pay/${paymentRequest.paymentLinkId}`,
             dmId: paymentRequest.dmId,
-        }, { status: 201 });
+            shareable: !isDmOnly,
+        };
+        if (!isDmOnly) {
+            responseBody.payUrl = `/pay/${paymentRequest.paymentLinkId}`;
+        }
+
+        return NextResponse.json(responseBody, { status: 201 });
     } catch (error: any) {
         console.error("Peer request creation failed:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

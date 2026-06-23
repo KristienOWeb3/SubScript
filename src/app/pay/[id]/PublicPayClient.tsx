@@ -89,7 +89,9 @@ export default function PublicPayClient({
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
 
     /* Derived variables */
-    const isUserRequest = linkData?.merchant_name_snapshot === "SubScript user request" || linkData?.external_reference?.startsWith("peer-request:");
+    const isUserRequest = linkData?.merchant_name_snapshot === "SubScript user request" ||
+        linkData?.external_reference?.startsWith("peer-request:") ||
+        linkData?.external_reference?.startsWith("dm-peer-request:");
 
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);

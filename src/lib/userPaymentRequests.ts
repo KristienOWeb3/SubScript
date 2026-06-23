@@ -7,6 +7,8 @@ type CreateUserPaymentRequestInput = {
     amountMicros: bigint;
     title: string;
     description: string;
+    expiresAt?: Date | null;
+    dmOnly?: boolean;
 };
 
 export async function createUserPaymentRequest({
@@ -15,6 +17,8 @@ export async function createUserPaymentRequest({
     amountMicros,
     title,
     description,
+    expiresAt = null,
+    dmOnly = false,
 }: CreateUserPaymentRequestInput) {
     return withPgClient(async (client) => {
         await client.query("begin");
@@ -34,18 +38,22 @@ export async function createUserPaymentRequest({
                     amount_usdc,
                     active,
                     max_uses,
+                    expires_at,
+                    receiver_address,
                     merchant_name_snapshot,
                     external_reference,
                     receipt_token
-                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7)
+                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7, $8, $9)
                 returning id`,
                 [
                     requester,
                     title,
                     description,
                     amountMicros.toString(),
+                    expiresAt ? expiresAt.toISOString() : null,
+                    receiver,
                     "SubScript user request",
-                    `peer-request:${requester}:${Date.now()}`,
+                    `${dmOnly ? "dm-peer-request" : "peer-request"}:${requester}:${Date.now()}`,
                     generateReceiptId(title),
                 ]
             );
@@ -79,8 +87,9 @@ export async function createUserPaymentRequest({
                             description,
                             `Requester: ${requester}`,
                             `Amount: ${amount.toFixed(6).replace(/\.?0+$/, "")} USDC`,
+                            expiresAt ? `Valid until: ${expiresAt.toLocaleString("en-US")}` : null,
                             "This is a structured SubScript payment request, not a free-form chat.",
-                        ].join("\n"),
+                        ].filter(Boolean).join("\n"),
                         paymentLinkId,
                     ]
                 );

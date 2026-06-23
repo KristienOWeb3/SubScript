@@ -131,6 +131,29 @@ const formatAddress = (addr: string | null) => {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 };
 
+const walletAddressPattern = /0x[a-fA-F0-9]{40}/g;
+
+const looksLikeWalletAddress = (value: string | null | undefined) => {
+  return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+};
+
+const formatPeerDisplayName = (name: string | null | undefined, address: string | null) => {
+  const cleanedName = name?.trim();
+  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return formatAddress(address);
+  return cleanedName;
+};
+
+const shortenWalletsInText = (value: string | null | undefined) => {
+  if (!value) return value || null;
+  return value.replace(walletAddressPattern, (match) => formatAddress(match));
+};
+
+const dmRequestDurationOptions = [
+  { value: "1", label: "1 hour" },
+  { value: "24", label: "24 hours" },
+  { value: "168", label: "7 days" },
+] as const;
+
 const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
@@ -177,6 +200,11 @@ export default function UserDashboard() {
 
   const [focusIntentId, setFocusIntentId] = useState<string | null>(null);
   const [selectedDmPeer, setSelectedDmPeer] = useState<string | null>(null);
+  const [dmRequestOpen, setDmRequestOpen] = useState(false);
+  const [dmRequestAmount, setDmRequestAmount] = useState("");
+  const [dmRequestNote, setDmRequestNote] = useState("");
+  const [dmRequestDuration, setDmRequestDuration] = useState<(typeof dmRequestDurationOptions)[number]["value"]>("24");
+  const [dmRequestStatus, setDmRequestStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
@@ -607,6 +635,14 @@ export default function UserDashboard() {
     }
   }, [dms, focusIntentId, selectedDmPeer, userWallet]);
 
+  useEffect(() => {
+    setDmRequestOpen(false);
+    setDmRequestAmount("");
+    setDmRequestNote("");
+    setDmRequestDuration("24");
+    setDmRequestStatus(null);
+  }, [selectedDmPeer]);
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     disconnect();
@@ -753,6 +789,36 @@ export default function UserDashboard() {
       setRequestNote("");
       await loadDms();
     }).catch((err) => setRequestStatus(err.message));
+  };
+
+  const handleCreateDmRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedDmPeer) return;
+
+    setDmRequestStatus(null);
+    await runAction("create-dm-request", async () => {
+      const res = await fetch("/api/user/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receiverAddress: selectedDmPeer,
+          amountUsdc: dmRequestAmount,
+          title: "DM payment request",
+          description: dmRequestNote || "SubScript in-DM payment request",
+          expiresInHours: Number(dmRequestDuration),
+          dmOnly: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send DM request");
+
+      setDmRequestStatus("Request sent inside this DM.");
+      setDmRequestOpen(false);
+      setDmRequestAmount("");
+      setDmRequestNote("");
+      setDmRequestDuration("24");
+      await loadDms();
+    }).catch((err) => setDmRequestStatus(err.message));
   };
 
   const handleRegisterDns = async (event: React.FormEvent) => {
@@ -1223,6 +1289,12 @@ export default function UserDashboard() {
   const activeThread = selectedDmPeer
     ? dmThreads.find((t) => t.peerAddress.toLowerCase() === selectedDmPeer)
     : null;
+  const activeThreadLabel = selectedDmPeer ? formatPeerDisplayName(activeThread?.peerName, selectedDmPeer) : "";
+  const isActiveDmMerchant = selectedDmPeer
+    ? subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
+      (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
+    : false;
+  const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] lg:h-[100dvh] lg:overflow-hidden">
@@ -1251,13 +1323,13 @@ export default function UserDashboard() {
             <div className="w-full">
               {activeTab === "inbox" && selectedDmPeer ? (
                 <ChatHeader
-                  peerName={activeThread?.peerName || formatAddress(selectedDmPeer)}
+                  peerName={activeThreadLabel}
                   peerProfilePic={activeThread?.peerProfilePic || null}
                   peerAddress={selectedDmPeer}
-                  isMerchant={subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")}
+                  isMerchant={isActiveDmMerchant}
                   onBack={() => setSelectedDmPeer(null)}
                   onSendFunds={() => {
-                    setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
+                    setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                     setSendFundsOpen(true);
                   }}
                 />
@@ -1274,7 +1346,7 @@ export default function UserDashboard() {
           )}
 
       {/* Main Grid View Container */}
-      <main className="mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 pb-[calc(8rem+env(safe-area-inset-bottom))] lg:pb-12">
+      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${isActiveMobileDm ? "pb-3" : "pb-[calc(8rem+env(safe-area-inset-bottom))]"}`}>
         {/* Title Header (Desktop only) */}
         {!isMobile && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
@@ -1434,23 +1506,23 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="min-h-0 lg:h-[calc(100dvh-160px)] flex flex-col lg:flex-row gap-5 -mx-5 lg:mx-0"
+                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 lg:h-[calc(100dvh-160px)] lg:max-w-none lg:flex-row"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
-                  <div className="flex-1 flex flex-col justify-between">
+                  <div className="flex-1 flex flex-col justify-between w-full">
                     {!selectedDmPeer ? (
-                      <div className="px-5 space-y-4 pb-20">
+                      <div className="w-full space-y-4 pb-20">
                         <DmThreadSelect
                           threads={dmThreads}
                           onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
                         />
                       </div>
                     ) : (
-                      <div className="flex-1 flex flex-col justify-between overflow-hidden h-[calc(100dvh-220px)]">
-                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-5 pb-24">
+                      <div className="flex h-[calc(100dvh-7.5rem)] flex-1 flex-col justify-between overflow-hidden">
+                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-1 pb-4">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
-                            {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
+                            {isActiveDmMerchant
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                               : "Direct peer-to-peer system messages only"}
                           </div>
@@ -1476,21 +1548,28 @@ export default function UserDashboard() {
                         </div>
 
                         {/* Bottom Action Footer for Mobile */}
-                        <div className="fixed bottom-20 left-0 right-0 px-5 py-3 bg-[#060608]/95 border-t border-white/5 z-40 backdrop-blur-md">
-                          {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
+                        <div className="-mx-1 border-t border-white/5 bg-[#060608]/95 px-1 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                          {isActiveDmMerchant ? (
                             <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                               YOU CAN NOT REQUEST FROM A MERCHANT
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveTab("links");
+                            <DmRequestComposer
+                              open={dmRequestOpen}
+                              amount={dmRequestAmount}
+                              note={dmRequestNote}
+                              duration={dmRequestDuration}
+                              status={dmRequestStatus}
+                              loading={loadingAction === "create-dm-request"}
+                              onToggle={() => {
+                                setDmRequestOpen((open) => !open);
+                                setDmRequestStatus(null);
                               }}
-                              className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
-                            >
-                              REQUEST
-                            </button>
+                              onSubmit={handleCreateDmRequest}
+                              onAmountChange={setDmRequestAmount}
+                              onNoteChange={setDmRequestNote}
+                              onDurationChange={setDmRequestDuration}
+                            />
                           )}
                         </div>
                       </div>
@@ -1519,19 +1598,19 @@ export default function UserDashboard() {
                               <div>
                                 <div className="flex items-center gap-1.5">
                                   <h4 className="text-sm font-black uppercase tracking-wider text-white">
-                                    {activeThread?.peerName || formatAddress(selectedDmPeer)}
+                                    {activeThreadLabel}
                                   </h4>
-                                  {(subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) || (activeThread?.peerName || "").endsWith(".hq") || (activeThread?.peerName || "").endsWith(".biz")) && (
+                                  {isActiveDmMerchant && (
                                     <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                                   )}
                                 </div>
-                                <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{selectedDmPeer}</p>
+                                <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
                               </div>
                             </div>
                             <button
                               type="button"
                               onClick={() => {
-                                setSendFundsRecipient(activeThread?.peerName || selectedDmPeer);
+                                setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                                 setSendFundsOpen(true);
                               }}
                               className="px-4 py-2.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
@@ -1543,7 +1622,7 @@ export default function UserDashboard() {
                           {/* Desktop Messages Scroll View */}
                           <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 pr-2">
                             <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
-                              {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase())
+                              {isActiveDmMerchant
                                 ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
                                 : "Direct peer-to-peer system messages only"}
                             </div>
@@ -1572,20 +1651,27 @@ export default function UserDashboard() {
 
                           {/* Bottom Action Footer for Desktop */}
                           <div className="pt-4 border-t border-white/5 shrink-0">
-                            {subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ? (
+                            {isActiveDmMerchant ? (
                               <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                                 YOU CAN NOT REQUEST FROM A MERCHANT
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveTab("links");
+                              <DmRequestComposer
+                                open={dmRequestOpen}
+                                amount={dmRequestAmount}
+                                note={dmRequestNote}
+                                duration={dmRequestDuration}
+                                status={dmRequestStatus}
+                                loading={loadingAction === "create-dm-request"}
+                                onToggle={() => {
+                                  setDmRequestOpen((open) => !open);
+                                  setDmRequestStatus(null);
                                 }}
-                                className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3 text-xs font-black uppercase tracking-[0.16em] transition"
-                              >
-                                REQUEST
-                              </button>
+                                onSubmit={handleCreateDmRequest}
+                                onAmountChange={setDmRequestAmount}
+                                onNoteChange={setDmRequestNote}
+                                onDurationChange={setDmRequestDuration}
+                              />
                             )}
                           </div>
                         </div>
@@ -2330,7 +2416,7 @@ export default function UserDashboard() {
       </div>
 
       {/* Mobile-only Bottom Navigation Bar */}
-      {isMobile && userWallet && (
+      {isMobile && userWallet && !isActiveMobileDm && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
           <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] liquid-glass bg-black/30 backdrop-blur-lg">
@@ -2753,6 +2839,8 @@ function DmThreadSelect({
         <div className="space-y-3">
           {threads.map((thread) => {
             const isSelected = thread.peerAddress.toLowerCase() === selectedPeerAddress?.toLowerCase();
+            const peerLabel = formatPeerDisplayName(thread.peerName, thread.peerAddress);
+            const latestPreview = shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment message");
             return (
               <button
                 key={thread.peerAddress}
@@ -2768,13 +2856,13 @@ function DmThreadSelect({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <p className="truncate text-xs font-black uppercase tracking-[0.12em] text-white">
-                      {thread.peerName || formatAddress(thread.peerAddress)}
+                      {peerLabel}
                     </p>
                     <span className="text-[9px] font-bold text-white/35">
                       {new Date(thread.latest.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-[11px] text-white/45">{thread.latest.title || thread.latest.description || "SubScript payment message"}</p>
+                  <p className="mt-1 truncate text-[11px] text-white/45">{latestPreview}</p>
                   <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#ccff00]/50">{thread.totalCount} system messages</p>
                 </div>
                 {thread.pendingCount > 0 && (
@@ -2817,7 +2905,10 @@ function DmBubble({
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
 }) {
   const isPending = dm.status === "PENDING";
-  const lines = splitDmDescription(dm.description);
+  const displayTitle = shortenWalletsInText(dm.title);
+  const displayDescription = shortenWalletsInText(dm.description);
+  const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
+  const lines = splitDmDescription(displayDescription);
   const canPay = isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
   const canDecline = isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
 
@@ -2909,33 +3000,33 @@ function DmBubble({
                   incoming ? "text-white border-white/5" : "text-white border-white/10"
                 }`}
               >
-                {dm.title || "Payment Details"}
+                {displayTitle || "Payment Details"}
               </h4>
               <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <div>
                   <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Plan / Purpose</span>
-                  <span className="font-bold text-white">{dm.title?.split(" requested")[0] || "Services / Payout"}</span>
+                  <span className="font-bold text-white">{displayTitle?.split(" requested")[0] || "Services / Payout"}</span>
                 </div>
                 <div>
                   <span className={`block uppercase tracking-widest text-[8px] ${incoming ? "text-white/40" : "text-white/60"}`}>Merchant / Sender</span>
-                  <span className="font-bold text-white truncate block">{dm.senderName || formatAddress(dm.senderAddress)}</span>
+                  <span className="font-bold text-white truncate block">{senderLabel}</span>
                 </div>
               </div>
               
-              {dm.description && (
+              {displayDescription && (
                 <div 
                   className={`rounded-xl p-3 border mt-2 ${
                     incoming ? "bg-black/25 border-white/5" : "bg-black/15 border-white/10"
                   }`}
                 >
                   <span className={`block uppercase tracking-widest text-[8px] mb-1 ${incoming ? "text-white/40" : "text-white/60"}`}>Details</span>
-                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap">{dm.description}</p>
+                  <p className="text-white/90 text-[10px] leading-relaxed whitespace-pre-wrap">{displayDescription}</p>
                 </div>
               )}
             </div>
           ) : (
             <>
-              <h3 className="text-base font-black uppercase leading-snug text-white">{dm.title || "SubScript message"}</h3>
+              <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
                 {lines.length > 0 ? lines.map((line) => (
                   <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
@@ -3065,6 +3156,123 @@ function DmBubble({
       </div>
       {!incoming && <Avatar profilePic={dm.senderProfilePic} />}
     </motion.div>
+  );
+}
+
+function DmRequestComposer({
+  open,
+  amount,
+  note,
+  duration,
+  status,
+  loading,
+  onToggle,
+  onSubmit,
+  onAmountChange,
+  onNoteChange,
+  onDurationChange,
+}: {
+  open: boolean;
+  amount: string;
+  note: string;
+  duration: (typeof dmRequestDurationOptions)[number]["value"];
+  status: string | null;
+  loading: boolean;
+  onToggle: () => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onAmountChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onDurationChange: (value: (typeof dmRequestDurationOptions)[number]["value"]) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        type="button"
+        onClick={onToggle}
+        disabled={loading}
+        className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${open ? "dm-action-menu-trigger-open" : ""} ${loading ? "quick-action-loading" : ""}`}
+      >
+        {loading ? "Sending Request" : open ? "Close Request" : "Request"}
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.form
+            key="dm-request-form"
+            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.7 }}
+            onSubmit={onSubmit}
+            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Amount">
+                <input
+                  value={amount}
+                  onChange={(event) => onAmountChange(event.target.value)}
+                  placeholder="25.00"
+                  inputMode="decimal"
+                  className="subscript-input"
+                  required
+                />
+              </Field>
+              <Field label="Valid for">
+                <select
+                  value={duration}
+                  onChange={(event) => onDurationChange(event.target.value as (typeof dmRequestDurationOptions)[number]["value"])}
+                  className="subscript-input"
+                >
+                  {dmRequestDurationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Memo">
+                <textarea
+                  value={note}
+                  onChange={(event) => onNoteChange(event.target.value)}
+                  placeholder="What is this request for?"
+                  rows={2}
+                  className="subscript-input resize-none"
+                />
+              </Field>
+            </div>
+            {status && (
+              <div className="mt-3 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                {status}
+              </div>
+            )}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onToggle}
+                disabled={loading}
+                className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
+              >
+                Send
+              </button>
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
+
+      {status && !open && (
+        <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+          {status}
+        </div>
+      )}
+    </div>
   );
 }
 
