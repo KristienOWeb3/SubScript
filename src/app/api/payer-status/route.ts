@@ -5,9 +5,17 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 export async function GET(request: Request) {
     try {
+        /* Throttle per-IP to limit account enumeration. */
+        const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        const rl = checkProviderRateLimit({ provider: "payer-status", key: ip, limit: 30, windowMs: 60_000 });
+        if (!rl.ok) {
+            return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+        }
+
         const address = new URL(request.url).searchParams.get("address") || "";
         if (!ethers.isAddress(address)) {
             return NextResponse.json({ error: "Invalid address" }, { status: 400 });

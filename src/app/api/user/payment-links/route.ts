@@ -10,6 +10,9 @@ import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { createUserPaymentRequest } from "@/lib/userPaymentRequests";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { prisma } from "@/lib/prisma";
+
+const MAX_ACTIVE_USER_LINKS = 30;
 
 export async function POST(request: Request) {
     try {
@@ -32,6 +35,21 @@ export async function POST(request: Request) {
         const amountMicros = parseUsdcToMicros(amountUsdc);
         if (amountMicros <= 0) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
+        }
+
+        /* Cap active links per user to prevent spam / DB growth. */
+        const activeCount = await prisma.paymentLink.count({
+            where: {
+                merchantAddress: wallet.toLowerCase(),
+                active: true,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+        });
+        if (activeCount >= MAX_ACTIVE_USER_LINKS) {
+            return NextResponse.json(
+                { error: `You have reached the limit of ${MAX_ACTIVE_USER_LINKS} active payment links. Let some expire or deactivate them before creating more.` },
+                { status: 403 }
+            );
         }
 
         const cleanTitle = typeof title === "string" && title.trim()

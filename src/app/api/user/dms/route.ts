@@ -1,10 +1,41 @@
 /* API route to load and update system-automated DMs for the authenticated user */
 import { NextResponse } from "next/server";
+import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+
+export const maxDuration = 60;
+
+const USDC_TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)").toLowerCase();
+
+/* Confirm a transfer DM corresponds to a real on-chain USDC transfer from `from` to
+   `to` for at least `amountMicros`. Prevents spoofed "I sent you X" records. */
+async function verifyUsdcTransferOnChain(txHash: string, from: string, to: string, amountMicros: bigint): Promise<boolean> {
+    try {
+        const url = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+        const provider = new ethers.JsonRpcProvider(url);
+        /* Wait briefly for confirmation — the browser-wallet path submits without waiting. */
+        const receipt = await provider.waitForTransaction(txHash, 1, 30_000);
+        if (!receipt || receipt.status !== 1) return false;
+        const fromTopic = ethers.zeroPadValue(from, 32).toLowerCase();
+        const toTopic = ethers.zeroPadValue(to, 32).toLowerCase();
+        const usdc = USDC_NATIVE_GAS_ADDRESS.toLowerCase();
+        for (const log of receipt.logs) {
+            if (log.address.toLowerCase() !== usdc) continue;
+            if ((log.topics[0] || "").toLowerCase() !== USDC_TRANSFER_TOPIC) continue;
+            if ((log.topics[1] || "").toLowerCase() !== fromTopic) continue;
+            if ((log.topics[2] || "").toLowerCase() !== toTopic) continue;
+            if (BigInt(log.data) >= amountMicros) return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
 
 export async function GET(request: Request) {
     try {
@@ -142,6 +173,25 @@ export async function POST(request: Request) {
             }
 
             const amountMicros = parseUsdcToMicros(amountUsdc);
+
+            /* Each on-chain transfer backs at most one DM (block replaying one tx). */
+            const existingForTx = await prisma.subscriptDm.findFirst({
+                where: { txHash },
+                select: { id: true },
+            });
+            if (existingForTx) {
+                return NextResponse.json({ error: "This transaction has already been recorded." }, { status: 409 });
+            }
+
+            /* The transfer must be a real, confirmed USDC transfer from the sender to the
+               receiver for at least the stated amount — otherwise it's a spoofed record. */
+            const verified = await verifyUsdcTransferOnChain(txHash, normalizedWallet, normalizedReceiver, amountMicros);
+            if (!verified) {
+                return NextResponse.json(
+                    { error: "Could not verify this USDC transfer on-chain. Sender, recipient, and amount must match a confirmed transfer." },
+                    { status: 400 }
+                );
+            }
 
             await prisma.customer.upsert({
                 where: { walletAddress: normalizedWallet },
