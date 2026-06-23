@@ -73,9 +73,11 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 ## A look inside
 
 <div align="center">
-<img src="assets/screenshots/dashboard-mobile.png" alt="SubScript dashboard" width="30%" />
-&nbsp;&nbsp;
-<img src="assets/screenshots/chat-mobile.png" alt="In‑app payments chat" width="30%" />
+<img src="assets/screenshots/checkout.png" alt="Hosted USDC checkout" width="32%" />
+&nbsp;
+<img src="assets/screenshots/dashboard.png" alt="SubScript dashboard" width="32%" />
+&nbsp;
+<img src="assets/screenshots/chat.png" alt="In‑app payments chat" width="22%" />
 </div>
 
 ## Tech stack

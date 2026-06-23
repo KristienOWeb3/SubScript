@@ -1386,7 +1386,7 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className="min-w-0 flex-1 lg:h-full lg:overflow-y-auto">
+        <div className={`min-w-0 flex-1 lg:h-full ${activeTab === "inbox" ? "lg:overflow-hidden" : "lg:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -1416,8 +1416,8 @@ export default function UserDashboard() {
 
       {/* Main Grid View Container */}
       <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${isActiveMobileDm ? "pb-3" : "pb-[calc(8rem+env(safe-area-inset-bottom))]"}`}>
-        {/* Title Header (Desktop only) */}
-        {!isMobile && (
+        {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
+        {!isMobile && activeTab !== "inbox" && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
             <div>
               <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
@@ -1575,7 +1575,7 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 lg:h-[calc(100dvh-160px)] lg:max-w-none lg:flex-row"
+                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 lg:h-[calc(100dvh-104px)] lg:max-w-none lg:flex-row"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
