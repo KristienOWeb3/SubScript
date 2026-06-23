@@ -162,6 +162,21 @@ const formatUsdc = (amount: string | null) => {
   return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
 };
 
+/* Convert a USDC micro-amount (6dp) into a plain decimal string without losing
+   precision — used when re-sending a requested amount through the transfer APIs. */
+const microsToUsdcString = (micros: string | null) => {
+  if (!micros) return "0";
+  try {
+    const value = BigInt(micros);
+    const micro = BigInt(1_000_000);
+    const whole = value / micro;
+    const fraction = (value % micro).toString().padStart(6, "0").replace(/0+$/, "");
+    return fraction ? `${whole}.${fraction}` : whole.toString();
+  } catch {
+    return "0";
+  }
+};
+
 const splitDmDescription = (description: string | null) => {
   if (!description) return [];
   return description.split("\n").map((item) => item.trim()).filter(Boolean);
@@ -715,11 +730,76 @@ export default function UserDashboard() {
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
-    if (!dm.paymentLinkId) return;
+    /* Merchant subscription requests settle through the sponsored hosted checkout. */
+    if (dm.messageType !== "PEER_REQUEST") {
+      if (!dm.paymentLinkId) return;
+      await runAction(`pay-${dm.id}`, async () => {
+        await handleUpdateDmStatus(dm.id, "APPROVED");
+        router.push(`/pay/${dm.paymentLinkId}?direct=true`);
+      });
+      return;
+    }
+
+    /* Peer (user-to-user) requests are NOT merchant payments — they settle as a direct
+       USDC transfer to the requester, exactly like "Send Funds". Routing them through the
+       merchant /pay checkout (depositForMerchant) is why paying a peer request stalled. */
+    if (!dm.amountUsdc) return;
+    const amountMicros = dm.amountUsdc;
+    const requesterAddress = dm.senderAddress;
+    const humanAmount = microsToUsdcString(amountMicros);
+
     await runAction(`pay-${dm.id}`, async () => {
+      let txHash: string | undefined;
+
+      if (isEmbeddedWalletSession) {
+        const transfers = await sendFromEmbeddedWallet({
+          receiverAddress: requesterAddress,
+          amountUsdc: humanAmount,
+        });
+        txHash = transfers[0]?.txHash;
+      } else {
+        if (!accountAddress) {
+          throw new Error("Connect your wallet to pay this request.");
+        }
+        txHash = await writeContractAsync({
+          address: USDC_NATIVE_GAS_ADDRESS,
+          abi: [
+            {
+              type: "function",
+              name: "transfer",
+              stateMutability: "nonpayable",
+              inputs: [
+                { name: "recipient", type: "address" },
+                { name: "value", type: "uint256" },
+              ],
+              outputs: [{ name: "success", type: "bool" }],
+            },
+          ] as const,
+          functionName: "transfer",
+          args: [requesterAddress as `0x${string}`, BigInt(amountMicros)],
+        });
+      }
+
+      /* Mark the request handled and drop a transfer receipt into the thread (real txHash
+         so "View Tx" links to the explorer). */
       await handleUpdateDmStatus(dm.id, "APPROVED");
-      router.push(`/pay/${dm.paymentLinkId}?direct=true`);
-    });
+      if (txHash) {
+        await fetch("/api/user/dms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "log-transfer",
+            receiverAddress: requesterAddress,
+            amountUsdc: humanAmount,
+            txHash,
+            title: `${humanAmount} USDC Sent`,
+            description: dm.title ? `Paid request: ${dm.title}` : "Paid in-DM payment request.",
+          }),
+        });
+      }
+      triggerToast(`Sent ${humanAmount} USDC`);
+      await Promise.all([loadDms(), refetchUsdc().catch(() => {})]);
+    }).catch((err: any) => triggerToast(err?.message || "Could not complete the payment."));
   };
 
   const handleDeclineDm = async (dm: DmMessage) => {
@@ -2398,27 +2478,30 @@ export default function UserDashboard() {
           </nav>
 
           {/* DMs Icon Outside Bottom Bar Capsule */}
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedDmPeer(null);
-              setActiveTab("inbox");
-            }}
-            className={`relative h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
-              activeTab === "inbox"
-                ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
-                : "liquid-glass bg-black/30 backdrop-blur-lg border-white/5 text-white/50 hover:text-white w-12"
-            }`}
-            aria-label="Open DMs"
-          >
-            <MessageSquare className="h-5 w-5 shrink-0" />
-            {activeTab === "inbox" && <span className="text-[10px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDmPeer(null);
+                setActiveTab("inbox");
+              }}
+              className={`relative h-12 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
+                activeTab === "inbox"
+                  ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
+                  : "liquid-glass bg-black/30 backdrop-blur-lg border-white/5 text-white/50 hover:text-white w-12"
+              }`}
+              aria-label="Open DMs"
+            >
+              <MessageSquare className="h-5 w-5 shrink-0" />
+              {activeTab === "inbox" && <span className="text-[10px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
+            </button>
+            {/* Badge lives outside the button so its overflow-hidden never clips it. */}
             {pendingDmCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-black bg-red-500 px-1 text-[9px] font-black text-white">
+              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
                 {pendingDmCount > 9 ? "9+" : pendingDmCount}
               </span>
             )}
-          </button>
+          </div>
         </div>
       )}
 
@@ -2965,7 +3048,6 @@ function DmBubble({
             {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
           </span>
         </div>
-        {!incoming && <Avatar profilePic={dm.senderProfilePic} />}
       </motion.div>
     );
   }
@@ -3157,7 +3239,6 @@ function DmBubble({
           )}
         </div>
       </div>
-      {!incoming && <Avatar profilePic={dm.senderProfilePic} />}
     </motion.div>
   );
 }
@@ -3193,10 +3274,11 @@ function DmRequestComposer({
         {open && (
           <motion.form
             key="dm-request-form"
-            initial={{ opacity: 0, y: 18, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.7 }}
+            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
+            transition={{ type: "spring", stiffness: 360, damping: 18, mass: 0.9 }}
+            style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
             className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
@@ -3266,14 +3348,22 @@ function DmRequestComposer({
         </div>
       )}
 
+      {/* Styled to match the app's bottom nav capsule — a persistent action bar. */}
       <motion.button
         whileTap={{ scale: 0.97 }}
         type="button"
         onClick={onToggle}
         disabled={loading}
-        className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${open ? "dm-action-menu-trigger-open" : ""} ${loading ? "quick-action-loading" : ""}`}
+        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${loading ? "quick-action-loading" : ""} ${
+          open
+            ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
+            : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"
+        }`}
       >
-        {loading ? "Sending Request" : "Request"}
+        <span className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none transition-transform duration-300 ${open ? "rotate-45 bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}>
+          +
+        </span>
+        {loading ? "Sending Request" : open ? "Close" : "Request"}
       </motion.button>
     </div>
   );
