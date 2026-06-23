@@ -119,6 +119,24 @@ export default function PublicPayClient({
         return () => { cancelled = true; };
     }, []);
 
+    /* Returning-payer email prompt: a wallet that already has a SubScript account but
+       no email on file must supply one at checkout (it's required for receipts). */
+    const [payerNeedsEmail, setPayerNeedsEmail] = useState(false);
+    const [payerEmailInput, setPayerEmailInput] = useState("");
+    const [payerEmailError, setPayerEmailError] = useState<string | null>(null);
+    useEffect(() => {
+        if (!address) {
+            setPayerNeedsEmail(false);
+            return;
+        }
+        let cancelled = false;
+        fetch(`/api/payer-status?address=${address}`)
+            .then((res) => res.json())
+            .then((data) => { if (!cancelled) setPayerNeedsEmail(Boolean(data?.exists) && !data?.hasEmail); })
+            .catch(() => { if (!cancelled) setPayerNeedsEmail(false); });
+        return () => { cancelled = true; };
+    }, [address]);
+
     /* De-duplicate discovered wallet connectors (EIP-6963 can surface several). */
     const walletConnectors = (() => {
         const seen = new Set<string>();
@@ -279,6 +297,13 @@ export default function PublicPayClient({
         if (!linkData || !address) return;
         setVerificationError(null);
         setVerificationStatus(null);
+        setPayerEmailError(null);
+
+        /* Returning payer must provide an email before paying. */
+        if (payerNeedsEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmailInput.trim())) {
+            setPayerEmailError("Enter a valid email to continue.");
+            return;
+        }
 
         /* Strict production burn safeguard */
         if (!isProd && chainId === 1) {
@@ -449,7 +474,8 @@ export default function PublicPayClient({
                             paymentLinkId: linkData.id,
                             payerAddress: address || "",
                             receiptId,
-                            chainId: chainId
+                            chainId: chainId,
+                            payerEmail: payerEmailInput.trim() || undefined
                         })
                     });
 
@@ -812,7 +838,24 @@ export default function PublicPayClient({
                                                 <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{verificationError}</p>
                                             </div>
                                         )}
-                                        
+
+                                        {payerNeedsEmail && (
+                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-2 text-left">
+                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Add your email</p>
+                                                <p className="text-[10px] leading-relaxed text-white/55">
+                                                    Welcome back — we need an email for your receipt and account notifications before this payment.
+                                                </p>
+                                                <input
+                                                    type="email"
+                                                    value={payerEmailInput}
+                                                    onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }}
+                                                    placeholder="you@example.com"
+                                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
+                                                />
+                                                {payerEmailError && <p className="text-[10px] font-mono text-red-400">{payerEmailError}</p>}
+                                            </div>
+                                        )}
+
                                         {!hasSufficientArcBalance && (
                                             <div className="liquid-glass border border-amber-500/20 bg-amber-500/[0.03] rounded-2xl p-5 space-y-3 shadow-lg">
                                                 <div className="flex items-start gap-3">
