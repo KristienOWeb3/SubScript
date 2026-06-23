@@ -107,6 +107,31 @@ export default function PublicPayClient({
     const [isCreatingDm, setIsCreatingDm] = useState(false);
     const [dmError, setDmError] = useState<string | null>(null);
 
+    /* Detect an existing SubScript session so we can offer "go to DMs" instead of
+       forcing a fresh wallet connection. */
+    const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null } | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/auth/session")
+            .then((res) => res.json())
+            .then((data) => { if (!cancelled) setSessionInfo(data); })
+            .catch(() => { if (!cancelled) setSessionInfo(null); });
+        return () => { cancelled = true; };
+    }, []);
+
+    /* De-duplicate discovered wallet connectors (EIP-6963 can surface several). */
+    const walletConnectors = (() => {
+        const seen = new Set<string>();
+        return connectors.filter((connector) => {
+            const key = connector.name || connector.id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    })();
+    const hasInjectedProvider = typeof window !== "undefined" && Boolean((window as any).ethereum);
+    const noWalletDetected = typeof window !== "undefined" && !hasInjectedProvider && walletConnectors.length <= 1;
+
     const handleGoToDms = async () => {
         if (!linkData?.id) return;
         setIsCreatingDm(true);
@@ -601,16 +626,85 @@ export default function PublicPayClient({
 
                         {!isConnected ? (
                             <div className="space-y-4">
-                                <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
-                                    Connect your browser wallet (e.g. MetaMask, Rabby) on the Arc Testnet to complete the payment.
-                                </p>
-                                <button
-                                    onClick={handleConnect}
-                                    className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
-                                >
-                                    <Wallet className="w-4 h-4" />
-                                    Connect Wallet
-                                </button>
+                                {/* Already signed in to SubScript: offer DMs instead of a fresh connect. */}
+                                {sessionInfo?.loggedIn && (
+                                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
+                                        <p className="text-[11px] leading-relaxed text-white/75">
+                                            You're already signed in to SubScript
+                                            {sessionInfo.email ? ` as ${sessionInfo.email}` : sessionInfo.wallet ? ` (${sessionInfo.wallet.slice(0, 6)}...${sessionInfo.wallet.slice(-4)})` : ""}.
+                                            Open this request in your DMs, or connect a wallet below to pay directly.
+                                        </p>
+                                        <button
+                                            onClick={handleGoToDms}
+                                            disabled={isCreatingDm}
+                                            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                        >
+                                            {isCreatingDm ? (
+                                                <><Loader2 className="w-4 h-4 animate-spin text-black" /> Opening DMs...</>
+                                            ) : (
+                                                <>Go to my SubScript DMs <ArrowRight className="w-4 h-4" /></>
+                                            )}
+                                        </button>
+                                        {dmError && <p className="text-[10px] font-mono text-red-400">{dmError}</p>}
+                                        <div className="flex items-center gap-3 pt-1">
+                                            <span className="h-px flex-1 bg-white/10" />
+                                            <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a wallet</span>
+                                            <span className="h-px flex-1 bg-white/10" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {noWalletDetected ? (
+                                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5 space-y-3 text-center">
+                                        <AlertCircle className="mx-auto h-6 w-6 text-amber-400" />
+                                        <p className="text-[11px] leading-relaxed text-white/70">
+                                            No browser wallet detected. Install MetaMask, Rabby, or another wallet extension, then refresh this page.
+                                        </p>
+                                        <a
+                                            href="https://metamask.io/download/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 hover:text-white transition"
+                                        >
+                                            Get a wallet <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                    </div>
+                                ) : walletConnectors.length > 1 ? (
+                                    <div className="space-y-2">
+                                        <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
+                                            Multiple wallets found — choose one
+                                        </p>
+                                        {walletConnectors.map((connector) => (
+                                            <button
+                                                key={connector.uid}
+                                                onClick={() => connect({ connector })}
+                                                disabled={isConnecting}
+                                                className="w-full py-3.5 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                            >
+                                                {connector.icon ? (
+                                                    <img src={connector.icon} alt="" className="h-4 w-4 rounded" />
+                                                ) : (
+                                                    <Wallet className="w-4 h-4" />
+                                                )}
+                                                {connector.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-[10px] text-white/40 text-center leading-relaxed font-sans">
+                                            Connect your browser wallet (e.g. MetaMask, Rabby) on {expectedChainName} to complete the payment.
+                                        </p>
+                                        <button
+                                            onClick={handleConnect}
+                                            disabled={isConnecting}
+                                            className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                        >
+                                            {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+                                            {isConnecting ? "Connecting..." : "Connect Wallet"}
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-6">
@@ -619,6 +713,12 @@ export default function PublicPayClient({
                                     <div className="flex items-center justify-between">
                                         <span>Payer: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ""}</span>
                                         <button type="button" onClick={() => disconnect()} className="hover:text-white transition-colors uppercase font-bold">Disconnect</button>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1 text-white/60">
+                                        <span>Network:</span>
+                                        <span className={`font-bold ${isWrongChain ? "text-amber-400" : "text-[#00d2b4]"}`}>
+                                            {isWrongChain ? `Switch to ${requiredChainName}` : `${requiredChainName} ✓`}
+                                        </span>
                                     </div>
                                     <div className="flex items-center justify-between mt-1 text-white/60">
                                         <span>Arc Network USDC Balance:</span>
