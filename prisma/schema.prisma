@@ -139,6 +139,7 @@ model Merchant {
   emailEnabled           Boolean          @default(true) @map("email_enabled")
   payoutSettlementEnabled Boolean         @default(true) @map("payout_settlement_enabled")
   disputeAlertsEnabled   Boolean          @default(true) @map("dispute_alerts_enabled")
+  churnSurveyEnabled     Boolean          @default(true) @map("churn_survey_enabled")
   securityMultiSigEnabled Boolean         @default(false) @map("security_multi_sig_enabled")
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at")

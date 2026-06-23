@@ -87,6 +87,7 @@ export async function GET(request: Request) {
                     payoutSettlementEnabled: merchant.payoutSettlementEnabled,
                     disputeAlertsEnabled: merchant.disputeAlertsEnabled,
                     securityMultiSigEnabled: merchant.securityMultiSigEnabled,
+                    churnSurveyEnabled: merchant.churnSurveyEnabled,
                     payoutDestination: merchant.payoutDestination,
                     availableBalanceUsdc: merchant.availableBalanceUsdc.toString(),
                 };
@@ -200,6 +201,7 @@ export async function POST(request: Request) {
             securityMultiSigEnabled,
             payoutSettlementEnabled,
             disputeAlertsEnabled,
+            churnSurveyEnabled,
             payoutDestination,
             spendingLimitDaily,
             spendingLimitWeekly,
@@ -230,6 +232,7 @@ export async function POST(request: Request) {
             if (payoutSettlementEnabled !== undefined) updateData.payoutSettlementEnabled = false;
             if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = false;
             if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
+            if (churnSurveyEnabled !== undefined) updateData.churnSurveyEnabled = !!churnSurveyEnabled;
             if (payoutDestination !== undefined) updateData.payoutDestination = payoutDestination;
 
             await prisma.merchant.upsert({

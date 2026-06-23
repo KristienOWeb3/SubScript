@@ -50,6 +50,17 @@ export async function triggerExitSurvey(
             return;
         }
 
+        // Respect the merchant's churn-survey preference — skip entirely when disabled.
+        const merchantPrefResult = await db
+            .from("merchants")
+            .select("churn_survey_enabled")
+            .eq("wallet_address", merchantAddress.toLowerCase())
+            .maybeSingle();
+        if (merchantPrefResult?.data && merchantPrefResult.data.churn_survey_enabled === false) {
+            console.log("Exit survey skipped: merchant has churn survey disabled.");
+            return;
+        }
+
         // Fetch the merchant name / alias for the DM description
         const merchantAliasResult = await db
             .from("address_aliases")
