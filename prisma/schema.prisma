@@ -502,6 +502,16 @@ model MeteredVault {
   monthlyLimitUsdc  BigInt   @default(50000000) @map("monthly_limit_usdc")
   monthlySpentUsdc  BigInt   @default(0) @map("monthly_spent_usdc")
   lastTopUpAt       DateTime? @map("last_top_up_at")
+
+  // On-chain escrow mirror (dormant until SubScriptVault is deployed + routes cut over).
+  commitUsdc        BigInt   @default(0) @map("commit_usdc")
+  owedUsdc          BigInt   @default(0) @map("owed_usdc")
+  accruedUsageUsdc  BigInt   @default(0) @map("accrued_usage_usdc")
+  cycleStart        DateTime? @map("cycle_start")
+  active            Boolean  @default(false)
+  vaultChainId      Int?     @map("vault_chain_id")
+  lastSyncedBlock   BigInt?  @map("last_synced_block")
+
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
 
