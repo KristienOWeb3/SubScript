@@ -12,6 +12,7 @@ import {
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
 
 const isProdEnv = process.env.NODE_ENV === "production";
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
@@ -321,6 +322,12 @@ export async function POST(request: Request) {
         try {
             if (action === "withdraw") {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
+            }
+
+            /* Pay For Me: SubScript sponsors gas for a user's merchant-directed actions
+               (subscribe / approve / premium payment). Best-effort, no-op if disabled. */
+            if (accountRole === "USER") {
+                await ensureGasSponsored(wallet.toLowerCase());
             }
 
             const { provider, rpcEndpoint } = await getRpcProviderForWrite();

@@ -8,6 +8,7 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
 
 export const maxDuration = 120;
 
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
         if (amount <= BigInt(0)) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
         }
+
+        /* Pay For Me: SubScript covers gas for the user committing to a merchant vault. */
+        await ensureGasSponsored(wallet.toLowerCase());
 
         const txHash = await commitFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
