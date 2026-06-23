@@ -1,0 +1,58 @@
+/* Deploy SubScriptConfidential (current subscription contract).
+ *
+ * Why this script: the older scripts/deploy-standard.js references a non-existent
+ * "SubScript" contract with a 1-arg constructor. The live contract is SubScriptPSA
+ * (constructor: paymentToken, stableFXRouter), and SubScriptConfidential EXTENDS it —
+ * so it has the subscription functions (createSubscription, the 2-arg executePayment,
+ * isSequenceExecuted, cancelSubscription) AND registerViewKey/executeBatchPayout.
+ *
+ * Deploying this one contract lets you point BOTH STANDARD_CONTRACT_ADDRESS and
+ * CONFIDENTIAL_CONTRACT_ADDRESS at it, fixing both contract-health gaps at once.
+ *
+ * Env: PRIVATE_KEY (owner/deployer), RPC_URL (Arc testnet),
+ *      STABLEFX_ROUTER_ADDRESS (required), USDC_ADDRESS (optional, defaults to native).
+ *
+ *   npx hardhat run scripts/deploy-confidential.js --network arcTestnet
+ */
+const hre = require("hardhat");
+
+async function main() {
+    const [deployer] = await hre.ethers.getSigners();
+    console.log("Deploying with account:", deployer.address);
+    console.log("Balance:", hre.ethers.formatEther(await hre.ethers.provider.getBalance(deployer.address)));
+
+    const paymentToken = process.env.USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
+    const stableFXRouter = process.env.STABLEFX_ROUTER_ADDRESS;
+    const initialOwner = process.env.CONTRACT_OWNER_ADDRESS || deployer.address;
+
+    if (!stableFXRouter) {
+        throw new Error("STABLEFX_ROUTER_ADDRESS is required (the IStableFX router the contract settles through).");
+    }
+
+    console.log("\n--- Deploying SubScriptConfidential ---");
+    console.log("  paymentToken:  ", paymentToken);
+    console.log("  stableFXRouter:", stableFXRouter);
+    console.log("  initialOwner:  ", initialOwner);
+
+    const Factory = await hre.ethers.getContractFactory("SubScriptConfidential");
+    const contract = await Factory.deploy(paymentToken, stableFXRouter, initialOwner);
+    await contract.waitForDeployment();
+    const address = await contract.getAddress();
+
+    console.log("\n========================================");
+    console.log("  DEPLOYMENT COMPLETE");
+    console.log("========================================");
+    console.log(`  SubScriptConfidential: ${address}`);
+    console.log("========================================");
+    console.log("\nUpdate src/lib/contracts/constants.ts (and any env) with:");
+    console.log(`  STANDARD_CONTRACT_ADDRESS     = "${address}"`);
+    console.log(`  CONFIDENTIAL_CONTRACT_ADDRESS = "${address}"`);
+    console.log("\nThen verify:  npm run check:contracts");
+}
+
+main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
