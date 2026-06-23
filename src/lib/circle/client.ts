@@ -82,6 +82,28 @@ async function circleFetch<T>(path: string, init: RequestInit & { userToken?: st
     return payload as T;
 }
 
+/**
+ * Mint the device token + encryption key Circle's social-login iframe uses to encrypt
+ * the OAuth result. These MUST come from Circle (keyed to the browser's deviceId) — a
+ * client-generated UUID is not a valid key and makes the iframe throw "Error encrypting
+ * data". Endpoint path is env-overridable in case the account's API version differs.
+ */
+export async function createSocialLoginDeviceToken(deviceId: string) {
+    const path = process.env.CIRCLE_SOCIAL_LOGIN_TOKEN_PATH || "/v1/w3s/users/social/login/token";
+    const payload = await circleFetch<{
+        data?: { deviceToken?: string; deviceEncryptionKey?: string; encryptionKey?: string };
+    }>(path, {
+        method: "POST",
+        body: JSON.stringify({ deviceId, idempotencyKey: crypto.randomUUID() }),
+    });
+    const deviceToken = payload.data?.deviceToken;
+    const deviceEncryptionKey = payload.data?.deviceEncryptionKey || payload.data?.encryptionKey;
+    if (!deviceToken || !deviceEncryptionKey) {
+        throw new Error("Circle did not return a device token and encryption key for social login.");
+    }
+    return { deviceToken, deviceEncryptionKey };
+}
+
 export async function createCircleArcWalletChallenge(userToken: string) {
     const blockchain = process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET";
     const accountType = process.env.CIRCLE_WALLET_ACCOUNT_TYPE || "EOA";

@@ -1,0 +1,28 @@
+name: Contract Health
+
+# Fails the build if any contract address the app calls is missing code or the
+# expected function selectors on-chain — the launch-day "deployed-vs-code drift"
+# class of bug. Runs on every push/PR to main and can be triggered manually.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Skip lifecycle scripts (prisma/foundry) — the check only needs ethers + constants.ts.
+      - run: npm ci --ignore-scripts
+      - run: npm run check:contracts
+        env:
+          # Optional override; defaults to the public Arc testnet RPC in the script.
+          ARC_RPC_PRIMARY: ${{ secrets.ARC_RPC_PRIMARY }}
+          NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS: ${{ secrets.NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS }}

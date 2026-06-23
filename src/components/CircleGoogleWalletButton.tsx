@@ -160,8 +160,6 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 throw new Error(config.error || "Circle Google login is not configured.");
             }
 
-            const deviceToken = getOrCreateCookie("circle_device_token");
-            const deviceEncryptionKey = getOrCreateCookie("circle_device_encryption_key");
             window.localStorage.setItem("subscript_circle_auth_intent", getAuthIntent());
 
             const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
@@ -193,22 +191,41 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 }
             };
 
-            const loginConfigs: LoginConfigs = {
-                deviceToken,
-                deviceEncryptionKey,
-                google: {
-                    clientId: config.googleClientId,
-                    redirectUri: config.redirectUri,
-                    selectAccountPrompt: true,
-                },
+            const googleConfig = {
+                clientId: config.googleClientId,
+                redirectUri: config.redirectUri,
+                selectAccountPrompt: true,
             };
 
+            /* Start with placeholder device fields just to obtain the deviceId. */
             const sdk = new W3SSdk({
                 appSettings: { appId: config.appId },
-                loginConfigs,
+                loginConfigs: { deviceToken: "", deviceEncryptionKey: "", google: googleConfig },
             }, onLoginComplete);
 
-            await sdk.getDeviceId();
+            const deviceId = await sdk.getDeviceId();
+
+            /* Mint the real device token + encryption key from Circle for this device.
+               (A client-generated UUID here is what caused "Error encrypting data".) */
+            const dtRes = await fetch("/api/auth/circle/google/device-token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ deviceId }),
+            });
+            const dt = await dtRes.json().catch(() => ({}));
+            if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
+                throw new Error(dt.error || "Could not initialize Google login. Please try again.");
+            }
+
+            sdk.updateConfigs({
+                appSettings: { appId: config.appId },
+                loginConfigs: {
+                    deviceToken: dt.deviceToken,
+                    deviceEncryptionKey: dt.deviceEncryptionKey,
+                    google: googleConfig,
+                },
+            }, onLoginComplete);
+
             await sdk.performLogin(SocialLoginProvider.GOOGLE);
         } catch (err: any) {
             setError(err.message || "Continue with Google failed.");
