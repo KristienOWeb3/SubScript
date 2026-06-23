@@ -200,6 +200,31 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "A DM thread must already exist before sending a reaction." }, { status: 403 });
             }
 
+            /* Anti-spam: a sender can nudge/react to a given peer at most once per hour.
+               Notifications are in-app only (no email/push here), so this protects the
+               recipient's inbox without touching the email API. */
+            const REACTION_WINDOW_MS = 60 * 60 * 1000;
+            const recentReaction = await prisma.subscriptDm.findFirst({
+                where: {
+                    senderAddress: normalizedWallet,
+                    receiverAddress: normalizedReceiver,
+                    messageType: "PEER_REACTION",
+                    createdAt: { gt: new Date(Date.now() - REACTION_WINDOW_MS) },
+                },
+                orderBy: { createdAt: "desc" },
+                select: { createdAt: true },
+            });
+            if (recentReaction) {
+                const minutesLeft = Math.max(
+                    1,
+                    Math.ceil((recentReaction.createdAt.getTime() + REACTION_WINDOW_MS - Date.now()) / 60000)
+                );
+                return NextResponse.json(
+                    { error: `You can only nudge or react once an hour in a thread. Try again in about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.` },
+                    { status: 429 }
+                );
+            }
+
             const dm = await prisma.subscriptDm.create({
                 data: {
                     senderAddress: normalizedWallet,

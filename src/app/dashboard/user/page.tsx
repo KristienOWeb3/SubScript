@@ -827,38 +827,38 @@ export default function UserDashboard() {
     await runAction(`dismiss-${dm.id}`, async () => handleUpdateDmStatus(dm.id, "DISMISSED"));
   };
 
+  const sendDmReaction = async (dm: DmMessage, title: string, description: string) => {
+    const res = await fetch("/api/user/dms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "log-reaction",
+        receiverAddress: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverAddress : dm.senderAddress,
+        title,
+        description,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Surface rate-limit (429) and other failures in-app; nothing is emailed.
+      triggerToast(data.error || "Could not send that reaction.");
+      return;
+    }
+    await loadDms();
+  };
+
   const handleNudgeSuggestion = async (dm: DmMessage) => {
     await runAction(`nudge-${dm.id}`, async () => {
       // Brief shimmer for tactile feedback before the reaction posts.
       await new Promise(resolve => setTimeout(resolve, 700));
-      await fetch("/api/user/dms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "log-reaction",
-          receiverAddress: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverAddress : dm.senderAddress,
-          title: "Payment Nudge",
-          description: "Nudged to approve the pending payment request."
-        })
-      });
-      await loadDms();
+      await sendDmReaction(dm, "Payment Nudge", "Nudged to approve the pending payment request.");
     });
   };
 
   const handleThanksSuggestion = async (dm: DmMessage) => {
     await runAction(`thanks-${dm.id}`, async () => {
       await new Promise(resolve => setTimeout(resolve, 700));
-      await fetch("/api/user/dms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "log-reaction",
-          receiverAddress: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverAddress : dm.senderAddress,
-          title: "Thanks ❤️",
-          description: "Sent thanks response"
-        })
-      });
-      await loadDms();
+      await sendDmReaction(dm, "Thanks ❤️", "Sent thanks response");
     });
   };
 
