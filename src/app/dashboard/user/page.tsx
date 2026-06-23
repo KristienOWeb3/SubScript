@@ -167,6 +167,15 @@ const splitDmDescription = (description: string | null) => {
   return description.split("\n").map((item) => item.trim()).filter(Boolean);
 };
 
+/* A DM only links to the explorer when it carries a genuine on-chain hash.
+   Reactions and other system messages have null/placeholder (all-zero) hashes. */
+const isRealTxHash = (txHash: string | null | undefined): txHash is string => {
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
+  return !/^0x0+$/.test(txHash);
+};
+
+const isReactionMessage = (messageType: string) => messageType === "PEER_REACTION";
+
 const getDmPeerAddress = (dm: DmMessage, userWallet: string | null) => {
   const ownWallet = userWallet?.toLowerCase();
   return dm.senderAddress.toLowerCase() === ownWallet ? dm.receiverAddress : dm.senderAddress;
@@ -723,17 +732,14 @@ export default function UserDashboard() {
 
   const handleNudgeSuggestion = async (dm: DmMessage) => {
     await runAction(`nudge-${dm.id}`, async () => {
-      // Simulate 700ms shimmer effect
+      // Brief shimmer for tactile feedback before the reaction posts.
       await new Promise(resolve => setTimeout(resolve, 700));
-      // Log nudge transfer message
       await fetch("/api/user/dms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "log-transfer",
+          action: "log-reaction",
           receiverAddress: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverAddress : dm.senderAddress,
-          amountUsdc: "0.000001",
-          txHash: "0x" + "0".repeat(64),
           title: "Payment Nudge",
           description: "Nudged to approve the pending payment request."
         })
@@ -749,10 +755,8 @@ export default function UserDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "log-transfer",
+          action: "log-reaction",
           receiverAddress: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverAddress : dm.senderAddress,
-          amountUsdc: "0.000001",
-          txHash: "0x" + "0".repeat(64),
           title: "Thanks ❤️",
           description: "Sent thanks response"
         })
@@ -2901,7 +2905,8 @@ function DmBubble({
   if (dm.messageType === "DEBIT_SUCCESS" && isPending) {
     actionItems.push({ key: "dismiss", label: "Thanks", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
   }
-  if (dm.messageType === "PEER_TRANSFER" && onThanks) {
+  /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
+  if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
     actionItems.push({ key: "thanks", label: "Thanks", onClick: onThanks, loadingKey: `thanks-${dm.id}` });
   }
   if (dm.messageType === "PEER_REQUEST" && isPending && !incoming && onNudge) {
@@ -2918,7 +2923,7 @@ function DmBubble({
       { key: "survey-other", label: "Other", onClick: () => onSurveySubmit(dm, "OTHER"), loadingKey: `survey-${dm.id}-OTHER` },
     );
   }
-  if (dm.txHash) {
+  if (isRealTxHash(dm.txHash)) {
     actionItems.push({
       key: "tx",
       label: "View Tx",
@@ -2927,12 +2932,51 @@ function DmBubble({
   }
   const hasActionMenu = actionItems.length > 1;
 
+  /* iMessage-style entrance: bubbles pop in from their own corner with a soft
+     spring overshoot. Outgoing messages get a touch more bounce, like a sent text. */
+  const bubbleSpring = incoming
+    ? { type: "spring" as const, stiffness: 480, damping: 26, mass: 0.8 }
+    : { type: "spring" as const, stiffness: 520, damping: 17, mass: 0.85 };
+  const bubbleOrigin = incoming ? "bottom left" : "bottom right";
+
+  if (isReactionMessage(dm.messageType)) {
+    return (
+      <motion.div
+        initial={{ scale: 0.5, opacity: 0, y: 8 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.95 }}
+        transition={{ type: "spring", stiffness: 600, damping: 15, mass: 0.7 }}
+        style={{ transformOrigin: bubbleOrigin }}
+        className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
+      >
+        {incoming && <Avatar profilePic={dm.senderProfilePic} />}
+        <div className={`flex flex-col gap-1 ${incoming ? "items-start" : "items-end"}`}>
+          <div
+            className={`select-none rounded-full px-4 py-2 text-xs font-bold shadow-md ${
+              incoming
+                ? "border border-white/10 bg-[#262629]/95 text-white"
+                : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
+            }`}
+          >
+            {displayTitle || "Reaction"}
+          </div>
+          <span className="px-2 text-[9px] font-bold text-white/35">
+            {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+          </span>
+        </div>
+        {!incoming && <Avatar profilePic={dm.senderProfilePic} />}
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
-      initial={{ scale: 0.8, opacity: 0, y: 15 }}
+      initial={{ scale: 0.82, opacity: 0, y: 14 }}
       animate={{ scale: 1, opacity: 1, y: 0 }}
       whileHover={{ scale: 1.01 }}
-      transition={{ type: "spring", stiffness: 400, damping: 22 }}
+      transition={bubbleSpring}
+      style={{ transformOrigin: bubbleOrigin }}
       className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
     >
       {incoming && <Avatar profilePic={dm.senderProfilePic} />}

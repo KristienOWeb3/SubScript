@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { getCookie, setCookie, deleteCookie } from "cookies-next/client";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
@@ -87,11 +87,40 @@ function getAuthIntent() {
         : "signup";
 }
 
+const LOGIN_WATCHDOG_MS = 90_000;
+
 export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWalletButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearWatchdog = () => {
+        if (watchdogRef.current) {
+            clearTimeout(watchdogRef.current);
+            watchdogRef.current = null;
+        }
+    };
+
+    /* The Circle SDK can silently stall if the Google popup is dismissed or blocked,
+       leaving the button spinning forever. The watchdog surfaces that as a clear error. */
+    const armWatchdog = () => {
+        clearWatchdog();
+        watchdogRef.current = setTimeout(() => {
+            clearCircleSession();
+            setIsLoading(false);
+            setError("Google sign-in didn't finish. Close the Google window if it's still open and try again.");
+        }, LOGIN_WATCHDOG_MS);
+    };
+
+    const stopLoading = () => {
+        clearWatchdog();
+        setIsLoading(false);
+    };
+
+    useEffect(() => clearWatchdog, []);
 
     const completeCircleLogin = async (session: CircleSession) => {
+        clearWatchdog();
         const completeRes = await fetch("/api/auth/circle/wallet/complete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -122,6 +151,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
     const handleContinue = async () => {
         setIsLoading(true);
         setError(null);
+        armWatchdog();
 
         try {
             const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
@@ -138,7 +168,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                 try {
                     if (loginError || !result) {
                         clearCircleSession();
-                        setIsLoading(false);
+                        stopLoading();
                         setError(loginError?.message || "Google login did not complete.");
                         return;
                     }
@@ -158,7 +188,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
                        failed with "Error encrypting data" and also created a separate account. */
                     await completeCircleLogin(session);
                 } catch (err: any) {
-                    setIsLoading(false);
+                    stopLoading();
                     setError(err.message || "Continue with Google failed.");
                 }
             };
@@ -182,7 +212,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
             await sdk.performLogin(SocialLoginProvider.GOOGLE);
         } catch (err: any) {
             setError(err.message || "Continue with Google failed.");
-            setIsLoading(false);
+            stopLoading();
         }
     };
 

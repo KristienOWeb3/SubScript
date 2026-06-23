@@ -170,6 +170,52 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
         }
 
+        if (action === "log-reaction") {
+            /* Lightweight in-thread acknowledgement (e.g. "Thanks", "Nudge").
+               Reactions carry no amount and no on-chain hash, so they never render
+               a transfer amount or an explorer link. */
+            const { receiverAddress, title, description } = sanitizedBody;
+            if (typeof receiverAddress !== "string" || !receiverAddress.startsWith("0x") || receiverAddress.length !== 42) {
+                return NextResponse.json({ error: "Invalid receiver address" }, { status: 400 });
+            }
+            const normalizedWallet = wallet.toLowerCase();
+            const normalizedReceiver = receiverAddress.toLowerCase();
+            if (normalizedReceiver === normalizedWallet) {
+                return NextResponse.json({ error: "You cannot send a reaction to your own wallet." }, { status: 400 });
+            }
+            const receiverRole = await getAccountRole(normalizedReceiver);
+            if (receiverRole !== "USER") {
+                return NextResponse.json({ error: "Reactions can only be sent inside peer-to-peer user threads." }, { status: 403 });
+            }
+            const existingThread = await prisma.subscriptDm.findFirst({
+                where: {
+                    OR: [
+                        { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
+                        { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
+                    ],
+                },
+                select: { id: true },
+            });
+            if (!existingThread) {
+                return NextResponse.json({ error: "A DM thread must already exist before sending a reaction." }, { status: 403 });
+            }
+
+            const dm = await prisma.subscriptDm.create({
+                data: {
+                    senderAddress: normalizedWallet,
+                    receiverAddress: normalizedReceiver,
+                    messageType: "PEER_REACTION",
+                    status: "APPROVED",
+                    amountUsdc: null,
+                    txHash: null,
+                    title: typeof title === "string" && title.trim() ? title.trim().slice(0, 80) : "Reaction",
+                    description: typeof description === "string" ? description.trim().slice(0, 280) : null,
+                }
+            });
+
+            return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
+        }
+
         const { dmId, status } = sanitizedBody;
 
         if (typeof dmId !== "string" || !status) {

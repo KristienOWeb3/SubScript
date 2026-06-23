@@ -39,6 +39,8 @@ function circleApiKey() {
     return key.trim();
 }
 
+const CIRCLE_API_TIMEOUT_MS = Number(process.env.CIRCLE_API_TIMEOUT_MS) || 15000;
+
 async function circleFetch<T>(path: string, init: RequestInit & { userToken?: string } = {}) {
     assertProviderRateLimit({
         provider: "circle",
@@ -54,10 +56,24 @@ async function circleFetch<T>(path: string, init: RequestInit & { userToken?: st
         headers.set("X-User-Token", init.userToken);
     }
 
-    const response = await fetch(`${CIRCLE_API_BASE_URL}${path}`, {
-        ...init,
-        headers,
-    });
+    /* Bound every Circle call so a stalled upstream can't hang the login route forever. */
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CIRCLE_API_TIMEOUT_MS);
+    let response: Response;
+    try {
+        response = await fetch(`${CIRCLE_API_BASE_URL}${path}`, {
+            ...init,
+            headers,
+            signal: controller.signal,
+        });
+    } catch (error: any) {
+        if (error?.name === "AbortError") {
+            throw new Error("Circle API request timed out. Please try again.");
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
