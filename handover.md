@@ -6,25 +6,31 @@ the live site), not on feature branches. Do not park fixes on `claude/*` branche
 commit and push to `main` so changes are visible/deployed. Verify with `npx tsc --noEmit` + `npm run build`
 before pushing.
 
-## Live state (end of this session)
-- **The launch landing page is LIVE on `main`** (commit `252eb9b`). `subscriptonarc.com` now serves the
-  product landing (hero CTAs *Get Started* / *Read the Docs*, stats bar, feature grid, how-it-works,
-  consumer/business, final CTA) instead of the waitlist. `dashboard.subscriptonarc.com` remains the app.
-- Earlier `main` had diverged and never received the prior build-cycle work, which is why the landing
-  hadn't appeared until now.
+## Live state (LIVE on `main`)
+- **Launch landing page** (`252eb9b`): `subscriptonarc.com` serves the product landing (hero CTAs
+  *Get Started* / *Read the Docs*, stats bar, feature grid, how-it-works, consumer/business, final CTA)
+  instead of the waitlist. `dashboard.subscriptonarc.com` remains the app.
+- **Continue with Google fixed** (`aafa969`): the "Error encrypting data" failure is gone. Google no
+  longer creates a separate Circle PIN wallet — it only verifies the email and maps to the SAME
+  server-managed embedded-wallet model as email/OTP, keyed by email. So **one email = one account**:
+  a Google login reuses the existing OTP account's wallet instead of creating a second one. The
+  `sdk.execute` PIN challenge is skipped in both `CircleGoogleWalletButton.tsx` and `auth/popup`.
+  (Provisioning relies on `WALLET_ENCRYPTION_KEY`, already set since OTP works.)
+- **Merchant Checkout Setup upgrade** (`aafa969`): a "Fastest integration — the CLI" card
+  (`npx @subscript-protocol/cli`) and corrected "SDK" labels → "REST · no SDK".
+- The team also pushes directly to `main` (e.g. DM-boundary + DM-request-in-conversation work,
+  CLI `1.3.2`). Always `git fetch` + rebase before pushing; `main` moves fast.
 
 ## NOT yet on `main` (still only on branch `claude/launch-integration`)
-This earlier work is built + verified but was never merged. To make it live, bring it onto `main`
-(reconcile the small `packages/cli` conflict: main has its own CLI version/banner vs the branch's
-`ethers` fix):
+Earlier build-cycle work, built + verified but not merged. NOTE: some of it (DM peer-request
+non-shareable + expiry, DM UX) has since been re-implemented by the team directly on `main`
+(`bca2634`, `845f35d`) — check `main` before re-landing to avoid duplicating. Still genuinely missing:
 - Security: API-key hashing (+ Phase B runbook), step-up key export, internal-billing auth, durable batch payout.
 - Dev: standalone CLI + subcommands, docs CLI quickstart + API reference.
 - Features: pay-with-logged-in-account (no wallet reconnect), Web Push (VAPID, mobile-ready), QR scan-to-pay,
-  in-DM request pop-out (amount/purpose/expiry, shimmer loading), fiat on-ramp (geo + CCTP guidance),
-  Safe merchant multisig, auto-signup on payment.
+  fiat on-ramp (geo + CCTP guidance), Safe merchant multisig, auto-signup on payment.
 - Privacy: confidential-by-default Phase 0 (free baseline, fails closed).
 - Mainnet readiness: config-only chain/address switch + live API keys + `docs/go-live-checklist.md`.
-- DM UX: centered layout, widened chat bubbles, bottom-bar hidden in a thread, peer requests non-shareable.
 - **Launch mailer:** `scripts/send-launch-emails.mjs` (segments waitlist by `user_type`, two on-brand
   emails, dry-run by default; `--test <email>` to preview, `--send` to deliver via Resend).
 
