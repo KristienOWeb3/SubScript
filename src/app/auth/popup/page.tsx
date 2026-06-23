@@ -5,8 +5,6 @@ import { Loader2 } from "lucide-react";
 import { getCookie, setCookie, deleteCookie } from "cookies-next/client";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 import {
-    ChallengeStatus,
-    type ChallengeCompleteCallback,
     type LoginCompleteCallback,
     type LoginConfigs,
     type SocialLoginResult,
@@ -139,56 +137,11 @@ function PopupContent() {
                         };
                         persistCircleSession(session);
 
-                        const challengeRes = await fetch("/api/auth/circle/wallet", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                circleAuth: {
-                                    userToken: session.userToken,
-                                    oAuthInfo: session.oAuthInfo,
-                                },
-                                authIntent: getAuthIntent(),
-                            }),
-                        });
-                        const challenge = await challengeRes.json();
-                        if (!challengeRes.ok) {
-                            throw new Error(challenge.error || "Could not initialize your Arc wallet.");
-                        }
-
-                        if (challenge.requiresChallenge === false) {
-                            await completeCircleLogin(session);
-                            return;
-                        }
-
-                        if (!challenge.challengeId) {
-                            throw new Error("Circle did not return a wallet challenge.");
-                        }
-
-                        setStep("challenge");
-                        sdk.setAuthentication({
-                            userToken: session.userToken,
-                            encryptionKey: session.encryptionKey,
-                        });
-
-                        const onChallengeComplete: ChallengeCompleteCallback = async (challengeError, challengeResult) => {
-                            try {
-                                if (cancelled) return;
-
-                                if (challengeError || challengeResult?.status !== ChallengeStatus.COMPLETE) {
-                                    clearCircleSession();
-                                    setStep("error");
-                                    setError(challengeError?.message || "Wallet setup was not completed.");
-                                    return;
-                                }
-
-                                await completeCircleLogin(session);
-                            } catch (err: any) {
-                                setStep("error");
-                                setError(err.message || "Could not complete wallet setup.");
-                            }
-                        };
-
-                        sdk.execute(challenge.challengeId, onChallengeComplete);
+                        /* Google verifies the email; the account is a server-managed embedded wallet
+                           (same model as email/OTP, one account per email). Skip Circle's PIN wallet
+                           challenge — sdk.execute() was the step that threw "Error encrypting data"
+                           and created a separate account. */
+                        await completeCircleLogin(session);
                     } catch (err: any) {
                         setStep("error");
                         setError(err.message || "Continue with Google failed.");

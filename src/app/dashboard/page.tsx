@@ -3978,6 +3978,39 @@ Please complete the following implementation tasks:
             case "checkout":
                 return (
                     <div className="space-y-8">
+                        {/* Fastest path: the CLI (no SDK, plain REST). */}
+                        <div className="liquid-glass border border-[#00d2b4]/25 rounded-3xl p-6 shadow-2xl bg-[#00d2b4]/[0.04]">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                <div>
+                                    <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                        <Code2 className={`w-4 h-4 ${primaryColorText}`} />
+                                        Fastest integration — the CLI
+                                    </h2>
+                                    <p className="mt-2 text-[11px] text-white/55 leading-relaxed max-w-md">
+                                        One command scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript is a plain REST API — there is no SDK to install.
+                                    </p>
+                                </div>
+                                <a
+                                    href="https://www.subscriptonarc.com/docs"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-[#00d2b4] hover:underline"
+                                >
+                                    Read the docs →
+                                </a>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-4 py-3">
+                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscript-protocol/cli</code>
+                                <button
+                                    onClick={() => handleCopy("npx @subscript-protocol/cli", "CLI Command")}
+                                    className="shrink-0 p-2 text-white/50 hover:text-[#00d2b4] rounded-lg hover:bg-white/5 transition-colors"
+                                    title="Copy command"
+                                >
+                                    {copiedText === "CLI Command" ? <Check className="w-4 h-4 text-[#00d2b4]" /> : <Copy className="w-4 h-4" />}
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
@@ -4095,8 +4128,8 @@ Please complete the following implementation tasks:
                             {/* Code output Block */}
                             <div className="liquid-glass border border-white/5 rounded-3xl overflow-hidden shadow-2xl bg-black/40 p-6 flex flex-col justify-between space-y-4">
                                 <div className="space-y-1">
-                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">SDK Code Snippet</span>
-                                    <p className="text-[10px] text-white/30">React checkout paywall integration code snippet.</p>
+                                    <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Checkout Snippet (REST · no SDK)</span>
+                                    <p className="text-[10px] text-white/30">A fetch-based checkout button + intent route. No SDK to install.</p>
                                 </div>
                                 <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center flex-1 flex items-center justify-center">
                                     <p className="text-xs text-white/60 leading-relaxed">
@@ -4117,7 +4150,7 @@ Please complete the following implementation tasks:
                                         </>
                                     ) : (
                                         <>
-                                            <Copy className="w-4 h-4" /> Copy React SDK Component
+                                            <Copy className="w-4 h-4" /> Copy Checkout Component
                                         </>
                                     )}
                                 </button>
