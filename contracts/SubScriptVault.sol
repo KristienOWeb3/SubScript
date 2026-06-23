@@ -84,7 +84,6 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     function initialize(address _paymentToken, address _owner) public initializer {
         __Ownable_init(_owner);
-        __UUPSUpgradeable_init();
         __Pausable_init();
         require(_paymentToken != address(0), "token=0");
         paymentToken = IERC20(_paymentToken);
