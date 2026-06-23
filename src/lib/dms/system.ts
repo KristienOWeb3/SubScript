@@ -70,35 +70,42 @@ export async function createPaymentRequestDm({
         throw new Error(`Payment link is ${unavailableReason}`);
     }
 
-    const merchantAddress = link.merchantAddress.toLowerCase();
-    const merchantRole = await getAccountRole(merchantAddress);
-    if (merchantRole !== "ENTERPRISE") {
-        throw new Error("Only merchant wallets can start payment request DMs with users");
+    const creatorAddress = link.merchantAddress.toLowerCase();
+    const creatorRole = await getAccountRole(creatorAddress);
+    /* Links are created either by merchants (ENTERPRISE) or by users (peer-to-peer
+       "receive USDC" links). Both open a request DM the recipient can act on. */
+    if (creatorRole !== "ENTERPRISE" && creatorRole !== "USER") {
+        throw new Error("This payment link's owner does not have a SubScript account.");
     }
-    if (merchantAddress === normalizedReceiver) {
-        throw new Error("Merchants cannot send their own checkout to their user inbox");
+    const isMerchantLink = creatorRole === "ENTERPRISE";
+    const messageType = isMerchantLink ? "PAYMENT_REQUEST" : "PEER_REQUEST";
+
+    if (creatorAddress === normalizedReceiver) {
+        throw new Error("You can't pay your own payment link.");
     }
 
     const existing = await prisma.subscriptDm.findFirst({
         where: {
             receiverAddress: normalizedReceiver,
             paymentLinkId: link.id,
-            messageType: "PAYMENT_REQUEST",
+            messageType,
             status: "PENDING",
         },
         orderBy: { createdAt: "desc" },
     });
     if (existing) return { dm: existing, created: false, link };
 
-    const merchant = await prisma.merchant.findUnique({
-        where: { walletAddress: merchantAddress },
-        select: { verified: true, profilePic: true },
-    });
-    const merchantAlias = await prisma.addressAlias.findUnique({
-        where: { address: merchantAddress },
+    const merchant = isMerchantLink
+        ? await prisma.merchant.findUnique({
+            where: { walletAddress: creatorAddress },
+            select: { verified: true, profilePic: true },
+        })
+        : null;
+    const creatorAlias = await prisma.addressAlias.findUnique({
+        where: { address: creatorAddress },
     });
 
-    const merchantName = link.merchantNameSnapshot || merchantAlias?.alias || `${merchantAddress.slice(0, 6)}...${merchantAddress.slice(-4)}`;
+    const creatorName = link.merchantNameSnapshot || creatorAlias?.alias || `${creatorAddress.slice(0, 6)}...${creatorAddress.slice(-4)}`;
     const amount = formatUsdcFromMicros(link.amountUsdc);
     const issuedAt = new Date().toLocaleString("en-US", {
         dateStyle: "medium",
@@ -107,17 +114,19 @@ export async function createPaymentRequestDm({
 
     const dm = await prisma.subscriptDm.create({
         data: {
-            senderAddress: merchantAddress,
+            senderAddress: creatorAddress,
             receiverAddress: normalizedReceiver,
-            messageType: "PAYMENT_REQUEST",
+            messageType,
             status: "PENDING",
             amountUsdc: link.amountUsdc,
-            title: `${merchantName} requested ${amount} USDC`,
+            title: `${creatorName} requested ${amount} USDC`,
             description: [
                 `Payment for: ${link.title}`,
                 link.description ? `Details: ${link.description}` : null,
                 `Amount: ${amount} USDC`,
-                `Merchant: ${merchantName}${merchant?.verified ? " (verified)" : " (unverified)"}`,
+                isMerchantLink
+                    ? `Merchant: ${creatorName}${merchant?.verified ? " (verified)" : " (unverified)"}`
+                    : `From: ${creatorName}`,
                 `Issued: ${issuedAt}`,
                 link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
             ].filter(Boolean).join("\n"),
