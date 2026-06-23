@@ -29,9 +29,16 @@ export async function GET(request: Request) {
     const redirectUri = resolveRedirectUri(request, process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_REDIRECT_URI || process.env.CIRCLE_GOOGLE_REDIRECT_URI);
     const circleApiKey = process.env.CIRCLE_API_KEY;
 
-    if (!appId || !googleClientId || !redirectUri || !isUsableCircleApiKey(circleApiKey)) {
+    const missing: string[] = [];
+    if (!appId) missing.push("NEXT_PUBLIC_CIRCLE_APP_ID");
+    if (!googleClientId) missing.push("a Google OAuth client id (NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID)");
+    if (!redirectUri) missing.push("NEXT_PUBLIC_CIRCLE_GOOGLE_REDIRECT_URI");
+    if (!isUsableCircleApiKey(circleApiKey)) missing.push("a real CIRCLE_API_KEY (currently missing or a placeholder)");
+
+    if (missing.length > 0) {
         return NextResponse.json({
-            error: "Circle Google login is not configured. Set NEXT_PUBLIC_CIRCLE_APP_ID, NEXT_PUBLIC_CIRCLE_GOOGLE_REDIRECT_URI, a Google OAuth client id, and a real CIRCLE_API_KEY.",
+            error: `Continue with Google isn't configured on the server. Missing: ${missing.join(", ")}. Set these in your deployment environment and redeploy.`,
+            missing,
         }, { status: 500 });
     }
 

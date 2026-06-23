@@ -242,6 +242,10 @@ export default function UserDashboard() {
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [emailPromptValue, setEmailPromptValue] = useState("");
+  const [emailPromptSaving, setEmailPromptSaving] = useState(false);
+  const [emailPromptError, setEmailPromptError] = useState<string | null>(null);
+  const [vaultInfoOpen, setVaultInfoOpen] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
@@ -894,6 +898,32 @@ export default function UserDashboard() {
     }).catch((err) => setDmRequestStatus(err.message));
   };
 
+  const handleSaveEmailPrompt = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setEmailPromptError(null);
+    const value = emailPromptValue.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setEmailPromptError("Enter a valid email address.");
+      return;
+    }
+    setEmailPromptSaving(true);
+    try {
+      const res = await fetch("/api/user/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: value }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not save your email.");
+      setUserEmail(data.email);
+      setEmailPromptValue("");
+    } catch (err: any) {
+      setEmailPromptError(err.message || "Could not save your email.");
+    } finally {
+      setEmailPromptSaving(false);
+    }
+  };
+
   const handleCreateShareableLink = async (event: React.FormEvent) => {
     event.preventDefault();
     setLinkError(null);
@@ -1540,8 +1570,18 @@ export default function UserDashboard() {
                 <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
                   <div className="mb-6 flex items-center justify-between">
                     <div>
-                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
-                      <p className="text-[9px] text-white/40 mt-1">Fund platform allowances with automated on-chain top-up rules.</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
+                        <button
+                          type="button"
+                          onClick={() => setVaultInfoOpen(true)}
+                          className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[9px] font-black text-white/50 transition hover:border-[#ccff00]/50 hover:text-[#ccff00]"
+                          aria-label="What is a vault?"
+                        >
+                          ?
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-white/40 mt-1">Prepaid balance for a metered service — <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">what's this?</button></p>
                     </div>
                     <button
                       type="button"
@@ -2674,7 +2714,102 @@ export default function UserDashboard() {
         vault={editingVault}
         refetchVaults={loadVaults}
       />
+
+      <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
+
+      {/* Blocking email capture — an email is required for receipts and notifications.
+          Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
+      {!loading && userWallet && !userEmail && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md">
+          <form
+            onSubmit={handleSaveEmailPrompt}
+            className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
+              <Mail className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">Add your email</h2>
+              <p className="mt-2 text-xs leading-relaxed text-white/50">
+                We need an email to send you payment receipts, requests, and account notifications. This is required to continue.
+              </p>
+            </div>
+            <input
+              type="email"
+              value={emailPromptValue}
+              onChange={(event) => setEmailPromptValue(event.target.value)}
+              placeholder="you@example.com"
+              className="subscript-input"
+              autoFocus
+              required
+            />
+            {emailPromptError && (
+              <p className="text-[11px] font-bold text-red-300">{emailPromptError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={emailPromptSaving}
+              className={`subscript-primary-button ${emailPromptSaving ? "opacity-60" : ""}`}
+            >
+              {emailPromptSaving ? "Saving..." : "Save email"}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
+  );
+}
+
+function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.92, y: 16, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.96, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 420, damping: 26 }}
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-6 shadow-2xl"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
+                <Shield className="h-5 w-5" />
+              </div>
+              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">What is a prepaid vault?</h2>
+            </div>
+            <p className="text-xs leading-relaxed text-white/55">
+              A vault is a small prepaid balance you commit to a single service. Instead of paying per
+              call, you fund the vault once and the service draws from it as you use it — so usage-based
+              products keep working without you approving every charge.
+            </p>
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Typically used for</p>
+              <ul className="space-y-1.5 text-xs text-white/60">
+                <li>• API access billed per request</li>
+                <li>• AI / LLM token usage</li>
+                <li>• Storage, bandwidth, and media delivery</li>
+                <li>• Any pay-per-use metered service</li>
+              </ul>
+            </div>
+            <p className="text-[11px] leading-relaxed text-white/40">
+              The merchant sets the commit amount. At the end of each 30-day cycle they draw the period's
+              usage cost from your vault; you top the vault back up to keep the service running.
+            </p>
+            <button type="button" onClick={onClose} className="subscript-primary-button">
+              Got it
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

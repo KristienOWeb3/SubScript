@@ -47,6 +47,23 @@ export async function GET(request: Request) {
             }
         }
 
+        /* Wallet-only accounts (e.g. auto-onboarded payers) have no embedded-wallet row,
+           so fall back to the email captured on their customer profile. This keeps the
+           "add your email" prompt from re-appearing after they've provided one. */
+        if (!email) {
+            try {
+                const customer = await pgMaybeOne<{ email: string | null }>(
+                    "select email from customers where wallet_address = $1 limit 1",
+                    [wallet.toLowerCase()]
+                );
+                if (customer?.email) {
+                    email = customer.email;
+                }
+            } catch (err) {
+                console.error("Session customer email lookup error:", err);
+            }
+        }
+
         const role = await getAccountRole(wallet);
         const isEmbedded = Boolean(provider && provider !== "external_wallet");
 
