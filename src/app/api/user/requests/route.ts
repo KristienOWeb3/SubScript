@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
-import { requireAccountRole } from "@/lib/accounts/roles";
+import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { createUserPaymentRequest } from "@/lib/userPaymentRequests";
 
 export async function POST(request: Request) {
@@ -22,21 +22,22 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
         }
 
-        const { receiverAddress, amountUsdc, title, description, expiresInHours, dmOnly } = sanitizeInput(body);
+        const { receiverAddress, amountUsdc, title, description, expiresInHours } = sanitizeInput(body);
         
         let normalizedReceiver: string | null = null;
-        if (receiverAddress) {
-            if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
-                return NextResponse.json({ error: "Receiver address is invalid" }, { status: 400 });
-            }
-            normalizedReceiver = receiverAddress.toLowerCase();
-            const normalizedRequester = requester.toLowerCase();
-            if (normalizedRequester === normalizedReceiver) {
-                return NextResponse.json({ error: "You cannot request USDC from yourself" }, { status: 400 });
-            }
+        if (typeof receiverAddress !== "string" || !ethers.isAddress(receiverAddress)) {
+            return NextResponse.json({ error: "Receiver address is required for user-to-user DM requests" }, { status: 400 });
+        }
+        normalizedReceiver = receiverAddress.toLowerCase();
+        const receiverRole = await getAccountRole(normalizedReceiver);
+        if (receiverRole !== "USER") {
+            return NextResponse.json({ error: "Users can only request USDC from user wallets. Merchant wallets cannot be requested by users." }, { status: 403 });
+        }
+        const normalizedRequester = requester.toLowerCase();
+        if (normalizedRequester === normalizedReceiver) {
+            return NextResponse.json({ error: "You cannot request USDC from yourself" }, { status: 400 });
         }
 
-        const normalizedRequester = requester.toLowerCase();
         const amountMicros = parseUsdcToMicros(amountUsdc);
         if (amountMicros <= 0) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
         const expiresAt = parsedExpiresInHours
             ? new Date(Date.now() + parsedExpiresInHours * 60 * 60 * 1000)
             : null;
-        const isDmOnly = Boolean(dmOnly) && Boolean(normalizedReceiver);
+        const isDmOnly = true;
 
         const paymentRequest = await createUserPaymentRequest({
             requester: normalizedRequester,

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { requireAccountRole } from "@/lib/accounts/roles";
+import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 
 export async function GET(request: Request) {
@@ -51,8 +51,13 @@ export async function GET(request: Request) {
             where: { walletAddress: { in: Array.from(uniqueAddresses) } },
             select: { walletAddress: true, profilePic: true }
         });
+        const roles = await prisma.accountRole.findMany({
+            where: { address: { in: Array.from(uniqueAddresses) } },
+            select: { address: true, role: true }
+        });
 
         const aliasMap = new Map(aliases.map((a: any) => [a.address.toLowerCase(), a.alias]));
+        const roleMap = new Map(roles.map((r: any) => [r.address.toLowerCase(), r.role]));
         const profilePicMap = new Map<string, string | null>();
         customers.forEach((c: any) => profilePicMap.set(c.walletAddress.toLowerCase(), c.profilePic));
         merchants.forEach((m: any) => profilePicMap.set(m.walletAddress.toLowerCase(), m.profilePic));
@@ -61,9 +66,11 @@ export async function GET(request: Request) {
             id: dm.id,
             senderAddress: dm.senderAddress,
             senderName: aliasMap.get(dm.senderAddress.toLowerCase()) || dm.senderAddress,
+            senderRole: roleMap.get(dm.senderAddress.toLowerCase()) || null,
             senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
             receiverAddress: dm.receiverAddress,
             receiverName: aliasMap.get(dm.receiverAddress.toLowerCase()) || dm.receiverAddress,
+            receiverRole: roleMap.get(dm.receiverAddress.toLowerCase()) || null,
             receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,
             messageType: dm.messageType,
             status: dm.status,
@@ -106,8 +113,26 @@ export async function POST(request: Request) {
             if (typeof receiverAddress !== "string" || !receiverAddress.startsWith("0x") || receiverAddress.length !== 42) {
                 return NextResponse.json({ error: "Invalid receiver address" }, { status: 400 });
             }
-            if (receiverAddress.toLowerCase() === wallet.toLowerCase()) {
+            const normalizedWallet = wallet.toLowerCase();
+            const normalizedReceiver = receiverAddress.toLowerCase();
+            if (normalizedReceiver === normalizedWallet) {
                 return NextResponse.json({ error: "You cannot send USDC to your own connected wallet." }, { status: 400 });
+            }
+            const receiverRole = await getAccountRole(normalizedReceiver);
+            if (receiverRole !== "USER") {
+                return NextResponse.json({ error: "Users cannot start or append peer-transfer DMs with merchant wallets." }, { status: 403 });
+            }
+            const existingThread = await prisma.subscriptDm.findFirst({
+                where: {
+                    OR: [
+                        { senderAddress: normalizedWallet, receiverAddress: normalizedReceiver },
+                        { senderAddress: normalizedReceiver, receiverAddress: normalizedWallet },
+                    ],
+                },
+                select: { id: true },
+            });
+            if (!existingThread) {
+                return NextResponse.json({ error: "A DM thread must already exist before logging a peer transfer." }, { status: 403 });
             }
             if (!amountUsdc || isNaN(Number(amountUsdc)) || Number(amountUsdc) <= 0) {
                 return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
@@ -119,20 +144,20 @@ export async function POST(request: Request) {
             const amountMicros = parseUsdcToMicros(amountUsdc);
 
             await prisma.customer.upsert({
-                where: { walletAddress: wallet.toLowerCase() },
+                where: { walletAddress: normalizedWallet },
                 update: {},
-                create: { walletAddress: wallet.toLowerCase() },
+                create: { walletAddress: normalizedWallet },
             });
             await prisma.customer.upsert({
-                where: { walletAddress: receiverAddress.toLowerCase() },
+                where: { walletAddress: normalizedReceiver },
                 update: {},
-                create: { walletAddress: receiverAddress.toLowerCase() },
+                create: { walletAddress: normalizedReceiver },
             });
 
             const dm = await prisma.subscriptDm.create({
                 data: {
-                    senderAddress: wallet.toLowerCase(),
-                    receiverAddress: receiverAddress.toLowerCase(),
+                    senderAddress: normalizedWallet,
+                    receiverAddress: normalizedReceiver,
                     messageType: "PEER_TRANSFER",
                     status: "APPROVED",
                     amountUsdc: amountMicros,

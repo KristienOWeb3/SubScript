@@ -96,9 +96,11 @@ interface DmMessage {
   id: string;
   senderAddress: string;
   senderName: string;
+  senderRole: string | null;
   senderProfilePic: string | null;
   receiverAddress: string;
   receiverName: string;
+  receiverRole: string | null;
   receiverProfilePic: string | null;
   messageType: string;
   status: string;
@@ -173,6 +175,7 @@ const getDmPeerAddress = (dm: DmMessage, userWallet: string | null) => {
 export default function UserDashboard() {
   const router = useRouter();
   const { disconnect } = useDisconnect();
+  const dmBottomRef = useRef<HTMLDivElement | null>(null);
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -467,9 +470,6 @@ export default function UserDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  const [requestAmount, setRequestAmount] = useState("");
-  const [requestNote, setRequestNote] = useState("");
-  const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
   const [sendMode, setSendMode] = useState<"single" | "batch">("single");
@@ -643,6 +643,14 @@ export default function UserDashboard() {
     setDmRequestStatus(null);
   }, [selectedDmPeer]);
 
+  useEffect(() => {
+    if (activeTab !== "inbox" || !selectedDmPeer) return;
+    const timer = window.setTimeout(() => {
+      dmBottomRef.current?.scrollIntoView({ block: "end" });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, selectedDmPeer, dms.length]);
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     disconnect();
@@ -663,9 +671,7 @@ export default function UserDashboard() {
   const sendFromEmbeddedWallet = async (payload: {
     receiverAddress?: string;
     amountUsdc?: string;
-    title?: string;
-    description?: string;
-    recipients?: { receiverAddress: string; amountUsdc: string; title?: string; description?: string }[];
+    recipients?: { receiverAddress: string; amountUsdc: string }[];
   }) => {
     const res = await fetch("/api/user/wallet/send", {
       method: "POST",
@@ -769,28 +775,6 @@ export default function UserDashboard() {
     });
   };
 
-  const handleCreateRequest = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setRequestStatus(null);
-    await runAction("create-request", async () => {
-      const res = await fetch("/api/user/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amountUsdc: requestAmount,
-          title: "USDC request",
-          description: requestNote || "SubScript user payment request",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create request");
-      setRequestStatus(`Request created: ${window.location.origin}${data.payUrl}`);
-      setRequestAmount("");
-      setRequestNote("");
-      await loadDms();
-    }).catch((err) => setRequestStatus(err.message));
-  };
-
   const handleCreateDmRequest = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedDmPeer) return;
@@ -806,7 +790,6 @@ export default function UserDashboard() {
           title: "DM payment request",
           description: dmRequestNote || "SubScript in-DM payment request",
           expiresInHours: Number(dmRequestDuration),
-          dmOnly: true,
         }),
       });
       const data = await res.json();
@@ -970,13 +953,11 @@ export default function UserDashboard() {
         const transfers = await sendFromEmbeddedWallet({
           receiverAddress: singleResolved.address,
           amountUsdc: singleAmount,
-          title: `Sent ${singleAmount} USDC`,
-          description: `Direct transfer of ${singleAmount} USDC on-chain to ${singleRecipient}.`,
         });
         setSingleSendStatus(`Success! Transfer transaction submitted: ${transfers[0]?.txHash || "confirmed"}`);
         setSingleRecipient("");
         setSingleAmount("");
-        await Promise.all([refetchUsdc().catch(console.error), loadDms().catch(console.error)]);
+        await refetchUsdc().catch(console.error);
         return;
       }
 
@@ -1049,14 +1030,12 @@ export default function UserDashboard() {
           recipients: resolvedRows.map((row) => ({
             receiverAddress: row.address,
             amountUsdc: row.amount,
-            title: `Sent ${row.amount} USDC`,
-            description: `Direct transfer of ${row.amount} USDC on-chain.`,
           })),
         });
         setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
         setBatchRows([{ address: "", amount: "" }]);
         setBatchProgress(null);
-        await Promise.all([refetchUsdc().catch(console.error), loadDms().catch(console.error)]);
+        await refetchUsdc().catch(console.error);
         return;
       }
 
@@ -1256,6 +1235,7 @@ export default function UserDashboard() {
       threads.set(peerAddress, {
         peerAddress,
         peerName: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverName : dm.senderName,
+        peerRole: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverRole : dm.senderRole,
         peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
         latest: dm,
         latestTime,
@@ -1270,6 +1250,7 @@ export default function UserDashboard() {
         existing.latestTime = latestTime;
         const isOwnSender = dm.senderAddress.toLowerCase() === userWallet?.toLowerCase();
         existing.peerName = isOwnSender ? dm.receiverName : dm.senderName;
+        existing.peerRole = isOwnSender ? dm.receiverRole : dm.senderRole;
         existing.peerProfilePic = isOwnSender ? dm.receiverProfilePic : dm.senderProfilePic;
       }
     }
@@ -1277,6 +1258,7 @@ export default function UserDashboard() {
   }, new Map<string, {
     peerAddress: string;
     peerName: string;
+    peerRole: string | null;
     peerProfilePic: string | null;
     latest: DmMessage;
     latestTime: number;
@@ -1284,14 +1266,17 @@ export default function UserDashboard() {
     totalCount: number;
   }>()).values()).sort((a, b) => b.latestTime - a.latestTime);
   const selectedThreadDms = selectedDmPeer
-    ? dms.filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
+    ? dms
+        .filter((dm) => getDmPeerAddress(dm, userWallet).toLowerCase() === selectedDmPeer)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     : [];
   const activeThread = selectedDmPeer
     ? dmThreads.find((t) => t.peerAddress.toLowerCase() === selectedDmPeer)
     : null;
   const activeThreadLabel = selectedDmPeer ? formatPeerDisplayName(activeThread?.peerName, selectedDmPeer) : "";
   const isActiveDmMerchant = selectedDmPeer
-    ? subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
+    ? activeThread?.peerRole === "ENTERPRISE" ||
+      subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
       (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
     : false;
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
@@ -1545,6 +1530,7 @@ export default function UserDashboard() {
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                             />
                           ))}
+                          <div ref={dmBottomRef} />
                         </div>
 
                         {/* Bottom Action Footer for Mobile */}
@@ -1646,6 +1632,7 @@ export default function UserDashboard() {
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
                                 />
                               ))}
+                              <div ref={dmBottomRef} />
                             </div>
                           </div>
 
@@ -1696,53 +1683,25 @@ export default function UserDashboard() {
                 exit={{ opacity: 0, y: -16 }}
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
-                <SectionTitle title="Payment Links" subtitle="Request USDC from another SubScript user." />
-                <form onSubmit={handleCreateRequest} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                  <Field label="USDC Amount">
-                    <input value={requestAmount} onChange={(event) => setRequestAmount(event.target.value)} placeholder="25.00" inputMode="decimal" className="subscript-input" required />
-                  </Field>
-                  <Field label="Memo">
-                    <textarea value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Dinner, deposit, subscription split..." rows={3} className="subscript-input resize-none" />
-                  </Field>
-                  {requestStatus && (
-                    <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4 flex flex-col gap-2">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-[#ccff00]">Payment Link Generated</p>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="text"
-                          readOnly
-                          value={requestStatus.replace("Request created: ", "")}
-                          className="flex-1 rounded-xl bg-black/40 border border-white/5 px-3 py-2 text-[11px] font-mono text-white/80 focus:outline-none"
-                          onClick={(e) => {
-                            (e.target as HTMLInputElement).select();
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = requestStatus.replace("Request created: ", "");
-                            navigator.clipboard.writeText(url);
-                            triggerToast("Link copied to clipboard!");
-                          }}
-                          className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 text-[#ccff00] text-xs font-bold px-3 py-2 transition"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <button type="submit" disabled={loadingAction === "create-request"} className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed">
-                    {loadingAction === "create-request" ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Requesting...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" /> Request
-                      </>
-                    )}
+                <SectionTitle title="Payment Requests" subtitle="Private user requests now start inside DMs." />
+                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
+                    <MessageSquare className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">Request inside a user DM</h2>
+                    <p className="mt-2 text-xs leading-relaxed text-white/45">
+                      User-to-user requests are private, receiver-bound, and not shareable links. Open a user thread from DMs, then tap Request.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("inbox")}
+                    className="dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center"
+                  >
+                    Open DMs
                   </button>
-                </form>
+                </section>
               </motion.section>
             )}
 
@@ -2510,7 +2469,6 @@ export default function UserDashboard() {
         isEmbeddedWalletSession={isEmbeddedWalletSession}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
-        loadDms={loadDms}
       />
 
       <ConfigureVaultModal
@@ -2809,6 +2767,7 @@ function DmThreadSelect({
   threads: Array<{
     peerAddress: string;
     peerName: string;
+    peerRole: string | null;
     peerProfilePic: string | null;
     latest: DmMessage;
     latestTime: number;
@@ -2909,8 +2868,8 @@ function DmBubble({
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
-  const canDecline = isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
   const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
@@ -3186,23 +3145,13 @@ function DmRequestComposer({
 }) {
   return (
     <div className="space-y-3">
-      <motion.button
-        whileTap={{ scale: 0.97 }}
-        type="button"
-        onClick={onToggle}
-        disabled={loading}
-        className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${open ? "dm-action-menu-trigger-open" : ""} ${loading ? "quick-action-loading" : ""}`}
-      >
-        {loading ? "Sending Request" : open ? "Close Request" : "Request"}
-      </motion.button>
-
       <AnimatePresence>
         {open && (
           <motion.form
             key="dm-request-form"
-            initial={{ opacity: 0, y: 14, scale: 0.97 }}
+            initial={{ opacity: 0, y: 18, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.7 }}
             onSubmit={onSubmit}
             className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
@@ -3272,6 +3221,16 @@ function DmRequestComposer({
           {status}
         </div>
       )}
+
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        type="button"
+        onClick={onToggle}
+        disabled={loading}
+        className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${open ? "dm-action-menu-trigger-open" : ""} ${loading ? "quick-action-loading" : ""}`}
+      >
+        {loading ? "Sending Request" : "Request"}
+      </motion.button>
     </div>
   );
 }
@@ -3841,7 +3800,6 @@ function SendFundsModal({
   isEmbeddedWalletSession,
   writeContractAsync,
   refetchUsdc,
-  loadDms,
 }: {
   open: boolean;
   recipient: string;
@@ -3852,7 +3810,6 @@ function SendFundsModal({
   isEmbeddedWalletSession: boolean;
   writeContractAsync: any;
   refetchUsdc: () => void;
-  loadDms: () => void;
 }) {
   const [amount, setAmount] = useState("");
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
@@ -3915,8 +3872,6 @@ function SendFundsModal({
           body: JSON.stringify({
             receiverAddress: resolvedAddress,
             amountUsdc: amount,
-            title: `Sent ${amount} USDC`,
-            description: `Direct transfer of ${amount} USDC on-chain to ${recipient}.`,
           }),
         });
         const data = await response.json().catch(() => ({}));
@@ -3925,7 +3880,6 @@ function SendFundsModal({
         }
         setStatus("success");
         refetchUsdc();
-        loadDms();
         setTimeout(() => onClose(), 2000);
         return;
       }
@@ -3943,34 +3897,16 @@ function SendFundsModal({
         },
       ] as const;
 
-      const txHash = await writeContractAsync({
+      await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
         args: [resolvedAddress as `0x${string}`, parseUnits(amount, 6)],
       });
 
-      const res = await fetch("/api/user/dms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "log-transfer",
-          receiverAddress: resolvedAddress,
-          amountUsdc: amount,
-          txHash,
-          title: `Sent ${amount} USDC`,
-          description: `Direct transfer of ${amount} USDC on-chain to ${recipient}.`,
-        }),
-      });
-
-      if (res.ok) {
-        setStatus("success");
-        refetchUsdc();
-        loadDms();
-        setTimeout(() => onClose(), 2000);
-      } else {
-        setStatus("Transfer sent on-chain but failed to log in chat history.");
-      }
+      setStatus("success");
+      refetchUsdc();
+      setTimeout(() => onClose(), 2000);
     } catch (err: any) {
       setStatus(err.message || "Transfer execution failed.");
     } finally {

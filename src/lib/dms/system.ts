@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getAccountRole } from "@/lib/accounts/roles";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -70,6 +71,10 @@ export async function createPaymentRequestDm({
     }
 
     const merchantAddress = link.merchantAddress.toLowerCase();
+    const merchantRole = await getAccountRole(merchantAddress);
+    if (merchantRole !== "ENTERPRISE") {
+        throw new Error("Only merchant wallets can start payment request DMs with users");
+    }
     if (merchantAddress === normalizedReceiver) {
         throw new Error("Merchants cannot send their own checkout to their user inbox");
     }

@@ -14,8 +14,6 @@ export const maxDuration = 120;
 type SendRecipient = {
     receiverAddress: string;
     amountUsdc: unknown;
-    title?: string;
-    description?: string;
 };
 
 type EmbeddedWalletRecord = {
@@ -60,47 +58,13 @@ function normalizeRecipients(body: any): SendRecipient[] {
         return body.recipients.map((item: any) => ({
             receiverAddress: item?.receiverAddress || item?.address,
             amountUsdc: item?.amountUsdc || item?.amount,
-            title: item?.title,
-            description: item?.description,
         }));
     }
 
     return [{
         receiverAddress: body?.receiverAddress,
         amountUsdc: body?.amountUsdc,
-        title: body?.title,
-        description: body?.description,
     }];
-}
-
-async function logTransfer(client: any, sender: string, receiver: string, amountMicros: bigint, txHash: string, title?: string, description?: string) {
-    await client.query(
-        `insert into customers (wallet_address)
-         values ($1), ($2)
-         on conflict (wallet_address) do nothing`,
-        [sender, receiver]
-    );
-
-    await client.query(
-        `insert into subscript_dms (
-            sender_address,
-            receiver_address,
-            message_type,
-            status,
-            amount_usdc,
-            title,
-            description,
-            tx_hash
-        ) values ($1, $2, 'PEER_TRANSFER', 'APPROVED', $3, $4, $5, $6)`,
-        [
-            sender,
-            receiver,
-            amountMicros.toString(),
-            title || `${formatAmount(amountMicros)} USDC Sent`,
-            description || `Direct transfer of ${formatAmount(amountMicros)} USDC on-chain.`,
-            txHash.toLowerCase(),
-        ]
-    );
 }
 
 export async function POST(request: Request) {
@@ -141,8 +105,6 @@ export async function POST(request: Request) {
             return {
                 receiver,
                 amountMicros,
-                title: item.title,
-                description: item.description,
             };
         });
 
@@ -179,10 +141,6 @@ export async function POST(request: Request) {
             if (!receipt || receipt.status !== 1) {
                 throw new Error(`Transfer to ${item.receiver} reverted on-chain`);
             }
-
-            await withPgClient(async (client) => {
-                await logTransfer(client, normalizedSender, item.receiver, item.amountMicros, tx.hash, item.title, item.description);
-            });
 
             txs.push({
                 receiverAddress: item.receiver,
