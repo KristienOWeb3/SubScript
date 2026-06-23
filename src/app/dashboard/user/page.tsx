@@ -232,6 +232,12 @@ export default function UserDashboard() {
   const [dmRequestNote, setDmRequestNote] = useState("");
   const [dmRequestDuration, setDmRequestDuration] = useState<(typeof dmRequestDurationOptions)[number]["value"]>("24");
   const [dmRequestStatus, setDmRequestStatus] = useState<string | null>(null);
+  const [linkAmount, setLinkAmount] = useState("");
+  const [linkMemo, setLinkMemo] = useState("");
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
@@ -886,6 +892,48 @@ export default function UserDashboard() {
       setDmRequestDuration("24");
       await loadDms();
     }).catch((err) => setDmRequestStatus(err.message));
+  };
+
+  const handleCreateShareableLink = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLinkError(null);
+    setLinkResultUrl(null);
+    if (!linkAmount || isNaN(Number(linkAmount)) || Number(linkAmount) <= 0) {
+      setLinkError("Enter a valid USDC amount.");
+      return;
+    }
+    setLinkLoading(true);
+    try {
+      const res = await fetch("/api/user/payment-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsdc: linkAmount,
+          title: linkMemo.trim() || "USDC payment",
+          description: linkMemo.trim() || "SubScript payment link.",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
+      setLinkResultUrl(data.checkoutUrl as string);
+      setLinkAmount("");
+      setLinkMemo("");
+    } catch (err: any) {
+      setLinkError(err.message || "Could not create the payment link.");
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const copyLinkUrl = async () => {
+    if (!linkResultUrl) return;
+    try {
+      await navigator.clipboard.writeText(linkResultUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
   };
 
   const handleRegisterDns = async (event: React.FormEvent) => {
@@ -1588,8 +1636,8 @@ export default function UserDashboard() {
                         />
                       </div>
                     ) : (
-                      <div className="flex h-[calc(100dvh-7.5rem)] flex-1 flex-col justify-between overflow-hidden">
-                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-1 pb-4">
+                      <div className="relative flex h-[calc(100dvh-7.5rem)] flex-1 flex-col overflow-hidden">
+                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-32">
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {isActiveDmMerchant
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -1617,8 +1665,8 @@ export default function UserDashboard() {
                           <div ref={dmBottomRef} />
                         </div>
 
-                        {/* Bottom Action Footer for Mobile */}
-                        <div className="-mx-1 border-t border-white/5 bg-[#060608]/95 px-1 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                        {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
+                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
                           {isActiveDmMerchant ? (
                             <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                               YOU CAN NOT REQUEST FROM A MERCHANT
@@ -1767,25 +1815,74 @@ export default function UserDashboard() {
                 exit={{ opacity: 0, y: -16 }}
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
-                <SectionTitle title="Payment Requests" subtitle="Private user requests now start inside DMs." />
-                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
-                    <MessageSquare className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">Request inside a user DM</h2>
-                    <p className="mt-2 text-xs leading-relaxed text-white/45">
-                      User-to-user requests are private, receiver-bound, and not shareable links. Open a user thread from DMs, then tap Request.
+                <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
+                <form onSubmit={handleCreateShareableLink} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                  <Field label="USDC Amount">
+                    <input
+                      value={linkAmount}
+                      onChange={(event) => setLinkAmount(event.target.value)}
+                      placeholder="25.00"
+                      inputMode="decimal"
+                      className="subscript-input"
+                      required
+                    />
+                  </Field>
+                  <Field label="What's it for (optional)">
+                    <input
+                      value={linkMemo}
+                      onChange={(event) => setLinkMemo(event.target.value)}
+                      placeholder="Invoice #1042, split the bill, donation..."
+                      className="subscript-input"
+                      maxLength={120}
+                    />
+                  </Field>
+                  {linkError && (
+                    <div className="rounded-2xl border border-red-400/20 bg-red-500/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">
+                      {linkError}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={linkLoading}
+                    className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${linkLoading ? "quick-action-loading" : ""}`}
+                  >
+                    {linkLoading ? "Creating link" : "Create payment link"}
+                  </button>
+                </form>
+
+                {linkResultUrl && (
+                  <div className="liquid-glass border border-[#ccff00]/20 bg-[#ccff00]/[0.04] rounded-3xl p-5 sm:p-6 space-y-3 shadow-2xl">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Your shareable link</h3>
+                    <p className="break-all rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/80">{linkResultUrl}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={copyLinkUrl}
+                        className="dm-quick-button min-w-0"
+                      >
+                        {linkCopied ? "Copied ✓" : "Copy link"}
+                      </button>
+                      <a
+                        href={linkResultUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-center"
+                      >
+                        Open <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-white/45">
+                      Share this anywhere. When someone pays, they're auto-onboarded as a SubScript user and a DM thread opens between you.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("inbox")}
-                    className="dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center"
-                  >
-                    Open DMs
-                  </button>
-                </section>
+                )}
+
+                <div className="flex items-start gap-3 rounded-3xl border border-white/5 bg-black/30 p-4">
+                  <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
+                  <p className="text-[11px] leading-relaxed text-white/45">
+                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request — those are receiver-bound and can't be shared.
+                  </p>
+                </div>
               </motion.section>
             )}
 
