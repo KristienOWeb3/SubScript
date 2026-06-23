@@ -45,9 +45,10 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     struct Vault {
         uint256 balance;     // escrowed USDC currently held
-        uint256 owed;        // debt beyond escrow (overage from the last draw)
+        uint256 owed;        // legacy/unused: no debt is ever created in this model
         uint64 cycleStart;   // unix seconds; start of the current paid cycle
-        bool active;         // service usable: balance >= requiredCommit && owed == 0
+        bool active;         // service usable: balance >= requiredCommit
+        uint64 lockedUntil;  // escrow is withdrawable only at/after this time (commit + cycle)
     }
 
     /* user => merchant => vault */
@@ -103,10 +104,11 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     /* ──────────────────────────── User actions ───────────────────── */
 
     /**
-     * @notice Deposit `amount` USDC into the (msg.sender, merchant) vault. Clears any
-     *         outstanding `owed` first (paid out to the merchant), then tops up escrow.
-     *         Activates the vault and starts a fresh cycle once escrow >= requiredCommit
-     *         and owed == 0. Caller must approve `amount` to this contract first.
+     * @notice Deposit `amount` USDC into the (msg.sender, merchant) vault and activate the
+     *         service for the cycle once escrow >= requiredCommit. The escrow is locked from
+     *         withdrawal for one cycle (~30 days) from a fresh commit. Caller must approve
+     *         `amount` to this contract first. No debt is ever created — usage is capped at
+     *         the committed escrow off-chain.
      */
     function commit(address merchant, uint256 amount) external nonReentrant whenNotPaused {
         require(merchant != address(0), "merchant=0");
@@ -116,7 +118,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
         Vault storage v = vaults[msg.sender][merchant];
 
-        // Settle owed debt to the merchant before adding to escrow.
+        // Legacy safety: clear any pre-existing owed (none is created in this model).
         uint256 owedCleared = 0;
         if (v.owed > 0) {
             owedCleared = amount >= v.owed ? v.owed : amount;
@@ -125,24 +127,30 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
             amount -= owedCleared;
         }
 
+        bool wasActive = v.active;
         v.balance += amount;
 
         if (v.owed == 0 && v.balance >= requiredCommit[merchant]) {
             v.active = true;
-            v.cycleStart = uint64(block.timestamp);
+            // Start the cycle + lock only on a fresh activation, not on a top-up.
+            if (!wasActive) {
+                v.cycleStart = uint64(block.timestamp);
+                v.lockedUntil = uint64(block.timestamp + cycleLength);
+            }
         }
 
         emit Committed(msg.sender, merchant, amount, v.balance, owedCleared, v.active);
     }
 
     /**
-     * @notice Withdraw unused escrow back to the user's wallet. Allowed only when the
-     *         vault carries no debt. Dropping below the required commit deactivates the
-     *         vault — the user must re-commit before using the service again.
+     * @notice Withdraw unused escrow back to the user's wallet once the lock has elapsed
+     *         (one cycle / ~30 days after the commit). Dropping below the required commit
+     *         deactivates the vault — the user must re-commit to use the service again.
      */
     function withdrawSurplus(address merchant, uint256 amount) external nonReentrant {
         Vault storage v = vaults[msg.sender][merchant];
         require(v.owed == 0, "settle owed first");
+        require(block.timestamp >= v.lockedUntil, "locked");
         require(amount > 0 && amount <= v.balance, "bad amount");
 
         v.balance -= amount;
@@ -171,19 +179,17 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         Vault storage v = vaults[user][merchant];
         require(amount > 0, "amount=0");
 
+        // Never create debt: the merchant can only draw up to the escrowed balance.
+        // Usage is gated off-chain so it should not exceed the commit in the first place.
         uint256 drawn = amount <= v.balance ? amount : v.balance;
         v.balance -= drawn;
         merchantClaimable[merchant] += drawn;
 
-        if (amount > drawn) {
-            v.owed += (amount - drawn);
-        }
-
-        // Active only if fully funded for the next cycle and debt-free.
-        v.active = (v.owed == 0 && v.balance >= requiredCommit[merchant]);
+        // Active only if still funded to the required commit for the next cycle.
+        v.active = (v.balance >= requiredCommit[merchant]);
         v.cycleStart = uint64(block.timestamp);
 
-        emit UsageDrawn(user, merchant, amount, drawn, v.owed, v.active);
+        emit UsageDrawn(user, merchant, amount, drawn, 0, v.active);
     }
 
     /* ──────────────────────────── Merchant settlement ────────────── */
@@ -201,10 +207,10 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function getVault(address user, address merchant)
         external
         view
-        returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded)
+        returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded, uint64 lockedUntil)
     {
         Vault storage v = vaults[user][merchant];
-        return (v.balance, v.owed, v.cycleStart, v.active, requiredCommit[merchant]);
+        return (v.balance, v.owed, v.cycleStart, v.active, requiredCommit[merchant], v.lockedUntil);
     }
 
     function isActive(address user, address merchant) external view returns (bool) {

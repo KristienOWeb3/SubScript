@@ -44,7 +44,7 @@ contract SubScriptVaultTest is Test {
     /* Commit of the required amount activates the vault. */
     function testCommitActivates() public {
         _commit(COMMIT);
-        (uint256 balance, uint256 owed,, bool active, uint256 needed) = vault.getVault(user, merchant);
+        (uint256 balance, uint256 owed,, bool active, uint256 needed,) = vault.getVault(user, merchant);
         assertEq(balance, COMMIT);
         assertEq(owed, 0);
         assertTrue(active);
@@ -57,63 +57,57 @@ contract SubScriptVaultTest is Test {
         vm.prank(merchant);
         vault.drawUsage(user, 40e6);
 
-        (uint256 balance, uint256 owed,, bool active,) = vault.getVault(user, merchant);
+        (uint256 balance, uint256 owed,, bool active,,) = vault.getVault(user, merchant);
         assertEq(balance, 60e6);
         assertEq(owed, 0);
         assertFalse(active); // 60 < 100 commit -> must re-commit before next usage
         assertEq(vault.merchantClaimable(merchant), 40e6);
     }
 
-    /* A draw exceeding the escrow zeroes the balance and records the overage as owed. */
-    function testDrawExceedingBalanceCreatesOwed() public {
+    /* A draw exceeding the escrow caps at the balance — no debt is ever created. */
+    function testDrawCapsAtBalanceNoDebt() public {
         _commit(COMMIT);
         vm.prank(merchant);
         vault.drawUsage(user, 150e6);
 
-        (uint256 balance, uint256 owed,, bool active,) = vault.getVault(user, merchant);
+        (uint256 balance, uint256 owed,, bool active,,) = vault.getVault(user, merchant);
         assertEq(balance, 0);
-        assertEq(owed, 50e6);
+        assertEq(owed, 0);            // no negative / no debt
         assertFalse(active);
         assertEq(vault.merchantClaimable(merchant), 100e6); // only the escrow was collected
     }
 
-    /* Re-committing clears owed first, then restores the commit to reactivate. */
-    function testRecommitClearsOwedAndReactivates() public {
+    /* Re-committing simply restores the commit and reactivates (no debt to settle). */
+    function testRecommitReactivates() public {
         _commit(COMMIT);
         vm.prank(merchant);
-        vault.drawUsage(user, 150e6); // owed = 50, balance = 0
+        vault.drawUsage(user, 150e6); // balance -> 0, no owed
 
-        _commit(150e6); // 50 clears owed, 100 restores commit
-        (uint256 balance, uint256 owed,, bool active,) = vault.getVault(user, merchant);
+        _commit(COMMIT); // restore commit
+        (uint256 balance, uint256 owed,, bool active,,) = vault.getVault(user, merchant);
         assertEq(owed, 0);
-        assertEq(balance, 100e6);
+        assertEq(balance, COMMIT);
         assertTrue(active);
-        assertEq(vault.merchantClaimable(merchant), 150e6); // 100 draw + 50 owed settlement
+        assertEq(vault.merchantClaimable(merchant), 100e6); // just the single draw
     }
 
-    /* User can withdraw surplus when debt-free; dropping below commit deactivates. */
-    function testWithdrawSurplus() public {
+    /* Withdraw is blocked during the lock window, allowed after it elapses. */
+    function testWithdrawAfterLock() public {
         _commit(COMMIT);
-        uint256 before = usdc.balanceOf(user);
 
+        vm.prank(user);
+        vm.expectRevert(bytes("locked"));
+        vault.withdrawSurplus(merchant, 40e6);
+
+        vm.warp(block.timestamp + 31 days);
+        uint256 before = usdc.balanceOf(user);
         vm.prank(user);
         vault.withdrawSurplus(merchant, 40e6);
 
-        (uint256 balance,,, bool active,) = vault.getVault(user, merchant);
+        (uint256 balance,,, bool active,,) = vault.getVault(user, merchant);
         assertEq(balance, 60e6);
         assertFalse(active);
         assertEq(usdc.balanceOf(user), before + 40e6);
-    }
-
-    /* Withdraw is blocked while there is outstanding owed debt. */
-    function testWithdrawBlockedWithOwed() public {
-        _commit(COMMIT);
-        vm.prank(merchant);
-        vault.drawUsage(user, 150e6); // owed = 50
-
-        vm.prank(user);
-        vm.expectRevert(bytes("settle owed first"));
-        vault.withdrawSurplus(merchant, 1);
     }
 
     /* Merchant claims settled funds via the pull-payment ledger. */

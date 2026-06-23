@@ -523,6 +523,7 @@ model MeteredVault {
   owedUsdc          BigInt   @default(0) @map("owed_usdc")
   accruedUsageUsdc  BigInt   @default(0) @map("accrued_usage_usdc")
   cycleStart        DateTime? @map("cycle_start")
+  lockedUntil       DateTime? @map("locked_until")
   active            Boolean  @default(false)
   vaultChainId      Int?     @map("vault_chain_id")
   lastSyncedBlock   BigInt?  @map("last_synced_block")

@@ -19,7 +19,7 @@ export const VAULT_ABI = [
     "function drawUsageFor(address merchant, address user, uint256 amount)",
     "function merchantClaim()",
     "function merchantClaimable(address merchant) view returns (uint256)",
-    "function getVault(address user, address merchant) view returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded)",
+    "function getVault(address user, address merchant) view returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded, uint64 lockedUntil)",
 ];
 
 const USDC_ABI = [
@@ -33,6 +33,7 @@ export type VaultState = {
     cycleStart: bigint;
     active: boolean;
     commitNeeded: bigint;
+    lockedUntil: bigint;
 };
 
 function readProvider(): ethers.JsonRpcProvider {
@@ -53,6 +54,7 @@ export async function readVault(user: string, merchant: string): Promise<VaultSt
         cycleStart: BigInt(v.cycleStart ?? v[2]),
         active: Boolean(v.active ?? v[3]),
         commitNeeded: BigInt(v.commitNeeded ?? v[4]),
+        lockedUntil: BigInt(v.lockedUntil ?? v[5] ?? 0),
     };
 }
 
@@ -63,6 +65,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     const v = await readVault(normalizedUser, normalizedMerchant);
 
     const cycleStart = v.cycleStart > BigInt(0) ? new Date(Number(v.cycleStart) * 1000) : null;
+    const lockedUntil = v.lockedUntil > BigInt(0) ? new Date(Number(v.lockedUntil) * 1000) : null;
     await prisma.meteredVault.upsert({
         where: { userAddress_merchantAddress: { userAddress: normalizedUser, merchantAddress: normalizedMerchant } },
         update: {
@@ -70,6 +73,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
             owedUsdc: v.owed,
             commitUsdc: v.commitNeeded,
             cycleStart,
+            lockedUntil,
             active: v.active,
             vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
         },
@@ -80,6 +84,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
             owedUsdc: v.owed,
             commitUsdc: v.commitNeeded,
             cycleStart,
+            lockedUntil,
             active: v.active,
             vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
         },

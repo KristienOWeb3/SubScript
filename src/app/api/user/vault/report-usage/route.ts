@@ -59,14 +59,27 @@ export async function POST(request: Request) {
             }, { status: 404 });
         }
 
-        // Gate: an inactive vault (owed debt or below the required commit) cannot be used.
+        // Gate: an inactive vault (below the required commit) cannot be used.
         if (!vault.active) {
             return NextResponse.json({
-                error: "Vault inactive. The user must re-commit (clear any owed balance and restore the commit) before using the service again.",
+                error: "Vault inactive. The user must commit to your service before using it again.",
                 code: "VAULT_INACTIVE",
-                owedUsdc: vault.owedUsdc.toString(),
                 commitUsdc: vault.commitUsdc.toString(),
                 balanceUsdc: vault.balanceUsdc.toString(),
+            }, { status: 402 });
+        }
+
+        // Cap usage at the committed escrow — never let usage exceed what was committed
+        // (no debt/negative balance). When the commit is exhausted, service stops.
+        if (vault.accruedUsageUsdc + amountMicros > vault.balanceUsdc) {
+            const remaining = vault.balanceUsdc - vault.accruedUsageUsdc;
+            return NextResponse.json({
+                error: "Committed balance exhausted. The user must re-commit to keep using the service.",
+                code: "COMMIT_EXHAUSTED",
+                commitUsdc: vault.commitUsdc.toString(),
+                balanceUsdc: vault.balanceUsdc.toString(),
+                accruedUsageUsdc: vault.accruedUsageUsdc.toString(),
+                remainingUsdc: (remaining > BigInt(0) ? remaining : BigInt(0)).toString(),
             }, { status: 402 });
         }
 

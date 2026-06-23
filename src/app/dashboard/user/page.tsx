@@ -4671,10 +4671,15 @@ function MeteredVaultRow({
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
 }) {
-  const owed = Number(vault.owedUsdc || 0);
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
+  const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
+  const locked = lockedUntilDate ? Date.now() < lockedUntilDate.getTime() : false;
+  const canWithdraw = balance > 0 && !locked;
+  const lockLabel = lockedUntilDate
+    ? lockedUntilDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
       <div className="flex items-start justify-between gap-3">
@@ -4685,12 +4690,12 @@ function MeteredVaultRow({
           <div className="min-w-0">
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
             <p className="mt-1 text-[10px] text-white/40">
-              Commit required: {formatUsdc(vault.commitUsdc)} USDC · this cycle used {formatUsdc(vault.accruedUsageUsdc)} USDC
+              Used {formatUsdc(vault.accruedUsageUsdc)} / {formatUsdc(vault.balanceUsdc)} USDC committed this cycle
             </p>
           </div>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Blocked" : "Active"}
+          {blocked ? "Inactive" : "Active"}
         </span>
       </div>
 
@@ -4698,9 +4703,6 @@ function MeteredVaultRow({
         <div>
           <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
           <p className="text-[9px] uppercase text-white/35">committed balance</p>
-          {owed > 0 && (
-            <p className="mt-1 text-[10px] font-bold text-red-400">Owed: {formatUsdc(vault.owedUsdc)} USDC</p>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -4710,22 +4712,26 @@ function MeteredVaultRow({
           >
             {blocked ? "Re-commit" : "Add commit"}
           </button>
-          {balance > 0 && owed === 0 && (
+          {balance > 0 && (
             <button
               type="button"
-              onClick={() => onWithdraw(vault)}
-              className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
+              onClick={() => canWithdraw && onWithdraw(vault)}
+              disabled={!canWithdraw}
+              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${canWithdraw ? "bg-white/5 border-white/10 text-white/80 hover:bg-white/15" : "cursor-not-allowed border-white/5 bg-black/20 text-white/30"}`}
             >
-              Withdraw
+              {locked ? "Locked" : "Withdraw"}
             </button>
           )}
         </div>
       </div>
+      {locked && lockLabel && (
+        <p className="text-[10px] leading-relaxed text-white/40">
+          Committed funds are locked for this cycle — withdrawable from <span className="font-bold text-white/60">{lockLabel}</span>.
+        </p>
+      )}
       {blocked && commitNeeded > 0 && (
         <p className="text-[10px] leading-relaxed text-amber-300/70">
-          {owed > 0
-            ? `Service paused. Re-commit to clear the ${formatUsdc(vault.owedUsdc)} USDC owed and restore the ${formatUsdc(vault.commitUsdc)} USDC commit.`
-            : `Service paused. Top your committed balance back up to ${formatUsdc(vault.commitUsdc)} USDC to resume.`}
+          Service paused — you&apos;ve used your committed amount. Re-commit {formatUsdc(vault.commitUsdc)} USDC to keep using it.
         </p>
       )}
     </div>
