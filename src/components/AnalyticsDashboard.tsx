@@ -14,6 +14,45 @@ interface AnalyticsDashboardProps {
     merchantAddress: string;
 }
 
+function formatUsdcMicros(value: any) {
+    try {
+        const micros = BigInt(String(value ?? "0"));
+        const unit = BigInt(1_000_000);
+        const sign = micros < BigInt(0) ? "-" : "";
+        const absolute = micros < BigInt(0) ? -micros : micros;
+        const whole = absolute / unit;
+        const fraction = (absolute % unit).toString().padStart(6, "0").slice(0, 2);
+        return `${sign}${whole.toString()}.${fraction}`;
+    } catch {
+        return "0.00";
+    }
+}
+
+function formatUsdcInput(value: any) {
+    try {
+        const micros = BigInt(String(value ?? "0"));
+        const unit = BigInt(1_000_000);
+        const sign = micros < BigInt(0) ? "-" : "";
+        const absolute = micros < BigInt(0) ? -micros : micros;
+        const whole = absolute / unit;
+        const fraction = (absolute % unit).toString().padStart(6, "0").replace(/0+$/, "");
+        return `${sign}${whole.toString()}${fraction ? `.${fraction}` : ""}`;
+    } catch {
+        return "0";
+    }
+}
+
+function microsToNumber(value: any) {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shortenHash(value: string | undefined) {
+    if (!value) return "";
+    if (value.length <= 14) return value;
+    return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
 export default function AnalyticsDashboard({
     isPremium,
     setActiveTab,
@@ -37,11 +76,18 @@ export default function AnalyticsDashboard({
     const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
     const [responses, setResponses] = useState<any[]>([]);
 
-    /* Metered Vault Simulation States */
+    /* Metered Vault States */
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
-    const [apiKeys, setApiKeys] = useState<any[]>([]);
     const [selectedApiKey, setSelectedApiKey] = useState("");
+    const [usageSecretKey, setUsageSecretKey] = useState("");
+    const [requiredCommit, setRequiredCommit] = useState("0");
+    const [commitInput, setCommitInput] = useState("0");
+    const [claimableAmount, setClaimableAmount] = useState("0");
+    const [isVaultOpsLoading, setIsVaultOpsLoading] = useState(false);
+    const [isSavingCommit, setIsSavingCommit] = useState(false);
+    const [isClaimingVault, setIsClaimingVault] = useState(false);
+    const [vaultOpsStatus, setVaultOpsStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
     const fetchVaults = async () => {
         setIsVaultsLoading(true);
@@ -57,6 +103,38 @@ export default function AnalyticsDashboard({
             console.error("Failed to load customer vaults:", err);
         } finally {
             setIsVaultsLoading(false);
+        }
+    };
+
+    const fetchVaultOps = async () => {
+        setIsVaultOpsLoading(true);
+        try {
+            const [commitRes, claimRes] = await Promise.all([
+                fetch("/api/merchant/vault/commit-config"),
+                fetch("/api/merchant/vault/claim")
+            ]);
+
+            const commitData = await commitRes.json().catch(() => null);
+            const claimData = await claimRes.json().catch(() => null);
+
+            if (commitRes.ok && commitData?.success) {
+                const nextCommit = commitData.commitUsdc || "0";
+                setRequiredCommit(nextCommit);
+                setCommitInput(formatUsdcInput(nextCommit));
+            }
+            if (claimRes.ok && claimData?.success) {
+                setClaimableAmount(claimData.claimableUsdc || "0");
+            }
+            if (!commitRes.ok || !claimRes.ok) {
+                setVaultOpsStatus({
+                    text: commitData?.error || claimData?.error || "Vault controls could not be loaded.",
+                    type: "error"
+                });
+            }
+        } catch (err) {
+            console.error("Failed to load merchant vault controls:", err);
+        } finally {
+            setIsVaultOpsLoading(false);
         }
     };
 
@@ -86,9 +164,12 @@ export default function AnalyticsDashboard({
                     const res = await fetch("/api/merchant/api-keys");
                     if (res.ok) {
                         const data = await res.json();
-                        setApiKeys(data.keys || []);
-                        if (data.keys && data.keys.length > 0) {
-                            setSelectedApiKey(data.keys[0].secretKeyPlain);
+                        const keys = data.keys || [];
+                        const usableKey = keys.find((key: any) => key.secretKeyAvailable && key.secretKeyPlain);
+                        if (usableKey) {
+                            setSelectedApiKey(usableKey.secretKeyPlain);
+                        } else {
+                            setSelectedApiKey("");
                         }
                     }
                 } catch (err) {
@@ -98,9 +179,68 @@ export default function AnalyticsDashboard({
 
             fetchTemplate();
             fetchVaults();
+            fetchVaultOps();
             fetchApiKeys();
         }
     }, [activeSubTab, isPremium, merchantAddress]);
+
+    const handleSaveCommitConfig = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (commitInput === "" || isNaN(Number(commitInput)) || Number(commitInput) < 0) {
+            setVaultOpsStatus({ text: "Required commit must be zero or greater.", type: "error" });
+            return;
+        }
+
+        setIsSavingCommit(true);
+        setVaultOpsStatus(null);
+        try {
+            const res = await fetch("/api/merchant/vault/commit-config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amountUsdc: commitInput })
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                const nextCommit = data.commitUsdc || "0";
+                setRequiredCommit(nextCommit);
+                setCommitInput(formatUsdcInput(nextCommit));
+                setVaultOpsStatus({
+                    text: `Required commit saved. Tx ${shortenHash(data.txHash)}.`,
+                    type: "success"
+                });
+                fetchVaults();
+            } else {
+                setVaultOpsStatus({ text: data?.error || "Failed to save required commit.", type: "error" });
+            }
+        } catch (err: any) {
+            setVaultOpsStatus({ text: err.message || "Failed to save required commit.", type: "error" });
+        } finally {
+            setIsSavingCommit(false);
+        }
+    };
+
+    const handleClaimVaultFunds = async () => {
+        setIsClaimingVault(true);
+        setVaultOpsStatus(null);
+        try {
+            const res = await fetch("/api/merchant/vault/claim", { method: "POST" });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                setVaultOpsStatus({
+                    text: `Claim submitted. Tx ${shortenHash(data.txHash)}.`,
+                    type: "success"
+                });
+                fetchVaultOps();
+                fetchVaults();
+            } else {
+                setVaultOpsStatus({ text: data?.error || "Failed to claim vault funds.", type: "error" });
+            }
+        } catch (err: any) {
+            setVaultOpsStatus({ text: err.message || "Failed to claim vault funds.", type: "error" });
+        } finally {
+            setIsClaimingVault(false);
+        }
+    };
 
     const surveyStats = useMemo(() => {
         const counts = {
@@ -767,15 +907,116 @@ export default function AnalyticsDashboard({
 
                             {isPremium && (
                                 <div className="mt-8 border-t border-white/5 pt-6 space-y-5 text-left">
-                                    <div>
-                                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                            <Shield className="w-4 h-4 text-[#00d2b4]" />
-                                            Active Customer Prepaid Vaults ({vaults.length})
-                                        </h4>
-                                        <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
-                                            Allowances configured by customers for your platform. Use the simulator to test charges.
-                                        </p>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                        <div>
+                                            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                                <Shield className="w-4 h-4 text-[#00d2b4]" />
+                                                Metered Vaults ({vaults.length})
+                                            </h4>
+                                            <p className="text-[9px] text-white/40 mt-1 uppercase tracking-wider">
+                                                Customer escrow, accrued usage, owed debt, and merchant claim controls.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                fetchVaultOps();
+                                                fetchVaults();
+                                            }}
+                                            disabled={isVaultOpsLoading || isVaultsLoading}
+                                            className="self-start px-3 py-1.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white/70 flex items-center gap-1.5 transition"
+                                        >
+                                            <RefreshCw className={`w-3 h-3 ${(isVaultOpsLoading || isVaultsLoading) ? "animate-spin" : ""}`} />
+                                            Refresh
+                                        </button>
                                     </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                        <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                            <div>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Required Commit</p>
+                                                <p className="text-[9px] text-white/35 mt-1">
+                                                    Minimum escrow each customer must restore before usage can continue.
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                                                <label className="flex-1 space-y-1.5">
+                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">USDC</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.000001"
+                                                        value={commitInput}
+                                                        onChange={(e) => setCommitInput(e.target.value)}
+                                                        disabled={isSavingCommit}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-sm font-mono disabled:opacity-50"
+                                                        placeholder="0"
+                                                    />
+                                                </label>
+                                                <button
+                                                    type="submit"
+                                                    disabled={isSavingCommit}
+                                                    className="px-5 py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                                >
+                                                    {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                                    Save Commit
+                                                </button>
+                                            </div>
+                                            <p className="text-[9px] text-white/35 uppercase tracking-wider">
+                                                Current on-chain setting: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                            </p>
+                                        </form>
+
+                                        <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
+                                            <div>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Claimable Settled Funds</p>
+                                                <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
+                                                <p className="text-[9px] text-white/35 mt-1">
+                                                    Funds become claimable after the keeper draws accrued cycle usage from escrow.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleClaimVaultFunds}
+                                                disabled={isClaimingVault || isVaultOpsLoading || microsToNumber(claimableAmount) <= 0}
+                                                className="px-5 py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                            >
+                                                {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
+                                                Claim Funds
+                                            </button>
+                                        </div>
+
+                                        <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                            <div>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Usage Test Key</p>
+                                                <p className="text-[9px] text-white/35 mt-1">
+                                                    Paste a one-time revealed secret key to test usage reports from this dashboard.
+                                                </p>
+                                            </div>
+                                            <label className="block space-y-1.5">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Secret key</span>
+                                                <input
+                                                    type="password"
+                                                    value={usageSecretKey}
+                                                    onChange={(e) => setUsageSecretKey(e.target.value)}
+                                                    autoComplete="off"
+                                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono"
+                                                    placeholder="sk_test_..."
+                                                />
+                                            </label>
+                                            <p className="text-[9px] text-white/30">
+                                                Stored keys are only returned as hints after creation; this field stays in local component state.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {vaultOpsStatus && (
+                                        <p className={`text-[10px] font-bold tracking-wide ${
+                                            vaultOpsStatus.type === "success" ? "text-emerald-400" : "text-red-400"
+                                        }`}>
+                                            {vaultOpsStatus.text}
+                                        </p>
+                                    )}
 
                                     {isVaultsLoading ? (
                                         <div className="flex h-24 items-center justify-center">
@@ -783,7 +1024,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                     ) : vaults.length === 0 ? (
                                         <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
-                                            <p className="text-xs text-white/45">No customers have configured prepaid vaults for your service yet.</p>
+                                            <p className="text-xs text-white/45">No customers have committed escrow to your metered service yet.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -792,7 +1033,7 @@ export default function AnalyticsDashboard({
                                                     <CustomerVaultRow
                                                         key={vault.id}
                                                         vault={vault}
-                                                        apiKey={selectedApiKey}
+                                                        apiKey={usageSecretKey.trim() || selectedApiKey}
                                                         onRefresh={fetchVaults}
                                                     />
                                                 ))}
@@ -822,14 +1063,14 @@ function CustomerVaultRow({
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-    const handleCharge = async (e: React.FormEvent) => {
+    const handleReportUsage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!apiKey) {
-            setStatus({ text: "API Key required. Please generate one under the API Keys tab.", type: "error" });
+            setStatus({ text: "A newly revealed secret key is required to test usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
             return;
         }
         if (!chargeAmount || isNaN(Number(chargeAmount)) || Number(chargeAmount) <= 0) {
-            setStatus({ text: "Invalid charge amount.", type: "error" });
+            setStatus({ text: "Invalid usage amount.", type: "error" });
             return;
         }
 
@@ -851,69 +1092,94 @@ function CustomerVaultRow({
 
             const data = await res.json();
             if (res.ok && data.success) {
-                if (data.topUpTriggered) {
-                    setStatus({ 
-                        text: `Charge successful. Remaining balance: $${(Number(data.balanceUsdc) / 1_000_000).toFixed(2)}. Auto-Top-Up was triggered!`, 
-                        type: "success" 
-                    });
-                } else {
-                    setStatus({ 
-                        text: `Charge successful. Remaining balance: $${(Number(data.balanceUsdc) / 1_000_000).toFixed(2)}`, 
-                        type: "success" 
-                    });
-                }
+                setStatus({
+                    text: `Usage accrued. Cycle total: $${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
+                    type: "success"
+                });
                 onRefresh();
             } else {
-                setStatus({ text: data.error || "Simulation charge failed.", type: "error" });
+                setStatus({ text: data.error || "Usage report failed.", type: "error" });
             }
         } catch (err: any) {
-            setStatus({ text: err.message || "Failed to execute simulated charge.", type: "error" });
+            setStatus({ text: err.message || "Failed to report usage.", type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
+    const cycleStart = vault.cycleStart ? new Date(vault.cycleStart).toLocaleDateString() : "Not started";
+    const owedMicros = microsToNumber(vault.owedUsdc);
+    const isActive = Boolean(vault.active);
+
     return (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
-            <div className="min-w-0">
-                <p className="text-xs font-mono text-white/90 truncate max-w-xs">{vault.userName || vault.userAddress}</p>
-                <p className="text-[10px] text-white/40 mt-1">
-                    Balance: <span className="font-bold text-[#ccff00]">${(Number(vault.balanceUsdc) / 1_000_000).toFixed(2)} USDC</span> |
-                    Threshold: ${(Number(vault.thresholdUsdc) / 1_000_000).toFixed(2)} USDC |
-                    Topup: ${(Number(vault.topUpAmountUsdc) / 1_000_000).toFixed(2)} USDC
-                </p>
-                <p className="text-[9px] text-white/30 uppercase mt-0.5">
-                    Spent: ${(Number(vault.monthlySpentUsdc) / 1_000_000).toFixed(2)} / ${(Number(vault.monthlyLimitUsdc) / 1_000_000).toFixed(2)} USDC
-                </p>
-            </div>
-            
-            <form onSubmit={handleCharge} className="flex flex-col gap-2 shrink-0 sm:items-end">
-                <div className="flex items-center gap-2">
-                    <input
-                        type="number"
-                        step="any"
-                        value={chargeAmount}
-                        onChange={(e) => setChargeAmount(e.target.value)}
-                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs w-20 text-center"
-                        placeholder="1.50"
-                        required
-                    />
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="px-4 py-1.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
-                    >
-                        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Charge"}
-                    </button>
+        <div className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-mono text-white/90 truncate max-w-xs">{vault.userName || vault.userAddress}</p>
+                        <span className={`px-2 py-0.5 rounded-full border text-[8px] font-bold uppercase tracking-wider ${
+                            isActive
+                                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                                : "border-red-400/20 bg-red-400/10 text-red-300"
+                        }`}>
+                            {isActive ? "Active" : "Blocked"}
+                        </span>
+                    </div>
+                    <p className="text-[9px] text-white/30 mt-1 font-mono">{vault.userAddress}</p>
                 </div>
-                {status && (
-                    <span className={`text-[9px] font-bold tracking-wide ${
-                        status.type === "success" ? "text-emerald-400" : "text-red-400"
-                    }`}>
-                        {status.text}
-                    </span>
-                )}
-            </form>
+
+                <form onSubmit={handleReportUsage} className="flex flex-col gap-2 shrink-0 lg:items-end">
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={chargeAmount}
+                            onChange={(e) => setChargeAmount(e.target.value)}
+                            className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs w-24 text-center"
+                            placeholder="1.50"
+                            required
+                        />
+                        <button
+                            type="submit"
+                            disabled={loading || !isActive}
+                            className="px-4 py-1.5 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
+                        >
+                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Report Usage"}
+                        </button>
+                    </div>
+                    {status && (
+                        <span className={`max-w-xs text-left lg:text-right text-[9px] font-bold tracking-wide ${
+                            status.type === "success" ? "text-emerald-400" : "text-red-400"
+                        }`}>
+                            {status.text}
+                        </span>
+                    )}
+                </form>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Escrow Balance</p>
+                    <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Required Commit</p>
+                    <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Accrued Usage</p>
+                    <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Owed</p>
+                    <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-white/35 font-bold">Cycle Start</p>
+                    <p className="text-xs font-bold text-white/70 mt-1">{cycleStart}</p>
+                </div>
+            </div>
         </div>
     );
 }
