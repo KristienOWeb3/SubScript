@@ -17,6 +17,8 @@ export const VAULT_ABI = [
     "function commit(address merchant, uint256 amount)",
     "function withdrawSurplus(address merchant, uint256 amount)",
     "function drawUsageFor(address merchant, address user, uint256 amount)",
+    "function merchantClaim()",
+    "function merchantClaimable(address merchant) view returns (uint256)",
     "function getVault(address user, address merchant) view returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded)",
 ];
 
@@ -138,6 +140,14 @@ export async function setRequiredCommitFromEmbedded(merchantWallet: string, amou
     const signer = await getEmbeddedSigner(merchantWallet);
     const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
     const tx = await vault.setRequiredCommit(amount);
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+export async function claimMerchantFromEmbedded(merchantWallet: string) {
+    const signer = await getEmbeddedSigner(merchantWallet);
+    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
+    const tx = await vault.merchantClaim();
     const receipt = await tx.wait();
     return receipt?.hash || tx.hash;
 }

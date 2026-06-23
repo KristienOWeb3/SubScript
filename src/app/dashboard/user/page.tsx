@@ -246,6 +246,13 @@ export default function UserDashboard() {
   const [emailPromptSaving, setEmailPromptSaving] = useState(false);
   const [emailPromptError, setEmailPromptError] = useState<string | null>(null);
   const [vaultInfoOpen, setVaultInfoOpen] = useState(false);
+  const [vaultActionOpen, setVaultActionOpen] = useState(false);
+  const [vaultActionMode, setVaultActionMode] = useState<"commit" | "withdraw">("commit");
+  const [vaultActionMerchant, setVaultActionMerchant] = useState("");
+  const [vaultActionMerchantLocked, setVaultActionMerchantLocked] = useState(false);
+  const [vaultActionAmount, setVaultActionAmount] = useState("");
+  const [vaultActionBusy, setVaultActionBusy] = useState(false);
+  const [vaultActionError, setVaultActionError] = useState<string | null>(null);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
@@ -924,6 +931,58 @@ export default function UserDashboard() {
     }
   };
 
+  const openVaultCommit = (merchant?: string) => {
+    setVaultActionMode("commit");
+    setVaultActionMerchant(merchant || "");
+    setVaultActionMerchantLocked(Boolean(merchant));
+    setVaultActionAmount("");
+    setVaultActionError(null);
+    setVaultActionOpen(true);
+  };
+
+  const openVaultWithdraw = (merchant: string) => {
+    setVaultActionMode("withdraw");
+    setVaultActionMerchant(merchant);
+    setVaultActionMerchantLocked(true);
+    setVaultActionAmount("");
+    setVaultActionError(null);
+    setVaultActionOpen(true);
+  };
+
+  const submitVaultAction = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setVaultActionError(null);
+    if (!vaultActionAmount || isNaN(Number(vaultActionAmount)) || Number(vaultActionAmount) <= 0) {
+      setVaultActionError("Enter a valid amount.");
+      return;
+    }
+    setVaultActionBusy(true);
+    try {
+      // Accept a 0x address or a registered alias for the merchant on a new commit.
+      let merchantAddress = vaultActionMerchant.trim();
+      if (!merchantAddress.startsWith("0x")) {
+        const resolved = await resolveRecipient(merchantAddress);
+        if (!resolved) throw new Error("Could not resolve that merchant name to an address.");
+        merchantAddress = resolved;
+      }
+      const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
+      triggerToast(vaultActionMode === "commit" ? "Committed to vault" : "Withdrew from vault");
+      setVaultActionOpen(false);
+      await loadVaults().catch(() => {});
+    } catch (err: any) {
+      setVaultActionError(err.message || "Vault action failed.");
+    } finally {
+      setVaultActionBusy(false);
+    }
+  };
+
   const handleCreateShareableLink = async (event: React.FormEvent) => {
     event.preventDefault();
     setLinkError(null);
@@ -1585,13 +1644,10 @@ export default function UserDashboard() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditingVault(null);
-                        setConfigVaultOpen(true);
-                      }}
+                      onClick={() => openVaultCommit()}
                       className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/20 transition"
                     >
-                      + Create Vault
+                      + Commit to a service
                     </button>
                   </div>
 
@@ -1602,16 +1658,13 @@ export default function UserDashboard() {
                   ) : vaults.length === 0 ? (
                     <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
                       <Shield className="mb-2 h-6 w-6 text-white/20" />
-                      <p className="text-xs text-white/45">No prepaid vaults configured.</p>
+                      <p className="text-xs text-white/45">No vaults yet.</p>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingVault(null);
-                          setConfigVaultOpen(true);
-                        }}
+                        onClick={() => openVaultCommit()}
                         className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
                       >
-                        Create your first prepaid vault
+                        Commit to your first service
                       </button>
                     </div>
                   ) : (
@@ -1620,14 +1673,8 @@ export default function UserDashboard() {
                         <MeteredVaultRow
                           key={vault.id}
                           vault={vault}
-                          onTopup={(v) => {
-                            setEditingVault(v);
-                            setTopupVaultOpen(true);
-                          }}
-                          onConfigure={(v) => {
-                            setEditingVault(v);
-                            setConfigVaultOpen(true);
-                          }}
+                          onCommit={(v) => openVaultCommit(v.merchantAddress)}
+                          onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
                         />
                       ))}
                     </div>
@@ -2716,6 +2763,78 @@ export default function UserDashboard() {
       />
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
+
+      <AnimatePresence>
+        {vaultActionOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+            onClick={() => !vaultActionBusy && setVaultActionOpen(false)}
+          >
+            <motion.form
+              initial={{ scale: 0.94, y: 16, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 26 }}
+              onClick={(event) => event.stopPropagation()}
+              onSubmit={submitVaultAction}
+              className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
+            >
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">
+                  {vaultActionMode === "commit" ? "Commit to a service" : "Withdraw from vault"}
+                </h2>
+                <p className="mt-2 text-xs leading-relaxed text-white/50">
+                  {vaultActionMode === "commit"
+                    ? "Escrow USDC for a merchant's metered service. This clears any owed balance first, then activates the service for the cycle once the commit is met."
+                    : "Withdraw unused committed balance back to your wallet. Dropping below the required commit pauses the service until you re-commit."}
+                </p>
+              </div>
+              <Field label="Merchant address or name">
+                <input
+                  value={vaultActionMerchant}
+                  onChange={(event) => setVaultActionMerchant(event.target.value)}
+                  placeholder="0x... or acme.biz"
+                  className="subscript-input"
+                  disabled={vaultActionMerchantLocked}
+                  required
+                />
+              </Field>
+              <Field label="Amount (USDC)">
+                <input
+                  value={vaultActionAmount}
+                  onChange={(event) => setVaultActionAmount(event.target.value)}
+                  placeholder="25.00"
+                  inputMode="decimal"
+                  className="subscript-input"
+                  autoFocus
+                  required
+                />
+              </Field>
+              {vaultActionError && <p className="text-[11px] font-bold text-red-300">{vaultActionError}</p>}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVaultActionOpen(false)}
+                  disabled={vaultActionBusy}
+                  className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={vaultActionBusy}
+                  className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${vaultActionBusy ? "quick-action-loading" : ""}`}
+                >
+                  {vaultActionBusy ? "Working..." : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
@@ -4545,55 +4664,70 @@ function BalanceRoutingNotice({
 
 function MeteredVaultRow({
   vault,
-  onTopup,
-  onConfigure,
+  onCommit,
+  onWithdraw,
 }: {
   vault: any;
-  onTopup: (vault: any) => void;
-  onConfigure: (vault: any) => void;
+  onCommit: (vault: any) => void;
+  onWithdraw: (vault: any) => void;
 }) {
+  const owed = Number(vault.owedUsdc || 0);
+  const balance = Number(vault.balanceUsdc || 0);
+  const commitNeeded = Number(vault.commitUsdc || 0);
+  const blocked = !vault.active;
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30 shrink-0">
-          <Shield className="h-5 w-5 text-[#ccff00]/70" />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
+    <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30 shrink-0">
+            <Shield className="h-5 w-5 text-[#ccff00]/70" />
+          </div>
+          <div className="min-w-0">
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
-          </div>
-          <p className="mt-1 text-[10px] text-white/40">
-            Top-up {formatUsdc(vault.topUpAmountUsdc)} USDC if under {formatUsdc(vault.thresholdUsdc)} USDC
-          </p>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-white/60">
-              Spent: {formatUsdc(vault.monthlySpentUsdc)} / {formatUsdc(vault.monthlyLimitUsdc)} USDC
-            </span>
+            <p className="mt-1 text-[10px] text-white/40">
+              Commit required: {formatUsdc(vault.commitUsdc)} USDC · this cycle used {formatUsdc(vault.accruedUsageUsdc)} USDC
+            </p>
           </div>
         </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Blocked" : "Active"}
+        </span>
       </div>
-      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-        <div className="text-right sm:mr-2">
+
+      <div className="flex items-end justify-between gap-3">
+        <div>
           <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
-          <p className="text-[9px] uppercase text-white/35">vault balance</p>
+          <p className="text-[9px] uppercase text-white/35">committed balance</p>
+          {owed > 0 && (
+            <p className="mt-1 text-[10px] font-bold text-red-400">Owed: {formatUsdc(vault.owedUsdc)} USDC</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onTopup(vault)}
+            onClick={() => onCommit(vault)}
             className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
           >
-            Deposit
+            {blocked ? "Re-commit" : "Add commit"}
           </button>
-          <button
-            type="button"
-            onClick={() => onConfigure(vault)}
-            className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
-          >
-            Config
-          </button>
+          {balance > 0 && owed === 0 && (
+            <button
+              type="button"
+              onClick={() => onWithdraw(vault)}
+              className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
+            >
+              Withdraw
+            </button>
+          )}
         </div>
       </div>
+      {blocked && commitNeeded > 0 && (
+        <p className="text-[10px] leading-relaxed text-amber-300/70">
+          {owed > 0
+            ? `Service paused. Re-commit to clear the ${formatUsdc(vault.owedUsdc)} USDC owed and restore the ${formatUsdc(vault.commitUsdc)} USDC commit.`
+            : `Service paused. Top your committed balance back up to ${formatUsdc(vault.commitUsdc)} USDC to resume.`}
+        </p>
+      )}
     </div>
   );
 }
