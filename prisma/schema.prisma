@@ -150,6 +150,20 @@ model Merchant {
   @@map("merchants")
 }
 
+model MerchantPlan {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress String   @map("merchant_address")
+  name            String
+  amountUsdc      BigInt   @map("amount_usdc")
+  periodSeconds   BigInt   @map("period_seconds")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([merchantAddress])
+  @@map("merchant_plans")
+}
+
 model Subscription {
   subscriptionId          BigInt    @id @map("subscription_id")
   merchantAddress         String    @map("merchant_address")
