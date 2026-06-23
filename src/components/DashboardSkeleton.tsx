@@ -3,11 +3,11 @@
 import React from "react";
 import Skeleton from "./ui/Skeleton";
 import { 
-    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3, Link2
+    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3, Link2, Sliders
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "settings";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
@@ -16,6 +16,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
         { id: "premium", label: "Premium", icon: Crown },
         { id: "analytics", label: "Analytics", icon: BarChart3 },
         { id: "payment-links", label: "Payment Links", icon: Link2 },
+        { id: "plans", label: "Plans", icon: Sliders },
         { id: "apikeys", label: "API Keys", icon: Key },
         { id: "checkout", label: "Checkout Setup", icon: Code2 },
         { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -194,6 +195,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                 );
 
             case "payment-links":
+            case "plans":
             case "checkout":
                 return (
                     <div className="space-y-8">

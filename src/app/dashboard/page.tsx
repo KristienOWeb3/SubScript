@@ -72,6 +72,7 @@ const tabs = [
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payment Links", icon: Link2 },
+    { id: "plans", label: "Plans", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
@@ -79,13 +80,45 @@ const tabs = [
     { id: "settings", label: "Profile", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "apikeys" | "checkout" | "webhooks" | "settings";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings";
+
+type MerchantPlan = {
+    id: string;
+    merchantAddress: string;
+    name: string;
+    amountUsdc: string;
+    periodSeconds: string;
+    active: boolean;
+};
+
+const formatPlanAmount = (micros: string) => {
+    try {
+        return Number(formatUnits(BigInt(micros), 6)).toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    } catch {
+        return "0.00";
+    }
+};
+
+const formatPlanPeriod = (seconds: string) => {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value <= 0) return "cycle";
+    const days = Math.round(value / 86400);
+    if (days === 1) return "day";
+    if (days === 7) return "week";
+    if (days >= 28 && days <= 31) return "month";
+    if (days >= 364 && days <= 366) return "year";
+    return `${days} days`;
+};
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Activity }> = [
     { id: "overview", label: "Home", icon: Activity },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "plans", label: "Plans", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
@@ -113,6 +146,14 @@ export default function DashboardPage() {
     const [paymentLinks, setPaymentLinks] = useState<any[]>([]);
     const [isLinksLoading, setIsLinksLoading] = useState(false);
     const [initialLinksFetched, setInitialLinksFetched] = useState(false);
+    const [merchantPlans, setMerchantPlans] = useState<MerchantPlan[]>([]);
+    const [isPlansLoading, setIsPlansLoading] = useState(false);
+    const [initialPlansFetched, setInitialPlansFetched] = useState(false);
+    const [planName, setPlanName] = useState("");
+    const [planAmountUsdc, setPlanAmountUsdc] = useState("");
+    const [planPeriodDays, setPlanPeriodDays] = useState("30");
+    const [planError, setPlanError] = useState<string | null>(null);
+    const [planSuccess, setPlanSuccess] = useState<string | null>(null);
 
     const [linkTitle, setLinkTitle] = useState("");
     const [linkDescription, setLinkDescription] = useState("");
@@ -675,7 +716,7 @@ export default function DashboardPage() {
     const [initialEventsFetched, setInitialEventsFetched] = useState(false);
     const [initialContractFetched, setInitialContractFetched] = useState(false);
 
-    const isLoading = !isMounted || isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched || !initialLinksFetched));
+    const isLoading = !isMounted || isAuthLoading || (isConnected && sessionWallet && (!initialKeysFetched || !initialWebhooksFetched || !initialEventsFetched || !initialContractFetched || !initialLinksFetched || !initialPlansFetched));
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { signMessageAsync } = useSignMessage();
 
@@ -718,6 +759,91 @@ export default function DashboardPage() {
         } finally {
             setIsLinksLoading(false);
             setInitialLinksFetched(true);
+        }
+    };
+
+    const fetchMerchantPlans = async () => {
+        setIsPlansLoading(true);
+        try {
+            const res = await fetch("/api/merchant/plans");
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Failed to load plans");
+            }
+            setMerchantPlans(data.plans || []);
+        } catch (err: any) {
+            console.error("Error fetching merchant plans:", err);
+            setPlanError(err.message || "Failed to load plans");
+        } finally {
+            setIsPlansLoading(false);
+            setInitialPlansFetched(true);
+        }
+    };
+
+    const handleCreatePlan = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setPlanError(null);
+        setPlanSuccess(null);
+
+        if (!planName.trim()) {
+            setPlanError("Plan name is required.");
+            return;
+        }
+        if (!planAmountUsdc || Number(planAmountUsdc) <= 0) {
+            setPlanError("Amount must be greater than 0 USDC.");
+            return;
+        }
+        if (!planPeriodDays || Number(planPeriodDays) < 1) {
+            setPlanError("Billing period must be at least 1 day.");
+            return;
+        }
+
+        setIsPlansLoading(true);
+        try {
+            const res = await fetch("/api/merchant/plans", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: planName,
+                    amountUsdc: planAmountUsdc,
+                    periodDays: Number(planPeriodDays),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to create plan.");
+            setPlanName("");
+            setPlanAmountUsdc("");
+            setPlanPeriodDays("30");
+            setPlanSuccess("Plan created. Users can now choose it from merchant DMs.");
+            setToastMessage("Plan Created");
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+            await fetchMerchantPlans();
+        } catch (err: any) {
+            setPlanError(err.message || "Failed to create plan.");
+        } finally {
+            setIsPlansLoading(false);
+        }
+    };
+
+    const handleTogglePlanActive = async (plan: MerchantPlan) => {
+        setPlanError(null);
+        setPlanSuccess(null);
+        setIsPlansLoading(true);
+        try {
+            const res = await fetch("/api/merchant/plans", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ planId: plan.id, active: !plan.active }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update plan.");
+            setPlanSuccess(!plan.active ? "Plan reactivated." : "Plan deactivated for new subscribers.");
+            await fetchMerchantPlans();
+        } catch (err: any) {
+            setPlanError(err.message || "Failed to update plan.");
+        } finally {
+            setIsPlansLoading(false);
         }
     };
 
@@ -958,6 +1084,7 @@ export default function DashboardPage() {
             setInitialWebhooksFetched(false);
             setInitialEventsFetched(false);
             setInitialContractFetched(false);
+            setInitialPlansFetched(false);
             return;
         }
 
@@ -1193,6 +1320,7 @@ export default function DashboardPage() {
             fetchWebhookEndpoints(),
             fetchWebhookEvents(),
             fetchPaymentLinks(),
+            fetchMerchantPlans(),
             fetchAlias(),
         ]);
     }, [sessionWallet, fetchAlias]);
@@ -2525,6 +2653,121 @@ Please complete the following implementation tasks:
         );
     };
 
+    const renderPlansTab = () => {
+        const activePlans = merchantPlans.filter((plan) => plan.active);
+        const inactivePlans = merchantPlans.filter((plan) => !plan.active);
+
+        return (
+            <div className="space-y-8">
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Sliders className="w-4 h-4 text-[#00d2b4]" />
+                                Merchant Plans
+                            </h2>
+                            <p className="text-[11px] text-white/40 font-sans">
+                                Publish named USDC subscription plans that users can choose, switch, or cancel from their merchant DM.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={fetchMerchantPlans}
+                            disabled={isPlansLoading}
+                            className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/55 transition hover:border-[#00d2b4]/30 hover:text-white disabled:opacity-50"
+                        >
+                            {isPlansLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Refresh"}
+                        </button>
+                    </div>
+
+                    <form onSubmit={handleCreatePlan} className="grid gap-4 font-sans text-xs md:grid-cols-[1.3fr_0.8fr_0.8fr_auto] md:items-end">
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Plan Name</label>
+                            <input
+                                type="text"
+                                value={planName}
+                                onChange={(event) => setPlanName(event.target.value)}
+                                placeholder="Pro API Access"
+                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={planAmountUsdc}
+                                onChange={(event) => setPlanAmountUsdc(event.target.value)}
+                                placeholder="29.00"
+                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Period Days</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="366"
+                                value={planPeriodDays}
+                                onChange={(event) => setPlanPeriodDays(event.target.value)}
+                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={isPlansLoading}
+                            className="rounded-xl bg-[#00d2b4] px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50"
+                        >
+                            {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                        </button>
+                    </form>
+
+                    {planError && <p className="text-[10px] font-bold text-red-400">{planError}</p>}
+                    {planSuccess && <p className="text-[10px] font-bold text-emerald-400">{planSuccess}</p>}
+                </div>
+
+                <div className="grid gap-5 lg:grid-cols-2">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Plans</h3>
+                            <span className="rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{activePlans.length}</span>
+                        </div>
+                        {activePlans.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                                No active plans yet. Create one above to populate the DM picker.
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {activePlans.map((plan) => (
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Inactive Plans</h3>
+                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold text-white/45">{inactivePlans.length}</span>
+                        </div>
+                        {inactivePlans.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                                Deactivated plans stay here for auditability.
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {inactivePlans.map((plan) => (
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderSettingsTab = () => {
         if (!userSettings) {
             return (
@@ -2900,6 +3143,9 @@ Please complete the following implementation tasks:
 
             case "payment-links":
                 return renderPaymentLinksTab();
+
+            case "plans":
+                return renderPlansTab();
 
             case "analytics":
                 return (
@@ -4785,3 +5031,41 @@ Please complete the following implementation tasks:
                         </div>
                     );
                 }
+
+function MerchantPlanRow({
+    plan,
+    busy,
+    onToggle,
+}: {
+    plan: MerchantPlan;
+    busy: boolean;
+    onToggle: (plan: MerchantPlan) => void;
+}) {
+    return (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <p className="truncate text-sm font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
+                    <p className="mt-1 text-xs font-bold text-[#00d2b4]">
+                        {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
+                    </p>
+                    <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
+                        {plan.active ? "Visible in user DMs" : "Hidden from new subscribers"}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onToggle(plan)}
+                    disabled={busy}
+                    className={`rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${
+                        plan.active
+                            ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
+                            : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"
+                    }`}
+                >
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
+                </button>
+            </div>
+        </div>
+    );
+}

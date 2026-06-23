@@ -112,6 +112,15 @@ interface DmMessage {
   createdAt: string;
 }
 
+interface MerchantPlan {
+  id: string;
+  merchantAddress: string;
+  name: string;
+  amountUsdc: string;
+  periodSeconds: string;
+  active: boolean;
+}
+
 type UserTab = "home" | "links" | "batch" | "inbox" | "dns";
 
 const userBottomTabs = [
@@ -160,6 +169,17 @@ const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
   return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
+};
+
+const formatPlanPeriod = (seconds: string) => {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return "cycle";
+  const days = Math.round(value / 86400);
+  if (days === 1) return "day";
+  if (days === 7) return "week";
+  if (days >= 28 && days <= 31) return "month";
+  if (days >= 364 && days <= 366) return "year";
+  return `${days} days`;
 };
 
 /* Convert a USDC micro-amount (6dp) into a plain decimal string without losing
@@ -256,6 +276,12 @@ export default function UserDashboard() {
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
+  const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
+  const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
+  const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
+  const [planManagerOpen, setPlanManagerOpen] = useState(false);
+  const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
+  const [planManagerError, setPlanManagerError] = useState<string | null>(null);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -682,6 +708,9 @@ export default function UserDashboard() {
     setDmRequestNote("");
     setDmRequestDuration("24");
     setDmRequestStatus(null);
+    setPlanManagerOpen(false);
+    setPlanManagerStatus(null);
+    setPlanManagerError(null);
   }, [selectedDmPeer]);
 
   useEffect(() => {
@@ -744,6 +773,90 @@ export default function UserDashboard() {
     const data = await res.json();
     if (!data.success) throw new Error(data.error || "Failed to update DM status");
     await loadDms();
+  };
+
+  const getActiveSubscriptionForMerchant = (merchantAddress: string | null | undefined) => {
+    if (!merchantAddress) return null;
+    return subscriptions.find(
+      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE"
+    ) || null;
+  };
+
+  const loadPlansForMerchant = async (merchantAddress: string) => {
+    setIsThreadPlansLoading(true);
+    setPlanManagerError(null);
+    try {
+      const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(merchantAddress)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to load merchant plans.");
+      setThreadPlans(data.plans || []);
+      setPlansMerchantAddress(merchantAddress.toLowerCase());
+    } catch (err: any) {
+      setPlanManagerError(err.message || "Failed to load merchant plans.");
+    } finally {
+      setIsThreadPlansLoading(false);
+    }
+  };
+
+  const handleTogglePlanManager = async () => {
+    if (!selectedDmPeer) return;
+    const nextOpen = !planManagerOpen;
+    setPlanManagerOpen(nextOpen);
+    setPlanManagerStatus(null);
+    setPlanManagerError(null);
+    if (nextOpen && plansMerchantAddress !== selectedDmPeer.toLowerCase()) {
+      await loadPlansForMerchant(selectedDmPeer);
+    }
+  };
+
+  const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
+    const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
+    const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+    await runAction(actionKey, async () => {
+      setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
+      setPlanManagerError(null);
+      const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
+      const body = activeSub
+        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id }
+        : { planId: plan.id };
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+      setPlanManagerStatus(activeSub ? `Switched to ${data.planName || plan.name}.` : `Subscribed to ${data.planName || plan.name}.`);
+      triggerToast(activeSub ? "Plan switched on-chain" : "Subscription created on-chain");
+      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+    }).catch((err: any) => {
+      setPlanManagerError(err.message || "Subscription transaction failed.");
+    });
+  };
+
+  const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
+    const activeSub = getActiveSubscriptionForMerchant(merchantAddress);
+    if (!activeSub) {
+      setPlanManagerError("No active subscription found for this merchant.");
+      return;
+    }
+    if (!window.confirm("Cancel this subscription on-chain now? Access may stop immediately.")) return;
+    await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
+      setPlanManagerStatus("Cancelling subscription on-chain...");
+      setPlanManagerError(null);
+      const res = await fetch("/api/user/subscription/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
+      setPlanManagerStatus("Subscription cancelled on-chain.");
+      triggerToast("Subscription cancelled on-chain");
+      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+    }).catch((err: any) => {
+      setPlanManagerError(err.message || "Cancel transaction failed.");
+    });
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
@@ -863,10 +976,9 @@ export default function UserDashboard() {
   };
 
   const handleCancelPlanSuggestion = async (dm: DmMessage) => {
-    await runAction(`cancel-${dm.id}`, async () => {
-      await new Promise(resolve => setTimeout(resolve, 700));
-      await handleUpdateDmStatus(dm.id, "DECLINED");
-    });
+    const merchantAddress = dm.senderAddress.toLowerCase();
+    await handleCancelSubscriptionForMerchant(merchantAddress);
+    await handleUpdateDmStatus(dm.id, "DECLINED").catch(() => {});
   };
 
   const handleSurveySubmit = async (dm: DmMessage, response: string) => {
@@ -1500,6 +1612,7 @@ export default function UserDashboard() {
       subscriptions.some(s => s.merchantAddress.toLowerCase() === selectedDmPeer.toLowerCase()) ||
       (activeThreadLabel.endsWith(".hq") || activeThreadLabel.endsWith(".biz"))
     : false;
+  const activeThreadSubscription = selectedDmPeer ? getActiveSubscriptionForMerchant(selectedDmPeer) : null;
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
@@ -1755,9 +1868,19 @@ export default function UserDashboard() {
                         {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
                         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
                           {isActiveDmMerchant ? (
-                            <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
-                              YOU CAN NOT REQUEST FROM A MERCHANT
-                            </div>
+                            <MerchantPlanManager
+                              open={planManagerOpen}
+                              merchantLabel={activeThreadLabel}
+                              plans={threadPlans}
+                              activeSubscription={activeThreadSubscription}
+                              loading={isThreadPlansLoading}
+                              loadingAction={loadingAction}
+                              status={planManagerStatus}
+                              error={planManagerError}
+                              onToggle={handleTogglePlanManager}
+                              onSubscribe={handleSubscribeOrSwitchPlan}
+                              onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                            />
                           ) : (
                             <DmRequestComposer
                               open={dmRequestOpen}
@@ -1858,9 +1981,19 @@ export default function UserDashboard() {
                           {/* Bottom Action Footer for Desktop */}
                           <div className="pt-4 border-t border-white/5 shrink-0">
                             {isActiveDmMerchant ? (
-                              <div className="rounded-full border border-white/5 bg-black/20 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
-                                YOU CAN NOT REQUEST FROM A MERCHANT
-                              </div>
+                              <MerchantPlanManager
+                                open={planManagerOpen}
+                                merchantLabel={activeThreadLabel}
+                                plans={threadPlans}
+                                activeSubscription={activeThreadSubscription}
+                                loading={isThreadPlansLoading}
+                                loadingAction={loadingAction}
+                                status={planManagerStatus}
+                                error={planManagerError}
+                                onToggle={handleTogglePlanManager}
+                                onSubscribe={handleSubscribeOrSwitchPlan}
+                                onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                              />
                             ) : (
                               <DmRequestComposer
                                 open={dmRequestOpen}
@@ -3591,6 +3724,133 @@ function DmBubble({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function MerchantPlanManager({
+  open,
+  merchantLabel,
+  plans,
+  activeSubscription,
+  loading,
+  loadingAction,
+  status,
+  error,
+  onToggle,
+  onSubscribe,
+  onCancel,
+}: {
+  open: boolean;
+  merchantLabel: string;
+  plans: MerchantPlan[];
+  activeSubscription: Subscription | null;
+  loading: boolean;
+  loadingAction: string | null;
+  status: string | null;
+  error: string | null;
+  onToggle: () => void;
+  onSubscribe: (plan: MerchantPlan) => void;
+  onCancel: () => void;
+}) {
+  const hasActiveSubscription = !!activeSubscription;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Merchant plan controls</p>
+          <p className="truncate text-xs font-bold text-white">
+            {hasActiveSubscription
+              ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}`
+              : `Choose a plan from ${merchantLabel}`}
+          </p>
+        </div>
+        {hasActiveSubscription && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
+            className={`dm-quick-button relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
+              loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
+            }`}
+          >
+            Hard Cancel
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
+        >
+          {open ? "Hide Plans" : "Manage Plan"}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 360, damping: 26 }}
+            className="space-y-3 rounded-2xl border border-white/10 bg-black/45 p-3"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-5 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading plans
+              </div>
+            ) : plans.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 px-4 py-5 text-center text-xs text-white/45">
+                This merchant has not published active plans yet.
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {plans.map((plan) => {
+                  const isCurrent = activeSubscription
+                    ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
+                      activeSubscription.billingIntervalSeconds === plan.periodSeconds
+                    : false;
+                  const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+                  return (
+                    <div key={plan.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
+                          <p className="mt-1 text-[10px] font-bold text-[#ccff00]">
+                            {formatUsdc(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
+                          </p>
+                        </div>
+                        {isCurrent && (
+                          <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]">
+                            Current
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onSubscribe(plan)}
+                        disabled={isCurrent || loadingAction === loadingKey}
+                        className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
+                          isCurrent
+                            ? "border-white/5 bg-white/[0.03] text-white/25"
+                            : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
+                        } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
+                      >
+                        {isCurrent ? "Active now" : hasActiveSubscription ? "Switch" : "Subscribe"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {status && <p className="text-[10px] font-bold text-[#ccff00]">{status}</p>}
+            {error && <p className="text-[10px] font-bold text-red-300">{error}</p>}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
