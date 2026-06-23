@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Copy, Check, Terminal, Sparkles } from "lucide-react";
 import { useAccount } from "wagmi";
-import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 export default function PromptGenerator() {
   const { address: web3Address } = useAccount();
@@ -51,7 +51,7 @@ LIVE MERCHANT DEPLOYMENT DETAILS:
 - MERCHANT_ADDRESS = "${displayAddress}"
 - PRICE_PER_PERIOD = ${price} USDC (6 decimals, formatted as parseUnits('${price}', 6))
 - PAYMENT_PERIOD_SECONDS = ${period}
-- SUBSCRIPT_CONTRACT = "0x38594705B7feE26B5E05a04069695A907b725b9f" (STANDARD_CONTRACT_ADDRESS)
+- SUBSCRIPT_CONTRACT = "${STANDARD_CONTRACT_ADDRESS}" (STANDARD_CONTRACT_ADDRESS)
 - USDC_ADDRESS = "${USDC_NATIVE_GAS_ADDRESS}"
 - Routing Metadata: { "routing": "traceable" }
 

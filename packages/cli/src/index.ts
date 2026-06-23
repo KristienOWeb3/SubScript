@@ -23,6 +23,12 @@ import { runDoctor } from "./commands/doctor.js";
 import { runVerify } from "./commands/verify.js";
 import { runUpdate } from "./commands/update.js";
 
+const ARC_TESTNET_CHAIN_ID = 5042002;
+const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
+const STANDARD_CONTRACT_ADDRESS = "0x6C574a62F174b7Dc29060200Ab22afc9933FD502";
+const USDC_NATIVE_GAS_ADDRESS = "0x3600000000000000000000000000000000000000";
+const SUBSCRIPT_PROTOCOL_FEE_BPS = 100;
+
 function printAsciiBanner() {
   console.log(String.raw`
    _____       _     _____           _       _
@@ -299,11 +305,11 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
         merchantAddress: merchantWalletAddress,
         mode,
         tier: 1,
-        chainId: 5042002, // Arc Testnet
-        routerAddress: "0x6946B7746c2968B195BD15319D25F67E587CAe3C",
-        standardAddress: "0x38594705B7feE26B5E05a04069695A907b725b9f",
-        usdcAddress: "0x3600000000000000000000000000000000000000",
-        feeBps: 100,
+        chainId: ARC_TESTNET_CHAIN_ID,
+        routerAddress: SUBSCRIPT_ROUTER_ADDRESS,
+        standardAddress: STANDARD_CONTRACT_ADDRESS,
+        usdcAddress: USDC_NATIVE_GAS_ADDRESS,
+        feeBps: SUBSCRIPT_PROTOCOL_FEE_BPS,
         cliVersion: CLI_VERSION,
         templateVersion: TEMPLATE_VERSION,
         requestId,
