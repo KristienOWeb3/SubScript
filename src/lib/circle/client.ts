@@ -89,13 +89,22 @@ async function circleFetch<T>(path: string, init: RequestInit & { userToken?: st
  * data". Endpoint path is env-overridable in case the account's API version differs.
  */
 export async function createSocialLoginDeviceToken(deviceId: string) {
-    const path = process.env.CIRCLE_SOCIAL_LOGIN_TOKEN_PATH || "/v1/w3s/users/social/login/token";
-    const payload = await circleFetch<{
+    const canonicalPath = "/v1/w3s/users/social/token";
+    const configuredPath = process.env.CIRCLE_SOCIAL_LOGIN_TOKEN_PATH || canonicalPath;
+    const body = JSON.stringify({ deviceId, idempotencyKey: crypto.randomUUID() });
+    const fetchToken = (path: string) => circleFetch<{
         data?: { deviceToken?: string; deviceEncryptionKey?: string; encryptionKey?: string };
-    }>(path, {
-        method: "POST",
-        body: JSON.stringify({ deviceId, idempotencyKey: crypto.randomUUID() }),
-    });
+    }>(path, { method: "POST", body });
+
+    let payload: Awaited<ReturnType<typeof fetchToken>>;
+    try {
+        payload = await fetchToken(configuredPath);
+    } catch (error: any) {
+        const staleOverride = configuredPath !== canonicalPath && /resource not found/i.test(error?.message || "");
+        if (!staleOverride) throw error;
+        payload = await fetchToken(canonicalPath);
+    }
+
     const deviceToken = payload.data?.deviceToken;
     const deviceEncryptionKey = payload.data?.deviceEncryptionKey || payload.data?.encryptionKey;
     if (!deviceToken || !deviceEncryptionKey) {
