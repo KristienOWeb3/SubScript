@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { SignJWT } from "jose";
 import { ethers } from "ethers";
 import { getAccountRole } from "@/lib/accounts/roles";
@@ -7,6 +7,7 @@ import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/ac
 import { encryptPrivateKey } from "@/lib/crypto";
 import { getCircleEmail, type CircleSocialAuth } from "@/lib/circle/client";
 import { setSessionCookie } from "@/lib/authCookies";
+import { safelySendEmail, sendSignInAlertEmail } from "@/lib/email/transactional";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -102,6 +103,14 @@ export async function POST(request: Request) {
         });
 
         setSessionCookie(response, request, jwt, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+
+        /* Notify the verified Google email that their account was just signed in to.
+           Runs after the response is sent so it never delays login, and is wrapped so a
+           mail failure can't break authentication. */
+        after(() => safelySendEmail(
+            "google sign-in alert",
+            () => sendSignInAlertEmail(emailLower, { provider: "google" })
+        ));
 
         return response;
     } catch (error: any) {

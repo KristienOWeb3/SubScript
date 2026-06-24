@@ -2,6 +2,10 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const securityHeaders = [
   {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains",
+  },
+  {
     key: "X-Frame-Options",
     value: "DENY",
   },

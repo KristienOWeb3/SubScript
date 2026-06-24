@@ -90,6 +90,27 @@ export async function sendAuthenticationCodeEmail(email: string, code: string) {
     });
 }
 
+export async function sendSignInAlertEmail(
+    email: string,
+    details: { provider: string; when?: Date }
+) {
+    const providerLabel = details.provider === "google"
+        ? "Google"
+        : details.provider === "apple"
+            ? "Apple"
+            : details.provider;
+    const when = (details.when || new Date()).toUTCString();
+    const safeProvider = htmlEscape(providerLabel);
+    return sendTransactionalEmail({
+        to: email,
+        subject: "New sign-in to your SubScript account",
+        text: `Your SubScript account was just signed in to using Continue with ${providerLabel} at ${when}. If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.`,
+        html: `<p>Your SubScript account was just signed in to using <strong>Continue with ${safeProvider}</strong>.</p><p style="color:#667085">${htmlEscape(when)}</p><p>If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.</p>`,
+        // Bucket by the minute so a rapid retry de-dupes, but later genuine sign-ins still alert.
+        idempotencyKey: `signin-alert:${email.toLowerCase()}:${details.provider}:${Math.floor(Date.now() / 60000)}`,
+    });
+}
+
 export async function sendWelcomeEmail(email: string, role: "USER" | "ENTERPRISE", walletAddress: string) {
     const audience = role === "ENTERPRISE" ? "merchant" : "user";
     return sendTransactionalEmail({

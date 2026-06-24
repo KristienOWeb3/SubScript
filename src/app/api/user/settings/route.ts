@@ -25,6 +25,21 @@ function getUnsupportedSetting(body: Record<string, unknown>, unsupported: Set<s
     return null;
 }
 
+/* A profile picture may only be a raster image upload (data URL) or an https URL.
+   This blocks javascript:/data:text-html/svg payloads that would otherwise be stored
+   verbatim and become an XSS or SSRF vector when the avatar is rendered. */
+function isSafeProfilePicValue(value: string): boolean {
+    if (value.length > 5_000_000) return false;
+    if (value.startsWith("data:")) {
+        return /^data:image\/(?:png|jpe?g|gif|webp);base64,/.test(value);
+    }
+    try {
+        return new URL(value).protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
 export async function GET(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
@@ -207,6 +222,17 @@ export async function POST(request: Request) {
             spendingLimitWeekly,
             spendingLimitMonthly,
         } = body;
+
+        if (typeof profilePic === "string" && profilePic !== "" && !isSafeProfilePicValue(profilePic)) {
+            return NextResponse.json(
+                { error: "Invalid profile image. Upload a PNG/JPG/GIF/WebP image or provide an https image URL." },
+                { status: 400 }
+            );
+        }
+
+        if (typeof payoutDestination === "string" && payoutDestination.length > 200) {
+            return NextResponse.json({ error: "Payout destination is too long (max 200 characters)." }, { status: 400 });
+        }
 
         let finalProfilePic = profilePic;
         if (typeof profilePic === "string" && profilePic.startsWith("data:image/")) {
