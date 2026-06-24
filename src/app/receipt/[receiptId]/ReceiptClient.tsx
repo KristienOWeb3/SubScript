@@ -40,6 +40,21 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
     const [invitedList, setInvitedList] = useState<string[]>([]);
 
+    /* Deep link from the dashboard "Grant access" button: scroll to + focus the invite
+       form once the receipt is loaded and the viewer is the owner. */
+    useEffect(() => {
+        if (loading || !receipt || typeof window === "undefined") return;
+        if (new URLSearchParams(window.location.search).get("invite") !== "1") return;
+        const payer = receipt.payer_address?.toLowerCase();
+        const merchant = receipt.merchant_address?.toLowerCase();
+        if (!sessionWallet || (sessionWallet !== payer && sessionWallet !== merchant)) return;
+        const el = document.getElementById("invite-section");
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => (document.getElementById("invite-input") as HTMLInputElement | null)?.focus(), 400);
+        }
+    }, [loading, receipt, sessionWallet]);
+
     const fetchReceiptDetails = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -324,7 +339,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
                 {/* 3. Owner Access: Invite Address Form */}
                 {isOwner && (
-                    <section className="border border-white/5 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 shadow-2xl space-y-6">
+                    <section id="invite-section" className="border border-[#ccff00]/15 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 shadow-2xl space-y-6 scroll-mt-24">
                         <div>
                             <h2 className="text-sm font-bold flex items-center gap-2">
                                 <UserPlus className="h-4 w-4 text-[#ccff00]" /> Invite Address to View Receipt
@@ -336,6 +351,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
                         <form onSubmit={handleInvite} className="flex gap-2">
                             <input
+                                id="invite-input"
                                 type="text"
                                 value={inviteAddress}
                                 onChange={(e) => setInviteAddress(e.target.value)}

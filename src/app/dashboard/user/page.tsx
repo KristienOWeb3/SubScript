@@ -2750,14 +2750,25 @@ export default function UserDashboard() {
                                 </span>
                               </td>
                               <td className="py-4 text-right">
-                                <a
-                                  href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                >
-                                  Tx <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
+                                <div className="inline-flex items-center gap-3">
+                                  <a
+                                    href={`/receipt/${tx.receiptId}?invite=1`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                    title="Grant another address permission to view this private receipt"
+                                  >
+                                    Grant access
+                                  </a>
+                                  <a
+                                    href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                  >
+                                    Tx <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
                               </td>
                             </tr>
                           ))
