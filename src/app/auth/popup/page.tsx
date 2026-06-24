@@ -25,6 +25,7 @@ type CircleSession = {
 };
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const CIRCLE_VERIFY_TIMEOUT_MS = 25_000;
 const COOKIE_OPTIONS = {
     path: "/",
     maxAge: COOKIE_MAX_AGE,
@@ -68,14 +69,30 @@ function getAuthIntent() {
     return storedIntent === "signin" ? "signin" : "signup";
 }
 
+function clearCircleLoginState() {
+    clearCircleSession();
+    window.localStorage.removeItem("socialLoginProvider");
+    window.localStorage.removeItem("state");
+    window.localStorage.removeItem("nonce");
+}
+
 function PopupContent() {
     const [step, setStep] = useState<"loading" | "challenge" | "complete" | "error">("loading");
     const [error, setError] = useState("");
 
     useEffect(() => {
         let cancelled = false;
+        let verifyWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+        const clearVerifyWatchdog = () => {
+            if (verifyWatchdog) {
+                clearTimeout(verifyWatchdog);
+                verifyWatchdog = null;
+            }
+        };
 
         const completeCircleLogin = async (session: CircleSession) => {
+            clearVerifyWatchdog();
             const completeRes = await fetch("/api/auth/circle/wallet/complete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -122,9 +139,10 @@ function PopupContent() {
                 const onLoginComplete: LoginCompleteCallback = async (loginError, result) => {
                     try {
                         if (cancelled) return;
+                        clearVerifyWatchdog();
 
                         if (loginError || !result) {
-                            clearCircleSession();
+                            clearCircleLoginState();
                             setStep("error");
                             setError(loginError?.message || "Google login did not complete.");
                             return;
@@ -160,11 +178,19 @@ function PopupContent() {
                     },
                 };
 
+                verifyWatchdog = setTimeout(() => {
+                    if (cancelled) return;
+                    clearCircleLoginState();
+                    setStep("error");
+                    setError("Circle took too long to verify your Google account. Please try again.");
+                }, CIRCLE_VERIFY_TIMEOUT_MS);
+
                 const sdk = new W3SSdk({
                     appSettings: { appId: config.appId },
                     loginConfigs,
                 }, onLoginComplete);
             } catch (err: any) {
+                clearVerifyWatchdog();
                 setStep("error");
                 setError(err.message || "Continue with Google failed.");
             }
@@ -174,6 +200,7 @@ function PopupContent() {
 
         return () => {
             cancelled = true;
+            clearVerifyWatchdog();
         };
     }, []);
 
