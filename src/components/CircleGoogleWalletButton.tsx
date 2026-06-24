@@ -70,12 +70,19 @@ function persistCircleSession(session: CircleSession) {
     }
 }
 
+function persistCircleDevice(deviceToken: string, deviceEncryptionKey: string) {
+    setCookie("circle_device_token", deviceToken, COOKIE_OPTIONS);
+    setCookie("circle_device_encryption_key", deviceEncryptionKey, COOKIE_OPTIONS);
+}
+
 function clearCircleSession() {
     for (const name of [
         "circle_user_token",
         "circle_encryption_key",
         "circle_refresh_token",
         "circle_oauth_info",
+        "circle_device_token",
+        "circle_device_encryption_key",
     ]) {
         deleteCookie(name, { path: "/" });
     }
@@ -216,6 +223,7 @@ export default function CircleGoogleWalletButton({ onSuccess }: CircleGoogleWall
             if (!dtRes.ok || !dt.deviceToken || !dt.deviceEncryptionKey) {
                 throw new Error(dt.error || "Could not initialize Google login. Please try again.");
             }
+            persistCircleDevice(dt.deviceToken, dt.deviceEncryptionKey);
 
             sdk.updateConfigs({
                 appSettings: { appId: config.appId },

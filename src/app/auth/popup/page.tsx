@@ -56,6 +56,8 @@ function clearCircleSession() {
         "circle_encryption_key",
         "circle_refresh_token",
         "circle_oauth_info",
+        "circle_device_token",
+        "circle_device_encryption_key",
     ]) {
         deleteCookie(name, { path: "/" });
     }
