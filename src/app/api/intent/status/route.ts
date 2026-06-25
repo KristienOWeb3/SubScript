@@ -42,7 +42,8 @@ export async function GET(request: Request) {
             latestPayment?.txHash,
             latestPayment?.verificationChainId ? Number(latestPayment.verificationChainId) : undefined
         );
-        const returnUrls = (link.stateSnapshot as { returnUrls?: Record<string, string> } | null)?.returnUrls;
+        /* returnUrls are intentionally NOT exposed here: this endpoint is unauthenticated, so
+           merchant app URLs / query state must not leak to anyone holding an intent id. */
         return NextResponse.json({
             success: true,
             intent: {
@@ -60,7 +61,6 @@ export async function GET(request: Request) {
                 checkoutUrl: buildCheckoutUrl(link.id, origin),
                 chainId: settlement.chainId,
                 usdcAddress: settlement.usdcAddress,
-                ...(returnUrls ? { returnUrls } : {}),
                 latestPayment: latestPayment
                     ? {
                         id: latestPayment.id,

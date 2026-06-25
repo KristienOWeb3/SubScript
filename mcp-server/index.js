@@ -16,23 +16,32 @@ const abiPath = join(__dirname, "abi.json");
    sk_test_/sk_live_ key from your dashboard; defaults to the hosted production API. */
 const API_BASE = (process.env.SUBSCRIPT_API_BASE || "https://www.subscriptonarc.com").replace(/\/$/, "");
 const SECRET_KEY = process.env.SUBSCRIPT_SECRET_KEY || "";
+const API_TIMEOUT_MS = Number(process.env.SUBSCRIPT_API_TIMEOUT_MS) || 15000;
 
 async function callSubscriptApi(path, { method = "GET", body } = {}) {
   if (!SECRET_KEY && method !== "GET") {
     throw new Error("SUBSCRIPT_SECRET_KEY is not set. Provide an sk_test_/sk_live_ key to call this endpoint.");
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(SECRET_KEY ? { Authorization: `Bearer ${SECRET_KEY}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = { raw: text }; }
-  return { status: res.status, json };
+  /* Abort the request if the API stalls, so an MCP tool call can't hang the server. */
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(SECRET_KEY ? { Authorization: `Bearer ${SECRET_KEY}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+    return { status: res.status, json };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function jsonResult(value) {
@@ -139,6 +148,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 function verifyWebhookSignature(rawBody, signatureHeader, secret, toleranceSeconds = 300) {
   if (!signatureHeader || !secret) return { valid: false, reason: "missing signature or secret" };
+  const tolerance = Number(toleranceSeconds);
+  if (!Number.isFinite(tolerance) || tolerance <= 0) {
+    return { valid: false, reason: "invalid tolerance" };
+  }
   let timestampStr = "", signature = "";
   for (const part of signatureHeader.split(",")) {
     const [k, v] = part.split("=");
@@ -148,7 +161,7 @@ function verifyWebhookSignature(rawBody, signatureHeader, secret, toleranceSecon
   if (!timestampStr || !signature) return { valid: false, reason: "malformed signature header" };
   const ts = parseInt(timestampStr, 10);
   if (isNaN(ts)) return { valid: false, reason: "invalid timestamp" };
-  if (Math.abs(Math.floor(Date.now() / 1000) - ts) > toleranceSeconds) {
+  if (Math.abs(Math.floor(Date.now() / 1000) - ts) > tolerance) {
     return { valid: false, reason: "timestamp outside tolerance" };
   }
   const expected = crypto.createHmac("sha256", secret).update(`${timestampStr}.${rawBody}`).digest("hex");

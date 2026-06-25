@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import crypto from "crypto";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
@@ -107,7 +108,8 @@ export async function sendSignInAlertEmail(
         text: `Your SubScript account was just signed in to using Continue with ${providerLabel} at ${when}. If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.`,
         html: `<p>Your SubScript account was just signed in to using <strong>Continue with ${safeProvider}</strong>.</p><p style="color:#667085">${htmlEscape(when)}</p><p>If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.</p>`,
         // Bucket by the minute so a rapid retry de-dupes, but later genuine sign-ins still alert.
-        idempotencyKey: `signin-alert:${email.toLowerCase()}:${details.provider}:${Math.floor(Date.now() / 60000)}`,
+        // Hash the email so recipient PII isn't duplicated into the provider-visible Idempotency-Key header.
+        idempotencyKey: `signin-alert:${crypto.createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 16)}:${details.provider}:${Math.floor(Date.now() / 60000)}`,
     });
 }
 

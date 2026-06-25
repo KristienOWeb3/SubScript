@@ -118,5 +118,6 @@ Verify signatures with the SDK:
 
 ```ts
 import { SubScript } from "@subscriptonarc/sdk";
+const subscript = new SubScript({ secretKey: process.env.SUBSCRIPT_SECRET_KEY! });
 const event = subscript.webhooks.constructEvent(rawBody, sigHeader, webhookSecret);
 ```

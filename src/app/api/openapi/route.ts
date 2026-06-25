@@ -138,7 +138,11 @@ const spec = {
                         "application/json": {
                             schema: {
                                 type: "object",
-                                required: ["title", "amountUsdcMicros"],
+                                required: ["title"],
+                                oneOf: [
+                                    { required: ["amountUsdcMicros"] },
+                                    { required: ["amountUsdc"] },
+                                ],
                                 properties: {
                                     title: { type: "string" },
                                     amountUsdcMicros: { type: "string", description: "Integer micro-USDC, e.g. \"15000000\"." },

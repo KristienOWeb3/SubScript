@@ -16,7 +16,9 @@ function validateReturnUrl(label: string, value: unknown): { ok: true; value?: s
     }
     try {
         const u = new URL(value);
-        if (u.protocol !== "https:" && u.hostname !== "localhost" && u.hostname !== "127.0.0.1") {
+        const isLoopback = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+        const isAllowed = u.protocol === "https:" || (isLoopback && u.protocol === "http:");
+        if (!isAllowed) {
             return { ok: false, error: `Bad Request: ${label} must be an https URL` };
         }
     } catch {
@@ -100,15 +102,17 @@ export async function POST(request: Request) {
         const amountSource = (amountUsdcMicros !== undefined && amountUsdcMicros !== null && amountUsdcMicros !== "")
             ? amountUsdcMicros
             : amountUsdc;
-        let amountBigInt: bigint;
-        try {
-            amountBigInt = BigInt(amountSource);
-            if (amountBigInt <= BigInt(0)) {
-                return NextResponse.json({ error: "Bad Request: Amount must be greater than 0" }, { status: 400 });
-            }
-        } catch {
+        /* Only accept a plain positive decimal-integer string/number — BigInt() would otherwise
+           coerce booleans, hex ("0x10"), etc., violating the micro-USDC contract. */
+        const amountText = typeof amountSource === "number" && Number.isInteger(amountSource)
+            ? String(amountSource)
+            : typeof amountSource === "string"
+                ? amountSource.trim()
+                : "";
+        if (!/^[1-9]\d*$/.test(amountText)) {
             return NextResponse.json({ error: "Bad Request: Invalid amountUsdcMicros" }, { status: 400 });
         }
+        const amountBigInt = BigInt(amountText);
 
         const successUrlCheck = validateReturnUrl("successUrl", successUrl);
         if (!successUrlCheck.ok) return NextResponse.json({ error: successUrlCheck.error }, { status: 400 });
@@ -131,9 +135,13 @@ export async function POST(request: Request) {
         // 3. Idempotency check
         if (idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim() !== "") {
             const existing = await prisma.paymentLink.findFirst({
-                where: { idempotencyKey }
+                where: { idempotencyKey, merchantAddress }
             });
             if (existing) {
+                /* A subscription checkout is also a PaymentLink — never return one as a payment intent. */
+                if ((existing.stateSnapshot as { subscription?: unknown } | null)?.subscription) {
+                    return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
+                }
                 const receiptToken = existing.receiptToken || generateReceiptId(existing.title);
                 if (!existing.receiptToken) {
                     await prisma.paymentLink.update({

@@ -105,16 +105,19 @@ export async function GET(request: Request) {
         const subscriberParam = searchParams.get("subscriber");
 
         if (subIdParam) {
-            const subId = parseInt(subIdParam.replace(/^sub_/, ""), 10);
-            if (isNaN(subId) || subId <= 0) {
+            /* Accept only a full decimal id after the sub_ prefix — parseInt would silently
+               accept "sub_123abc" as 123 and read a different subscription. */
+            const rawSubId = subIdParam.replace(/^sub_/, "");
+            if (!/^[1-9]\d*$/.test(rawSubId)) {
                 return NextResponse.json({ error: "Bad Request: Invalid subscription ID format" }, { status: 400 });
             }
+            const subId = BigInt(rawSubId);
             try {
                 const sub = await publicClient.readContract({
                     address: STANDARD_CONTRACT_ADDRESS,
                     abi: SUBSCRIPT_ABI,
                     functionName: "subscriptions",
-                    args: [BigInt(subId)],
+                    args: [subId],
                 });
                 const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
                 if (merchant.toLowerCase() !== merchantWallet) {
@@ -195,9 +198,14 @@ export async function GET(request: Request) {
             }
         }
 
-        /* No params: list this merchant's subscription checkout sessions created via POST. */
+        /* No params: list this merchant's subscription checkout sessions created via POST.
+           Filter on the subscription metadata in the query so one-time intents can't push
+           older subscriptions out of the take:100 window. */
         const links = await prisma.paymentLink.findMany({
-            where: { merchantAddress: merchantWallet },
+            where: {
+                merchantAddress: merchantWallet,
+                stateSnapshot: { path: ["subscription", "kind"], equals: "subscription" },
+            },
             orderBy: { createdAt: "desc" },
             take: 100,
         });
@@ -262,17 +270,25 @@ export async function POST(request: Request) {
         }
 
         if (amountMicros === null) {
-            const source = (amountUsdcMicros !== undefined && amountUsdcMicros !== null && amountUsdcMicros !== "")
-                ? amountUsdcMicros : amountUsdc !== undefined && amountUsdc !== null && amountUsdc !== ""
-                    ? BigInt(Math.round(Number(amountUsdc) * 1_000_000)).toString() : null;
+            /* Validate before converting: legacy `amountUsdc` like "abc"/"Infinity" must 400, not 500. */
+            let source: string | null = null;
+            if (amountUsdcMicros !== undefined && amountUsdcMicros !== null && amountUsdcMicros !== "") {
+                source = String(amountUsdcMicros).trim();
+            } else if (amountUsdc !== undefined && amountUsdc !== null && amountUsdc !== "") {
+                const decimal = String(amountUsdc).trim();
+                if (!/^\d+(\.\d{1,6})?$/.test(decimal)) {
+                    return NextResponse.json({ error: "Bad Request: invalid amountUsdc" }, { status: 400 });
+                }
+                const [whole, fraction = ""] = decimal.split(".");
+                source = `${whole}${fraction.padEnd(6, "0")}`;
+            }
             if (source === null) {
                 return NextResponse.json({ error: "Bad Request: provide planId, amountUsdcMicros, or amountUsdc" }, { status: 400 });
             }
-            try {
-                amountMicros = BigInt(source);
-            } catch {
+            if (!/^\d+$/.test(source)) {
                 return NextResponse.json({ error: "Bad Request: invalid amountUsdcMicros" }, { status: 400 });
             }
+            amountMicros = BigInt(source);
         }
         if (amountMicros <= BigInt(0)) {
             return NextResponse.json({ error: "Bad Request: amount must be greater than 0" }, { status: 400 });
@@ -310,9 +326,13 @@ export async function POST(request: Request) {
 
         // 2. Idempotency: return the existing subscription if the key was already used.
         if (idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim() !== "") {
-            const existing = await prisma.paymentLink.findFirst({ where: { idempotencyKey } });
+            const existing = await prisma.paymentLink.findFirst({ where: { idempotencyKey, merchantAddress } });
             if (existing) {
                 const meta = readSubscriptionMeta(existing.stateSnapshot);
+                /* Reject if the same key was used for a one-time intent (different resource shape). */
+                if (!meta) {
+                    return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
+                }
                 return NextResponse.json({
                     success: true,
                     subscription: {
@@ -415,6 +435,13 @@ export async function DELETE(request: Request) {
                 where: { subscriptionId },
                 data: { cancelAtPeriodEnd: true, cancelRequestedAt: new Date() },
             });
+            await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                subscriptionId: idParam,
+                status: "canceled",
+                subscriber: existing.subscriber,
+                merchantAddress,
+                reason: "Cancel requested at period end",
+            })).catch(() => { /* delivery is best-effort */ });
             return NextResponse.json({
                 id: `sub_${idParam}`,
                 object: "subscription",
@@ -423,10 +450,13 @@ export async function DELETE(request: Request) {
             }, { status: 200 });
         }
 
-        // Checkout-session subscription (uuid): cancel it if it hasn't activated.
+        // Checkout-session subscription (uuid): cancel it only if it hasn't activated on-chain.
         const link = await prisma.paymentLink.findUnique({ where: { id: idParam } });
         if (!link || link.merchantAddress.toLowerCase() !== merchantAddress || !readSubscriptionMeta(link.stateSnapshot)) {
             return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
+        }
+        if (link.status === "PAID") {
+            return NextResponse.json({ error: "Conflict: active subscriptions must be canceled by on-chain subscription id" }, { status: 409 });
         }
         await prisma.paymentLink.update({
             where: { id: idParam },

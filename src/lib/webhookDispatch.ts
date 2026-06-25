@@ -28,19 +28,26 @@ export async function dispatchMerchantWebhook(
         };
 
         await Promise.all(endpoints.map(async (endpoint: { id: string; url: string; secret: string }) => {
+            let status = 0;
+            let responseText = "";
             try {
-                const { status, responseText } = await sendWebhookRequest(endpoint.url, payload, endpoint.secret);
-                await prisma.webhookEvent.create({
-                    data: {
-                        webhookEndpointId: endpoint.id,
-                        event,
-                        eventType: event,
-                        status,
-                        payload: payload as any,
-                        responseBody: responseText,
-                    },
-                }).catch(() => { /* logging is best-effort */ });
-            } catch { /* one endpoint failing must not affect the others */ }
+                const result = await sendWebhookRequest(endpoint.url, payload, endpoint.secret);
+                status = result.status;
+                responseText = result.responseText;
+            } catch (err) {
+                /* Record the failure too, so merchants can see failed delivery attempts. */
+                responseText = err instanceof Error ? err.message : String(err);
+            }
+            await prisma.webhookEvent.create({
+                data: {
+                    webhookEndpointId: endpoint.id,
+                    event,
+                    eventType: event,
+                    status,
+                    payload: payload as any,
+                    responseBody: responseText,
+                },
+            }).catch(() => { /* logging is best-effort */ });
         }));
 
         return { dispatched: endpoints.length };

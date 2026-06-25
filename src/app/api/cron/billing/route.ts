@@ -263,7 +263,7 @@ export async function POST(request: Request) {
                     ].join("\n"),
                 }).catch((dmErr: any) => console.error("Failed to create renewal warning DM:", dmErr));
 
-                await dispatchMerchantWebhook(subscriberAddress, "subscription.payment_failed", subscriptionWebhookData({
+                await dispatchMerchantWebhook(sub.merchant_address, "subscription.payment_failed", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "past_due",
                     amountUsdcMicros: sub.amount_cap_usdc || 0,
@@ -360,7 +360,7 @@ export async function POST(request: Request) {
                             });
                         }
 
-                        await dispatchMerchantWebhook(subscriberAddress, "subscription.canceled", subscriptionWebhookData({
+                        await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                             subscriptionId: subId,
                             status: "canceled",
                             amountUsdcMicros: sub.amount_cap_usdc || 0,
@@ -445,7 +445,7 @@ export async function POST(request: Request) {
                         });
                     }
 
-                    await dispatchMerchantWebhook(subscriber, "subscription.canceled", subscriptionWebhookData({
+                    await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "canceled",
                         amountUsdcMicros: sub.amount_cap_usdc || 0,
@@ -551,7 +551,7 @@ export async function POST(request: Request) {
                     })
                     .eq("wallet_address", subscriber.toLowerCase());
 
-                await dispatchMerchantWebhook(subscriber, "subscription.renewed", subscriptionWebhookData({
+                await dispatchMerchantWebhook(sub.merchant_address, "subscription.renewed", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "active",
                     amountUsdcMicros: requiredAmount,

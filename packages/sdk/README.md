@@ -39,10 +39,13 @@ const status = await subscript.intents.retrieve(intent.id);
 ```ts
 import { SubScript } from "@subscriptonarc/sdk";
 
+const subscript = new SubScript({ secretKey: process.env.SUBSCRIPT_SECRET_KEY! });
+
 // In your webhook route (rawBody is the unparsed request body string):
+const signature = request.headers.get("x-subscript-signature") ?? "";
 const event = subscript.webhooks.constructEvent(
   rawBody,
-  request.headers["x-subscript-signature"],
+  signature,
   process.env.SUBSCRIPT_WEBHOOK_SECRET!,
 );
 // throws if the signature is invalid; otherwise returns the parsed event

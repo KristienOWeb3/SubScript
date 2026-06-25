@@ -27,9 +27,14 @@ export interface SubScriptOptions {
 
 /** Convert a decimal USDC amount (e.g. 15 or "15.50") to canonical integer micro-USDC. */
 export function usdc(amount: number | string): string {
-    const n = typeof amount === "number" ? amount : Number(amount);
-    if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid USDC amount: ${amount}`);
-    return BigInt(Math.round(n * 1_000_000)).toString();
+    // Parse the decimal string exactly — floating-point math (Number * 1e6) silently loses
+    // precision and rounds, which would change the amount before it reaches the API.
+    const raw = typeof amount === "number" ? amount.toString() : amount.trim();
+    const match = raw.match(/^(\d+)(?:\.(\d+))?$/);
+    if (!match) throw new Error(`Invalid USDC amount: ${amount}`);
+    const [, whole, frac = ""] = match;
+    if (frac.length > 6) throw new Error(`USDC supports at most 6 decimal places: ${amount}`);
+    return BigInt(`${whole}${frac.padEnd(6, "0")}`).toString();
 }
 
 /** Convert integer micro-USDC to a decimal USDC string. */
@@ -147,10 +152,15 @@ export interface WebhookEvent {
 }
 
 function stringifyMicros<T extends { amountUsdcMicros?: string | bigint | number }>(params: T): T {
-    if (params && params.amountUsdcMicros != null && typeof params.amountUsdcMicros !== "string") {
-        return { ...params, amountUsdcMicros: String(params.amountUsdcMicros) };
+    if (!params || params.amountUsdcMicros == null) return params;
+    const micros = typeof params.amountUsdcMicros === "bigint"
+        ? params.amountUsdcMicros.toString()
+        : String(params.amountUsdcMicros).trim();
+    // Enforce the public contract: digits-only integer micro-USDC (reject "1.5", "1e21", etc.).
+    if (!/^\d+$/.test(micros)) {
+        throw new Error(`Invalid amountUsdcMicros: ${params.amountUsdcMicros}`);
     }
-    return params;
+    return { ...params, amountUsdcMicros: micros };
 }
 
 /* --------------------------------- Client ------------------------------------ */
