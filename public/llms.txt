@@ -18,6 +18,7 @@ SubScript helps consumers pay without dollar-card friction and helps merchants a
 
 ## Developer Resources
 
+- [Quickstart](https://www.subscriptonarc.com/quickstart.md): Five-minute guided walkthrough — keys, install, first payment, webhook verification, and local testing with `trigger`.
 - [OpenAPI 3.1 Spec](https://www.subscriptonarc.com/openapi.json): Machine-readable contract for the REST API — generate typed clients, Postman collections, and agent tools from it.
 - [API Reference](https://www.subscriptonarc.com/api-reference.md): Prose reference — auth, amount units, idempotency, rate limits, error codes, endpoints, and webhook events.
 - [TypeScript SDK](https://www.npmjs.com/package/@subscriptonarc/sdk): `@subscriptonarc/sdk` — typed client for intents, subscriptions, usage, and webhook verification.
