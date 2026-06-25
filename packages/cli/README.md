@@ -1,4 +1,4 @@
-# @subscript/cli
+# @subscriptonarc/cli
 
 The integration CLI for [SubScript](https://www.subscriptonarc.com) — programmable USDC payments on Arc.
 Scaffold a working checkout intent route, a signed webhook receiver, and a checkout button in seconds.
@@ -10,7 +10,7 @@ zero runtime dependencies to your project.
 ## Quick start
 
 ```bash
-npx @subscript/cli
+npx @subscriptonarc/cli
 ```
 
 The interactive wizard detects your framework (Next.js App/Pages Router, React SPA, Express), then
@@ -20,13 +20,13 @@ scaffolds the files you need and writes a `.env.local` with your keys.
 
 | Command | What it does |
 | --- | --- |
-| `npx @subscript/cli` | Interactive setup wizard (default). |
-| `npx @subscript/cli init --session <token>` | Non-interactive setup using a token from your merchant dashboard. |
-| `npx @subscript/cli add checkout` | Scaffold the checkout intent server route + button. |
-| `npx @subscript/cli add webhook` | Scaffold the signed webhook receiver route. |
-| `npx @subscript/cli doctor` | Diagnose an existing integration. |
-| `npx @subscript/cli verify` | Verify generated files against the protocol templates. |
-| `npx @subscript/cli update` | Update generated files to the latest templates. |
+| `npx @subscriptonarc/cli` | Interactive setup wizard (default). |
+| `npx @subscriptonarc/cli init --session <token>` | Non-interactive setup using a token from your merchant dashboard. |
+| `npx @subscriptonarc/cli add checkout` | Scaffold the checkout intent server route + button. |
+| `npx @subscriptonarc/cli add webhook` | Scaffold the signed webhook receiver route. |
+| `npx @subscriptonarc/cli doctor` | Diagnose an existing integration. |
+| `npx @subscriptonarc/cli verify` | Verify generated files against the protocol templates. |
+| `npx @subscriptonarc/cli update` | Update generated files to the latest templates. |
 
 ### Options
 
