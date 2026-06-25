@@ -18,9 +18,24 @@ SubScript helps consumers pay without dollar-card friction and helps merchants a
 
 ## Developer Resources
 
+- [Quickstart](https://www.subscriptonarc.com/quickstart.md): Five-minute guided walkthrough — keys, install, first payment, webhook verification, and local testing with `trigger`.
+- [OpenAPI 3.1 Spec](https://www.subscriptonarc.com/openapi.json): Machine-readable contract for the REST API — generate typed clients, Postman collections, and agent tools from it.
+- [API Reference](https://www.subscriptonarc.com/api-reference.md): Prose reference — auth, amount units, idempotency, rate limits, error codes, endpoints, and webhook events.
+- [TypeScript SDK](https://www.npmjs.com/package/@subscriptonarc/sdk): `@subscriptonarc/sdk` — typed client for intents, subscriptions, usage, and webhook verification.
+- [MCP Server](https://github.com/KristienOWeb3/SubScript/tree/main/mcp-server): `@subscriptonarc/mcp` exposes create_intent, get_payment_status, report_usage, and verify_webhook tools for AI agents.
 - [Full LLM Reference](https://www.subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
 - [Sitemap](https://www.subscriptonarc.com/sitemap.xml): Search crawler sitemap.
 - [Robots](https://www.subscriptonarc.com/robots.txt): Crawler access policy.
+
+## Developer API (canonical contract)
+
+Authenticate with `Authorization: Bearer sk_test_…` (sandbox) or `sk_live_…` (production). Amounts are canonical integer micro-USDC: 1 USDC = 1000000, so 15 USDC = "15000000" in `amountUsdcMicros`. The legacy decimal field `amountUsdc` is still accepted everywhere as an alias.
+
+- One-time payment: `POST /api/intent` with `{ title, amountUsdcMicros, successUrl?, cancelUrl?, externalReference?, idempotencyKey?, sandbox? }`. Returns `intent.checkoutUrl`, `intent.id`, `chainId`, and `usdcAddress`.
+- Payment status: `GET /api/intent/status?id=<intentId>` returns `status` (PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE), `latestPayment.txHash`, and `latestPayment.explorerUrl`.
+- Subscriptions: `POST /api/v1/subscriptions` with `{ amountUsdcMicros | planId, interval (daily|weekly|monthly|yearly) | intervalSeconds, intervalCount?, subscriber? }` returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` after on-chain authorization. List via `GET /api/v1/subscriptions` (`?id=sub_<n>` or `?subscriber=0x…`); cancel via `DELETE /api/v1/subscriptions?id=sub_<id>`.
+- Metered usage: `POST /api/user/vault/report-usage` with `{ userAddress, amountUsdcMicros }`.
+- Webhooks: signed with `x-subscript-signature: t=<unix>,v1=<hex>` = HMAC-SHA256 of `${t}.${rawBody}`. Canonical event name is `type: "payment.succeeded"` (`event: "payment.success"` is a back-compat alias); each field is sent in both snake_case (canonical) and camelCase. Payloads carry `chain_id`, `usdc_address`, `transaction_hash`, and `explorer_url` for on-chain reconciliation.
 
 ## Primary Concepts
 

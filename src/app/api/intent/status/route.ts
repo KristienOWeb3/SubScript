@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isPaymentLinkUnavailable } from "@/lib/dms/system";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { arcReconciliation } from "@/lib/arc/reconciliation";
 
 export async function GET(request: Request) {
     try {
@@ -37,6 +38,12 @@ export async function GET(request: Request) {
                         ? "INACTIVE"
                         : "PENDING";
 
+        const settlement = arcReconciliation(
+            latestPayment?.txHash,
+            latestPayment?.verificationChainId ? Number(latestPayment.verificationChainId) : undefined
+        );
+        /* returnUrls are intentionally NOT exposed here: this endpoint is unauthenticated, so
+           merchant app URLs / query state must not leak to anyone holding an intent id. */
         return NextResponse.json({
             success: true,
             intent: {
@@ -45,12 +52,15 @@ export async function GET(request: Request) {
                 title: link.title,
                 description: link.description,
                 amountUsdc: link.amountUsdc.toString(),
+                amountUsdcMicros: link.amountUsdc.toString(),
                 merchantAddress: link.merchantAddress,
                 maxUses: link.maxUses,
                 useCount: link.useCount,
                 active: link.active,
                 expiresAt: link.expiresAt,
                 checkoutUrl: buildCheckoutUrl(link.id, origin),
+                chainId: settlement.chainId,
+                usdcAddress: settlement.usdcAddress,
                 latestPayment: latestPayment
                     ? {
                         id: latestPayment.id,
@@ -58,6 +68,7 @@ export async function GET(request: Request) {
                         payerAddress: latestPayment.payerAddress,
                         credited: latestPayment.credited,
                         creditedAt: latestPayment.creditedAt,
+                        explorerUrl: settlement.explorerTxUrl,
                     }
                     : null,
             },

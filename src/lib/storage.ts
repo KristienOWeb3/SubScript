@@ -15,10 +15,12 @@ export async function uploadProfilePicture(
 
     try {
         // Parse data URL format: data:image/png;base64,...
-        const match = base64DataUrl.match(/^data:(image\/[a-zA-Z+.-]+);base64,(.+)$/);
+        // Only raster image types are accepted — never image/svg+xml, which can carry
+        // executable script and would be a stored-XSS vector if ever rendered inline.
+        const match = base64DataUrl.match(/^data:(image\/(?:png|jpe?g|gif|webp));base64,(.+)$/);
         if (!match) {
-            console.warn("[Storage Utility] Invalid Base64 data URL format. Returning original string.");
-            return base64DataUrl;
+            console.warn("[Storage Utility] Unsupported or non-raster image data URL. Rejecting upload.");
+            return "";
         }
 
         const [, mimeType, base64Data] = match;

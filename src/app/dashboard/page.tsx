@@ -2078,7 +2078,7 @@ export default function DashboardPage() {
     const agentIntegrationPrompt = useMemo(() => {
         return `I want to integrate the SubScript Protocol into this codebase.
 Please inspect the workspace. If the initialization package has NOT been run yet, please run it in the terminal first:
-npx @subscript-protocol/create
+npx @subscriptonarc/create
 
 This initialization tool installs the SubScript SDK, prompts for deployment parameters, writes SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET into .env.local, configures .cursorrules, and scaffolds both a server-side checkout intent route and a signed webhook route.
 
@@ -2091,7 +2091,7 @@ Here are my project configuration specifications for this integration:
 
 Please complete the following implementation tasks:
 1. Checkout Intent Creation: Locate the generated server route (for example, src/app/api/subscript/checkout/route.ts). From the pricing page, call that route with amountUsdc, title, description, externalReference, and an idempotencyKey. Store the returned intentId beside the logged-in user/order/subscription before redirecting the user to checkoutUrl.
-2. Webhook Fulfillment: Locate the generated webhook route (for example, src/app/api/webhooks/subscript/route.ts or an Express router). Keep raw-body x-subscript-signature verification enabled. When event === "payment.success", use data.intent_id or data.checkout_session_id to find the local record, enforce idempotency with event.id, and unlock the matching plan exactly once using ${dbProvider === "none" ? "the detected database" : dbProvider}.
+2. Webhook Fulfillment: Locate the generated webhook route (for example, src/app/api/webhooks/subscript/route.ts or an Express router). Keep raw-body x-subscript-signature verification enabled. When event.type === "payment.succeeded" (its alias "payment.success" is also accepted), use data.intent_id or data.checkout_session_id to find the local record, enforce idempotency with event.id, and unlock the matching plan exactly once using ${dbProvider === "none" ? "the detected database" : dbProvider}.
 3. User Session: Set up session recreation/persistence using ${sessionProvider === "none" ? "HTTP-only secure cookies or JWT" : sessionProvider} so the frontend can determine whether the logged-in user has an active paid subscription. Do not ask my app to know the payer wallet; SubScript maps wallet payment activity to the Checkout Intent.
 4. Payment Rail Boundary: Treat hosted checkout as Arc-native USDC only. Do not add Base, Solana, or CCTP checkout claims unless the SubScript docs in this repo explicitly say hosted CCTP memo settlement is live.
 5. Clean Code Practices: Keep SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET server-side only. Do not add emojis in comments or logs.`;
@@ -2101,7 +2101,7 @@ Please complete the following implementation tasks:
         mcpServers: {
             subscript: {
                 command: "npx",
-                args: ["-y", "@subscript-protocol/mcp"],
+                args: ["-y", "@subscriptonarc/mcp"],
                 env: {
                     SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
                     SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
@@ -4257,9 +4257,9 @@ Please complete the following implementation tasks:
                                 </a>
                             </div>
                             <div className="mt-4 flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-4 py-3">
-                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscript-protocol/cli</code>
+                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscriptonarc/cli</code>
                                 <button
-                                    onClick={() => handleCopy("npx @subscript-protocol/cli", "CLI Command")}
+                                    onClick={() => handleCopy("npx @subscriptonarc/cli", "CLI Command")}
                                     className="shrink-0 p-2 text-white/50 hover:text-[#00d2b4] rounded-lg hover:bg-white/5 transition-colors"
                                     title="Copy command"
                                 >

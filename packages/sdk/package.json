@@ -1,0 +1,45 @@
+{
+  "name": "@subscriptonarc/sdk",
+  "version": "1.0.1",
+  "description": "Typed SubScript API client — payment intents, subscriptions, usage reporting, and webhook verification for Arc USDC payments.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "subscript",
+    "arc",
+    "usdc",
+    "payments",
+    "stablecoin",
+    "subscriptions",
+    "usage-billing",
+    "webhooks",
+    "sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KristienOWeb3/SubScript.git",
+    "directory": "packages/sdk"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

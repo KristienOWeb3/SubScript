@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import crypto from "crypto";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 
@@ -87,6 +88,28 @@ export async function sendAuthenticationCodeEmail(email: string, code: string) {
         text: `Your SubScript verification code is ${code}. It expires in 10 minutes. If you did not request it, you can ignore this email.`,
         html: `<p>Your SubScript verification code is <strong style="font-size:24px;letter-spacing:4px">${safeCode}</strong>.</p><p>It expires in 10 minutes. If you did not request it, you can ignore this email.</p>`,
         idempotencyKey: `otp:${email}:${code}`,
+    });
+}
+
+export async function sendSignInAlertEmail(
+    email: string,
+    details: { provider: string; when?: Date }
+) {
+    const providerLabel = details.provider === "google"
+        ? "Google"
+        : details.provider === "apple"
+            ? "Apple"
+            : details.provider;
+    const when = (details.when || new Date()).toUTCString();
+    const safeProvider = htmlEscape(providerLabel);
+    return sendTransactionalEmail({
+        to: email,
+        subject: "New sign-in to your SubScript account",
+        text: `Your SubScript account was just signed in to using Continue with ${providerLabel} at ${when}. If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.`,
+        html: `<p>Your SubScript account was just signed in to using <strong>Continue with ${safeProvider}</strong>.</p><p style="color:#667085">${htmlEscape(when)}</p><p>If this was you, no action is needed. If you don't recognize this sign-in, secure your email account immediately.</p>`,
+        // Bucket by the minute so a rapid retry de-dupes, but later genuine sign-ins still alert.
+        // Hash the email so recipient PII isn't duplicated into the provider-visible Idempotency-Key header.
+        idempotencyKey: `signin-alert:${crypto.createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 16)}:${details.provider}:${Math.floor(Date.now() / 60000)}`,
     });
 }
 

@@ -40,7 +40,7 @@ export async function runDoctor() {
     // 2. Configuration file verification
     if (!existsSync(paths.configPath)) {
       issues.push("SubScript configuration file (subscript.config.ts) is missing.");
-      fixes.push("Run initialization to generate config: npx @subscript/cli init --session <TOKEN>");
+      fixes.push("Run initialization to generate config: npx @subscriptonarc/cli init --session <TOKEN>");
     } else {
       // Configuration details check
       const configContent = await readFile(paths.configPath, "utf8");
@@ -51,7 +51,7 @@ export async function runDoctor() {
 
       if (!hasMerchant || !hasMode || !hasVersion) {
         issues.push("subscript.config.ts appears corrupt or is missing required parameter definitions.");
-        fixes.push("Regenerate the config file by running: npx @subscript/cli init --session <TOKEN>");
+        fixes.push("Regenerate the config file by running: npx @subscriptonarc/cli init --session <TOKEN>");
       }
 
       // Check files existence based on mode
@@ -67,14 +67,14 @@ export async function runDoctor() {
       const buttonPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
       if (!existsSync(buttonPath)) {
         issues.push("SubScriptCheckoutButton.tsx component file is missing.");
-        fixes.push("Re-run checkout scaffold: npx @subscript/cli add checkout");
+        fixes.push("Re-run checkout scaffold: npx @subscriptonarc/cli add checkout");
       }
 
       if (mode === "privacy-routed" || mode === "zk-routed") {
         const escrowPath = path.join(paths.componentsDir, "EscrowStatusTracker.tsx");
         if (!existsSync(escrowPath)) {
           issues.push("Privacy Premium routing mode is enabled, but EscrowStatusTracker.tsx is missing.");
-          fixes.push("Re-run checkout scaffold to restore escrow components: npx @subscript/cli add checkout");
+          fixes.push("Re-run checkout scaffold to restore escrow components: npx @subscriptonarc/cli add checkout");
         }
       }
     }

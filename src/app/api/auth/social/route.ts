@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SignJWT } from "jose";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { safelySendEmail, sendSignInAlertEmail } from "@/lib/email/transactional";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
 import { setSessionCookie } from "@/lib/authCookies";
@@ -164,6 +165,13 @@ export async function POST(request: Request) {
 
         
         setSessionCookie(response, request, jwt, expiresAt);
+
+        /* Notify the account email of the sign-in (security alert). Runs after the
+           response so it never delays login and can't break auth on mail failure. */
+        after(() => safelySendEmail(
+            `${providerVal} sign-in alert`,
+            () => sendSignInAlertEmail(emailVal, { provider: providerVal })
+        ));
 
         return response;
     } catch (err: any) {

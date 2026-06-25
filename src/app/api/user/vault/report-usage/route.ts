@@ -34,16 +34,34 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { userAddress, amountUsdc } = sanitizedBody;
+        const { userAddress, amountUsdc, amountUsdcMicros } = sanitizedBody;
 
-        if (typeof userAddress !== "string" || !userAddress.startsWith("0x") || userAddress.length !== 42) {
+        if (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress)) {
             return NextResponse.json({ error: "Invalid user address" }, { status: 400 });
         }
-        if (!amountUsdc || isNaN(Number(amountUsdc)) || Number(amountUsdc) <= 0) {
+
+        /* Canonical unit is integer micro-USDC (`amountUsdcMicros`), consistent with /intent and
+           /v1/subscriptions. The legacy decimal `amountUsdc` is still accepted for compatibility.
+           Reject non-string/non-finite inputs before BigInt so e.g. `true` or "Infinity" 400 cleanly. */
+        let amountMicros: bigint;
+        if (amountUsdcMicros !== undefined && amountUsdcMicros !== null && amountUsdcMicros !== "") {
+            if (typeof amountUsdcMicros !== "string" || !/^\d+$/.test(amountUsdcMicros)) {
+                return NextResponse.json({ error: "Invalid amountUsdcMicros (must be an integer micro-USDC string)" }, { status: 400 });
+            }
+            amountMicros = BigInt(amountUsdcMicros);
+        } else if (amountUsdc !== undefined && amountUsdc !== null && amountUsdc !== "") {
+            const legacyAmount = typeof amountUsdc === "number" || typeof amountUsdc === "string" ? Number(amountUsdc) : NaN;
+            if (!Number.isFinite(legacyAmount)) {
+                return NextResponse.json({ error: "Invalid consumption amount" }, { status: 400 });
+            }
+            amountMicros = BigInt(Math.round(legacyAmount * 1_000_000));
+        } else {
+            return NextResponse.json({ error: "Invalid consumption amount" }, { status: 400 });
+        }
+        if (amountMicros <= BigInt(0)) {
             return NextResponse.json({ error: "Invalid consumption amount" }, { status: 400 });
         }
 
-        const amountMicros = BigInt(Math.round(Number(amountUsdc) * 1_000_000));
         const normalizedUser = userAddress.toLowerCase();
 
         const vault = await prisma.meteredVault.findUnique({

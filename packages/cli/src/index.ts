@@ -22,6 +22,7 @@ import { runAddWebhook } from "./commands/addWebhook.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runVerify } from "./commands/verify.js";
 import { runUpdate } from "./commands/update.js";
+import { runTrigger } from "./commands/trigger.js";
 
 const ARC_TESTNET_CHAIN_ID = 5042002;
 const SUBSCRIPT_ROUTER_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
@@ -52,7 +53,7 @@ function detectPackageManager(): string {
 
 async function runWizard() {
   printAsciiBanner();
-  intro("@subscript-protocol/integration-wizard");
+  intro("@subscriptonarc/integration-wizard");
 
   const secretKeyResult = await text({
     message: "Enter your SubScript Secret Key (server-side Checkout Intent key):",
@@ -201,9 +202,9 @@ async function runWizard() {
     }
   }
 
-  /* SubScript integrates over a plain REST API (POST /api/intent) — there is no SDK to install.
-     The generated server route and checkout button use the built-in fetch, so a standard hosted
-     checkout integration adds zero runtime dependencies. */
+  /* The generated server route and checkout button use built-in fetch, so a standard hosted
+     checkout integration adds zero runtime dependencies. A typed @subscriptonarc/sdk is also
+     available for teams that prefer a client over raw REST. */
   const pm = detectPackageManager();
 
   /* On-chain client libraries are only needed for Privacy Premium mode, where the generated
@@ -255,10 +256,10 @@ SUBSCRIPT_INTERVAL=2592000
   /* Agent Context Injection (.cursorrules) */
   const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
-1. THE REST TRUTH: SubScript integrates over a plain REST API — there is no SDK package. Do not
-   install or import \`@subscript-protocol/sdk\`; it does not exist.
+1. INTEGRATION TRUTH: The generated files integrate over a plain REST API with zero dependencies.
+   A typed client, \`@subscriptonarc/sdk\`, is also published if you prefer it over raw \`fetch\`.
    - From a server route, call \`POST {SUBSCRIPT_BASE_URL}/api/intent\` with a
-     \`Authorization: Bearer \${SUBSCRIPT_SECRET_KEY}\` header (plain \`fetch\`).
+     \`Authorization: Bearer \${SUBSCRIPT_SECRET_KEY}\` header (plain \`fetch\` or the SDK).
    - Store the returned \`intentId\` beside the user/order and redirect the browser to \`checkoutUrl\`.
    - Verify webhook signatures against the exact raw request body before handling payloads.
 2. HOSTED CHECKOUT TRUTH: Hosted payment links settle through direct Arc USDC. Do not promise CCTP checkout until Arc-side memo settlement is available.
@@ -402,6 +403,8 @@ interface ParsedArgs {
   sub: string | undefined;
   session?: string;
   mode?: string;
+  url?: string;
+  secret?: string;
   noTelemetry: boolean;
   help: boolean;
   version: boolean;
@@ -411,6 +414,8 @@ function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
   let session: string | undefined;
   let mode: string | undefined;
+  let url: string | undefined;
+  let secret: string | undefined;
   let noTelemetry = false;
   let help = false;
   let version = false;
@@ -424,10 +429,14 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (arg === "--session") session = argv[++i];
     else if (arg.startsWith("--mode=")) mode = arg.slice("--mode=".length);
     else if (arg === "--mode") mode = argv[++i];
+    else if (arg.startsWith("--url=")) url = arg.slice("--url=".length);
+    else if (arg === "--url") url = argv[++i];
+    else if (arg.startsWith("--secret=")) secret = arg.slice("--secret=".length);
+    else if (arg === "--secret") secret = argv[++i];
     else positionals.push(arg);
   }
 
-  return { command: positionals[0], sub: positionals[1], session, mode, noTelemetry, help, version };
+  return { command: positionals[0], sub: positionals[1], session, mode, url, secret, noTelemetry, help, version };
 }
 
 function printHelp() {
@@ -435,7 +444,7 @@ function printHelp() {
 SubScript CLI v${CLI_VERSION} — Arc USDC payments integration
 
 Usage:
-  npx @subscript-protocol/cli [command] [options]
+  npx @subscriptonarc/cli [command] [options]
 
 Commands:
   init                  Interactive setup wizard (default when no command is given).
@@ -445,17 +454,25 @@ Commands:
   doctor                Diagnose an existing SubScript integration.
   verify                Verify generated files against the protocol templates.
   update                Update generated SubScript files to the latest templates.
+  trigger <event>       Send a signed test webhook to your endpoint (local testing).
 
 Options:
   -h, --help            Show this help.
   -v, --version         Show the CLI version.
   --mode <mode>         "standard" (default) or "privacy-routed".
+  --url <endpoint>      trigger: target webhook URL (default http://localhost:3000/api/webhooks).
+  --secret <whsec>      trigger: signing secret (defaults to SUBSCRIPT_WEBHOOK_SECRET / .env.local).
   --no-telemetry        Disable anonymous usage telemetry.
 
+Events for 'trigger':
+  payment.succeeded  subscription.created  subscription.renewed
+  subscription.payment_failed  subscription.canceled
+
 Examples:
-  npx @subscript-protocol/cli
-  npx @subscript-protocol/cli add webhook
-  npx @subscript-protocol/cli doctor
+  npx @subscriptonarc/cli
+  npx @subscriptonarc/cli add webhook
+  npx @subscriptonarc/cli doctor
+  npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript
 `);
 }
 
@@ -501,6 +518,9 @@ async function main() {
       break;
     case "update":
       await runUpdate({ noTelemetry: args.noTelemetry });
+      break;
+    case "trigger":
+      await runTrigger({ event: args.sub, url: args.url, secret: args.secret });
       break;
     case "help":
       printHelp();

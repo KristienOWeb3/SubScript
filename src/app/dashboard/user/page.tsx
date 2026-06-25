@@ -258,6 +258,7 @@ export default function UserDashboard() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkResultUrl, setLinkResultUrl] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [linkQrShown, setLinkQrShown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
@@ -1099,6 +1100,7 @@ export default function UserDashboard() {
     event.preventDefault();
     setLinkError(null);
     setLinkResultUrl(null);
+    setLinkQrShown(false);
     if (!linkAmount || isNaN(Number(linkAmount)) || Number(linkAmount) <= 0) {
       setLinkError("Enter a valid USDC amount.");
       return;
@@ -1559,11 +1561,16 @@ export default function UserDashboard() {
     const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
     return aNext - bNext;
   });
-  const pendingDmCount = dms.filter((dm) => dm.status === "PENDING").length;
+  /* Only the receiver of a PENDING system DM can settle it (see /api/user/dms POST),
+     so requests the user *sent* must not keep the notification badge lit forever. */
+  const isActionableDm = (dm: DmMessage) =>
+    dm.status === "PENDING" && dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase();
+  const pendingDmCount = dms.filter(isActionableDm).length;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
     const existing = threads.get(peerAddress);
     const latestTime = new Date(dm.createdAt).getTime();
+    const actionable = isActionableDm(dm);
     if (!existing) {
       threads.set(peerAddress, {
         peerAddress,
@@ -1572,12 +1579,12 @@ export default function UserDashboard() {
         peerProfilePic: dm.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? dm.receiverProfilePic : dm.senderProfilePic,
         latest: dm,
         latestTime,
-        pendingCount: dm.status === "PENDING" ? 1 : 0,
+        pendingCount: actionable ? 1 : 0,
         totalCount: 1,
       });
     } else {
       existing.totalCount += 1;
-      if (dm.status === "PENDING") existing.pendingCount += 1;
+      if (actionable) existing.pendingCount += 1;
       if (latestTime > existing.latestTime) {
         existing.latest = dm;
         existing.latestTime = latestTime;
@@ -2082,15 +2089,30 @@ export default function UserDashboard() {
                       >
                         {linkCopied ? "Copied ✓" : "Copy link"}
                       </button>
-                      <a
-                        href={linkResultUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => setLinkQrShown((shown) => !shown)}
+                        aria-expanded={linkQrShown}
                         className="dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-center"
                       >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </a>
+                        {linkQrShown ? "Hide QR" : "Show QR"} <QrCode className="h-3 w-3" />
+                      </button>
                     </div>
+                    {linkQrShown && (
+                      <div className="flex flex-col items-center gap-3 pt-1">
+                        <div className="rounded-3xl bg-white p-4">
+                          <QRCodeSVG
+                            value={linkResultUrl}
+                            size={196}
+                            level="H"
+                            imageSettings={{ src: "/logo.png", height: 38, width: 38, excavate: true }}
+                          />
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-center text-white/45">
+                          Let the payer scan this with their phone camera to open the payment link.
+                        </p>
+                      </div>
+                    )}
                     <p className="text-[11px] leading-relaxed text-white/45">
                       Share this anywhere. When someone pays, they're auto-onboarded as a SubScript user and a DM thread opens between you.
                     </p>

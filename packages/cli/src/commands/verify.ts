@@ -85,7 +85,7 @@ export async function runVerify(options: { noTelemetry?: boolean }) {
                 `[!] Version Compatibility: WARNING. Your integration is outdated.\n` +
                 `    Generated template: ${version}\n` +
                 `    Minimum supported:  ${minSupported}\n` +
-                `    Run "npx @subscript/cli update" to upgrade components.`
+                `    Run "npx @subscriptonarc/cli update" to upgrade components.`
               );
             } else {
               logs.push(`[+] Version Compatibility: PASSED (Remote minimum supported: ${minSupported})`);

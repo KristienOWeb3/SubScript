@@ -57,7 +57,9 @@ export async function GET(request: Request) {
             },
             orderBy: {
                 createdAt: "desc"
-            }
+            },
+            /* Cap the working set so the inbox can't load an unbounded history into memory. */
+            take: 500
         });
 
         /* Collect unique addresses to fetch aliases and profile pics */
