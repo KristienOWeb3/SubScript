@@ -121,9 +121,9 @@ export async function runInit(options: { session?: string; mode?: string; noTele
 
     console.log("\n[SUCCESS] SubScript initialization completed successfully!");
     console.log("[INFO] Next steps:");
-    console.log("  1. Add checkout component:  npx @subscript-protocol/cli add checkout");
+    console.log("  1. Add checkout component:  npx @subscript/cli add checkout");
     if (paths.hasBackend) {
-      console.log("  2. Add webhook route:       npx @subscript-protocol/cli add webhook");
+      console.log("  2. Add webhook route:       npx @subscript/cli add webhook");
     }
 
     // Telemetry completed

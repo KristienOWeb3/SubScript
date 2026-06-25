@@ -1,5 +1,5 @@
 {
-    "name": "@subscript-protocol/app",
+    "name": "@subscript/app",
     "version": "1.2.3",
     "private": true,
     "description": "Programmable USDC payments for modern commerce — subscriptions, checkout, usage billing, and peer payments settled on Arc.",
@@ -16,7 +16,7 @@
     "scripts": {
         "dev": "next dev",
         "build": "prisma generate && next build",
-        "build:cli": "npm run build --workspace @subscript-protocol/cli",
+        "build:cli": "npm run build --workspace @subscript/cli",
         "start": "next start",
         "check:contracts": "node scripts/check-contracts.mjs",
         "integration:smoke": "node scripts/subscript-integration-smoke.mjs",

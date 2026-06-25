@@ -2078,7 +2078,7 @@ export default function DashboardPage() {
     const agentIntegrationPrompt = useMemo(() => {
         return `I want to integrate the SubScript Protocol into this codebase.
 Please inspect the workspace. If the initialization package has NOT been run yet, please run it in the terminal first:
-npx @subscript-protocol/create
+npx @subscript/create
 
 This initialization tool installs the SubScript SDK, prompts for deployment parameters, writes SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET into .env.local, configures .cursorrules, and scaffolds both a server-side checkout intent route and a signed webhook route.
 
@@ -2101,7 +2101,7 @@ Please complete the following implementation tasks:
         mcpServers: {
             subscript: {
                 command: "npx",
-                args: ["-y", "@subscript-protocol/mcp"],
+                args: ["-y", "@subscript/mcp"],
                 env: {
                     SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
                     SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
@@ -4257,9 +4257,9 @@ Please complete the following implementation tasks:
                                 </a>
                             </div>
                             <div className="mt-4 flex items-center gap-2 bg-black/50 border border-white/10 rounded-xl px-4 py-3">
-                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscript-protocol/cli</code>
+                                <code className="flex-1 text-xs font-mono text-white/90 break-all">npx @subscript/cli</code>
                                 <button
-                                    onClick={() => handleCopy("npx @subscript-protocol/cli", "CLI Command")}
+                                    onClick={() => handleCopy("npx @subscript/cli", "CLI Command")}
                                     className="shrink-0 p-2 text-white/50 hover:text-[#00d2b4] rounded-lg hover:bg-white/5 transition-colors"
                                     title="Copy command"
                                 >

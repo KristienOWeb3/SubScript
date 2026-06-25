@@ -52,7 +52,7 @@ function detectPackageManager(): string {
 
 async function runWizard() {
   printAsciiBanner();
-  intro("@subscript-protocol/integration-wizard");
+  intro("@subscript/integration-wizard");
 
   const secretKeyResult = await text({
     message: "Enter your SubScript Secret Key (server-side Checkout Intent key):",
@@ -256,7 +256,7 @@ SUBSCRIPT_INTERVAL=2592000
   const cursorrulesContent = `# SubScript Protocol - Agent Integration Ground Rules
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
 1. THE REST TRUTH: SubScript integrates over a plain REST API — there is no SDK package. Do not
-   install or import \`@subscript-protocol/sdk\`; it does not exist.
+   install or import \`@subscript/sdk\`; it does not exist.
    - From a server route, call \`POST {SUBSCRIPT_BASE_URL}/api/intent\` with a
      \`Authorization: Bearer \${SUBSCRIPT_SECRET_KEY}\` header (plain \`fetch\`).
    - Store the returned \`intentId\` beside the user/order and redirect the browser to \`checkoutUrl\`.
@@ -435,7 +435,7 @@ function printHelp() {
 SubScript CLI v${CLI_VERSION} — Arc USDC payments integration
 
 Usage:
-  npx @subscript-protocol/cli [command] [options]
+  npx @subscript/cli [command] [options]
 
 Commands:
   init                  Interactive setup wizard (default when no command is given).
@@ -453,9 +453,9 @@ Options:
   --no-telemetry        Disable anonymous usage telemetry.
 
 Examples:
-  npx @subscript-protocol/cli
-  npx @subscript-protocol/cli add webhook
-  npx @subscript-protocol/cli doctor
+  npx @subscript/cli
+  npx @subscript/cli add webhook
+  npx @subscript/cli doctor
 `);
 }
 

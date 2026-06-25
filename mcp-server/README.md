@@ -18,7 +18,7 @@ To add this to Cursor, configure it as a command-line tool in **Settings > Featu
 
 - **Name:** `SubScript`
 - **Type:** `command`
-- **Command:** `npx -y @subscript-protocol/mcp`
+- **Command:** `npx -y @subscript/mcp`
 
 Alternatively, add this to your `.cursor/mcp.json` configuration file:
 ```json
@@ -26,7 +26,7 @@ Alternatively, add this to your `.cursor/mcp.json` configuration file:
   "mcpServers": {
     "subscript": {
       "command": "npx",
-      "args": ["-y", "@subscript-protocol/mcp"]
+      "args": ["-y", "@subscript/mcp"]
     }
   }
 }
@@ -45,7 +45,7 @@ Add the configuration to your `claude_desktop_config.json` file:
   "mcpServers": {
     "subscript": {
       "command": "npx",
-      "args": ["-y", "@subscript-protocol/mcp"]
+      "args": ["-y", "@subscript/mcp"]
     }
   }
 }

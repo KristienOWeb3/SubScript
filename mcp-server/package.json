@@ -1,5 +1,5 @@
 {
-  "name": "@subscript-protocol/mcp",
+  "name": "@subscript/mcp",
   "version": "1.0.0",
   "description": "Model Context Protocol (MCP) server for SubScript recurring payment protocol on the Arc network.",
   "type": "module",
