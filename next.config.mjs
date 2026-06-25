@@ -49,6 +49,10 @@ const nextConfig = {
         source: '/.well-known/mcp/server-card.json',
         destination: '/api/mcp-server-card',
       },
+      {
+        source: '/openapi.json',
+        destination: '/api/openapi',
+      },
     ];
   },
   webpack: (config) => {

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
+import { arcReconciliation } from "@/lib/arc/reconciliation";
 
 function formatUsdc(value: bigint | string | number) {
     const amount = typeof value === "bigint" ? value : BigInt(value);
@@ -17,10 +18,15 @@ export function createPaymentSucceededWebhook(args: {
     amountUsdc: bigint | string | number;
     receiptId: string | null;
     txHash: string;
+    chainId?: number;
 }) {
     const amountPaid = formatUsdc(args.amountUsdc);
+    const amountUsdcMicros = (typeof args.amountUsdc === "bigint" ? args.amountUsdc : BigInt(args.amountUsdc)).toString();
+    const settlement = arcReconciliation(args.txHash, args.chainId);
     return {
         id: `evt_payment_${args.paymentId}`,
+        /* Canonical event name is `type: "payment.succeeded"`; `event` is a back-compat alias.
+           Likewise every field below is emitted in both snake_case (canonical) and camelCase. */
         event: "payment.success",
         type: "payment.succeeded",
         created: Math.floor(Date.now() / 1000),
@@ -31,11 +37,20 @@ export function createPaymentSucceededWebhook(args: {
             merchant_reference: args.merchantReference,
             amount: amountPaid,
             amount_paid: amountPaid,
+            // Canonical integer micro-USDC, matching the unit accepted by /intent and /v1/subscriptions.
+            amount_usdc_micros: amountUsdcMicros,
             currency: "USDC",
             receiptId: args.receiptId,
             receipt_id: args.receiptId,
             txHash: args.txHash,
             transaction_hash: args.txHash,
+            // On-chain reconciliation: verify settlement independently.
+            chain_id: settlement.chainId,
+            chainId: settlement.chainId,
+            usdc_address: settlement.usdcAddress,
+            usdcAddress: settlement.usdcAddress,
+            explorer_url: settlement.explorerTxUrl,
+            explorerUrl: settlement.explorerTxUrl,
         },
     };
 }

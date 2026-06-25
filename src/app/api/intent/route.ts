@@ -6,6 +6,24 @@ import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMi
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { arcReconciliation } from "@/lib/arc/reconciliation";
+
+/* Validate an optional checkout return URL (https only, except localhost for dev). */
+function validateReturnUrl(label: string, value: unknown): { ok: true; value?: string } | { ok: false; error: string } {
+    if (value === undefined || value === null || value === "") return { ok: true };
+    if (typeof value !== "string" || value.length > 2048) {
+        return { ok: false, error: `Bad Request: ${label} must be a string up to 2048 characters` };
+    }
+    try {
+        const u = new URL(value);
+        if (u.protocol !== "https:" && u.hostname !== "localhost" && u.hostname !== "127.0.0.1") {
+            return { ok: false, error: `Bad Request: ${label} must be an https URL` };
+        }
+    } catch {
+        return { ok: false, error: `Bad Request: ${label} is not a valid URL` };
+    }
+    return { ok: true, value };
+}
 
 async function parseBody(request: Request) {
     try {
@@ -57,11 +75,14 @@ export async function POST(request: Request) {
             title,
             description,
             amountUsdc,
+            amountUsdcMicros,
             expiresAt,
             externalReference,
             idempotencyKey,
             merchantName,
             maxUses,
+            successUrl,
+            cancelUrl,
             sandbox
         } = body;
         const isSandboxRequest = sandbox === true || apiKeyMode === "test";
@@ -74,15 +95,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: externalReference must be a non-empty string up to 256 characters" }, { status: 400 });
         }
 
+        /* `amountUsdcMicros` is the canonical field name (integer micro-USDC); `amountUsdc` here has
+           always been micro-USDC too and stays as an accepted alias. */
+        const amountSource = (amountUsdcMicros !== undefined && amountUsdcMicros !== null && amountUsdcMicros !== "")
+            ? amountUsdcMicros
+            : amountUsdc;
         let amountBigInt: bigint;
         try {
-            amountBigInt = BigInt(amountUsdc);
+            amountBigInt = BigInt(amountSource);
             if (amountBigInt <= BigInt(0)) {
                 return NextResponse.json({ error: "Bad Request: Amount must be greater than 0" }, { status: 400 });
             }
         } catch {
-            return NextResponse.json({ error: "Bad Request: Invalid amountUsdc" }, { status: 400 });
+            return NextResponse.json({ error: "Bad Request: Invalid amountUsdcMicros" }, { status: 400 });
         }
+
+        const successUrlCheck = validateReturnUrl("successUrl", successUrl);
+        if (!successUrlCheck.ok) return NextResponse.json({ error: successUrlCheck.error }, { status: 400 });
+        const cancelUrlCheck = validateReturnUrl("cancelUrl", cancelUrl);
+        if (!cancelUrlCheck.ok) return NextResponse.json({ error: cancelUrlCheck.error }, { status: 400 });
+        const returnUrls: Record<string, string> = {};
+        if (successUrlCheck.value) returnUrls.successUrl = successUrlCheck.value;
+        if (cancelUrlCheck.value) returnUrls.cancelUrl = cancelUrlCheck.value;
+        const hasReturnUrls = Object.keys(returnUrls).length > 0;
 
         let parsedMaxUses: number | null = null;
         if (maxUses !== undefined && maxUses !== null && maxUses !== "") {
@@ -106,6 +141,8 @@ export async function POST(request: Request) {
                         data: { receiptToken },
                     });
                 }
+                const existingReturnUrls = (existing.stateSnapshot as { returnUrls?: Record<string, string> } | null)?.returnUrls;
+                const existingSettlement = arcReconciliation();
                 return NextResponse.json({
                     success: true,
                     intent: {
@@ -113,11 +150,15 @@ export async function POST(request: Request) {
                         title: existing.title,
                         description: existing.description,
                         amountUsdc: existing.amountUsdc.toString(),
+                        amountUsdcMicros: existing.amountUsdc.toString(),
                         merchantAddress: existing.merchantAddress,
                         receiverAddress: existing.receiverAddress,
                         status: existing.status,
                         receiptToken,
-                        checkoutUrl: buildCheckoutUrl(existing.id)
+                        checkoutUrl: buildCheckoutUrl(existing.id),
+                        chainId: existingSettlement.chainId,
+                        usdcAddress: existingSettlement.usdcAddress,
+                        ...(existingReturnUrls ? { returnUrls: existingReturnUrls } : {})
                     }
                 }, { status: 200 });
             }
@@ -174,10 +215,12 @@ export async function POST(request: Request) {
                 merchantNameSnapshot: merchantName || null,
                 receiptToken: generateReceiptId(title),
                 maxUses: parsedMaxUses,
-                status: "PENDING"
+                status: "PENDING",
+                ...(hasReturnUrls ? { stateSnapshot: { returnUrls } } : {})
             }
         });
 
+        const settlement = arcReconciliation();
         return NextResponse.json({
             success: true,
             intent: {
@@ -186,11 +229,15 @@ export async function POST(request: Request) {
                 title: newLink.title,
                 description: newLink.description,
                 amountUsdc: newLink.amountUsdc.toString(),
+                amountUsdcMicros: newLink.amountUsdc.toString(),
                 merchantAddress: newLink.merchantAddress,
                 receiverAddress: newLink.receiverAddress,
                 status: newLink.status,
                 receiptToken: newLink.receiptToken,
-                checkoutUrl: buildCheckoutUrl(newLink.id)
+                checkoutUrl: buildCheckoutUrl(newLink.id),
+                chainId: settlement.chainId,
+                usdcAddress: settlement.usdcAddress,
+                ...(hasReturnUrls ? { returnUrls } : {})
             },
             sandbox: isSandboxRequest
         }, { status: 201 });
