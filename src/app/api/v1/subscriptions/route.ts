@@ -148,53 +148,49 @@ export async function GET(request: Request) {
                 return NextResponse.json({ error: "Bad Request: Invalid subscriber address" }, { status: 400 });
             }
             try {
-                const nextId = Number(await publicClient.readContract({
-                    address: STANDARD_CONTRACT_ADDRESS,
-                    abi: SUBSCRIPT_ABI,
-                    functionName: "nextSubscriptionId",
-                }));
-                const idList = Array.from({ length: Math.max(0, nextId - 1) }, (_, i) => i + 1);
-                const subscriptions: any[] = [];
-                const batchSize = 20;
-                for (let i = 0; i < idList.length; i += batchSize) {
-                    const chunk = idList.slice(i, i + batchSize);
-                    const results = await Promise.all(chunk.map(async (id) => {
-                        try {
-                            const data = await publicClient.readContract({
-                                address: STANDARD_CONTRACT_ADDRESS,
-                                abi: SUBSCRIPT_ABI,
-                                functionName: "subscriptions",
-                                args: [BigInt(id)],
-                            });
-                            return { id, data };
-                        } catch {
+                /* Indexer-backed: select candidate ids from the subscriptions mirror (indexed by
+                   merchant + subscriber) rather than scanning every on-chain id, then read only
+                   those from chain for authoritative amount/status. Bounded — scales with a
+                   subscriber's own subscriptions, not the whole contract. */
+                const rows = await prisma.subscription.findMany({
+                    where: { merchantAddress: merchantWallet, subscriber: subscriberWallet },
+                    select: { subscriptionId: true },
+                    orderBy: { subscriptionId: "desc" },
+                    take: 100,
+                });
+                const subscriptions = (await Promise.all(rows.map(async ({ subscriptionId }: { subscriptionId: bigint }) => {
+                    try {
+                        const data = await publicClient.readContract({
+                            address: STANDARD_CONTRACT_ADDRESS,
+                            abi: SUBSCRIPT_ABI,
+                            functionName: "subscriptions",
+                            args: [subscriptionId],
+                        });
+                        const [subPayer, subMerchant, amount, period, nextPayment, isActive] = data;
+                        if (subPayer.toLowerCase() !== subscriberWallet || subMerchant.toLowerCase() !== merchantWallet) {
                             return null;
                         }
-                    }));
-                    for (const res of results) {
-                        if (!res?.data) continue;
-                        const [subPayer, subMerchant, amount, period, nextPayment, isActive] = res.data;
-                        if (subPayer.toLowerCase() === subscriberWallet && subMerchant.toLowerCase() === merchantWallet) {
-                            subscriptions.push({
-                                id: `sub_${res.id}`,
-                                object: "subscription",
-                                subscriber: subPayer,
-                                merchant: subMerchant,
-                                amountUsdc: microsToDecimal(amount),
-                                amountUsdcMicros: amount.toString(),
-                                periodSeconds: Number(period),
-                                nextPaymentTimestamp: Number(nextPayment),
-                                nextPaymentDate: new Date(Number(nextPayment) * 1000).toISOString(),
-                                status: isActive ? "active" : "inactive",
-                                isActive,
-                            });
-                        }
+                        return {
+                            id: `sub_${subscriptionId}`,
+                            object: "subscription" as const,
+                            subscriber: subPayer,
+                            merchant: subMerchant,
+                            amountUsdc: microsToDecimal(amount),
+                            amountUsdcMicros: amount.toString(),
+                            periodSeconds: Number(period),
+                            nextPaymentTimestamp: Number(nextPayment),
+                            nextPaymentDate: new Date(Number(nextPayment) * 1000).toISOString(),
+                            status: isActive ? "active" : "inactive",
+                            isActive,
+                        };
+                    } catch {
+                        return null;
                     }
-                }
+                }))).filter((s): s is NonNullable<typeof s> => s !== null);
                 return NextResponse.json({ object: "list", data: subscriptions }, { status: 200 });
             } catch (err: any) {
-                console.error("Error scanning subscriptions on-chain:", err);
-                return NextResponse.json({ error: "Failed to scan subscriptions on-chain" }, { status: 500 });
+                console.error("Error listing subscriptions for subscriber:", err);
+                return NextResponse.json({ error: "Failed to list subscriptions" }, { status: 500 });
             }
         }
 
