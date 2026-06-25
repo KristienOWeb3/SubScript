@@ -9,6 +9,8 @@ import { getSecretKeyMode } from "@/lib/apiErrors";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
+import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 const SUBSCRIPT_ABI = [
     {
@@ -354,6 +356,14 @@ export async function POST(request: Request) {
             },
         });
 
+        await dispatchMerchantWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
+            subscriptionId: link.id,
+            status: "incomplete",
+            amountUsdcMicros: amountMicros,
+            subscriber: subscriberAddress,
+            merchantAddress,
+        })).catch(() => { /* delivery is best-effort */ });
+
         return NextResponse.json({
             success: true,
             subscription: {
@@ -422,6 +432,13 @@ export async function DELETE(request: Request) {
             where: { id: idParam },
             data: { active: false, status: "CANCELED" },
         });
+        await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+            subscriptionId: idParam,
+            status: "canceled",
+            amountUsdcMicros: link.amountUsdc,
+            merchantAddress,
+            reason: "Canceled before activation",
+        })).catch(() => { /* delivery is best-effort */ });
         return NextResponse.json({ id: `sub_${idParam}`, object: "subscription", status: "canceled" }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions DELETE error:", error);

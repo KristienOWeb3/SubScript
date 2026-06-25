@@ -94,6 +94,37 @@ const spec = {
                     },
                 },
             },
+            SubscriptionWebhook: {
+                type: "object",
+                description:
+                    "POSTed for subscription lifecycle events. Same signature scheme as payment webhooks " +
+                    "(`x-subscript-signature: t=…,v1=…`, HMAC-SHA256 of `${t}.${rawBody}`). Canonical event name is `type`.",
+                properties: {
+                    id: { type: "string" },
+                    type: {
+                        type: "string",
+                        enum: ["subscription.created", "subscription.renewed", "subscription.canceled", "subscription.payment_failed"],
+                        description: "Canonical event name.",
+                    },
+                    event: { type: "string", description: "Back-compat alias of `type`." },
+                    created: { type: "integer" },
+                    data: {
+                        type: "object",
+                        properties: {
+                            subscription_id: { type: "string" },
+                            status: { type: "string", enum: ["incomplete", "active", "past_due", "canceled"] },
+                            amount_usdc_micros: { type: ["string", "null"] },
+                            currency: { type: "string", const: "USDC" },
+                            subscriber: { type: ["string", "null"] },
+                            merchant_address: { type: ["string", "null"] },
+                            reason: { type: "string", description: "Present on canceled/payment_failed events." },
+                            transaction_hash: { type: ["string", "null"] },
+                            chain_id: { type: "integer" },
+                            explorer_url: { type: ["string", "null"] },
+                        },
+                    },
+                },
+            },
         },
     },
     paths: {
@@ -229,6 +260,34 @@ const spec = {
             post: {
                 summary: "Payment succeeded",
                 requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/PaymentSucceededWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.created": {
+            post: {
+                summary: "Subscription created (awaiting on-chain activation)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.renewed": {
+            post: {
+                summary: "Subscription renewed (a billing cycle settled on-chain)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.payment_failed": {
+            post: {
+                summary: "Subscription renewal payment failed (dunning)",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
+                responses: { "200": { description: "Return 2xx to acknowledge." } },
+            },
+        },
+        "subscription.canceled": {
+            post: {
+                summary: "Subscription canceled",
+                requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/SubscriptionWebhook" } } } },
                 responses: { "200": { description: "Return 2xx to acknowledge." } },
             },
         },

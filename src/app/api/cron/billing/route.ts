@@ -5,6 +5,8 @@ import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contr
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
+import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -160,6 +162,15 @@ export async function POST(request: Request) {
                         })
                         .eq("subscription_id", subId);
 
+                    await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "canceled",
+                        amountUsdcMicros: sub.amount_cap_usdc || 0,
+                        subscriber: merchantAddress,
+                        merchantAddress,
+                        reason: "Canceled at period end",
+                    })).catch(() => { /* delivery is best-effort */ });
+
                     const adminPrivateKey = process.env.PRIVATE_KEY || "";
                     const adminAddress = adminPrivateKey 
                         ? new ethers.Wallet(adminPrivateKey).address.toLowerCase()
@@ -252,6 +263,15 @@ export async function POST(request: Request) {
                     ].join("\n"),
                 }).catch((dmErr: any) => console.error("Failed to create renewal warning DM:", dmErr));
 
+                await dispatchMerchantWebhook(subscriberAddress, "subscription.payment_failed", subscriptionWebhookData({
+                    subscriptionId: subId,
+                    status: "past_due",
+                    amountUsdcMicros: sub.amount_cap_usdc || 0,
+                    subscriber: subscriberAddress,
+                    merchantAddress: sub.merchant_address,
+                    reason: failureReason,
+                })).catch(() => { /* delivery is best-effort */ });
+
                 if (previousStatus === "ACTIVE") {
                     console.log(`[Premium Entered Past Due] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}`);
                     await supabase
@@ -340,6 +360,15 @@ export async function POST(request: Request) {
                             });
                         }
 
+                        await dispatchMerchantWebhook(subscriberAddress, "subscription.canceled", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "canceled",
+                            amountUsdcMicros: sub.amount_cap_usdc || 0,
+                            subscriber: subscriberAddress,
+                            merchantAddress: sub.merchant_address,
+                            reason: "Canceled after failed payment retries",
+                        })).catch(() => { /* delivery is best-effort */ });
+
                         results.push({
                             subId,
                             subscriber: subscriberAddress,
@@ -415,6 +444,15 @@ export async function POST(request: Request) {
                             console.error("Failed to trigger exit survey:", err);
                         });
                     }
+
+                    await dispatchMerchantWebhook(subscriber, "subscription.canceled", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "canceled",
+                        amountUsdcMicros: sub.amount_cap_usdc || 0,
+                        subscriber,
+                        merchantAddress: sub.merchant_address,
+                        reason: "Canceled on-chain",
+                    })).catch(() => { /* delivery is best-effort */ });
 
                     results.push({
                         subId,
@@ -512,6 +550,15 @@ export async function POST(request: Request) {
                         updated_at: new Date().toISOString()
                     })
                     .eq("wallet_address", subscriber.toLowerCase());
+
+                await dispatchMerchantWebhook(subscriber, "subscription.renewed", subscriptionWebhookData({
+                    subscriptionId: subId,
+                    status: "active",
+                    amountUsdcMicros: requiredAmount,
+                    subscriber,
+                    merchantAddress: sub.merchant_address,
+                    txHash: tx.hash,
+                })).catch(() => { /* delivery is best-effort */ });
 
                 results.push({
                     subId,

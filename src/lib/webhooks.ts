@@ -56,6 +56,50 @@ export function createPaymentSucceededWebhook(args: {
 }
 
 /**
+ * Builds the `data` object for a subscription lifecycle event (subscription.created/renewed/
+ * canceled/payment_failed). Mirrors the payment webhook's dual snake_case (canonical) + camelCase
+ * fields, and includes on-chain reconciliation details when a settlement tx is present.
+ */
+export function subscriptionWebhookData(args: {
+    subscriptionId: string | number;
+    status: string;
+    amountUsdcMicros?: bigint | string | number | null;
+    subscriber?: string | null;
+    merchantAddress?: string | null;
+    txHash?: string | null;
+    chainId?: number;
+    reason?: string | null;
+}): Record<string, unknown> {
+    const micros = args.amountUsdcMicros != null
+        ? (typeof args.amountUsdcMicros === "bigint" ? args.amountUsdcMicros : BigInt(args.amountUsdcMicros)).toString()
+        : null;
+    const settlement = args.txHash ? arcReconciliation(args.txHash, args.chainId) : null;
+    return {
+        subscription_id: `sub_${args.subscriptionId}`,
+        subscriptionId: `sub_${args.subscriptionId}`,
+        status: args.status,
+        amount_usdc_micros: micros,
+        amountUsdcMicros: micros,
+        amount: micros != null ? formatUsdc(micros) : null,
+        currency: "USDC",
+        subscriber: args.subscriber ?? null,
+        merchant_address: args.merchantAddress ?? null,
+        merchantAddress: args.merchantAddress ?? null,
+        ...(args.reason ? { reason: args.reason } : {}),
+        ...(settlement ? {
+            transaction_hash: args.txHash,
+            txHash: args.txHash,
+            chain_id: settlement.chainId,
+            chainId: settlement.chainId,
+            usdc_address: settlement.usdcAddress,
+            usdcAddress: settlement.usdcAddress,
+            explorer_url: settlement.explorerTxUrl,
+            explorerUrl: settlement.explorerTxUrl,
+        } : {}),
+    };
+}
+
+/**
  * Dispatches a webhook payload to a destination URL.
  * Generates an HMAC-SHA256 signature in the 'x-subscript-signature' header.
  */
