@@ -193,3 +193,47 @@ export async function sendPaymentReceiptEmails(input: Omit<PaymentReceipt, "reci
         }));
     }));
 }
+
+/* Human-readable labels for the (max 4) cancellation reasons a user can pick. */
+const CANCELLATION_REASON_LABELS: Record<string, string> = {
+    TOO_EXPENSIVE: "Too expensive",
+    LACK_OF_FEATURES: "Missing features they needed",
+    TECHNICAL_ISSUES: "Technical issues",
+    OTHER: "Other",
+};
+
+/**
+ * Email the merchant the reason a user gave when cancelling — only when a real reason
+ * was chosen. "Prefer not to answer" (any non-reason code) is a no-op, so a merchant is
+ * never disturbed unless the customer opted to share why. Respects merchant email_enabled.
+ */
+export async function sendSubscriptionCancellationReasonEmail(input: {
+    merchantAddress: string;
+    customerAddress: string;
+    reasonCode: string;
+    subscriptionId?: string | null;
+}) {
+    const label = CANCELLATION_REASON_LABELS[input.reasonCode];
+    if (!label) return; // no reason given (e.g. dismissed) — don't disturb the merchant
+
+    let merchant: WalletEmailPreference | null = null;
+    try {
+        merchant = await getWalletEmailPreference(input.merchantAddress);
+    } catch (error) {
+        console.error("Cancellation-reason email merchant lookup failed", error instanceof Error ? error.message : "Unknown error");
+        return;
+    }
+    const email = merchant?.email?.toLowerCase();
+    if (!email || merchant?.email_enabled === false) return;
+
+    const shortCustomer = `${input.customerAddress.slice(0, 6)}...${input.customerAddress.slice(-4)}`;
+    const subLine = input.subscriptionId ? ` (subscription #${input.subscriptionId})` : "";
+
+    await safelySendEmail("subscription cancellation reason", () => sendTransactionalEmail({
+        to: email,
+        subject: `A subscriber cancelled — reason: ${label}`,
+        text: `A customer (${shortCustomer}) cancelled their subscription${subLine}.\n\nReason given: ${label}\n\nYou're receiving this because the customer chose to share why. Customers who prefer not to answer are never reported.`,
+        html: `<p>A customer (<code>${htmlEscape(shortCustomer)}</code>) cancelled their subscription${htmlEscape(subLine)}.</p><p><strong>Reason given:</strong> ${htmlEscape(label)}</p><p style="color:#667085">You're receiving this because the customer chose to share why. Customers who prefer not to answer are never reported.</p>`,
+        idempotencyKey: `cancellation-reason:${input.merchantAddress.toLowerCase()}:${input.customerAddress.toLowerCase()}:${input.subscriptionId || "na"}:${input.reasonCode}`,
+    }));
+}

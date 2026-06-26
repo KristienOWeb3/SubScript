@@ -4,6 +4,7 @@ import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
+import PwaInstaller from "@/components/PwaInstaller";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export const viewport: Viewport = {
     maximumScale: 1,
     userScalable: false,
     viewportFit: "cover",
+    themeColor: "#000000",
 };
 
 const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
@@ -132,6 +134,11 @@ const structuredData = {
 export const metadata: Metadata = {
     metadataBase: new URL(appUrl),
     applicationName: "SubScript",
+    appleWebApp: {
+        capable: true,
+        title: "SubScript",
+        statusBarStyle: "black-translucent",
+    },
     title: {
         default: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
         template: "%s | SubScript",
@@ -208,6 +215,7 @@ export const metadata: Metadata = {
         icon: [
             { url: "/favicon.ico", sizes: "any" },
             { url: "/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+            { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
             { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
         ],
         shortcut: "/favicon.ico",
@@ -236,6 +244,7 @@ export default async function RootLayout({
                 <PostHogProvider>
                     <PrivyProviderWrapper>
                         {children}
+                        <PwaInstaller />
                     </PrivyProviderWrapper>
                 </PostHogProvider>
             </body>

@@ -629,24 +629,39 @@ export async function POST(request: Request) {
                                 .maybeSingle();
 
                             if (payerSettings?.push_enabled !== false && payerSettings?.debit_success_enabled !== false) {
-                                await supabase
+                                /* A one-time merchant→user payment only surfaces as a receipt DM once a
+                                   subscription has opened a thread between them. Otherwise it stays
+                                   backend-only (no DM), so merchants with many one-off payers aren't
+                                   forced into per-user DM threads. */
+                                const { data: subscriptionThread } = await supabase
                                     .from("subscript_dms")
-                                    .insert({
-                                        sender_address: paymentLink.merchant_address.toLowerCase(),
-                                        receiver_address: normalizedPayer,
-                                        message_type: "DEBIT_SUCCESS",
-                                        status: "PENDING",
-                                        amount_usdc: paymentLink.amount_usdc.toString(),
-                                        title: `Receipt: ${paymentLink.title}`,
-                                        description: [
-                                            `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
-                                            `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
-                                            `Transaction: ${normalizedTx}`,
-                                            `Receipt: ${shareUrl}`,
-                                        ].filter(Boolean).join("\n"),
-                                        tx_hash: normalizedTx,
-                                        payment_link_id: paymentLink.id,
-                                    });
+                                    .select("id")
+                                    .eq("sender_address", paymentLink.merchant_address.toLowerCase())
+                                    .eq("receiver_address", normalizedPayer)
+                                    .in("message_type", ["SUBSCRIPTION_STARTED", "EXPIRY_WARNING", "CHURN_SURVEY"])
+                                    .limit(1)
+                                    .maybeSingle();
+
+                                if (subscriptionThread) {
+                                    await supabase
+                                        .from("subscript_dms")
+                                        .insert({
+                                            sender_address: paymentLink.merchant_address.toLowerCase(),
+                                            receiver_address: normalizedPayer,
+                                            message_type: "DEBIT_SUCCESS",
+                                            status: "PENDING",
+                                            amount_usdc: paymentLink.amount_usdc.toString(),
+                                            title: `Receipt: ${paymentLink.title}`,
+                                            description: [
+                                                `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
+                                                `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
+                                                `Transaction: ${normalizedTx}`,
+                                                `Receipt: ${shareUrl}`,
+                                            ].filter(Boolean).join("\n"),
+                                            tx_hash: normalizedTx,
+                                            payment_link_id: paymentLink.id,
+                                        });
+                                }
 
                                 /* Best-effort browser/native push for the same event. */
                                 sendPushToWallet(normalizedPayer, {

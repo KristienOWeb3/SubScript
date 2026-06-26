@@ -45,12 +45,25 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
     }
 }
 
+/* How many billing cycles of allowance to authorize up front. createSubscription only
+   needs one period for the first charge, but the keeper debits each cycle against this
+   same allowance (see cron/billing), so approving one period means the sub dies after
+   one cycle. Approve ~1 year of cycles so recurring billing keeps working. */
+function horizonAllowance(amount: bigint, period: bigint): bigint {
+    const seconds = Number(period);
+    const cyclesPerYear = Number.isFinite(seconds) && seconds > 0
+        ? Math.max(1, Math.round((365.25 * 24 * 60 * 60) / seconds))
+        : 1;
+    return amount * BigInt(cyclesPerYear);
+}
+
 export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint) {
     const signer = await getEmbeddedSigner(walletAddress);
     const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
     const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
-    if (allowance < amount) {
-        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, amount);
+    const desiredAllowance = horizonAllowance(amount, period);
+    if (allowance < desiredAllowance) {
+        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
         await approveTx.wait();
     }
     const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);

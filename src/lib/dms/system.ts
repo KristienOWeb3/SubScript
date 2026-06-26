@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
+import { sendPushToWallet } from "@/lib/push";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -47,6 +48,91 @@ export function isPaymentLinkUnavailable(link: {
     if (link.expiresAt && link.expiresAt < new Date()) return "expired";
     if (link.maxUses !== null && link.useCount >= link.maxUses) return "exhausted";
     return null;
+}
+
+/** Human-readable billing cadence from a period in seconds. */
+function formatPeriodLabel(periodSeconds: bigint | number | string) {
+    const seconds = Number(periodSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) return "cycle";
+    const days = Math.round(seconds / 86400);
+    if (days === 1) return "day";
+    if (days === 7) return "week";
+    if (days >= 28 && days <= 31) return "month";
+    if (days >= 364 && days <= 366) return "year";
+    return `${days} days`;
+}
+
+/**
+ * Open the merchant→user DM thread when a user subscribes to a plan. This is the
+ * "opened DM via subscription" marker: once it exists, one-time merchant payments
+ * to this user surface as receipt DMs too (see payment-links/verify). Best-effort.
+ */
+export async function createSubscriptionStartedDm({
+    merchantAddress,
+    subscriberAddress,
+    planName,
+    amountUsdc,
+    periodSeconds,
+    isChange = false,
+}: {
+    merchantAddress: string;
+    subscriberAddress: string;
+    planName: string;
+    amountUsdc: bigint;
+    periodSeconds: bigint;
+    isChange?: boolean;
+}) {
+    const merchant = merchantAddress.toLowerCase();
+    const subscriber = subscriberAddress.toLowerCase();
+
+    const merchantAlias = await prisma.addressAlias.findUnique({ where: { address: merchant } }).catch(() => null);
+    const merchantName = merchantAlias?.alias || `${merchant.slice(0, 6)}...${merchant.slice(-4)}`;
+    const amount = formatUsdcFromMicros(amountUsdc);
+    const cadence = formatPeriodLabel(periodSeconds);
+
+    const dm = await prisma.subscriptDm.create({
+        data: {
+            senderAddress: merchant,
+            receiverAddress: subscriber,
+            messageType: "SUBSCRIPTION_STARTED",
+            status: "APPROVED",
+            amountUsdc,
+            title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
+            description: [
+                `Merchant: ${merchantName}`,
+                `Plan: ${planName}`,
+                `Amount: ${amount} USDC / ${cadence}`,
+                "You can manage or cancel this subscription anytime from your dashboard.",
+            ].join("\n"),
+        },
+    });
+
+    /* Browser push for the new DM (best-effort; no-op if the user hasn't enabled it). */
+    sendPushToWallet(subscriber, {
+        title: isChange ? "Plan updated" : "Subscription started",
+        body: `${planName}: ${amount} USDC / ${cadence} with ${merchantName}.`,
+        url: "/user?tab=inbox",
+        tag: `subscription-${merchant}`,
+    }).catch(() => { /* best-effort */ });
+
+    return dm;
+}
+
+/**
+ * True if a subscription has opened a merchant→user DM thread (a SUBSCRIPTION_STARTED,
+ * EXPIRY_WARNING, or CHURN_SURVEY DM — all subscription-lifecycle only). Used to gate
+ * one-time payment receipt DMs so they appear only after a subscription relationship.
+ */
+export async function hasSubscriptionDmThread(merchantAddress: string, userAddress: string) {
+    const existing = await prisma.subscriptDm.findFirst({
+        where: {
+            senderAddress: merchantAddress.toLowerCase(),
+            receiverAddress: userAddress.toLowerCase(),
+            messageType: { in: ["SUBSCRIPTION_STARTED", "EXPIRY_WARNING", "CHURN_SURVEY"] },
+        },
+        select: { id: true },
+    }).catch(() => null);
+    return Boolean(existing);
 }
 
 export async function createPaymentRequestDm({

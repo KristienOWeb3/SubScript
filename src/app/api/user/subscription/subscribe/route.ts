@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
+import { createSubscriptionStartedDm } from "@/lib/dms/system";
 
 export const maxDuration = 120;
 
@@ -32,6 +33,15 @@ export async function POST(request: Request) {
 
         await ensureGasSponsored(wallet.toLowerCase());
         const { txHash, subId } = await subscribeFromEmbedded(wallet, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+
+        /* Open the merchant→user DM thread for this subscription (best-effort). */
+        await createSubscriptionStartedDm({
+            merchantAddress: plan.merchantAddress,
+            subscriberAddress: wallet.toLowerCase(),
+            planName: plan.name,
+            amountUsdc: plan.amountUsdc,
+            periodSeconds: plan.periodSeconds,
+        }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
         return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name }, { status: 200 });
     } catch (error: any) {

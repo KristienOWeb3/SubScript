@@ -470,11 +470,15 @@ model PayrollRecipient {
   @@map("payroll_recipients")
 }
 model AddressAlias {
-  address     String   @id @map("address")
-  alias       String   @unique @map("alias")
-  isAnonymous Boolean  @default(false) @map("is_anonymous")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  address       String    @id @map("address")
+  alias         String    @unique @map("alias")
+  isAnonymous   Boolean   @default(false) @map("is_anonymous")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  // Last time the wallet *changed* its alias value. NULL for the auto-assigned
+  // default username, so the first user-initiated change is free; subsequent
+  // changes are rate-limited to once every 365 days. See merchant/alias route.
+  lastChangedAt DateTime? @map("last_changed_at")
 
   @@map("address_aliases")
 }
