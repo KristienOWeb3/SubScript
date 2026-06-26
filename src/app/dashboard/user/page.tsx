@@ -1197,11 +1197,21 @@ export default function UserDashboard() {
 
   const handleRegisterDns = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    const domainName = dnsDomain.endsWith(".sub") ? dnsDomain : `${dnsDomain}.sub`;
+
+    /* Make sure the user understands the once-a-year limit before they commit. */
+    if (!window.confirm(
+      `Set your DNS name to "${domainName}"?\n\n`
+      + `You can only change your .sub name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
+    )) {
+      return;
+    }
+
     setDnsLoading(true);
     setDnsError(null);
     setDnsSuccess(null);
 
-    const domainName = dnsDomain.endsWith(".sub") ? dnsDomain : `${dnsDomain}.sub`;
     try {
       const res = await fetch("/api/merchant/alias", {
         method: "POST",
@@ -2460,7 +2470,12 @@ export default function UserDashboard() {
                   </div>
                   {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
 
+                  <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-3 py-2">
+                    Heads up: you can only change your <span className="font-mono">.sub</span> name <strong>once every 365 days</strong>. Pick carefully — after a change you won't be able to switch again for a year.
+                  </p>
+
                   {registeredDomain ? (
+                    <div className="space-y-2">
                     <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
                       <div>
                         <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
@@ -2469,17 +2484,22 @@ export default function UserDashboard() {
                       <button
                         onClick={async () => {
                           setDnsLoading(true);
+                          setDnsError(null);
                           try {
                             const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                            const data = await res.json().catch(() => ({}));
                             if (res.ok) {
                               setRegisteredDomain(null);
                               setProfilePic(null);
                               setDnsDomain("");
                               setDnsSuccess("Alias removed successfully");
                               setTimeout(() => setDnsSuccess(null), 3000);
+                            } else {
+                              setDnsError(data.error || "Could not unregister this name.");
                             }
                           } catch (err) {
                             console.error(err);
+                            setDnsError("Network error removing DNS name.");
                           } finally {
                             setDnsLoading(false);
                           }
@@ -2488,6 +2508,9 @@ export default function UserDashboard() {
                       >
                         {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
                       </button>
+                    </div>
+                      {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
+                      {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
                     </div>
                   ) : (
                     <form onSubmit={handleRegisterDns} className="space-y-3">

@@ -683,6 +683,15 @@ export default function DashboardPage() {
         const cleanPrefix = prefix.split(".")[0];
         const fullAlias = `${cleanPrefix}${dnsSuffix}`;
 
+        /* Surface the once-a-year limit before committing the change. */
+        if (!window.confirm(
+            `Set your DNS name to "${fullAlias}"?\n\n`
+            + `You can only change your DNS name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
+        )) {
+            setDnsLoading(false);
+            return;
+        }
+
         try {
             const res = await fetch("/api/merchant/alias", {
                 method: "POST",
@@ -2823,6 +2832,9 @@ Please complete the following implementation tasks:
                     {/* DNS / Alias Section */}
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
+                        <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
+                            Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.
+                        </p>
                         {userSettings.alias ? (
                             <div className="p-4 rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 flex items-center justify-between">
                                 <div>
@@ -2832,17 +2844,22 @@ Please complete the following implementation tasks:
                                 <button
                                     onClick={async () => {
                                         setDnsLoading(true);
+                                        setDnsError(null);
                                         try {
                                             const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                                            const data = await res.json().catch(() => ({}));
                                             if (res.ok) {
                                                 setUserSettings((prev: any) => ({ ...prev, alias: null }));
                                                 setMerchantAlias(null);
                                                 setDnsDomain("");
                                                 setDnsSuccess("Alias removed successfully");
                                                 setTimeout(() => setDnsSuccess(null), 3000);
+                                            } else {
+                                                setDnsError(data.error || "Could not unregister this name.");
                                             }
                                         } catch (err) {
                                             console.error(err);
+                                            setDnsError("Network error removing DNS name.");
                                         } finally {
                                             setDnsLoading(false);
                                         }
@@ -2889,10 +2906,10 @@ Please complete the following implementation tasks:
                                         Enterprise custom namespaces allow customers to identify your business link securely.
                                     </p>
                                 </div>
-                                {dnsError && <p className="text-[10px] text-red-400">{dnsError}</p>}
-                                {dnsSuccess && <p className="text-[10px] text-emerald-400">{dnsSuccess}</p>}
                             </form>
                         )}
+                        {dnsError && <p className="text-[10px] text-red-400">{dnsError}</p>}
+                        {dnsSuccess && <p className="text-[10px] text-emerald-400">{dnsSuccess}</p>}
                     </div>
                 </div>
 

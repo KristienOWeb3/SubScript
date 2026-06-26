@@ -13,6 +13,27 @@ const USER_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.sub$/;
 const ENTERPRISE_ALIAS_REGEX = /^[a-z0-9-]{3,15}\.(hq|biz)$/;
 const MAX_PROFILE_PIC_BYTES = 2 * 1024 * 1024;
 
+/* A DNS name can only be changed once every 365 days (see migration 20260630000000). */
+const ALIAS_CHANGE_COOLDOWN_DAYS = 365;
+const ALIAS_CHANGE_COOLDOWN_MS = ALIAS_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * If the wallet changed its alias within the cooldown window, return the date it
+ * becomes eligible again; otherwise null (the change is allowed).
+ */
+function aliasCooldownUntil(lastChangedAt: string | null | undefined): Date | null {
+    if (!lastChangedAt) return null;
+    const next = new Date(new Date(lastChangedAt).getTime() + ALIAS_CHANGE_COOLDOWN_MS);
+    return next.getTime() > Date.now() ? next : null;
+}
+
+function cooldownMessage(nextChangeAt: Date, verb: "change" | "unregister"): string {
+    const days = Math.ceil((nextChangeAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+    const when = nextChangeAt.toISOString().slice(0, 10);
+    return `You can only change your DNS name once every ${ALIAS_CHANGE_COOLDOWN_DAYS} days. `
+        + `You can ${verb} it again on ${when} (about ${days} day${days === 1 ? "" : "s"} from now).`;
+}
+
 function getDataUrlByteLength(value: string) {
     const base64 = value.split(",")[1] || "";
     return Math.floor((base64.length * 3) / 4);
@@ -78,7 +99,7 @@ export async function GET(request: Request) {
 
         const { data, error } = await supabaseAdmin
             .from("address_aliases")
-            .select("address, alias, is_anonymous")
+            .select("address, alias, is_anonymous, last_changed_at")
             .eq("address", targetAddress)
             .maybeSingle();
 
@@ -91,6 +112,8 @@ export async function GET(request: Request) {
             ? await prisma.merchant.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true, verified: true } }).catch(() => null)
             : await prisma.customer.findUnique({ where: { walletAddress: targetAddress }, select: { profilePic: true } }).catch(() => null);
 
+        const nextChangeAt = aliasCooldownUntil(data?.last_changed_at);
+
         return NextResponse.json({
             success: true,
             address: targetAddress,
@@ -99,6 +122,9 @@ export async function GET(request: Request) {
             role,
             profile_pic: profile?.profilePic || null,
             verified: "verified" in (profile || {}) ? Boolean((profile as any)?.verified) : false,
+            // Cooldown info: how long until this wallet may change its DNS name again.
+            change_cooldown_days: ALIAS_CHANGE_COOLDOWN_DAYS,
+            next_change_at: nextChangeAt ? nextChangeAt.toISOString() : null,
         }, { status: 200 });
 
     } catch (err: any) {
@@ -193,13 +219,37 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Conflict: Alias is already registered to another wallet" }, { status: 409 });
             }
 
+            /* Look up the caller's current alias to rate-limit *name changes* to once per 365 days.
+               Re-submitting the same name (e.g. just toggling anonymity) is not a change. */
+            const { data: current } = await supabaseAdmin
+                .from("address_aliases")
+                .select("alias, last_changed_at")
+                .eq("address", normalizedUser)
+                .maybeSingle();
+
+            const isNameChange = !!current && current.alias !== normalizedAlias;
+
+            if (isNameChange) {
+                const nextChangeAt = aliasCooldownUntil(current!.last_changed_at);
+                if (nextChangeAt) {
+                    return NextResponse.json({
+                        error: cooldownMessage(nextChangeAt, "change"),
+                        nextChangeAt: nextChangeAt.toISOString(),
+                    }, { status: 429 });
+                }
+            }
+
             const { data, error } = await supabaseAdmin
                 .from("address_aliases")
                 .upsert({
                     address: normalizedUser,
                     alias: normalizedAlias,
                     is_anonymous: !!isAnonymous,
-                    updated_at: new Date().toISOString()
+                    updated_at: new Date().toISOString(),
+                    // Stamp the cooldown only on an actual name change. The initial registration
+                    // (no prior row) and same-name re-submits leave it untouched, so the user
+                    // keeps exactly one free change after their default username.
+                    ...(isNameChange ? { last_changed_at: new Date().toISOString() } : {}),
                 })
                 .select("address, alias, is_anonymous")
                 .single();
@@ -257,6 +307,22 @@ export async function DELETE(request: Request) {
 
         if (!supabaseAdmin) {
             return NextResponse.json({ error: "Configuration Error: Database not available" }, { status: 500 });
+        }
+
+        /* Block unregistering while in the change cooldown — otherwise a user could
+           delete + re-register to bypass the once-per-365-days name-change limit. */
+        const { data: current } = await supabaseAdmin
+            .from("address_aliases")
+            .select("last_changed_at")
+            .eq("address", normalizedUser)
+            .maybeSingle();
+
+        const nextChangeAt = aliasCooldownUntil(current?.last_changed_at);
+        if (nextChangeAt) {
+            return NextResponse.json({
+                error: cooldownMessage(nextChangeAt, "unregister"),
+                nextChangeAt: nextChangeAt.toISOString(),
+            }, { status: 429 });
         }
 
         const { error } = await supabaseAdmin
