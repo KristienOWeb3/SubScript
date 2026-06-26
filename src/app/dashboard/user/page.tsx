@@ -3839,7 +3839,7 @@ function MerchantPlanManager({
           onClick={onToggle}
           className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
         >
-          {open ? "Hide Plans" : "Manage Plan"}
+          {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
         </button>
       </div>
 
