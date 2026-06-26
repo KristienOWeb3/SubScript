@@ -1,10 +1,40 @@
 # SubScript — Handover
 
 ## ⚠️ Workflow rule (read first)
-**Push all work directly to `main`.** Kristien views progress on `main` (it's what Vercel deploys
-to the live site). `main` is **team‑active** — always `git fetch origin main` + rebase before pushing.
-Verify with `npx tsc --noEmit` + `npm run build` before pushing. On‑chain contracts are also guarded:
-run `npm run check:contracts` (and CI runs it on every push/PR).
+**Work on a feature branch and open a PR to `main`** (current flow — e.g. PR #2 merged, PR #3 open).
+**CodeRabbit** reviews every PR; address its findings (fix → reply on the thread → resolve), then merge.
+**Merging to `main` is what deploys to the live Vercel site** (the `sub-script` project, which owns
+`subscriptonarc.com`). Verify with `npx tsc --noEmit` (and `npm run build` for build‑level changes)
+before pushing. On‑chain contracts are guarded: `npm run check:contracts` runs on every push/PR.
+
+## Latest sessions — Integration DX + onboarding/DM fixes (2026‑06)
+
+### npm packages (published, public)
+- `@subscriptonarc/cli@1.1.0` — scaffolding wizard + `trigger <event>` (posts a *signed* sample webhook to a local endpoint for testing).
+- `@subscriptonarc/sdk@1.0.1` — typed client (`intents`, `subscriptions`, `usage`, `webhooks.verify/constructEvent`) + `usdc()`/`fromMicros()` helpers.
+- `@subscriptonarc/mcp@1.0.2` — MCP server: `create_intent`, `get_payment_status`, `report_usage`, `verify_webhook`.
+- Scope was renamed `@subscript-protocol` → `@subscriptonarc` (matches the domain). Old packages + the buggy first versions are deprecated on npm.
+
+### PR #2 (MERGED) — public API + tooling
+- **`/api/v1/subscriptions`** is a full resource now: `POST` create / `GET` read+list / `DELETE` cancel, backed by `PaymentLink.stateSnapshot` (no migration). Subscriber lookup uses the indexed `subscriptions` mirror, not an unbounded on‑chain scan.
+- **Subscription lifecycle webhooks** (`subscription.created/renewed/canceled/payment_failed`) via `src/lib/webhookDispatch.ts`, fired from the billing cron + the resource. Canonical payment event is **`payment.succeeded`** (`payment.success` is a back‑compat alias).
+- **Canonical units**: integer micro‑USDC field `amountUsdcMicros` accepted on `/intent`, `/v1/subscriptions`, `/report-usage` (legacy `amountUsdc` still an alias).
+- **On‑chain reconciliation** fields (`chain_id`, `usdc_address`, `transaction_hash`, `explorer_url`) in webhooks + `/intent/status`, via `src/lib/arc/reconciliation.ts`. **`successUrl`/`cancelUrl`** added to `/intent` (stored in `stateSnapshot`).
+- **Docs**: OpenAPI 3.1 at `/openapi.json` (`src/app/api/openapi/route.ts`), `public/api-reference.md`, `public/quickstart.md` — all linked from `public/llms.txt`. Hardened per CodeRabbit (idempotency scoped to merchant — a cross‑merchant leak; strict amount/address validation; etc.).
+
+### PR #3 (OPEN — branch `claude/onboarding-and-dm-fixes`) — onboarding & DM fixes
+- **Live DMs**: the user dashboard polls `/api/user/dms` every 8s while visible (+ on focus), so messages update without a reload. DMs are a user‑only surface, so this covers both ends.
+- **Notification badge**: counts only *actionable* incoming `PENDING` requests (`PAYMENT_REQUEST`/`PEER_REQUEST`/`EXPIRY_WARNING`); informational `DEBIT_SUCCESS` receipts no longer inflate it.
+- **Username from email**: `src/lib/auth/defaultAlias.ts` sets the default `.sub` username from the email local‑part at signup (email‑OTP, Google/Circle, social, and the wallet‑user email capture) — only if none exists yet, changeable later.
+- **Subscribe vs Manage Plan**: the in‑DM plan control reads **"Subscribe"** until a subscription is active, then **"Manage Plan"** + Hard Cancel.
+- **Profile pics**: added the Supabase storage domain to the CSP `img-src` in `src/middleware.ts` (it was only in `connect-src`) — fixes broken avatars on *other* users' screens.
+- **DM network guard**: connected‑wallet DM payments + Send‑Funds switch the wallet to Arc (`ARC_TESTNET_CHAIN_ID`) before the USDC transfer.
+- **OTP‑verified email**: wallet accounts must confirm their email with a 6‑digit code (`/api/auth/otp/send` → `/api/user/email` with `{ email, code }`) before it's bound. Two‑step "add your email" modal.
+- **Merchant verification** confirmed **already hand‑verified** (admin `ADMIN_API_KEY` route only; `verified` defaults `false`) — no change needed.
+
+### Ops notes
+- **Vercel**: the repo had **3** Vercel projects building on every push. `sub-script` is canonical and owns `subscriptonarc.com`; `sub-script-yrkn` + `sub-script-arcnet` are duplicate imports with only default `*.vercel.app` domains — being consolidated down to just `sub-script` (disconnect Git on the duplicates; they hold no production domain so it's safe).
+- One‑time payments: recommendation is **receipt‑first** (don't auto‑open a DM); reserve DMs for subscriptions, commits/vaults, and peer requests.
 
 ## Deployed contracts (Arc testnet, chain 5042002)
 - **Router** proxy `0x6946B7746c2968B195BD15319D25F67E587CAe3C` → impl `0xCbd32f0a576644941AAE5b043E42C631CbCE6862` (upgraded; has `depositForMerchant`).
