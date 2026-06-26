@@ -8,6 +8,7 @@ import { encryptPrivateKey } from "@/lib/crypto";
 import { getCircleEmail, type CircleSocialAuth } from "@/lib/circle/client";
 import { setSessionCookie } from "@/lib/authCookies";
 import { safelySendEmail, sendSignInAlertEmail } from "@/lib/email/transactional";
+import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 
 function isCircleSocialAuth(value: any): value is CircleSocialAuth {
     return value &&
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
             );
             return String(after.rows[0].wallet_address).toLowerCase();
         });
+
+        /* Default the user's .sub username to their Google email name on first sign-up (changeable later). */
+        await ensureDefaultAliasFromEmail(walletAddress, emailLower);
 
         const secretStr = process.env.JWT_SECRET;
         if (!secretStr) {

@@ -15,6 +15,7 @@ import {
     saveOfflineUserEmbeddedWallet
 } from "@/lib/offlineDb";
 import { setSessionCookie } from "@/lib/authCookies";
+import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -195,10 +196,15 @@ export async function POST(request: Request) {
             .setExpirationTime(sessionDurationStr)
             .sign(secret);
 
+        /* Default the user's .sub username to their email name on first sign-up (changeable later). */
+        if (!isOfflineMode) {
+            await ensureDefaultAliasFromEmail(walletAddress, emailVal);
+        }
+
         const role = await getAccountRole(walletAddress);
 
-        const response = NextResponse.json({ 
-            success: true, 
+        const response = NextResponse.json({
+            success: true,
             wallet: walletAddress,
             email: emailVal,
             role

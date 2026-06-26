@@ -6,6 +6,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
+import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -31,6 +32,10 @@ export async function POST(request: Request) {
             update: { email },
             create: { walletAddress: wallet.toLowerCase(), email },
         });
+
+        /* Wallet-onboarded users: their registered email name becomes their default .sub username
+           (only if they don't already have one; changeable later). */
+        await ensureDefaultAliasFromEmail(wallet, email);
 
         return NextResponse.json({ success: true, email }, { status: 200 });
     } catch (error: any) {
