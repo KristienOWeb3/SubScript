@@ -23,6 +23,7 @@ import {
   CCTP_CONFIG 
 } from "@/lib/contracts/constants";
 import { QRCodeSVG } from "qrcode.react";
+import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
@@ -2965,8 +2966,8 @@ export default function UserDashboard() {
         onClose={() => setScannerOpen(false)}
         onScan={(value) => {
           const raw = value.trim();
-          /* A hosted payment link: take the payer straight to checkout. */
-          if (/\/pay\//.test(raw) && /^https?:\/\//i.test(raw)) {
+          /* A hosted payment link or subscription link: take the user straight there. */
+          if (/^https?:\/\//i.test(raw) && /\/(pay|subscribe)\//.test(raw)) {
             window.location.href = raw;
             return;
           }
@@ -3637,6 +3638,8 @@ function DmBubble({
       { key: "survey-features", label: "Lack Features", onClick: () => onSurveySubmit(dm, "LACK_OF_FEATURES"), loadingKey: `survey-${dm.id}-LACK_OF_FEATURES` },
       { key: "survey-technical", label: "Tech Issues", onClick: () => onSurveySubmit(dm, "TECHNICAL_ISSUES"), loadingKey: `survey-${dm.id}-TECHNICAL_ISSUES` },
       { key: "survey-other", label: "Other", onClick: () => onSurveySubmit(dm, "OTHER"), loadingKey: `survey-${dm.id}-OTHER` },
+      /* Opting out: the merchant is not emailed any reason. */
+      { key: "survey-skip", label: "Prefer not to answer", onClick: () => onSurveySubmit(dm, "DISMISSED"), loadingKey: `survey-${dm.id}-DISMISSED` },
     );
   }
   if (isRealTxHash(dm.txHash)) {
@@ -4895,12 +4898,10 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
 
     async function start() {
       try {
-        const BarcodeDetectorCtor = (globalThis as any).BarcodeDetector;
-        if (!BarcodeDetectorCtor || !navigator.mediaDevices?.getUserMedia) {
+        if (!navigator.mediaDevices?.getUserMedia) {
           setSupported(false);
           return;
         }
-        detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
 
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
@@ -4914,16 +4915,45 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
         video.srcObject = stream;
         await video.play();
 
+        /* Prefer the native BarcodeDetector (Android Chrome/Edge); fall back to jsQR
+           decoding of canvas frames so it also works on iOS Safari and Firefox. */
+        const BarcodeDetectorCtor = (globalThis as any).BarcodeDetector;
+        if (BarcodeDetectorCtor) {
+          try {
+            detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+          } catch {
+            detector = null;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+        const handleValue = (value: string) => {
+          stopped = true;
+          onScan?.(value.trim());
+          onClose();
+        };
+
         const tick = async () => {
           if (stopped || !videoRef.current) return;
+          const v = videoRef.current;
           try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes && codes.length > 0 && codes[0].rawValue) {
-              const value = String(codes[0].rawValue).trim();
-              stopped = true;
-              onScan?.(value);
-              onClose();
-              return;
+            if (detector) {
+              const codes = await detector.detect(v);
+              if (codes && codes.length > 0 && codes[0].rawValue) {
+                handleValue(String(codes[0].rawValue));
+                return;
+              }
+            } else if (ctx && v.videoWidth > 0) {
+              canvas.width = v.videoWidth;
+              canvas.height = v.videoHeight;
+              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+              const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
+              if (code?.data) {
+                handleValue(code.data);
+                return;
+              }
             }
           } catch {
             /* transient detect errors are ignored; keep scanning */
@@ -4988,7 +5018,7 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
                     <QrCode className="h-9 w-9" />
                   </div>
                   <p className="text-xs text-white/65 leading-relaxed">
-                    {error || "This browser can't access a live QR scanner. Open SubScript in Chrome/Edge on desktop or Android, or paste the address manually."}
+                    {error || "This browser can't access the camera. Check camera permissions, or paste the address/link manually."}
                   </p>
                 </div>
               )}

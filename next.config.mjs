@@ -19,7 +19,8 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
+    // camera=(self) so the in-app QR scanner can use the device camera; everything else stays denied.
+    value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)",
   },
 ];
 

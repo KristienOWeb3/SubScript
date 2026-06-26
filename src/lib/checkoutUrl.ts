@@ -47,3 +47,9 @@ export function buildCheckoutUrl(linkId: string, currentOrigin?: string | null) 
 
     return `${origin}/pay/${linkId}`;
 }
+
+/* Shareable link a customer follows to subscribe to a merchant plan (recurring). */
+export function buildSubscribeUrl(planId: string, currentOrigin?: string | null) {
+    const origin = getCheckoutOrigin(currentOrigin);
+    return `${origin}/subscribe/${planId}`;
+}

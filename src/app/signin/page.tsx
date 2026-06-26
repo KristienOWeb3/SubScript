@@ -21,6 +21,10 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialEmail = searchParams.get("email") || "";
+  /* Optional post-login destination (e.g. a /subscribe/[planId] link). Only safe
+     same-origin relative paths are honored, to avoid open-redirects. */
+  const rawNext = searchParams.get("next") || "";
+  const safeNext = /^\/(?!\/)[^\s]*$/.test(rawNext) ? rawNext : "";
 
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
@@ -45,13 +49,21 @@ function SignInContent() {
   }, [initialEmail]);
 
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
+    // Honor a post-login destination for standard user accounts (e.g. a shared
+    // /subscribe link). Merchants always land on their dashboard.
+    if (safeNext && data.role === "USER") {
+      window.location.href = safeNext;
+      return;
+    }
     if (data.role) {
       window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
       // If signed in but somehow role is missing, go to onboarding (signup role selector)
-      window.location.href = getDashboardUrl("USER", "/signup");
+      window.location.href = safeNext
+        ? `/signup?next=${encodeURIComponent(safeNext)}`
+        : getDashboardUrl("USER", "/signup");
     }
-  }, []);
+  }, [safeNext]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -290,7 +302,7 @@ function SignInContent() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => router.push("/signup")}
+                      onClick={() => router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : "/signup")}
                       className="py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
                     >
                       Create Account

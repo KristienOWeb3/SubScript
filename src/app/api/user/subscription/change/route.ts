@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { cancelFromEmbedded, subscribeFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { createSubscriptionStartedDm } from "@/lib/dms/system";
 
 export const maxDuration = 150;
 
@@ -40,6 +41,16 @@ export async function POST(request: Request) {
         }
 
         const { txHash, subId } = await subscribeFromEmbedded(wallet, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+
+        await createSubscriptionStartedDm({
+            merchantAddress: plan.merchantAddress,
+            subscriberAddress: wallet.toLowerCase(),
+            planName: plan.name,
+            amountUsdc: plan.amountUsdc,
+            periodSeconds: plan.periodSeconds,
+            isChange: true,
+        }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
+
         return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name }, { status: 200 });
     } catch (error: any) {
         console.error("Change plan failed:", error);

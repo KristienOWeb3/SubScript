@@ -11,8 +11,8 @@ self.addEventListener("push", (event) => {
   const title = data.title || "SubScript";
   const options = {
     body: data.body || "",
-    icon: "/icon.png",
-    badge: "/icon.png",
+    icon: "/icon-512.png",
+    badge: "/icon-512.png",
     tag: data.tag || undefined,
     data: { url: data.url || "/" },
   };

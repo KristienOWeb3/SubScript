@@ -10,7 +10,7 @@ import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
-import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
@@ -71,8 +71,7 @@ const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Payment Links", icon: Link2 },
-    { id: "plans", label: "Plans", icon: Sliders },
+    { id: "payment-links", label: "Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
@@ -118,7 +117,7 @@ const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Activity }> = [
     { id: "overview", label: "Home", icon: Activity },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "plans", label: "Plans", icon: Sliders },
+    { id: "payment-links", label: "Plans", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
@@ -823,7 +822,7 @@ export default function DashboardPage() {
             setPlanName("");
             setPlanAmountUsdc("");
             setPlanPeriodDays("30");
-            setPlanSuccess("Plan created. Users can now choose it from merchant DMs.");
+            setPlanSuccess("Plan created. Copy its subscribe link below and share it with customers.");
             setToastMessage("Plan Created");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 3000);
@@ -2673,10 +2672,11 @@ Please complete the following implementation tasks:
                         <div>
                             <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <Sliders className="w-4 h-4 text-[#00d2b4]" />
-                                Merchant Plans
+                                Create Subscription Plan
                             </h2>
                             <p className="text-[11px] text-white/40 font-sans">
-                                Publish named USDC subscription plans that users can choose, switch, or cancel from their merchant DM.
+                                Publish named recurring USDC plans. Share each plan's subscribe link with customers — no website needed.
+                                The same plans power your API keys and webhooks later, so you scale without rebuilding.
                             </p>
                         </div>
                         <button
@@ -2744,7 +2744,7 @@ Please complete the following implementation tasks:
                         </div>
                         {activePlans.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
-                                No active plans yet. Create one above to populate the DM picker.
+                                No active plans yet. Create one above to get a shareable subscribe link.
                             </div>
                         ) : (
                             <div className="space-y-3">
@@ -3170,7 +3170,14 @@ Please complete the following implementation tasks:
                 return renderSettingsTab();
 
             case "payment-links":
-                return renderPaymentLinksTab();
+                /* "Subscriptions" tab: subscription plans first (the headline for
+                   merchants without a site), then one-time payment links below. */
+                return (
+                    <div className="space-y-10">
+                        {renderPlansTab()}
+                        {renderPaymentLinksTab()}
+                    </div>
+                );
 
             case "plans":
                 return renderPlansTab();
@@ -5069,6 +5076,15 @@ function MerchantPlanRow({
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
 }) {
+    const [copied, setCopied] = useState(false);
+    const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(subscribeUrl).catch(() => {});
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
     return (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="flex items-start justify-between gap-4">
@@ -5078,7 +5094,7 @@ function MerchantPlanRow({
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
-                        {plan.active ? "Visible in user DMs" : "Hidden from new subscribers"}
+                        {plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
                     </p>
                 </div>
                 <button
@@ -5094,6 +5110,21 @@ function MerchantPlanRow({
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
                 </button>
             </div>
+
+            {plan.active && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-black/30 px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-white/45">{subscribeUrl}</span>
+                    <button
+                        type="button"
+                        onClick={handleCopy}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                        title={copied ? "Copied!" : "Copy subscribe link"}
+                    >
+                        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        {copied ? "Copied" : "Copy link"}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

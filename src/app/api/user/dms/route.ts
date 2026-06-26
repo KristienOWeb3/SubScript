@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import { sendSubscriptionCancellationReasonEmail } from "@/lib/email/transactional";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 export const maxDuration = 60;
@@ -335,12 +336,25 @@ export async function POST(request: Request) {
             data: { status }
         });
 
-        return NextResponse.json({ 
-            success: true, 
+        /* Exit-survey reason → email the merchant (only if a real reason was chosen).
+           "Prefer not to answer" submits DISMISSED, which sends nothing. */
+        if (
+            existingDm.messageType === "CHURN_SURVEY" &&
+            ["TOO_EXPENSIVE", "LACK_OF_FEATURES", "TECHNICAL_ISSUES", "OTHER"].includes(status)
+        ) {
+            await sendSubscriptionCancellationReasonEmail({
+                merchantAddress: existingDm.senderAddress,
+                customerAddress: existingDm.receiverAddress,
+                reasonCode: status,
+            }).catch((err) => console.error("[dms] cancellation-reason email failed:", err));
+        }
+
+        return NextResponse.json({
+            success: true,
             dm: {
                 id: updatedDm.id,
                 status: updatedDm.status
-            } 
+            }
         }, { status: 200 });
     } catch (err: any) {
         console.error("Failed to update DM status:", err);

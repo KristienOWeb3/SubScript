@@ -34,6 +34,13 @@ declare global {
 
 export default function SignupPage() {
   const router = useRouter();
+  /* Optional post-onboarding destination (e.g. a /subscribe/[planId] link a new
+     user followed). Only safe same-origin relative paths are honored. */
+  const getSafeNext = () => {
+    if (typeof window === "undefined") return "";
+    const raw = new URLSearchParams(window.location.search).get("next") || "";
+    return /^\/(?!\/)[^\s]*$/.test(raw) ? raw : "";
+  };
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { signMessageAsync } = useSignMessage();
@@ -162,7 +169,10 @@ export default function SignupPage() {
       setRequiresEmailLinking(false);
     }
     if (data.role) {
-      window.location.href = getDashboardUrl(data.role as any, "/dashboard");
+      const next = getSafeNext();
+      window.location.href = (next && data.role === "USER")
+        ? next
+        : getDashboardUrl(data.role as any, "/dashboard");
     } else {
       if (!data.email && !email) {
         setRequiresEmailLinking(true);
@@ -355,7 +365,10 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
-        window.location.href = getDashboardUrl(selectedRole as any, "/dashboard");
+        const next = getSafeNext();
+        window.location.href = (next && selectedRole === "USER")
+          ? next
+          : getDashboardUrl(selectedRole as any, "/dashboard");
       } else {
         setRoleError(data.error || "Failed to register account type.");
       }
