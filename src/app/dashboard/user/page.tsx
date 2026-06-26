@@ -607,7 +607,7 @@ export default function UserDashboard() {
     }
   };
 
-  const loadDms = async () => {
+  const loadDms = useCallback(async () => {
     try {
       const res = await fetch("/api/user/dms");
       const data = await res.json();
@@ -615,7 +615,27 @@ export default function UserDashboard() {
     } catch (err) {
       console.error("Failed to load DMs:", err);
     }
-  };
+  }, []);
+
+  /* Live inbox: poll DMs while the tab is visible (and refresh immediately on focus) so messages
+     from the other end and settled requests appear without a manual reload — which also keeps the
+     notification badge honest, since it's derived from this same data. */
+  useEffect(() => {
+    if (!userWallet) return;
+    const refresh = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        loadDms();
+      }
+    };
+    const interval = window.setInterval(refresh, 8000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [userWallet, loadDms]);
 
   const loadRegisteredDns = async (walletAddress: string) => {
     try {
@@ -1561,10 +1581,14 @@ export default function UserDashboard() {
     const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
     return aNext - bNext;
   });
-  /* Only the receiver of a PENDING system DM can settle it (see /api/user/dms POST),
-     so requests the user *sent* must not keep the notification badge lit forever. */
+  /* The badge should reflect only what needs the user's attention: incoming PENDING requests they
+     can actually act on. Outgoing requests can't be settled from this side, and informational
+     notices (e.g. DEBIT_SUCCESS renewal receipts) are created PENDING but aren't "action needed" —
+     neither should keep the badge lit. */
   const isActionableDm = (dm: DmMessage) =>
-    dm.status === "PENDING" && dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase();
+    dm.status === "PENDING" &&
+    dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
   const pendingDmCount = dms.filter(isActionableDm).length;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
