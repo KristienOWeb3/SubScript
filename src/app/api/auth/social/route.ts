@@ -6,6 +6,7 @@ import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { safelySendEmail, sendSignInAlertEmail } from "@/lib/email/transactional";
+import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
 import { setSessionCookie } from "@/lib/authCookies";
@@ -153,10 +154,13 @@ export async function POST(request: Request) {
             .setExpirationTime(sessionDurationStr)
             .sign(secret);
 
+        /* Default the user's .sub username to their email name on first sign-up (changeable later). */
+        await ensureDefaultAliasFromEmail(walletAddress, emailVal);
+
         const role = await getAccountRole(walletAddress);
 
-        const response = NextResponse.json({ 
-            success: true, 
+        const response = NextResponse.json({
+            success: true,
             wallet: walletAddress,
             email: emailVal,
             provider: providerVal,
