@@ -8,6 +8,7 @@ import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contra
 const SUB_ABI = [
     "function createSubscription(address merchant, uint256 amount, uint256 period) returns (uint256)",
     "function cancelSubscription(uint256 subId)",
+    "function modifySubscription(uint256 subId, uint256 newAmount, uint256 newPeriod)",
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
     "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)",
 ];
@@ -15,6 +16,7 @@ const SUB_ABI = [
 const USDC_ABI = [
     "function approve(address spender, uint256 amount) returns (bool)",
     "function allowance(address owner, address spender) view returns (uint256)",
+    "function transfer(address to, uint256 amount) returns (bool)",
 ];
 
 function readProvider() {
@@ -26,6 +28,7 @@ export type OnChainSubscription = {
     merchant: string;
     amount: bigint;
     period: bigint;
+    nextPayment: bigint;
     isActive: boolean;
 };
 
@@ -38,6 +41,7 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
             merchant: String(s.merchant ?? s[1]).toLowerCase(),
             amount: BigInt(s.amount ?? s[2]),
             period: BigInt(s.period ?? s[3]),
+            nextPayment: BigInt(s.nextPayment ?? s[4]),
             isActive: Boolean(s.isActive ?? s[5]),
         };
     } catch {
@@ -91,4 +95,59 @@ export async function cancelFromEmbedded(walletAddress: string, subId: string | 
     const tx = await contract.cancelSubscription(BigInt(subId));
     const receipt = await tx.wait();
     return receipt?.hash || tx.hash;
+}
+
+/**
+ * Change a subscription's amount/period in place (contract `modifySubscription`). This takes
+ * NO payment — the current period stays as already paid; the next on-chain renewal bills the
+ * new amount. We also raise the USDC allowance to cover the new annual horizon so recurring
+ * billing keeps succeeding at the higher amount.
+ */
+export async function modifyFromEmbedded(
+    walletAddress: string,
+    subId: string | bigint,
+    newAmount: bigint,
+    newPeriod: bigint,
+) {
+    const signer = await getEmbeddedSigner(walletAddress);
+    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
+    const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
+    const desiredAllowance = horizonAllowance(newAmount, newPeriod);
+    if (allowance < desiredAllowance) {
+        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
+        await approveTx.wait();
+    }
+    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
+    const tx = await contract.modifySubscription(BigInt(subId), newAmount, newPeriod);
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+/** Direct USDC transfer from the embedded wallet to a recipient — used to charge the
+    prorated difference when a user upgrades immediately. */
+export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint) {
+    const signer = await getEmbeddedSigner(walletAddress);
+    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
+    const tx = await usdc.transfer(to.toLowerCase(), amountMicros);
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+/**
+ * Prorated upgrade charge for the remainder of the current period:
+ *   (newAmount - oldAmount) * (secondsRemaining / period), clamped to a single period.
+ * Returns 0n for downgrades or once the period has lapsed.
+ */
+export function proratedUpgradeDelta(
+    oldAmount: bigint,
+    newAmount: bigint,
+    period: bigint,
+    nextPayment: bigint,
+    nowSeconds: bigint,
+): bigint {
+    if (newAmount <= oldAmount || period <= BigInt(0)) return BigInt(0);
+    let remaining = nextPayment - nowSeconds;
+    if (remaining <= BigInt(0)) return BigInt(0);
+    if (remaining > period) remaining = period;
+    return ((newAmount - oldAmount) * remaining) / period;
 }

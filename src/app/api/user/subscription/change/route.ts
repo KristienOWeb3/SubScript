@@ -1,13 +1,24 @@
-/* Change/upgrade plan from a DM: cancel the current subscription and subscribe to the
-   chosen plan. No exit survey (this is a switch, not a churn). Server-signed; gas on us. */
+/* Change plan from a DM. Uses the contract's in-place modifySubscription (no cancel/recreate,
+   no double charge):
+     - "scheduled" (default): the current paid period runs out, then the next renewal bills the
+       new amount. Right for downgrades and unhurried upgrades.
+     - "immediate": same in-place modify, plus a one-time prorated charge for the remainder of
+       the current period so an upgrade takes effect now without paying twice for the overlap.
+   If there's no existing subscription, falls back to a fresh subscribe. Server-signed; gas on us. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
-import { cancelFromEmbedded, subscribeFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
-import { createSubscriptionStartedDm } from "@/lib/dms/system";
+import {
+    subscribeFromEmbedded,
+    modifyFromEmbedded,
+    transferUsdcFromEmbedded,
+    getSubscriptionOnChain,
+    proratedUpgradeDelta,
+} from "@/lib/subscriptions/onchain";
+import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 
 export const maxDuration = 150;
 
@@ -21,37 +32,85 @@ export async function POST(request: Request) {
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const fromSubscriptionId = body.fromSubscriptionId !== undefined ? String(body.fromSubscriptionId) : "";
         const planId = typeof body.planId === "string" ? body.planId : "";
+        const mode = body.mode === "immediate" ? "immediate" : "scheduled";
         if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
 
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan || !plan.active) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
 
-        await ensureGasSponsored(wallet.toLowerCase());
+        const subscriber = wallet.toLowerCase();
+        await ensureGasSponsored(subscriber);
 
-        /* Cancel the existing subscription first (must belong to the caller and match the
-           plan's merchant — you can only switch plans within the same merchant). */
-        if (fromSubscriptionId && /^\d+$/.test(fromSubscriptionId)) {
-            const current = await getSubscriptionOnChain(fromSubscriptionId);
-            if (current && current.subscriber === wallet.toLowerCase() && current.isActive) {
-                if (current.merchant !== plan.merchantAddress.toLowerCase()) {
-                    return NextResponse.json({ error: "You can only switch to a plan from the same merchant." }, { status: 400 });
-                }
-                await cancelFromEmbedded(wallet, fromSubscriptionId);
+        /* Resolve the current subscription (must belong to caller, be active, and be with the
+           same merchant — you can only switch between a merchant's own plans). */
+        const current = (fromSubscriptionId && /^\d+$/.test(fromSubscriptionId))
+            ? await getSubscriptionOnChain(fromSubscriptionId)
+            : null;
+
+        /* No existing subscription to change → just subscribe fresh. */
+        if (!current || current.subscriber !== subscriber || !current.isActive) {
+            const { txHash, subId } = await subscribeFromEmbedded(subscriber, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+            await createSubscriptionStartedDm({
+                merchantAddress: plan.merchantAddress,
+                subscriberAddress: subscriber,
+                planName: plan.name,
+                amountUsdc: plan.amountUsdc,
+                periodSeconds: plan.periodSeconds,
+            }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
+            return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name, mode: "new" }, { status: 200 });
+        }
+
+        if (current.merchant !== plan.merchantAddress.toLowerCase()) {
+            return NextResponse.json({ error: "You can only switch to a plan from the same merchant." }, { status: 400 });
+        }
+        if (current.amount === plan.amountUsdc && current.period === plan.periodSeconds) {
+            return NextResponse.json({ error: "You're already on this plan." }, { status: 409 });
+        }
+
+        const isUpgrade = plan.amountUsdc > current.amount;
+
+        /* Immediate upgrade: charge only the prorated difference for the rest of the current
+           period now (downgrades never charge — they simply take effect next cycle). */
+        let proratedChargeMicros = BigInt(0);
+        let proratedTxHash: string | null = null;
+        if (mode === "immediate" && isUpgrade) {
+            const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+            proratedChargeMicros = proratedUpgradeDelta(
+                current.amount,
+                plan.amountUsdc,
+                current.period,
+                current.nextPayment,
+                nowSeconds,
+            );
+            if (proratedChargeMicros > BigInt(0)) {
+                proratedTxHash = await transferUsdcFromEmbedded(subscriber, plan.merchantAddress, proratedChargeMicros);
             }
         }
 
-        const { txHash, subId } = await subscribeFromEmbedded(wallet, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+        /* Apply the new amount/period on-chain (no payment taken by modify itself). */
+        const txHash = await modifyFromEmbedded(subscriber, fromSubscriptionId, plan.amountUsdc, plan.periodSeconds);
 
         await createSubscriptionStartedDm({
             merchantAddress: plan.merchantAddress,
-            subscriberAddress: wallet.toLowerCase(),
+            subscriberAddress: subscriber,
             planName: plan.name,
             amountUsdc: plan.amountUsdc,
             periodSeconds: plan.periodSeconds,
             isChange: true,
         }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
 
-        return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name }, { status: 200 });
+        return NextResponse.json({
+            success: true,
+            txHash,
+            subscriptionId: fromSubscriptionId,
+            planName: plan.name,
+            mode: mode === "immediate" && isUpgrade ? "immediate" : "scheduled",
+            proratedChargeUsdc: proratedChargeMicros > BigInt(0) ? formatUsdcFromMicros(proratedChargeMicros) : null,
+            proratedTxHash,
+            effective: mode === "immediate" && isUpgrade
+                ? "Upgrade applied now; the new rate bills from the next renewal."
+                : "Your current period continues; the new rate starts at the next renewal.",
+        }, { status: 200 });
     } catch (error: any) {
         console.error("Change plan failed:", error);
         return NextResponse.json({ error: error.message || "Failed to change plan" }, { status: 500 });

@@ -835,13 +835,30 @@ export default function UserDashboard() {
 
   const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
     const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
+
+    /* When switching, let the user pick the timing of an *upgrade*: now (prorated) vs at the
+       next renewal. Downgrades always take effect at the next renewal (no refund, no charge). */
+    let mode: "scheduled" | "immediate" = "scheduled";
+    if (activeSub) {
+      let isUpgrade = false;
+      try { isUpgrade = BigInt(plan.amountUsdc) > BigInt(activeSub.amountCapUsdc); } catch { isUpgrade = false; }
+      if (isUpgrade) {
+        const now = window.confirm(
+          `Upgrade to ${plan.name}?\n\n`
+          + `OK — upgrade now: you'll pay a prorated amount for the rest of the current period, and the new rate bills from the next renewal.\n\n`
+          + `Cancel — switch at renewal: keep your current plan until it renews, then the new rate starts automatically (no charge today).`
+        );
+        mode = now ? "immediate" : "scheduled";
+      }
+    }
+
     const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
     await runAction(actionKey, async () => {
       setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
       setPlanManagerError(null);
       const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
       const body = activeSub
-        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id }
+        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
         : { planId: plan.id };
       const res = await fetch(endpoint, {
         method: "POST",
@@ -850,8 +867,13 @@ export default function UserDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-      setPlanManagerStatus(activeSub ? `Switched to ${data.planName || plan.name}.` : `Subscribed to ${data.planName || plan.name}.`);
-      triggerToast(activeSub ? "Plan switched on-chain" : "Subscription created on-chain");
+      const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
+      setPlanManagerStatus(
+        activeSub
+          ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
+          : `Subscribed to ${data.planName || plan.name}.`
+      );
+      triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
       await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
     }).catch((err: any) => {
       setPlanManagerError(err.message || "Subscription transaction failed.");
