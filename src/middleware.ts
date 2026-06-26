@@ -121,7 +121,7 @@ function createContentSecurityPolicy(nonce: string) {
         `script-src ${scriptSources}`,
         `style-src ${styleSources}`,
         "style-src-attr 'unsafe-inline'",
-        "img-src 'self' data: blob: https://subscriptonarc.com https://www.subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network",
+        "img-src 'self' data: blob: https://subscriptonarc.com https://www.subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://explorer.arc.network https://explorer.testnet.arc.network https://jkrlsjpsytzffwjpixue.supabase.co",
         "font-src 'self' data:",
         "connect-src 'self' https://subscriptonarc.com https://www.subscriptonarc.com https://dashboard.subscriptonarc.com https://us.i.posthog.com https://us-assets.i.posthog.com https://auth.privy.io https://api.privy.io https://relay.walletconnect.com wss://relay.walletconnect.com https://api.circle.com https://iris-api-sandbox.circle.com https://rpc.testnet.arc.network wss://ws.testnet.arc.network https://explorer.arc.network https://explorer.testnet.arc.network https://ethereum-rpc.publicnode.com https://ethereum-sepolia-rpc.publicnode.com https://rpc.ankr.com https://sepolia.gateway.tenderly.co https://1rpc.io https://5042002.rpc.thirdweb.com https://jkrlsjpsytzffwjpixue.supabase.co",
         "frame-src 'self' https://www.google.com https://auth.privy.io https://relay.walletconnect.com https://api.circle.com https://pw-auth.circle.com",

@@ -912,6 +912,10 @@ export default function UserDashboard() {
         if (!accountAddress) {
           throw new Error("Connect your wallet to pay this request.");
         }
+        /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
+        if (chainId !== ARC_TESTNET_CHAIN_ID) {
+          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        }
         txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
           abi: [
@@ -1334,6 +1338,10 @@ export default function UserDashboard() {
         },
       ] as const;
 
+      /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
+      if (chainId !== ARC_TESTNET_CHAIN_ID) {
+        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
