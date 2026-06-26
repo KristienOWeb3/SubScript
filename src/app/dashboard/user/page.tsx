@@ -266,6 +266,8 @@ export default function UserDashboard() {
   const [emailPromptValue, setEmailPromptValue] = useState("");
   const [emailPromptSaving, setEmailPromptSaving] = useState(false);
   const [emailPromptError, setEmailPromptError] = useState<string | null>(null);
+  const [emailPromptStep, setEmailPromptStep] = useState<"email" | "code">("email");
+  const [emailPromptCode, setEmailPromptCode] = useState("");
   const [vaultInfoOpen, setVaultInfoOpen] = useState(false);
   const [vaultActionOpen, setVaultActionOpen] = useState(false);
   const [vaultActionMode, setVaultActionMode] = useState<"commit" | "withdraw">("commit");
@@ -1042,7 +1044,8 @@ export default function UserDashboard() {
     }).catch((err) => setDmRequestStatus(err.message));
   };
 
-  const handleSaveEmailPrompt = async (event: React.FormEvent) => {
+  /* Step 1: email a verification code (the email isn't bound until the code is confirmed). */
+  const handleSendEmailCode = async (event: React.FormEvent) => {
     event.preventDefault();
     setEmailPromptError(null);
     const value = emailPromptValue.trim();
@@ -1052,17 +1055,46 @@ export default function UserDashboard() {
     }
     setEmailPromptSaving(true);
     try {
-      const res = await fetch("/api/user/email", {
+      const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: value }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Could not save your email.");
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not send a verification code.");
+      setEmailPromptCode("");
+      setEmailPromptStep("code");
+    } catch (err: any) {
+      setEmailPromptError(err.message || "Could not send a verification code.");
+    } finally {
+      setEmailPromptSaving(false);
+    }
+  };
+
+  /* Step 2: confirm the code — only then is the email bound to this wallet account. */
+  const handleVerifyEmailCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setEmailPromptError(null);
+    const code = emailPromptCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setEmailPromptError("Enter the 6-digit code we emailed you.");
+      return;
+    }
+    setEmailPromptSaving(true);
+    try {
+      const res = await fetch("/api/user/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailPromptValue.trim(), code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not confirm your email.");
       setUserEmail(data.email);
       setEmailPromptValue("");
+      setEmailPromptCode("");
+      setEmailPromptStep("email");
     } catch (err: any) {
-      setEmailPromptError(err.message || "Could not save your email.");
+      setEmailPromptError(err.message || "Could not confirm your email.");
     } finally {
       setEmailPromptSaving(false);
     }
@@ -3039,27 +3071,45 @@ export default function UserDashboard() {
       {!loading && userWallet && !userEmail && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md">
           <form
-            onSubmit={handleSaveEmailPrompt}
+            onSubmit={emailPromptStep === "email" ? handleSendEmailCode : handleVerifyEmailCode}
             className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
           >
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
               <Mail className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">Add your email</h2>
+              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">
+                {emailPromptStep === "email" ? "Add your email" : "Verify your email"}
+              </h2>
               <p className="mt-2 text-xs leading-relaxed text-white/50">
-                We need an email to send you payment receipts, requests, and account notifications. This is required to continue.
+                {emailPromptStep === "email"
+                  ? "We need an email to send you payment receipts, requests, and account notifications. This is required to continue."
+                  : `Enter the 6-digit code we sent to ${emailPromptValue.trim()}.`}
               </p>
             </div>
-            <input
-              type="email"
-              value={emailPromptValue}
-              onChange={(event) => setEmailPromptValue(event.target.value)}
-              placeholder="you@example.com"
-              className="subscript-input"
-              autoFocus
-              required
-            />
+            {emailPromptStep === "email" ? (
+              <input
+                type="email"
+                value={emailPromptValue}
+                onChange={(event) => setEmailPromptValue(event.target.value)}
+                placeholder="you@example.com"
+                className="subscript-input"
+                autoFocus
+                required
+              />
+            ) : (
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={emailPromptCode}
+                onChange={(event) => setEmailPromptCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="123456"
+                className="subscript-input text-center tracking-[0.4em]"
+                autoFocus
+                required
+              />
+            )}
             {emailPromptError && (
               <p className="text-[11px] font-bold text-red-300">{emailPromptError}</p>
             )}
@@ -3068,8 +3118,19 @@ export default function UserDashboard() {
               disabled={emailPromptSaving}
               className={`subscript-primary-button ${emailPromptSaving ? "opacity-60" : ""}`}
             >
-              {emailPromptSaving ? "Saving..." : "Save email"}
+              {emailPromptSaving
+                ? (emailPromptStep === "email" ? "Sending..." : "Verifying...")
+                : (emailPromptStep === "email" ? "Send code" : "Verify & save")}
             </button>
+            {emailPromptStep === "code" && (
+              <button
+                type="button"
+                onClick={() => { setEmailPromptStep("email"); setEmailPromptError(null); }}
+                className="w-full text-[11px] font-bold text-white/50 transition hover:text-white/80"
+              >
+                Use a different email
+              </button>
+            )}
           </form>
         </div>
       )}
