@@ -1,15 +1,20 @@
 import type { MetadataRoute } from "next";
 
-/* Web App Manifest — makes SubScript installable (Add to Home Screen / desktop install).
-   Next.js serves this at /manifest.webmanifest and injects the <link rel="manifest">. */
+/* Web App Manifest — makes the SubScript *dashboard* installable (Add to Home Screen /
+   desktop install). Next.js serves this at /manifest.webmanifest.
+
+   The installed app targets the dashboard, not the marketing site: it opens the
+   role-aware dashboard router and is scoped to it. (In production the dashboard is its own
+   subdomain, so the scope is the dashboard origin; the install prompt is additionally
+   gated to dashboard routes in PwaInstaller so it never appears on marketing pages.) */
 export default function manifest(): MetadataRoute.Manifest {
     return {
-        name: "SubScript — USDC Subscriptions & Checkout",
+        name: "SubScript Dashboard",
         short_name: "SubScript",
         description:
-            "Installable SubScript app: pay, subscribe, scan QR codes, and get browser notifications for your SubScript DMs.",
-        id: "/",
-        start_url: "/",
+            "Your SubScript dashboard: payments, subscriptions, QR scanning, and browser notifications for your DMs.",
+        id: "/dashboard-router",
+        start_url: "/dashboard-router",
         scope: "/",
         display: "standalone",
         orientation: "portrait",
