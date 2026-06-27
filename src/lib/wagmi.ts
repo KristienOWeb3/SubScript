@@ -3,11 +3,21 @@ import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 import { mainnet, base, sepolia, baseSepolia } from "viem/chains";
 
-const arcRpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY || process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc.network";
+/* Arc network is selected by NEXT_PUBLIC_ENVIRONMENT ("mainnet" => Arc mainnet, anything else =>
+   testnet), so the client targets the same chain the cutover env vars point the contracts at.
+   Defaults to testnet, so current behaviour is unchanged until NEXT_PUBLIC_ENVIRONMENT=mainnet. */
+const isArcMainnet = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+const arcChainId = isArcMainnet ? 5042001 : 5042002;
+const arcRpcUrl =
+    process.env.NEXT_PUBLIC_ARC_RPC_PRIMARY ||
+    process.env.NEXT_PUBLIC_ARC_RPC_URL ||
+    (isArcMainnet ? "https://rpc.mainnet.arc.network" : "https://rpc.testnet.arc.network");
 
+/* Exported as `arcTestnet` for backward-compatible imports; it is the ACTIVE Arc chain (mainnet or
+   testnet) per NEXT_PUBLIC_ENVIRONMENT above. */
 export const arcTestnet = defineChain({
-    id: 5042002,
-    name: "Arc Testnet",
+    id: arcChainId,
+    name: isArcMainnet ? "Arc" : "Arc Testnet",
     nativeCurrency: {
         name: "USDC",
         symbol: "USDC",
@@ -30,11 +40,13 @@ export const config = createConfig({
     chains: [arcTestnet, mainnet, base, sepolia, baseSepolia],
     connectors: [injected({ shimDisconnect: true })],
     transports: {
-        [5042002]: http(arcRpcUrl),
-        [1]: http(),
-        [8453]: http(),
-        [11155111]: http(),
-        [84532]: http(),
+        /* Both Arc chain ids map to the active RPC; only the selected one (arcChainId) is used. */
+        5042002: http(arcRpcUrl),
+        5042001: http(arcRpcUrl),
+        1: http(),
+        8453: http(),
+        11155111: http(),
+        84532: http(),
     },
     ssr: true,
 });
