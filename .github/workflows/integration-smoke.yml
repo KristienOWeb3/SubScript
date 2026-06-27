@@ -1,0 +1,49 @@
+name: Integration Smoke
+
+# Runs the SubScript money-path smoke test on every push/PR to main and on demand.
+#
+# With no secrets configured it still validates the webhook signing contract (always-on layer).
+# If the optional repo secrets below are set, it also exercises the live API at SUBSCRIPT_BASE_URL
+# (intent -> status, subscription create/list/cancel, usage gate, inbound-webhook + keeper auth).
+#
+# Safe by design: the money-moving / DB-writing opt-ins (SMOKE_RUN_KEEPER, SMOKE_WEBHOOK_POST) are
+# intentionally NEVER set here, so CI can never bill a subscription or write to the database.
+#
+# Optional repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUBSCRIPT_BASE_URL        e.g. a preview/staging URL (avoid prod to keep sandbox data off it)
+#   SUBSCRIPT_SECRET_KEY      an sk_test_… key so the run stays in sandbox
+#   SUBSCRIPT_WEBHOOK_SECRET
+#   CRON_SECRET
+# Leave any unset to skip that layer. Forked-PR runs never receive secrets (GitHub policy), so they
+# validate the signing contract only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # The smoke script uses only Node built-ins — no dependency install needed.
+      - name: Run integration smoke
+        run: node scripts/subscript-integration-smoke.mjs
+        env:
+          SUBSCRIPT_BASE_URL: ${{ secrets.SUBSCRIPT_BASE_URL }}
+          SUBSCRIPT_SECRET_KEY: ${{ secrets.SUBSCRIPT_SECRET_KEY }}
+          SUBSCRIPT_WEBHOOK_SECRET: ${{ secrets.SUBSCRIPT_WEBHOOK_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
