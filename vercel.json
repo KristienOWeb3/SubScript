@@ -5,5 +5,11 @@
       "source": "/.well-known/mcp/server-card.json",
       "destination": "/api/mcp-server-card"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/customer-billing",
+      "schedule": "0 3 * * *"
+    }
   ]
 }
