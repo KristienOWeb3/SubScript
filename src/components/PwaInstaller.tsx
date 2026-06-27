@@ -1,8 +1,10 @@
 "use client";
 
-/* Registers the service worker on load (needed for install + Web Push) and surfaces a
-   lightweight, dismissible "Install app" button when the browser offers installation. */
+/* Registers the service worker (needed for install + Web Push) and surfaces a lightweight,
+   dismissible "Install app" button — but only inside the dashboard, so the marketing site
+   isn't installable. Only the dashboard becomes the installed app. */
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type BeforeInstallPromptEvent = Event & {
     prompt: () => Promise<void>;
@@ -11,12 +13,26 @@ type BeforeInstallPromptEvent = Event & {
 
 const DISMISS_KEY = "subscript_pwa_install_dismissed";
 
+/* Dashboard surfaces: /user (user dashboard), /merchant, /dashboard*, /dashboard-router. */
+function isDashboardPath(pathname: string | null): boolean {
+    if (!pathname) return false;
+    return (
+        pathname === "/user" || pathname.startsWith("/user/") ||
+        pathname === "/merchant" || pathname.startsWith("/merchant/") ||
+        pathname.startsWith("/dashboard")
+    );
+}
+
 export default function PwaInstaller() {
+    const pathname = usePathname();
+    const onDashboard = isDashboardPath(pathname);
     const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [visible, setVisible] = useState(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
+        /* Only the dashboard is installable — skip the SW + prompt on the marketing site. */
+        if (!onDashboard) return;
 
         /* Register the SW (idempotent — registering an already-registered SW is a no-op). */
         if ("serviceWorker" in navigator) {
@@ -46,9 +62,9 @@ export default function PwaInstaller() {
             window.removeEventListener("beforeinstallprompt", onBeforeInstall);
             window.removeEventListener("appinstalled", onInstalled);
         };
-    }, []);
+    }, [onDashboard]);
 
-    if (!visible || !deferredPrompt) return null;
+    if (!onDashboard || !visible || !deferredPrompt) return null;
 
     const install = async () => {
         try {
