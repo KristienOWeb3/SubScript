@@ -123,9 +123,14 @@ export async function POST(request: Request) {
         if (cleanSubId !== null && !isNaN(cleanSubId)) {
             const amount = data.amount ? parseFloat(String(data.amount)) : 0;
             const period = data.period ? parseInt(String(data.period), 10) : 0;
-            const nextPayment = data.nextPayment || data.timestamp || Math.floor(Date.now() / 1000) + period;
-            const nextPaymentDate = new Date(Number(nextPayment) * 1000).toISOString();
-            
+            /* `last_settlement_timestamp` is when THIS payment settled (now), not the next due date.
+               A BEFORE INSERT/UPDATE trigger (update_subscription_next_billing_date) derives
+               next_billing_date as last_settlement_timestamp + billing_interval_seconds, so storing a
+               future value here would push the renewal a full period late. We also set next_billing_date
+               explicitly so it's correct even if that trigger isn't deployed. Matches subscriptions/mirror.ts. */
+            const nowIso = new Date().toISOString();
+            const nextBillingDate = new Date(Date.now() + period * 1000).toISOString();
+
             let status = "ACTIVE";
             if (event === "subscription.cancelled" || event === "subscription.expired") {
                 status = "CANCELED";
@@ -147,7 +152,8 @@ export async function POST(request: Request) {
                     merchant_address: merchantAddress,
                     subscriber: data.subscriber ? String(data.subscriber).toLowerCase() : null,
                     current_nonce: data.currentNonce !== undefined ? parseInt(String(data.currentNonce), 10) : 0,
-                    last_settlement_timestamp: nextPaymentDate,
+                    last_settlement_timestamp: nowIso,
+                    next_billing_date: nextBillingDate,
                     billing_interval_seconds: period,
                     amount_cap_usdc: amount,
                     payment_tx_hash: data.nextCommitment || data.nullifierHash || null,

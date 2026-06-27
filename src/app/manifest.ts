@@ -27,5 +27,22 @@ export default function manifest(): MetadataRoute.Manifest {
             { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
             { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
+        /* Long-press / right-click jump targets on the installed app icon. All stay within scope. */
+        shortcuts: [
+            {
+                name: "Wallet & subscriptions",
+                short_name: "Wallet",
+                description: "Open your balances, subscriptions, and payment requests.",
+                url: "/user",
+                icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+            },
+            {
+                name: "Merchant dashboard",
+                short_name: "Merchant",
+                description: "Open your merchant payments, plans, and payouts.",
+                url: "/merchant",
+                icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+            },
+        ],
     };
 }

@@ -1,0 +1,291 @@
+/* Customer-subscription renewal keeper.
+ *
+ * Premium subs (merchant -> SubScript) are billed by `cron/billing`. This route bills the OTHER
+ * kind: CUSTOMER subs (customer -> merchant gym-style plans) created via the embedded-wallet
+ * routes and mirrored into `subscriptions` (kind = "CUSTOMER"). It is the server-side keeper for
+ * when on-chain Chainlink Automation is not registered.
+ *
+ * Safety model (this moves real USDC, so it is deliberately conservative):
+ *   - Auth: KEEPER_SECRET bearer, same as the other keeper crons. Trigger it externally on a
+ *     schedule (e.g. hourly/daily) exactly like `cron/billing`.
+ *   - Double-charge is impossible: the on-chain contract gates every charge by sequence
+ *     (`isSequenceExecuted` / `isPaymentDue`). We only `executePayment` when BOTH our mirror says
+ *     due (`next_billing_date <= now`) AND the chain says `isPaymentDue`, and we never reuse a
+ *     sequence. Balance + allowance are checked first so we don't waste gas on a guaranteed revert.
+ *   - `next_billing_date` is DB-derived by a trigger from `last_settlement_timestamp +
+ *     billing_interval_seconds`, so on success we only stamp `last_settlement_timestamp = now`.
+ */
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { ethers } from "ethers";
+import crypto from "crypto";
+import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
+import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { subscriptionWebhookData } from "@/lib/webhooks";
+
+export const maxDuration = 300;
+
+const STANDARD_ABI = [
+    "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
+    "function executePayment(uint256 _subId, uint256 _sequenceId) external",
+    "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+    "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+];
+
+/* Consecutive failed renewal attempts before we park the sub as PAST_DUE and stop retrying.
+   Until then it stays ACTIVE and is retried each run (cheap — only view calls until funded). */
+const MAX_RENEWAL_FAILURES = 4;
+
+async function createBillingDm({
+    supabase,
+    senderAddress,
+    receiverAddress,
+    messageType,
+    amountUsdc,
+    title,
+    description,
+    txHash,
+}: {
+    supabase: any;
+    senderAddress: string;
+    receiverAddress: string;
+    messageType: "DEBIT_SUCCESS" | "EXPIRY_WARNING";
+    amountUsdc: bigint | string | number;
+    title: string;
+    description: string;
+    txHash?: string | null;
+}) {
+    const { data: customerSettings } = await supabase
+        .from("customers")
+        .select("push_enabled, debit_success_enabled, expiry_warning_enabled")
+        .eq("wallet_address", receiverAddress.toLowerCase())
+        .maybeSingle();
+
+    if (customerSettings?.push_enabled === false) return;
+    if (messageType === "DEBIT_SUCCESS" && customerSettings?.debit_success_enabled === false) return;
+    if (messageType === "EXPIRY_WARNING" && customerSettings?.expiry_warning_enabled === false) return;
+
+    await supabase.from("subscript_dms").insert({
+        sender_address: senderAddress.toLowerCase(),
+        receiver_address: receiverAddress.toLowerCase(),
+        message_type: messageType,
+        status: "PENDING",
+        amount_usdc: amountUsdc.toString(),
+        title,
+        description,
+        tx_hash: txHash || null,
+    });
+}
+
+export async function POST(request: Request) {
+    const requestId = crypto.randomUUID();
+    try {
+        /* 1. Auth — accept the keeper secret (external scheduler) or Vercel's CRON_SECRET. The
+           vercel.json cron invokes this path with `Authorization: Bearer ${CRON_SECRET}`; either
+           secret may be configured. */
+        const authHeader = request.headers.get("Authorization");
+        const keeperSecret = process.env.KEEPER_SECRET;
+        const cronSecret = process.env.CRON_SECRET;
+        if (!keeperSecret && !cronSecret) {
+            return NextResponse.json({ error: "Internal Server Error: KEEPER_SECRET or CRON_SECRET must be configured" }, { status: 500 });
+        }
+        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
+        if (!authorized) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        /* 2. Supabase */
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+        if (!supabaseUrl || !supabaseServiceKey) {
+            return NextResponse.json({ error: "Configuration Error: Supabase keys missing on server" }, { status: 500 });
+        }
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        /* 3. Web3 */
+        const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+        const adminPrivateKey = process.env.PRIVATE_KEY;
+        if (!adminPrivateKey) {
+            return NextResponse.json({ error: "Configuration Error: Admin private key missing on server" }, { status: 500 });
+        }
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+        const standardContract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, STANDARD_ABI, adminWallet);
+        const usdcContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, adminWallet);
+
+        /* 4. Due CUSTOMER subs: active, not flagged to cancel, and past their derived next billing. */
+        const { data: dueSubs, error: dueError } = await supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("kind", "CUSTOMER")
+            .eq("status", "ACTIVE")
+            .eq("cancel_at_period_end", false)
+            .lte("next_billing_date", new Date().toISOString());
+
+        if (dueError) {
+            return NextResponse.json({ error: `Database error: ${dueError.message}` }, { status: 500 });
+        }
+
+        const results: any[] = [];
+
+        for (const sub of dueSubs || []) {
+            const subId = Number(sub.subscription_id);
+            const merchantAddress: string = sub.merchant_address;
+
+            try {
+                /* Authoritative on-chain state. */
+                const onChain = await standardContract.subscriptions(subId);
+                const subscriber: string = onChain[0];
+                const amountOnChain: bigint = BigInt(onChain[2]);
+                const isActiveOnChain: boolean = onChain[5];
+
+                /* Cancelled directly on-chain -> reflect it in the mirror and notify, then stop. */
+                if (!isActiveOnChain) {
+                    await supabase
+                        .from("subscriptions")
+                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                        .eq("subscription_id", subId);
+                    await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "canceled",
+                        amountUsdcMicros: amountOnChain,
+                        subscriber,
+                        merchantAddress,
+                        reason: "Canceled on-chain",
+                    })).catch(() => { /* best-effort */ });
+                    results.push({ subId, subscriber, action: "CANCELLED_ON_CHAIN", success: true });
+                    continue;
+                }
+
+                /* Next unexecuted sequence. */
+                let sequenceId = 1;
+                while (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                    sequenceId++;
+                }
+
+                /* The chain is the source of truth for "not too early". */
+                const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
+                if (!isDueOnChain) {
+                    results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
+                    continue;
+                }
+
+                /* Fail fast (no gas) if the subscriber can't pay. */
+                const balance: bigint = BigInt(await usdcContract.balanceOf(subscriber));
+                const allowance: bigint = BigInt(await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS));
+                if (balance < amountOnChain || allowance < amountOnChain) {
+                    const failures = Number(sub.downgrade_failures || 0);
+                    const newFailures = failures + 1;
+
+                    /* Notify once, on the first failure, to avoid a message every cron run. */
+                    if (failures === 0) {
+                        await createBillingDm({
+                            supabase,
+                            senderAddress: merchantAddress,
+                            receiverAddress: subscriber,
+                            messageType: "EXPIRY_WARNING",
+                            amountUsdc: amountOnChain,
+                            title: "Subscription renewal needs attention",
+                            description: [
+                                "SubScript could not renew your subscription.",
+                                "Reason: insufficient USDC balance or allowance.",
+                                "Add USDC to keep your plan active — we'll retry automatically.",
+                            ].join("\n"),
+                        }).catch((e: any) => console.error("[customer-billing] warning DM failed:", e));
+                        await dispatchMerchantWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "past_due",
+                            amountUsdcMicros: amountOnChain,
+                            subscriber,
+                            merchantAddress,
+                            reason: "Insufficient balance or allowance",
+                        })).catch(() => { /* best-effort */ });
+                    }
+
+                    if (newFailures >= MAX_RENEWAL_FAILURES) {
+                        /* Park it: stop retrying. The customer can re-subscribe from the dashboard. */
+                        await supabase
+                            .from("subscriptions")
+                            .update({ status: "PAST_DUE", downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                            .eq("subscription_id", subId);
+                        await dispatchMerchantWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                            subscriptionId: subId,
+                            status: "past_due",
+                            amountUsdcMicros: amountOnChain,
+                            subscriber,
+                            merchantAddress,
+                            reason: "Paused after repeated failed renewals",
+                        })).catch(() => { /* best-effort */ });
+                        results.push({ subId, subscriber, action: "PARKED_PAST_DUE", success: false, failuresCount: newFailures });
+                    } else {
+                        /* Keep ACTIVE and retry next run (cheap — only view calls until funded). */
+                        await supabase
+                            .from("subscriptions")
+                            .update({ downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                            .eq("subscription_id", subId);
+                        results.push({ subId, subscriber, action: "RETRY_SCHEDULED", success: false, failuresCount: newFailures });
+                    }
+                    continue;
+                }
+
+                /* Charge. */
+                const tx = await standardContract.executePayment(subId, sequenceId);
+                const receipt = await tx.wait();
+                if (receipt.status !== 1) {
+                    throw new Error("Payment execution transaction reverted");
+                }
+
+                /* Stamp settlement; the trigger derives the next billing date. Reset failures. */
+                await supabase
+                    .from("subscriptions")
+                    .update({
+                        status: "ACTIVE",
+                        downgrade_failures: 0,
+                        last_settlement_timestamp: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq("subscription_id", subId);
+
+                await createBillingDm({
+                    supabase,
+                    senderAddress: merchantAddress,
+                    receiverAddress: subscriber,
+                    messageType: "DEBIT_SUCCESS",
+                    amountUsdc: amountOnChain,
+                    title: "Subscription renewed",
+                    description: [
+                        "Your subscription was renewed successfully.",
+                        `Amount: ${Number(amountOnChain) / 1_000_000} USDC`,
+                        `Subscription ID: ${subId}`,
+                    ].join("\n"),
+                    txHash: tx.hash,
+                }).catch((e: any) => console.error("[customer-billing] receipt DM failed:", e));
+
+                await dispatchMerchantWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
+                    subscriptionId: subId,
+                    status: "active",
+                    amountUsdcMicros: amountOnChain,
+                    subscriber,
+                    merchantAddress,
+                    txHash: tx.hash,
+                })).catch(() => { /* best-effort */ });
+
+                results.push({ subId, subscriber, action: "PAYMENT_EXECUTED", success: true, txHash: tx.hash });
+            } catch (err: any) {
+                console.error(`[customer-billing] requestId: ${requestId}, sub ${subId} failed:`, err);
+                results.push({ subId, action: "EXECUTION_FAILED", success: false, error: err?.message || "Unknown error" });
+            }
+        }
+
+        return NextResponse.json({ success: true, processed: results.length, results }, { status: 200 });
+    } catch (error: any) {
+        console.error("Customer billing keeper error:", error);
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    }
+}
+
+export async function GET(request: Request) {
+    return POST(request);
+}

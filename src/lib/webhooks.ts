@@ -99,34 +99,33 @@ export function subscriptionWebhookData(args: {
     };
 }
 
+/* Statuses worth retrying: request timeout, rate limited, and any 5xx (transient server-side). */
+function isRetryableStatus(status: number): boolean {
+    return status === 408 || status === 429 || status >= 500;
+}
+
 /**
- * Dispatches a webhook payload to a destination URL.
- * Generates an HMAC-SHA256 signature in the 'x-subscript-signature' header.
+ * Dispatches a webhook payload to a destination URL with bounded retries.
+ * Generates a fresh HMAC-SHA256 'x-subscript-signature' header per attempt (so the timestamp stays
+ * inside the receiver's tolerance window across backoff), and retries transient failures — network
+ * errors and 408/429/5xx — up to 3 attempts total with short backoff. The URL is validated and the
+ * destination rate limit is consumed once per logical delivery, not per attempt. Returns the result
+ * of the final attempt and never throws.
  */
 export async function sendWebhookRequest(
     url: string,
     payload: any,
     secret: string
 ): Promise<{ status: number; responseText: string }> {
-    const timestamp = Math.floor(Date.now() / 1000);
     const serializedPayload = JSON.stringify(payload);
-    
-    const signaturePayload = `${timestamp}.${serializedPayload}`;
-    const hmac = crypto.createHmac("sha256", secret);
-    hmac.update(signaturePayload);
-    const signature = hmac.digest("hex");
-    
-    const signatureHeader = `t=${timestamp},v1=${signature}`;
-    
-    try {
-        const urlValidation = validateWebhookUrl(url);
-        if (!urlValidation.ok) {
-            return {
-                status: 400,
-                responseText: urlValidation.error,
-            };
-        }
 
+    /* Validate + consume the destination rate limit once for the whole delivery (all retries go to
+       the same host for the same event — they shouldn't each burn a token). */
+    const urlValidation = validateWebhookUrl(url);
+    if (!urlValidation.ok) {
+        return { status: 400, responseText: urlValidation.error };
+    }
+    try {
         const destinationHost = new URL(urlValidation.url).host.toLowerCase();
         assertProviderRateLimit({
             provider: "webhook-dispatch",
@@ -134,30 +133,44 @@ export async function sendWebhookRequest(
             limit: 120,
             windowMs: 60 * 1000,
         });
-
-        const response = await fetch(urlValidation.url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-subscript-signature": signatureHeader,
-                "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
-            },
-            body: serializedPayload,
-            signal: AbortSignal.timeout(10000),
-        });
-        
-        const responseText = await response.text().catch(() => "");
-        return {
-            status: response.status,
-            responseText: responseText.slice(0, 1000),
-        };
     } catch (err: any) {
-        console.warn(`Webhook delivery failure to ${url}:`, err);
-        return {
-            status: 504,
-            responseText: `Delivery failed: ${err.message || String(err)}`,
-        };
+        return { status: 429, responseText: err?.message || "Webhook destination rate limit exceeded" };
     }
+
+    const BACKOFF_MS = [500, 1500];
+    const maxAttempts = BACKOFF_MS.length + 1;
+    let last: { status: number; responseText: string } = { status: 0, responseText: "" };
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
+        const signatureHeader = `t=${timestamp},v1=${signature}`;
+
+        try {
+            const response = await fetch(urlValidation.url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-subscript-signature": signatureHeader,
+                    "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
+                },
+                body: serializedPayload,
+                signal: AbortSignal.timeout(10000),
+            });
+            const responseText = (await response.text().catch(() => "")).slice(0, 1000);
+            last = { status: response.status, responseText };
+            if (!isRetryableStatus(response.status)) return last;
+        } catch (err: any) {
+            console.warn(`Webhook delivery failure to ${url} (attempt ${attempt + 1}/${maxAttempts}):`, err);
+            last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
+        }
+
+        if (attempt < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
+        }
+    }
+
+    return last;
 }
 
 /**

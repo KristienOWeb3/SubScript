@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>Offline · SubScript</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card {
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 32px 24px;
+        }
+        .logo { width: 56px; height: 56px; margin: 0 auto 20px; display: block; }
+        h1 { font-size: 18px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.01em; }
+        p { font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, 0.55); margin: 0 0 24px; }
+        button {
+            width: 100%;
+            border: 0;
+            border-radius: 14px;
+            padding: 13px 16px;
+            background: #ccff00;
+            color: #000;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+        }
+        button:hover { filter: brightness(1.1); }
+        .hint { margin-top: 16px; font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <img class="logo" src="/icon-192.png" alt="SubScript" width="56" height="56" />
+        <h1>You're offline</h1>
+        <p>SubScript needs a connection to load your dashboard, balances, and payments. Your data is safe — nothing was lost.</p>
+        <button type="button" onclick="location.reload()">Try again</button>
+        <p class="hint">This page works offline. The dashboard will reload automatically once you're back online.</p>
+    </main>
+    <script>
+        // Auto-retry the moment connectivity returns.
+        window.addEventListener("online", function () { location.reload(); });
+    </script>
+</body>
+</html>
