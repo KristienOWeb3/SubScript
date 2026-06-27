@@ -19,6 +19,7 @@ import {
     proratedUpgradeDelta,
 } from "@/lib/subscriptions/onchain";
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
+import { mirrorSubscriptionCreated, mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 
 export const maxDuration = 150;
 
@@ -50,6 +51,15 @@ export async function POST(request: Request) {
         /* No existing subscription to change → just subscribe fresh. */
         if (!current || current.subscriber !== subscriber || !current.isActive) {
             const { txHash, subId } = await subscribeFromEmbedded(subscriber, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+            if (subId) {
+                await mirrorSubscriptionCreated({
+                    subscriptionId: subId,
+                    merchantAddress: plan.merchantAddress,
+                    subscriber,
+                    amountUsdc: plan.amountUsdc,
+                    periodSeconds: plan.periodSeconds,
+                });
+            }
             await createSubscriptionStartedDm({
                 merchantAddress: plan.merchantAddress,
                 subscriberAddress: subscriber,
@@ -89,6 +99,13 @@ export async function POST(request: Request) {
 
         /* Apply the new amount/period on-chain (no payment taken by modify itself). */
         const txHash = await modifyFromEmbedded(subscriber, fromSubscriptionId, plan.amountUsdc, plan.periodSeconds);
+
+        /* Mirror the new amount/period so the dashboard reflects the change. */
+        await mirrorSubscriptionModified({
+            subscriptionId: fromSubscriptionId,
+            amountUsdc: plan.amountUsdc,
+            periodSeconds: plan.periodSeconds,
+        });
 
         await createSubscriptionStartedDm({
             merchantAddress: plan.merchantAddress,

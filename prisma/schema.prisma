@@ -180,10 +180,14 @@ model Subscription {
   cancelAtPeriodEnd       Boolean   @default(false) @map("cancel_at_period_end")
   cancelRequestedAt       DateTime? @map("cancel_requested_at")
   downgradeFailures       Int       @default(0) @map("downgrade_failures")
+  // "PREMIUM" (merchant -> SubScript, billed by the in-app cron) or "CUSTOMER"
+  // (customer -> merchant plan, billed on-chain). See subscriptions/mirror.ts.
+  kind                    String    @default("PREMIUM") @map("kind")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
   @@index([merchantAddress])
+  @@index([subscriber])
   @@map("subscriptions")
 }
 

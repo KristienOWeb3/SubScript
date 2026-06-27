@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
+import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 
 export const maxDuration = 120;
@@ -33,6 +34,17 @@ export async function POST(request: Request) {
 
         await ensureGasSponsored(wallet.toLowerCase());
         const { txHash, subId } = await subscribeFromEmbedded(wallet, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+
+        /* Mirror to the subscriptions table so it shows in the dashboard + enables plan-switch. */
+        if (subId) {
+            await mirrorSubscriptionCreated({
+                subscriptionId: subId,
+                merchantAddress: plan.merchantAddress,
+                subscriber: wallet.toLowerCase(),
+                amountUsdc: plan.amountUsdc,
+                periodSeconds: plan.periodSeconds,
+            });
+        }
 
         /* Open the merchant→user DM thread for this subscription (best-effort). */
         await createSubscriptionStartedDm({

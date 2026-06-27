@@ -105,6 +105,7 @@ export async function POST(request: Request) {
         const { data: cancelSubs, error: cancelError } = await supabase
             .from("subscriptions")
             .select("*")
+            .eq("kind", "PREMIUM")
             .eq("status", "ACTIVE")
             .eq("cancel_at_period_end", true)
             .lte("next_billing_date", new Date().toISOString());
@@ -217,6 +218,7 @@ export async function POST(request: Request) {
         const { data: dbSubs, error: dbError } = await supabase
             .from("subscriptions")
             .select("*")
+            .eq("kind", "PREMIUM")
             .in("status", ["ACTIVE", "FAILED", "PAST_DUE"]);
 
         if (dbError) {
