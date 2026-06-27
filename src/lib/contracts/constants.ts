@@ -48,7 +48,7 @@ export const ARC_TESTNET = {
   blockExplorers: {
     default: {
       name: "Arc Explorer",
-      url: "https://explorer.arc.network",
+      url: "https://testnet.arcscan.app",
     },
   },
 } as const;
@@ -70,7 +70,7 @@ export const ARC_MAINNET = {
   blockExplorers: {
     default: {
       name: "Arc Explorer",
-      url: "https://explorer.arc.network",
+      url: "https://arcscan.app",
     },
   },
 } as const;

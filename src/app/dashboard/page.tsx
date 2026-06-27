@@ -71,7 +71,7 @@ const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Subscriptions", icon: Sliders },
+    { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
@@ -2591,7 +2591,7 @@ Please complete the following implementation tasks:
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
-                                                                                                        href={`https://explorer.arc.network/tx/${p.tx_hash}`} 
+                                                                                                        href={`https://testnet.arcscan.app/tx/${p.tx_hash}`} 
                                                                                                         target="_blank" 
                                                                                                         rel="noopener noreferrer"
                                                                                                     >

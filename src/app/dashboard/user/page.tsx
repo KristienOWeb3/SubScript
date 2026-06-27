@@ -4479,17 +4479,19 @@ function DepositModal({
 
                   <button
                     type="button"
-                    onClick={() => setActiveSubMode("fiat")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
+                    disabled
+                    aria-disabled="true"
+                    title="Fiat on-ramp arrives at mainnet launch"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.02] p-5 text-left opacity-60 cursor-not-allowed"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/60 shrink-0">
                       <CreditCard className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Fiat On-Ramp</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Buy USDC with credit card or bank transfer.</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white/70">Fiat On-Ramp</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Unavailable for now — arriving at mainnet launch.</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
+                    <span className="text-[8px] font-black uppercase tracking-wider text-[#ccff00]/80 shrink-0">Soon</span>
                   </button>
 
                   <button

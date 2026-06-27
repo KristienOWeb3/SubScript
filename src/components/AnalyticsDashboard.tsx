@@ -620,18 +620,12 @@ export default function AnalyticsDashboard({
                                                                 <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
                                                             </div>
                                                         </div>
-                                                        <button
-                                                            onClick={() => handleRetryClick(item.id)}
-                                                            disabled={retryingId === item.id}
-                                                            className="px-4 py-2 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 border border-[#00d2b4]/20 hover:border-[#00d2b4]/40 text-[#00d2b4] rounded-xl text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all disabled:opacity-50"
-                                                        >
-                                                            {retryingId === item.id ? (
-                                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                                            ) : (
-                                                                <RefreshCw className="w-3 h-3" />
-                                                            )}
-                                                            Retry Charge
-                                                        </button>
+                                                        {/* Renewals retry automatically on a schedule (see the customer-billing keeper) —
+                                                            merchants can't trigger charges manually. */}
+                                                        <span className="px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-white/30 flex items-center gap-1">
+                                                            <RefreshCw className="w-3 h-3" />
+                                                            Auto-retrying
+                                                        </span>
                                                     </div>
                                                 ));
                                             })()
