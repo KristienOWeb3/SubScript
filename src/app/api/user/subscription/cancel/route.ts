@@ -6,6 +6,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { mirrorSubscriptionCanceled } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
 
 export const maxDuration = 120;
@@ -34,6 +35,9 @@ export async function POST(request: Request) {
 
         await ensureGasSponsored(wallet.toLowerCase());
         const txHash = await cancelFromEmbedded(wallet, subscriptionId);
+
+        /* Reflect the cancellation in the dashboard mirror (best-effort). */
+        await mirrorSubscriptionCanceled(subscriptionId);
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>

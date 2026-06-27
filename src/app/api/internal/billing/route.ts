@@ -49,6 +49,7 @@ export async function GET(request: Request) {
             const { data: sub, error: subError } = await supabaseAdmin
                 .from("subscriptions")
                 .select("status, next_billing_date")
+                .eq("kind", "PREMIUM")
                 .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
                 .eq("subscriber", wallet)
                 .in("status", ["ACTIVE", "PAST_DUE"])

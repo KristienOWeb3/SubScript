@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { triggerExitSurvey } from "@/lib/payments/email";
+import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 
 let supabaseClient: any = null;
 
@@ -132,6 +133,13 @@ export async function POST(request: Request) {
                 status = "FAILED";
             }
 
+            /* Classify by recipient: subscriptions paid to the SubScript treasury are PREMIUM
+               (merchant -> SubScript); everything else is a CUSTOMER plan (customer -> merchant)
+               which the Premium billing cron must ignore. */
+            const kind = merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
+                ? "PREMIUM"
+                : "CUSTOMER";
+
             const { error: subError } = await supabase
                 .from("subscriptions")
                 .upsert({
@@ -144,6 +152,7 @@ export async function POST(request: Request) {
                     amount_cap_usdc: amount,
                     payment_tx_hash: data.nextCommitment || data.nullifierHash || null,
                     status: status,
+                    kind,
                     updated_at: new Date().toISOString()
                 }, { onConflict: "subscription_id" });
 
