@@ -107,7 +107,7 @@ export default function Navbar() {
                                     symbol: "USDC",
                                     decimals: 6,
                                 },
-                                blockExplorerUrls: ["https://explorer.arc.network"],
+                                blockExplorerUrls: ["https://testnet.arcscan.app"],
                             },
                         ],
                     });
