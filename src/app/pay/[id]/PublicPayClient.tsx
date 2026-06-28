@@ -6,7 +6,7 @@ import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, us
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock, Zap, QrCode, Shield, ShieldAlert
+    Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,8 +60,6 @@ export default function PublicPayClient({
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
-    const [showToast, setShowToast] = useState(false);
-    const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [showQrCode, setShowQrCode] = useState(false);
     const [checkoutUrl, setCheckoutUrl] = useState("");
     const [merchantVerified, setMerchantVerified] = useState<boolean | null>(null);
@@ -474,10 +472,6 @@ export default function PublicPayClient({
             }
             setVerifiedHash(txHash);
             
-            /* Show high-fidelity toast notification */
-            setToastMessage("Payment Confirmed");
-            setShowToast(true);
-            setTimeout(() => setShowToast(false), 4000);
 
             const verifyPayment = async () => {
                 try {
@@ -1046,15 +1040,6 @@ export default function PublicPayClient({
                     </div>
                 )}
             </AnimatePresence>
-
-            {showToast && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass border border-emerald-500/30 bg-black/60 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-[0_8px_32px_0_rgba(0,210,180,0.2)]">
-                    <Zap className="w-5 h-5 text-[#00d2b4] fill-[#00d2b4]/25 shrink-0" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-white">
-                        Payment Confirmed
-                    </span>
-                </div>
-            )}
         </div>
     );
 }
