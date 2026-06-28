@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { CONFIDENTIAL_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { buildPermitSingle } from "@/lib/payroll/permit2";
 import crypto from "crypto";
 
 /* USDC address and Permit2 address constants */
@@ -158,29 +159,19 @@ export async function POST(request: Request) {
                     existingAllowanceAmount < totalPayrollAmount ||
                     existingAllowanceExpiration < currentTimestamp
                 ) {
-                    /* Allowance is insufficient or expired. Submit the signed Permit2 permit if available. */
+                    /* Allowance is insufficient or expired. Submit the signed Permit2 authorization,
+                       rebuilt from the shared module so it is byte-identical to what the merchant
+                       signed (max allowance + max expiration, keeper as spender), using the persisted
+                       on-chain nonce. Any drift would make the signature fail to verify. */
                     if (!campaign.permit2Signature) {
                         throw new Error("Insufficient Permit2 allowance and no permit2Signature is saved.");
                     }
 
-                    const expirationTime = campaign.permit2Expiration
-                        ? Math.floor(new Date(campaign.permit2Expiration).getTime() / 1000)
-                        : currentTimestamp + 86400 * 30;
-
-                    const sigDeadlineTime = campaign.permit2Deadline
-                        ? Math.floor(new Date(campaign.permit2Deadline).getTime() / 1000)
-                        : currentTimestamp + 86400;
-
-                    const permitSingleStruct = {
-                        details: {
-                            token: USDC_ADDRESS,
-                            amount: totalPayrollAmount * BigInt(100), /* Approve large amount for recurring usage */
-                            expiration: expirationTime,
-                            nonce: campaign.permit2Nonce || 0
-                        },
-                        spender: keeperAddress,
-                        sigDeadline: sigDeadlineTime
-                    };
+                    const permitSingleStruct = buildPermitSingle(
+                        USDC_ADDRESS,
+                        keeperAddress,
+                        campaign.permit2Nonce ?? 0
+                    );
 
                     const permitTx = await permit2Contract.permit(
                         orgAddress,
@@ -235,8 +226,9 @@ export async function POST(request: Request) {
                 await prisma.payrollCampaign.update({
                     where: { id: campaign.id },
                     data: {
+                        /* Do NOT bump the nonce per cycle: a max-allowance authorization means the keeper
+                           submits permit() at most once, so the persisted nonce stays the on-chain nonce. */
                         nextPayday: nextPaydayDate,
-                        permit2Nonce: campaign.permit2Nonce !== null ? campaign.permit2Nonce + 1 : 1
                     }
                 });
 
