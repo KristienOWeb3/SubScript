@@ -23,6 +23,8 @@ import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contra
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
 
 export const maxDuration = 300;
 
@@ -279,7 +281,63 @@ export async function POST(request: Request) {
             }
         }
 
-        return NextResponse.json({ success: true, processed: results.length, results }, { status: 200 });
+        /* Deferred cancellations: subs the user cancelled "at period end" whose paid period has now
+           elapsed. Perform the on-chain cancel (server-signed from the subscriber's embedded wallet)
+           so access ends exactly when their paid days run out. */
+        const cancelResults: any[] = [];
+        const { data: dueCancels, error: dueCancelError } = await supabase
+            .from("subscriptions")
+            .select("subscription_id, merchant_address")
+            .eq("kind", "CUSTOMER")
+            .eq("status", "ACTIVE")
+            .eq("cancel_at_period_end", true)
+            .lte("next_billing_date", new Date().toISOString());
+
+        if (dueCancelError) {
+            console.error("[customer-billing] due-cancel query failed:", dueCancelError.message);
+        } else {
+            for (const sub of dueCancels || []) {
+                const subId = Number(sub.subscription_id);
+                try {
+                    const onChain = await standardContract.subscriptions(subId);
+                    const subscriber: string = onChain[0];
+                    const amount: bigint = BigInt(onChain[2]);
+                    const isActiveOnChain: boolean = onChain[5];
+
+                    if (isActiveOnChain) {
+                        await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                        await cancelFromEmbedded(subscriber, BigInt(subId));
+                    }
+
+                    await supabase
+                        .from("subscriptions")
+                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                        .eq("subscription_id", subId);
+
+                    await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "canceled",
+                        amountUsdcMicros: amount,
+                        subscriber,
+                        merchantAddress: sub.merchant_address,
+                        reason: "Canceled at period end",
+                    })).catch(() => { /* best-effort */ });
+
+                    cancelResults.push({ subId, action: "CANCELED_AT_PERIOD_END", success: true });
+                } catch (err: any) {
+                    /* e.g. an external wallet (no server-held key) can't be server-cancelled — still
+                       mark CANCELED so we stop tracking it as active. */
+                    await supabase
+                        .from("subscriptions")
+                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                        .eq("subscription_id", subId);
+                    console.error(`[customer-billing] period-end cancel for sub ${subId} failed:`, err?.message || err);
+                    cancelResults.push({ subId, action: "CANCEL_AT_PERIOD_END_FAILED", success: false, error: err?.message || "Unknown error" });
+                }
+            }
+        }
+
+        return NextResponse.json({ success: true, processed: results.length, results, cancellations: cancelResults }, { status: 200 });
     } catch (error: any) {
         console.error("Customer billing keeper error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
