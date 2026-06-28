@@ -40,7 +40,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save
+    ShieldCheck, Save, Home
 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -71,7 +71,7 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 
 const tabs = [
-    { id: "overview", label: "Overview", icon: Activity },
+    { id: "overview", label: "Overview", icon: Home },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
@@ -160,8 +160,8 @@ const shortenHash = (value: string | undefined) => {
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
-const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Activity }> = [
-    { id: "overview", label: "Home", icon: Activity },
+const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
+    { id: "overview", label: "Home", icon: Home },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Plans", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
@@ -3479,7 +3479,10 @@ Please complete the following implementation tasks:
                                         <span className={`text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap ${
                                             isActive ? "text-white" : "text-white/40"
                                         }`}>
-                                            {tab.label}
+                                            <span className="hidden sm:inline">{tab.label}</span>
+                                            <span className="inline sm:hidden">
+                                                {tab.id === "subscriptions" ? "Subs" : tab.id === "one-time" ? "One-Time" : "Commits"}
+                                            </span>
                                         </span>
                                     </div>
                                 </div>
@@ -5631,26 +5634,28 @@ function MerchantPlanRow({
             )}
 
             {plan.active && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-black/30 px-3 py-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-white/45">{subscribeUrl}</span>
-                    <button
-                        type="button"
-                        onClick={handleCopy}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
-                        title={copied ? "Copied!" : "Copy subscribe link"}
-                    >
-                        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                        {copied ? "Copied" : "Copy link"}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onShare(plan)}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white"
-                        title="Create sharing poster card"
-                    >
-                        <Share2 className="h-3 w-3" />
-                        Share
-                    </button>
+                <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border border-white/5 bg-black/30 p-2 sm:px-3 sm:py-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-white/45 pb-1.5 sm:pb-0 border-b border-white/5 sm:border-none">{subscribeUrl}</span>
+                    <div className="flex items-center justify-end gap-2 w-full sm:w-auto pt-1 sm:pt-0">
+                        <button
+                            type="button"
+                            onClick={handleCopy}
+                            className="flex-1 sm:flex-none flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                            title={copied ? "Copied!" : "Copy subscribe link"}
+                        >
+                            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            {copied ? "Copied" : "Copy link"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onShare(plan)}
+                            className="flex-1 sm:flex-none flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white"
+                            title="Create sharing poster card"
+                        >
+                            <Share2 className="h-3 w-3" />
+                            Share
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
