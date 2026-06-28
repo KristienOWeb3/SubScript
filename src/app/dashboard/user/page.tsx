@@ -3899,7 +3899,7 @@ function DmBubble({
                     initial={{ opacity: 0, y: -8, scale: 0.92 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -6, scale: 0.94 }}
-                    transition={{ type: "spring", stiffness: 420, damping: 24, mass: 0.7 }}
+                    transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
                     className={`dm-action-menu-grid ${incoming ? "origin-top-left" : "origin-top-right"}`}
                   >
                     {actionItems.map((action, index) => {
@@ -4027,7 +4027,9 @@ function MerchantPlanManager({
           </p>
         </div>
         {hasActiveSubscription && (
-          <button
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={onCancel}
             disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
@@ -4036,15 +4038,17 @@ function MerchantPlanManager({
             }`}
           >
             Hard Cancel
-          </button>
+          </motion.button>
         )}
-        <button
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
           type="button"
           onClick={onToggle}
           className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
         >
           {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
-        </button>
+        </motion.button>
       </div>
 
       <AnimatePresence>
@@ -4053,7 +4057,7 @@ function MerchantPlanManager({
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 360, damping: 26 }}
+            transition={{ type: "spring", stiffness: 420, damping: 20, mass: 0.8 }}
             className="space-y-3 rounded-2xl border border-white/10 bg-black/45 p-3"
           >
             {loading ? (
@@ -4074,7 +4078,11 @@ function MerchantPlanManager({
                     : false;
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
                   return (
-                    <div key={plan.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <motion.div
+                      key={plan.id}
+                      whileHover={{ scale: 1.015 }}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3 transition-all duration-300"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
@@ -4083,12 +4091,14 @@ function MerchantPlanManager({
                           </p>
                         </div>
                         {isCurrent && (
-                          <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]">
-                            Current
-                          </span>
+                           <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]">
+                             Current
+                           </span>
                         )}
                       </div>
-                      <button
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.97 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
                         disabled={isCurrent || loadingAction === loadingKey}
@@ -4099,8 +4109,8 @@ function MerchantPlanManager({
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent ? "Active now" : hasActiveSubscription ? "Switch" : "Subscribe"}
-                      </button>
-                    </div>
+                      </motion.button>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -4149,7 +4159,7 @@ function DmRequestComposer({
             initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
             animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
             exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
-            transition={{ type: "spring", stiffness: 360, damping: 18, mass: 0.9 }}
+            transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
             className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
@@ -4194,21 +4204,25 @@ function DmRequestComposer({
               </div>
             )}
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.96 }}
                 type="button"
                 onClick={onToggle}
                 disabled={loading}
                 className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
               >
                 Cancel
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.96 }}
                 type="submit"
                 disabled={loading}
                 className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
               >
                 Send
-              </button>
+              </motion.button>
             </div>
           </motion.form>
         )}
@@ -4222,6 +4236,7 @@ function DmRequestComposer({
 
       {/* Styled to match the app's bottom nav capsule — a persistent action bar. */}
       <motion.button
+        whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.97 }}
         type="button"
         onClick={onToggle}
@@ -4232,9 +4247,13 @@ function DmRequestComposer({
             : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"
         }`}
       >
-        <span className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none transition-transform duration-300 ${open ? "rotate-45 bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}>
+        <motion.span
+          animate={{ rotate: open ? 45 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+          className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}
+        >
           +
-        </span>
+        </motion.span>
         {loading ? "Sending Request" : open ? "Close" : "Request"}
       </motion.button>
     </div>
