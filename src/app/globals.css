@@ -150,16 +150,6 @@ body {
   animation: pulse-glow 3s infinite;
 }
 
-/* Liquid Glass Skeleton Shimmer */
-@keyframes liquid-glass-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
 @keyframes liquid-pulse {
   0%, 100% {
     opacity: 0.65;
@@ -172,20 +162,11 @@ body {
 .liquid-glass-skeleton {
   position: relative;
   overflow: hidden;
-  background-color: rgba(255, 255, 255, 0.01);
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.01) 0%,
-    rgba(255, 255, 255, 0.06) 25%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 255, 255, 0.06) 75%,
-    rgba(255, 255, 255, 0.01) 100%
-  );
-  background-size: 200% 100%;
+  background-color: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  animation: liquid-glass-shimmer 2.5s infinite linear, liquid-pulse 3s infinite ease-in-out;
+  animation: liquid-pulse 3s infinite ease-in-out;
 }
 
 .subscript-input {
@@ -300,34 +281,15 @@ body {
   }
 }
 
-/* Skeleton loading placeholder with a moving highlight sweep.
-   Replaces the plain opacity blink (animate-pulse) for a more premium feel that
-   matches the platform's liquid-glass shimmer language. */
+/* Skeleton loading placeholder. Only uses standard opacity pulsing. */
 .subscript-skeleton {
   background-color: rgba(255, 255, 255, 0.06);
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.14) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
-  animation: subscript-skeleton-sweep 1.6s ease-in-out infinite;
+  animation: liquid-pulse 3s infinite ease-in-out;
 }
 
 /* Secondary/sub-label bars sit a touch dimmer than primary ones. */
 .subscript-skeleton--faint {
   background-color: rgba(255, 255, 255, 0.03);
-}
-
-@keyframes subscript-skeleton-sweep {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
