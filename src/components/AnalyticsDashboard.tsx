@@ -328,10 +328,11 @@ export default function AnalyticsDashboard({
         }, 0);
     }, [ledgers]);
 
-    const totalVolume = useMemo(() => {
-        /* Estimate total historical volume as active MRR + claimable settlement */
-        return mrr * 1.25 + vaultBalance;
-    }, [mrr, vaultBalance]);
+    /* Annual run rate = current monthly recurring revenue × 12. Honest, derived from live ledgers. */
+    const annualRunRate = useMemo(() => mrr * 12, [mrr]);
+
+    /* Average monthly revenue per active subscriber. */
+    const arpu = useMemo(() => (activeSubscribers > 0 ? mrr / activeSubscribers : 0), [mrr, activeSubscribers]);
 
     /* Calculate dynamic retention rate from ledger count */
     const stats = useMemo(() => {
@@ -351,20 +352,20 @@ export default function AnalyticsDashboard({
         return 251.2 - (251.2 * stats.retention) / 100;
     }, [stats.retention]);
 
-    /* Scale bar heights dynamically up to 100% of container height */
+    /* Real revenue mix: each bar is a top active subscriber's monthly recurring contribution,
+       relative to the largest. No fabricated history. */
     const barHeights = useMemo(() => {
-        if (mrr === 0) return [0, 0, 0, 0, 0, 0];
-        const values = [
-            mrr * 0.5,
-            mrr * 0.65,
-            mrr * 0.8,
-            mrr * 0.9,
-            mrr * 0.95,
-            mrr
-        ];
-        const maxVal = Math.max(...values);
-        return values.map((v) => (maxVal > 0 ? (v / maxVal) * 100 : 0));
-    }, [mrr]);
+        const monthly = ledgers
+            .filter((s) => s.active)
+            .map((s: any) => (parseFloat(s.rawAmount) || 0) * (2592000 / (parseFloat(s.rawPeriod) || 2592000)))
+            .sort((a: number, b: number) => b - a)
+            .slice(0, 6);
+        if (monthly.length === 0) return [0, 0, 0, 0, 0, 0];
+        const maxVal = Math.max(...monthly);
+        const bars = monthly.map((v: number) => (maxVal > 0 ? (v / maxVal) * 100 : 0));
+        while (bars.length < 6) bars.push(0);
+        return bars;
+    }, [ledgers]);
 
     /* Display list of actual active premium subscribers */
     const displayList = useMemo(() => {
@@ -466,8 +467,8 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
                                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                                         <div className="space-y-1">
-                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Total Processed Volume</p>
-                                            <p className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">${totalVolume.toFixed(2)}</p>
+                                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Annual Run Rate</p>
+                                            <p className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">${annualRunRate.toFixed(2)}</p>
                                         </div>
                                         <div className="text-left sm:text-right">
                                             <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Monthly Recurring Revenue</p>
@@ -476,7 +477,7 @@ export default function AnalyticsDashboard({
                                     </div>
                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-8">
                                         <p className="text-[9px] text-white/30 max-w-md">
-                                            Net volume metrics derived from historical transaction ledger settlements
+                                            Annualized from your active recurring revenue · Claimable settlement: ${vaultBalance.toFixed(2)}
                                         </p>
                                         <button
                                             onClick={() => setActiveTab("overview")}
@@ -500,6 +501,10 @@ export default function AnalyticsDashboard({
                                                 <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">30-Day Churn Rate</p>
                                                 <p className="text-xl font-bold text-white/90">{stats.churn.toFixed(1)}%</p>
                                             </div>
+                                            <div>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Avg Revenue / Subscriber</p>
+                                                <p className="text-xl font-bold text-white/90">${arpu.toFixed(2)}<span className="text-[10px] text-white/40 font-normal">/mo</span></p>
+                                            </div>
                                         </div>
                                         <div className="flex items-center justify-center pt-2">
                                             <svg viewBox="0 0 100 100" className="w-24 h-24">
@@ -520,39 +525,24 @@ export default function AnalyticsDashboard({
                                 {/* Bottom Left Card: Performance Chart */}
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
-                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Financial Performance</p>
-                                        <p className="text-xs text-white/60">Revenue history (last 6 months)</p>
+                                        <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Revenue by Subscriber</p>
+                                        <p className="text-xs text-white/60">Top active monthly contributions</p>
                                     </div>
                                     
                                     <div className="flex items-end justify-between h-40 pt-6 px-1">
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-white/5 border border-white/5 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/30" style={{ height: `${barHeights[0]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">Jan</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-white/5 border border-white/5 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/30" style={{ height: `${barHeights[1]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">Feb</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-white/5 border border-white/5 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/30" style={{ height: `${barHeights[2]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">Mar</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-[#00d2b4]/10 border border-[#00d2b4]/30 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/30" style={{ height: `${barHeights[3]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">Apr</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-[#00d2b4]/20 border border-[#00d2b4]/40 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/30" style={{ height: `${barHeights[4]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">May</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-2 flex-1">
-                                            <div className="w-7 bg-[#00d2b4]/30 border border-[#00d2b4]/50 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/50" style={{ height: `${barHeights[5]}%` }}></div>
-                                            <span className="text-[9px] text-white/40 font-mono">Jun</span>
-                                        </div>
+                                        {barHeights.map((h, idx) => (
+                                            <div key={idx} className="flex flex-col items-center gap-2 flex-1">
+                                                <div
+                                                    className="w-7 bg-[#00d2b4]/15 border border-[#00d2b4]/30 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/40"
+                                                    style={{ height: `${h}%` }}
+                                                ></div>
+                                                <span className="text-[9px] text-white/40 font-mono">#{idx + 1}</span>
+                                            </div>
+                                        ))}
                                     </div>
 
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Measured in standard USDC token routing volume
+                                        Each bar is a top subscriber's monthly recurring revenue
                                     </p>
                                 </div>
 

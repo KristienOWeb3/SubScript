@@ -1480,7 +1480,7 @@ export default function DashboardPage() {
                             rawId: String(i),
                             address: subscriber,
                             shortSubAddress: `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`,
-                            limit: `${formatUnits(amount, 6)} USDC / ${Number(period) === 2592000 ? "mo" : Number(period) === 604800 ? "wk" : "yr"}`,
+                            limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
                             rawAmount: formatUnits(amount, 6),
                             rawPeriod: String(period),
                             nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
