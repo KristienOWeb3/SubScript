@@ -21,10 +21,11 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS 
 } from "@/lib/contracts/constants";
-import { 
-    SUBSCRIPT_ROUTER_ABI, 
-    USDC_ERC20_ABI 
+import {
+    SUBSCRIPT_ROUTER_ABI,
+    USDC_ERC20_ABI
 } from "@/lib/contracts/abis";
+import { buildPermitSingle } from "@/lib/payroll/permit2";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -81,6 +82,25 @@ const PERMIT2_DOMAIN = {
     chainId: 5042002,
     verifyingContract: PERMIT2_ADDRESS,
 } as const;
+
+/* Read the current Permit2 nonce for (owner, token, spender). */
+const PERMIT2_ALLOWANCE_ABI = [
+    {
+        type: "function",
+        name: "allowance",
+        stateMutability: "view",
+        inputs: [
+            { name: "user", type: "address" },
+            { name: "token", type: "address" },
+            { name: "spender", type: "address" },
+        ],
+        outputs: [
+            { name: "amount", type: "uint160" },
+            { name: "expiration", type: "uint48" },
+            { name: "nonce", type: "uint48" },
+        ],
+    },
+] as const;
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -195,6 +215,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         { id: generateTempId(), employeeWallet: "", salaryAmountUsdc: "" },
     ]);
     const [permit2Sig, setPermit2Sig] = useState<string | null>(null);
+    const [permit2Nonce, setPermit2Nonce] = useState<number | null>(null);
     const [isSigning, setIsSigning] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -505,32 +526,44 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 return;
             }
 
-            /* Approve 100x total for recurring usage headroom */
-            const approveAmount = totalMicro * BigInt(100);
+            if (embeddedWallet) {
+                /* Embedded merchant (the only kind now): the server approves USDC -> Permit2 and signs
+                   the authorization from the embedded key. */
+                const res = await fetch("/api/merchant/payroll/permit-sign", { method: "POST" });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || "Could not authorize payroll.");
+                setPermit2Sig(data.signature);
+                setPermit2Nonce(Number(data.nonce));
+                showToastMessage("Payroll authorization signed", "success");
+                return;
+            }
 
-            /* 30-day expiration */
-            const expiration = Math.floor(Date.now() / 1000) + 86400 * 30;
-            /* 24-hour sig deadline */
-            const sigDeadline = Math.floor(Date.now() / 1000) + 86400;
+            /* External wallet: sign the keeper-spender authorization built from the shared module, with
+               the keeper address and current on-chain Permit2 nonce — so the signed message is
+               byte-identical to what the keeper submits. Assumes USDC is already approved to Permit2. */
+            const keeperRes = await fetch("/api/merchant/payroll/keeper");
+            const keeperData = await keeperRes.json();
+            if (!keeperRes.ok || !keeperData.keeperAddress) throw new Error(keeperData.error || "Could not load the payroll keeper.");
+            const keeperAddress = keeperData.keeperAddress as `0x${string}`;
 
+            const allowanceRes = (await publicClient.readContract({
+                address: PERMIT2_ADDRESS as `0x${string}`,
+                abi: PERMIT2_ALLOWANCE_ABI,
+                functionName: "allowance",
+                args: [address as `0x${string}`, USDC_ADDRESS as `0x${string}`, keeperAddress],
+            })) as readonly [bigint, number, number];
+            const nonce = Number(allowanceRes[2]);
+
+            const message = buildPermitSingle(USDC_ADDRESS, keeperAddress, nonce);
             const signature = await signTypedDataAsync({
                 domain: PERMIT2_DOMAIN,
                 types: PERMIT2_TYPES,
                 primaryType: "PermitSingle",
-                message: {
-                    details: {
-                        token: USDC_ADDRESS,
-                        amount: approveAmount,
-                        expiration: expiration,
-                        nonce: 0,
-                    },
-                    spender: address as `0x${string}`,
-                    sigDeadline: BigInt(sigDeadline),
-                },
+                message: message as any,
             });
-
             setPermit2Sig(signature);
-            showToastMessage("Permit2 signature captured successfully", "success");
+            setPermit2Nonce(nonce);
+            showToastMessage("Payroll authorization signed", "success");
         } catch (err: any) {
             showToastMessage(err?.shortMessage || err?.message || "Signing failed", "error");
         } finally {
@@ -577,6 +610,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 frequencyDays,
                 isShielded: formShielded,
                 permit2Signature: permit2Sig,
+                permit2Nonce,
                 recipients: validRecipients.map((r) => ({
                     employeeWallet: r.employeeWallet.trim(),
                     salaryAmountUsdc: Math.round(parseFloat(r.salaryAmountUsdc) * 1_000_000),

@@ -260,22 +260,10 @@ export async function POST(request: Request) {
             if (typeof permit2Signature !== "string" || permit2Signature.trim().length === 0) {
                 return NextResponse.json({ error: "Invalid permit2Signature" }, { status: 400 });
             }
+            /* The Permit2 authorization is a fixed max-allowance/max-expiration (see lib/payroll/permit2),
+               so the only signed dynamic field we persist is the nonce. */
             if (permit2Nonce === undefined || permit2Nonce === null || typeof permit2Nonce !== "number" || !Number.isInteger(permit2Nonce) || permit2Nonce < 0) {
                 return NextResponse.json({ error: "Invalid permit2Nonce: must be a non-negative integer when permit2Signature is provided" }, { status: 400 });
-            }
-            if (!permit2Deadline || typeof permit2Deadline !== "string") {
-                return NextResponse.json({ error: "Invalid permit2Deadline: must be an ISO timestamp when permit2Signature is provided" }, { status: 400 });
-            }
-            if (!permit2Expiration || typeof permit2Expiration !== "string") {
-                return NextResponse.json({ error: "Invalid permit2Expiration: must be an ISO timestamp when permit2Signature is provided" }, { status: 400 });
-            }
-
-            /* Verify the timestamp strings are valid dates */
-            if (isNaN(Date.parse(permit2Deadline))) {
-                return NextResponse.json({ error: "permit2Deadline is not a valid ISO date" }, { status: 400 });
-            }
-            if (isNaN(Date.parse(permit2Expiration))) {
-                return NextResponse.json({ error: "permit2Expiration is not a valid ISO date" }, { status: 400 });
             }
         }
 
@@ -439,17 +427,9 @@ export async function PUT(request: Request) {
             if (permit2Nonce === undefined || permit2Nonce === null || typeof permit2Nonce !== "number" || !Number.isInteger(permit2Nonce) || permit2Nonce < 0) {
                 return NextResponse.json({ error: "permit2Nonce must be a non-negative integer for UPDATE_PERMIT action" }, { status: 400 });
             }
-            if (!permit2Deadline || typeof permit2Deadline !== "string" || isNaN(Date.parse(permit2Deadline))) {
-                return NextResponse.json({ error: "permit2Deadline must be a valid ISO timestamp for UPDATE_PERMIT action" }, { status: 400 });
-            }
-            if (!permit2Expiration || typeof permit2Expiration !== "string" || isNaN(Date.parse(permit2Expiration))) {
-                return NextResponse.json({ error: "permit2Expiration must be a valid ISO timestamp for UPDATE_PERMIT action" }, { status: 400 });
-            }
 
             updateObj.permit2_signature = permit2Signature;
             updateObj.permit2_nonce = permit2Nonce;
-            updateObj.permit2_deadline = permit2Deadline;
-            updateObj.permit2_expiration = permit2Expiration;
         }
 
         /* Apply the update */
