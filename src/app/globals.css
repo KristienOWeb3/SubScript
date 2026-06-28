@@ -67,7 +67,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 1rem;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Liquid Glass Style */
@@ -197,7 +197,7 @@ body {
   color: #fff;
   font-size: 0.78rem;
   outline: none;
-  transition: border-color 180ms ease, background-color 180ms ease;
+  transition: border-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .subscript-input:focus {
@@ -217,7 +217,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  transition: transform 160ms ease, filter 160ms ease, background-color 160ms ease;
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .subscript-primary-button {

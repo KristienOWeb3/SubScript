@@ -29,6 +29,9 @@ const config: Config = {
                 'glow-gold': '0 0 25px rgba(212, 168, 83, 0.3)',
                 'glow-green': '0 0 10px rgba(34, 197, 94, 0.3)',
             },
+            transitionTimingFunction: {
+                DEFAULT: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+            },
         },
     },
     plugins: [],

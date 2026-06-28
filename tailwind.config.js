@@ -16,6 +16,9 @@ module.exports = {
             fontFamily: {
                 sans: ['var(--font-sukar)', 'Sukar', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
             },
+            transitionTimingFunction: {
+                DEFAULT: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+            },
             animation: {
                 'float': 'float 6s ease-in-out infinite',
             },
