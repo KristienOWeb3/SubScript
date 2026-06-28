@@ -8,15 +8,52 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 
+const MAX_DESCRIPTION_LEN = 300;
+
 function formatPlan(p: any) {
     return {
         id: p.id,
         merchantAddress: p.merchantAddress,
         name: p.name,
+        description: p.description ?? null,
+        detailsUrl: p.detailsUrl ?? null,
         amountUsdc: p.amountUsdc.toString(),
         periodSeconds: p.periodSeconds.toString(),
         active: p.active,
     };
+}
+
+/* Normalize an optional customer-facing description: trim, cap at 300 chars,
+   empty -> null. Returns { ok, value } or { ok: false, error }. */
+function normalizeDescription(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+    if (raw === undefined || raw === null) return { ok: true, value: null };
+    if (typeof raw !== "string") return { ok: false, error: "description must be a string" };
+    const trimmed = raw.trim();
+    if (!trimmed) return { ok: true, value: null };
+    if (trimmed.length > MAX_DESCRIPTION_LEN) {
+        return { ok: false, error: `Description must be ${MAX_DESCRIPTION_LEN} characters or fewer` };
+    }
+    return { ok: true, value: trimmed };
+}
+
+/* Normalize an optional "view more" link: must be a well-formed http(s) URL so a
+   merchant can't smuggle a javascript:/data: scheme into a clickable customer link. */
+function normalizeDetailsUrl(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+    if (raw === undefined || raw === null) return { ok: true, value: null };
+    if (typeof raw !== "string") return { ok: false, error: "detailsUrl must be a string" };
+    const trimmed = raw.trim();
+    if (!trimmed) return { ok: true, value: null };
+    if (trimmed.length > 500) return { ok: false, error: "Details link is too long" };
+    let parsed: URL;
+    try {
+        parsed = new URL(trimmed);
+    } catch {
+        return { ok: false, error: "Details link must be a valid URL" };
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return { ok: false, error: "Details link must start with http:// or https://" };
+    }
+    return { ok: true, value: parsed.toString() };
 }
 
 export async function GET(request: Request) {
@@ -65,6 +102,12 @@ export async function POST(request: Request) {
         const name = typeof body.name === "string" ? body.name.trim().slice(0, 60) : "";
         if (!name) return NextResponse.json({ error: "Plan name is required" }, { status: 400 });
 
+        const descriptionResult = normalizeDescription(body.description);
+        if (!descriptionResult.ok) return NextResponse.json({ error: descriptionResult.error }, { status: 400 });
+
+        const detailsUrlResult = normalizeDetailsUrl(body.detailsUrl);
+        if (!detailsUrlResult.ok) return NextResponse.json({ error: detailsUrlResult.error }, { status: 400 });
+
         const amountUsdc = parseUsdcToMicros(body.amountUsdc);
         if (amountUsdc <= BigInt(0)) return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
 
@@ -82,7 +125,14 @@ export async function POST(request: Request) {
         }
 
         const plan = await prisma.merchantPlan.create({
-            data: { merchantAddress: wallet.toLowerCase(), name, amountUsdc, periodSeconds },
+            data: {
+                merchantAddress: wallet.toLowerCase(),
+                name,
+                description: descriptionResult.value,
+                detailsUrl: detailsUrlResult.value,
+                amountUsdc,
+                periodSeconds,
+            },
         });
         return NextResponse.json({ success: true, plan: formatPlan(plan) }, { status: 201 });
     } catch (error: any) {
@@ -106,9 +156,24 @@ export async function PATCH(request: Request) {
         if (!plan || plan.merchantAddress.toLowerCase() !== wallet.toLowerCase()) {
             return NextResponse.json({ error: "Plan not found" }, { status: 404 });
         }
+
+        const data: { active: boolean; description?: string | null; detailsUrl?: string | null } = {
+            active: body.active === undefined ? plan.active : !!body.active,
+        };
+        if (body.description !== undefined) {
+            const descriptionResult = normalizeDescription(body.description);
+            if (!descriptionResult.ok) return NextResponse.json({ error: descriptionResult.error }, { status: 400 });
+            data.description = descriptionResult.value;
+        }
+        if (body.detailsUrl !== undefined) {
+            const detailsUrlResult = normalizeDetailsUrl(body.detailsUrl);
+            if (!detailsUrlResult.ok) return NextResponse.json({ error: detailsUrlResult.error }, { status: 400 });
+            data.detailsUrl = detailsUrlResult.value;
+        }
+
         const updated = await prisma.merchantPlan.update({
             where: { id: planId },
-            data: { active: body.active === undefined ? plan.active : !!body.active },
+            data,
         });
         return NextResponse.json({ success: true, plan: formatPlan(updated) }, { status: 200 });
     } catch (error: any) {

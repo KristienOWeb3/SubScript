@@ -154,6 +154,8 @@ model MerchantPlan {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   merchantAddress String   @map("merchant_address")
   name            String
+  description     String?
+  detailsUrl      String?  @map("details_url")
   amountUsdc      BigInt   @map("amount_usdc")
   periodSeconds   BigInt   @map("period_seconds")
   active          Boolean  @default(true)

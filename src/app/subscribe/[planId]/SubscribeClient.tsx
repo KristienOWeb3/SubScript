@@ -11,6 +11,8 @@ import { isProd } from "@/lib/contracts/constants";
 type PlanData = {
     id: string;
     name: string;
+    description?: string | null;
+    detailsUrl?: string | null;
     amountUsdc: string;
     periodSeconds: string;
     merchantAddress: string;
@@ -41,6 +43,14 @@ function formatAmount(micros: string) {
     return (Number(micros) / 1_000_000).toFixed(2);
 }
 
+function getHostname(url: string) {
+    try {
+        return new URL(url).hostname;
+    } catch {
+        return url;
+    }
+}
+
 export default function SubscribeClient({
     planId,
     initialPlanData,
@@ -61,6 +71,16 @@ export default function SubscribeClient({
     const [subscribeError, setSubscribeError] = useState<string | null>(null);
     const [result, setResult] = useState<{ txHash?: string; subscriptionId?: string; planName?: string } | null>(null);
 
+    /* Interstitial before following the merchant-supplied "view more" link off-platform. */
+    const [showLeaveModal, setShowLeaveModal] = useState(false);
+
+    const handleConfirmLeave = () => {
+        if (plan?.detailsUrl) {
+            window.open(plan.detailsUrl, "_blank", "noopener,noreferrer");
+        }
+        setShowLeaveModal(false);
+    };
+
     /* Fetch fresh plan + merchant info (verified badge, profile pic) on mount. */
     useEffect(() => {
         let cancelled = false;
@@ -73,6 +93,8 @@ export default function SubscribeClient({
                     setPlan({
                         id: data.plan.id,
                         name: data.plan.name,
+                        description: data.plan.description ?? null,
+                        detailsUrl: data.plan.detailsUrl ?? null,
                         amountUsdc: data.plan.amountUsdc,
                         periodSeconds: data.plan.periodSeconds,
                         merchantAddress: data.plan.merchantAddress,
@@ -187,6 +209,25 @@ export default function SubscribeClient({
                             <h2 className="text-2xl font-extrabold text-white tracking-tight">{plan.name}</h2>
                         </div>
 
+                        {(plan.description || plan.detailsUrl) && (
+                            <div className="space-y-2">
+                                {plan.description && (
+                                    <p className="text-xs text-white/60 leading-relaxed whitespace-pre-line">
+                                        {plan.description}
+                                    </p>
+                                )}
+                                {plan.detailsUrl && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowLeaveModal(true)}
+                                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#00d2b4] transition hover:text-[#00d2b4]/80"
+                                    >
+                                        <ExternalLink className="w-3 h-3" /> View full details
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider flex items-center gap-1.5">
                                 <RefreshCw className="w-3 h-3" /> Recurring
@@ -285,6 +326,55 @@ export default function SubscribeClient({
                     </div>
                 )}
             </div>
+
+            {showLeaveModal && plan?.detailsUrl && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={() => setShowLeaveModal(false)}
+                >
+                    <div
+                        className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl w-full max-w-sm bg-black/80 space-y-5"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+                                <ShieldAlert className="w-5 h-5" />
+                            </div>
+                            <h3 className="text-sm font-bold text-white uppercase tracking-wider">You&apos;re leaving SubScript</h3>
+                        </div>
+
+                        <div className="space-y-3 text-[11px] leading-relaxed text-white/60">
+                            <p>
+                                This link opens an external site the merchant controls
+                                (<span className="font-mono text-white/80 break-all">{getHostname(plan.detailsUrl)}</span>).
+                                SubScript can&apos;t vouch for its content and isn&apos;t responsible for anything that happens there.
+                            </p>
+                            <p className="font-bold text-white/80">
+                                Never enter payment details on that site. All payments for this subscription happen only here, on SubScript.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <button
+                                type="button"
+                                onClick={handleConfirmLeave}
+                                className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                            >
+                                OK, I understand <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowLeaveModal(false)}
+                                className="w-full py-2.5 text-[10px] font-bold uppercase tracking-wider text-white/40 hover:text-white/70 transition"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

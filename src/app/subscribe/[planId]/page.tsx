@@ -28,7 +28,7 @@ async function getPlan(planId: string) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { data: plan, error } = await supabase
         .from("merchant_plans")
-        .select("id, merchant_address, name, amount_usdc, period_seconds, active")
+        .select("id, merchant_address, name, description, details_url, amount_usdc, period_seconds, active")
         .eq("id", planId)
         .maybeSingle();
 
@@ -61,7 +61,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
             : "Merchant");
 
     const title = `Subscribe to ${plan.name} — ${amountFormatted} USDC`;
-    const description = `Recurring subscription from ${merchantName} via SubScript Protocol`;
+    const description = (plan.description && String(plan.description).trim())
+        || `Recurring subscription from ${merchantName} via SubScript Protocol`;
 
     const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);
     const appUrl = configuredAppUrl
@@ -97,6 +98,8 @@ export default async function PublicSubscribePage({ params }: PageProps) {
         ? {
             id: plan.id,
             name: plan.name,
+            description: plan.description ?? null,
+            detailsUrl: plan.details_url ?? null,
             amountUsdc: String(plan.amount_usdc),
             periodSeconds: String(plan.period_seconds),
             merchantAddress: String(plan.merchant_address).toLowerCase(),

@@ -86,10 +86,14 @@ type MerchantPlan = {
     id: string;
     merchantAddress: string;
     name: string;
+    description?: string | null;
+    detailsUrl?: string | null;
     amountUsdc: string;
     periodSeconds: string;
     active: boolean;
 };
+
+const PLAN_DESCRIPTION_MAX = 300;
 
 const formatPlanAmount = (micros: string) => {
     try {
@@ -150,6 +154,8 @@ export default function DashboardPage() {
     const [isPlansLoading, setIsPlansLoading] = useState(false);
     const [initialPlansFetched, setInitialPlansFetched] = useState(false);
     const [planName, setPlanName] = useState("");
+    const [planDescription, setPlanDescription] = useState("");
+    const [planDetailsUrl, setPlanDetailsUrl] = useState("");
     const [planAmountUsdc, setPlanAmountUsdc] = useState("");
     const [planPeriodDays, setPlanPeriodDays] = useState("30");
     const [planError, setPlanError] = useState<string | null>(null);
@@ -805,6 +811,15 @@ export default function DashboardPage() {
             setPlanError("Billing period must be at least 1 day.");
             return;
         }
+        if (planDescription.length > PLAN_DESCRIPTION_MAX) {
+            setPlanError(`Description must be ${PLAN_DESCRIPTION_MAX} characters or fewer.`);
+            return;
+        }
+        const trimmedDetailsUrl = planDetailsUrl.trim();
+        if (trimmedDetailsUrl && !/^https?:\/\//i.test(trimmedDetailsUrl)) {
+            setPlanError("Details link must start with http:// or https://");
+            return;
+        }
 
         setIsPlansLoading(true);
         try {
@@ -813,6 +828,8 @@ export default function DashboardPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     name: planName,
+                    description: planDescription.trim() || undefined,
+                    detailsUrl: trimmedDetailsUrl || undefined,
                     amountUsdc: planAmountUsdc,
                     periodDays: Number(planPeriodDays),
                 }),
@@ -820,6 +837,8 @@ export default function DashboardPage() {
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to create plan.");
             setPlanName("");
+            setPlanDescription("");
+            setPlanDetailsUrl("");
             setPlanAmountUsdc("");
             setPlanPeriodDays("30");
             setPlanSuccess("Plan created. Copy its subscribe link below and share it with customers.");
@@ -2690,47 +2709,85 @@ Please complete the following implementation tasks:
                         </button>
                     </div>
 
-                    <form onSubmit={handleCreatePlan} className="grid gap-4 font-sans text-xs md:grid-cols-[1.3fr_0.8fr_0.8fr_auto] md:items-end">
+                    <form onSubmit={handleCreatePlan} className="space-y-4 font-sans text-xs">
+                        <div className="grid gap-4 md:grid-cols-[1.3fr_0.8fr_0.8fr] md:items-end">
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Plan Name</label>
+                                <input
+                                    type="text"
+                                    value={planName}
+                                    onChange={(event) => setPlanName(event.target.value)}
+                                    placeholder="Pro API Access"
+                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={planAmountUsdc}
+                                    onChange={(event) => setPlanAmountUsdc(event.target.value)}
+                                    placeholder="29.00"
+                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Period Days</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="366"
+                                    value={planPeriodDays}
+                                    onChange={(event) => setPlanPeriodDays(event.target.value)}
+                                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
                         <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Plan Name</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
+                                    Description <span className="normal-case text-white/25">(optional — shown to subscribers)</span>
+                                </label>
+                                <span className={`text-[9px] font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-400" : "text-white/30"}`}>
+                                    {planDescription.length}/{PLAN_DESCRIPTION_MAX}
+                                </span>
+                            </div>
+                            <textarea
+                                value={planDescription}
+                                onChange={(event) => setPlanDescription(event.target.value.slice(0, PLAN_DESCRIPTION_MAX))}
+                                rows={3}
+                                maxLength={PLAN_DESCRIPTION_MAX}
+                                placeholder="What's included — features, usage limits, support level, billing terms…"
+                                className="w-full resize-none rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
+                                Details Link <span className="normal-case text-white/25">(optional — &ldquo;view more&rdquo;)</span>
+                            </label>
                             <input
-                                type="text"
-                                value={planName}
-                                onChange={(event) => setPlanName(event.target.value)}
-                                placeholder="Pro API Access"
+                                type="url"
+                                inputMode="url"
+                                value={planDetailsUrl}
+                                onChange={(event) => setPlanDetailsUrl(event.target.value)}
+                                placeholder="https://yoursite.com/plans/pro"
                                 className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
                             />
                         </div>
-                        <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">USDC Amount</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={planAmountUsdc}
-                                onChange={(event) => setPlanAmountUsdc(event.target.value)}
-                                placeholder="29.00"
-                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
-                            />
+
+                        <div className="flex justify-end">
+                            <button
+                                type="submit"
+                                disabled={isPlansLoading}
+                                className="rounded-xl bg-[#00d2b4] px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50"
+                            >
+                                {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                            </button>
                         </div>
-                        <div className="space-y-1">
-                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Period Days</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="366"
-                                value={planPeriodDays}
-                                onChange={(event) => setPlanPeriodDays(event.target.value)}
-                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={isPlansLoading}
-                            className="rounded-xl bg-[#00d2b4] px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50"
-                        >
-                            {isPlansLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
-                        </button>
                     </form>
 
                     {planError && <p className="text-[10px] font-bold text-red-400">{planError}</p>}
@@ -5145,6 +5202,24 @@ function MerchantPlanRow({
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : plan.active ? "Deactivate" : "Reactivate"}
                 </button>
             </div>
+
+            {(plan.description || plan.detailsUrl) && (
+                <div className="mt-3 space-y-1.5">
+                    {plan.description && (
+                        <p className="whitespace-pre-line text-[11px] leading-relaxed text-white/55">{plan.description}</p>
+                    )}
+                    {plan.detailsUrl && (
+                        <a
+                            href={plan.detailsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00d2b4] transition hover:text-[#00d2b4]/80"
+                        >
+                            View more ↗
+                        </a>
+                    )}
+                </div>
+            )}
 
             {plan.active && (
                 <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-black/30 px-3 py-2">

@@ -39,6 +39,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
             plan: {
                 id: plan.id,
                 name: plan.name,
+                description: plan.description ?? null,
+                detailsUrl: plan.detailsUrl ?? null,
                 amountUsdc: plan.amountUsdc.toString(),
                 periodSeconds: plan.periodSeconds.toString(),
                 merchantAddress,
