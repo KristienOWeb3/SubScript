@@ -2985,7 +2985,7 @@ Please complete the following implementation tasks:
                     {planSuccess && <p className="text-[10px] font-bold text-emerald-400">{planSuccess}</p>}
                 </div>
 
-                <div className="grid gap-5 lg:grid-cols-2">
+                <div className="grid gap-5 md:grid-cols-2">
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Plans</h3>
@@ -4211,8 +4211,8 @@ Please complete the following implementation tasks:
                         </div>
 
                         {isPremium ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                                <div className="lg:col-span-2 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                                <div className="md:col-span-2 space-y-6">
                                     {/* PAST_DUE Warning Banner */}
                                     {dbSubscriptionStatus === "PAST_DUE" && (
                                         <div className="liquid-glass border border-amber-500/20 rounded-3xl p-6 shadow-2xl space-y-4 bg-amber-500/[0.02]">
@@ -4525,7 +4525,7 @@ Please complete the following implementation tasks:
                                     </div>
                                 </div>
 
-                                <div className="lg:col-span-1 space-y-6">
+                                <div className="md:col-span-1 space-y-6">
                                     {/* Billing Summary Card */}
                                     <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 shadow-2xl space-y-4">
                                         <h4 className="text-[10px] text-white/40 uppercase font-bold tracking-widest text-center">Subscription Billing</h4>
@@ -4787,7 +4787,7 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
                             {/* Configurator Form */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
                                 <div>
@@ -5113,7 +5113,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Event Feed and Inspector */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                             {/* Event Feed */}
                             <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
                                 <div>
@@ -5346,13 +5346,13 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+                    <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
                         {/* Sidebar Navigation */}
-                        <div className="hidden lg:block lg:col-span-1 space-y-2">
+                        <div className="hidden md:block md:col-span-1 lg:col-span-1 space-y-2">
                             {tabs.map((tab) => {
                                 const hasHref = "href" in tab;
                                 const isSelected = activeTab === (tab.id as any);
-                                const itemClasses = `w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
+                                const itemClasses = `w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left ${
                                     isSelected
                                         ? tab.id === "premium"
                                             ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white shadow-lg shadow-[#d4a853]/5"
@@ -5360,7 +5360,7 @@ Please complete the following implementation tasks:
                                         : "bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-white/[0.03]"
                                 }`;
                                 
-                                const iconClasses = `w-4 h-4 ${
+                                const iconClasses = `w-4 h-4 shrink-0 ${
                                     isSelected
                                         ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
                                         : "text-white/40"
@@ -5369,9 +5369,9 @@ Please complete the following implementation tasks:
                                 const content = (
                                     <>
                                         <tab.icon className={iconClasses} />
-                                        {tab.label}
+                                        <span className="hidden lg:inline">{tab.label}</span>
                                         {tab.id === "premium" && isPremium && (
-                                            <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                            <span className="hidden lg:inline-flex ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
                                         )}
                                     </>
                                 );
@@ -5382,6 +5382,7 @@ Please complete the following implementation tasks:
                                             key={tab.id}
                                             href={tab.href!}
                                             className={itemClasses}
+                                            title={tab.label}
                                         >
                                             {content}
                                         </Link>
@@ -5393,6 +5394,7 @@ Please complete the following implementation tasks:
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id as TabId)}
                                         className={itemClasses}
+                                        title={tab.label}
                                     >
                                         {content}
                                     </button>
@@ -5401,7 +5403,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* View Content */}
-                        <div className="lg:col-span-3 min-h-[500px]">
+                        <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTab}
@@ -5532,7 +5534,7 @@ Please complete the following implementation tasks:
 
                             {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
                             {isConnected && (mobileBottomTabs.some((tab) => tab.id === activeTab) || activeTab === "checkout") && (
-                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 lg:hidden">
+                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 md:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
                                     {mobileBottomTabs.map((tab) => (

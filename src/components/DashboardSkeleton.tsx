@@ -344,7 +344,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
 
     return (
         <>
-        <div className="lg:hidden space-y-6 pb-24 font-sans">
+        <div className="md:hidden space-y-6 pb-24 font-sans">
             <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl bg-black/35 backdrop-blur-xl">
                 <div className="space-y-3">
                     <Skeleton className="h-2.5 w-24 rounded-full" />
@@ -392,15 +392,15 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
             </div>
         </div>
 
-        <div className="hidden lg:grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+        <div className="hidden md:grid grid-cols-1 md:grid-cols-12 lg:grid-cols-4 gap-6 md:gap-8 items-start">
             {/* Sidebar Navigation skeleton */}
-            <div className="lg:col-span-1 space-y-2">
+            <div className="md:col-span-1 lg:col-span-1 space-y-2">
                 {tabs.map((tab) => {
                     const isActive = activeTab === tab.id;
                     return (
                         <div
                             key={tab.id}
-                            className={`w-full flex items-center gap-3.5 px-5 py-4 rounded-2xl border ${
+                            className={`w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl border ${
                                 isActive
                                     ? tab.id === "premium"
                                         ? "bg-[#d4a853]/10 border-[#d4a853]/30 text-white"
@@ -408,14 +408,14 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                                     : "bg-white/[0.01] border-white/5 text-white/50"
                             }`}
                         >
-                            <tab.icon className={`w-4 h-4 ${
+                            <tab.icon className={`w-4 h-4 shrink-0 ${
                                 isActive 
                                     ? tab.id === "premium" ? "text-[#d4a853]" : "text-[#00d2b4]"
                                     : "text-white/40"
                             }`} />
-                            <span className="text-xs font-bold uppercase tracking-wider">{tab.label}</span>
+                            <span className="hidden lg:inline text-xs font-bold uppercase tracking-wider">{tab.label}</span>
                             {tab.id === "premium" && (
-                                <span className="ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
+                                <span className="hidden lg:inline-flex ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-[#d4a853]/10 text-[#d4a853] border border-[#d4a853]/20">PRO</span>
                             )}
                         </div>
                     );
@@ -423,7 +423,7 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
             </div>
 
             {/* Content View skeleton */}
-            <div className="lg:col-span-3 min-h-[500px]">
+            <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
                 {renderContentSkeleton()}
             </div>
         </div>
