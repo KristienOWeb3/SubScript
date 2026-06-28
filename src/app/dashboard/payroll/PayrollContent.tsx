@@ -10,7 +10,7 @@ import {
     Shield, ShieldOff, Loader2, CheckCircle, AlertTriangle,
     DollarSign, Clock, Building2, Lock, Crown, Zap, Activity,
     BarChart3, Link2, Sliders, User, Key, Code2, Webhook, PlugZap
-} from "lucide-react";
+} from "@/components/icons";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import WithdrawModal from "@/components/WithdrawModal";

@@ -7,7 +7,7 @@ import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
     Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert
-} from "lucide-react";
+} from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Zap, CreditCard, Users, Heart } from "lucide-react";
+import { Zap, CreditCard, Users, Heart } from "@/components/icons";
 
 const features = [
     {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Terminal, Menu, X as CloseIcon } from "lucide-react";
+import { Terminal, Menu, X as CloseIcon } from "@/components/icons";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Circular SVGs for Socials

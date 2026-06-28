@@ -14,7 +14,7 @@ import {
   WalletCards,
   Webhook,
   Zap,
-} from "lucide-react";
+} from "@/components/icons";
 
 function normalizePublicUrl(value: string | undefined) {
   if (!value) return "";

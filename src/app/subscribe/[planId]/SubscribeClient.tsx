@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
     Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, RefreshCw, ExternalLink,
-} from "lucide-react";
+} from "@/components/icons";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { isProd } from "@/lib/contracts/constants";
 

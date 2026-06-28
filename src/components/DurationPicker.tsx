@@ -1,7 +1,7 @@
 /* High-fidelity relative duration picker component for Payment Links */
 
 import { useState, useEffect } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown } from "@/components/icons";
 
 interface DurationPickerProps {
     value: number; /* Total minutes */

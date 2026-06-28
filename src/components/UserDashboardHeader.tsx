@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe } from "lucide-react";
+import { Wallet, Copy, Check, LogOut, Eye, EyeOff, User, Globe } from "@/components/icons";
 
 interface UserDashboardHeaderProps {
     userWallet: string | null;

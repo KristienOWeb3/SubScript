@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ShieldCheck, Loader2 } from "lucide-react";
+import { ShieldCheck, Loader2 } from "@/components/icons";
 
 interface VerifiedCancellableProps {
     merchantAddress?: string;

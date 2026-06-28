@@ -20,7 +20,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
     Activity, Crown, Shield, Key, ArrowRightLeft, 
     Check, Loader2, AlertTriangle, PlayCircle, XCircle, ChevronLeft
-} from "lucide-react";
+} from "@/components/icons";
 import { 
     ARC_TESTNET_CHAIN_ID, 
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,

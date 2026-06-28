@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Shield } from "lucide-react";
+import { ArrowLeft, Shield } from "@/components/icons";
 import Navbar from "@/components/Navbar";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 

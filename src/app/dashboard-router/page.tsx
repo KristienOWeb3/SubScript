@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/icons";
 import { getDashboardUrl } from "@/utils/navigation";
 
 export default function DashboardRouterPage() {

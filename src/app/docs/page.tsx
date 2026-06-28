@@ -24,7 +24,7 @@ import {
   Webhook,
   X,
   Zap,
-} from "lucide-react";
+} from "@/components/icons";
 import { AnimatePresence, motion } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { getDashboardUrl } from "@/utils/navigation";

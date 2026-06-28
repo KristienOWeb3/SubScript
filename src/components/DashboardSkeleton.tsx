@@ -4,7 +4,7 @@ import React from "react";
 import Skeleton from "./ui/Skeleton";
 import { 
     Activity, Key, Code2, Webhook, Crown, Shield, BarChart3, Link2, Sliders
-} from "lucide-react";
+} from "@/components/icons";
 
 interface DashboardSkeletonProps {
     activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll";

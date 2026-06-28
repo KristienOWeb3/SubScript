@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/icons";
 import FloatingTablet from "./FloatingTablet";
 
 export default function Hero() {

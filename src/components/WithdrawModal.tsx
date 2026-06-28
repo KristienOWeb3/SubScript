@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2, Lock } from "lucide-react";
+import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2, Lock } from "@/components/icons";
 import { ethers } from "ethers";
 import Link from "next/link";
 

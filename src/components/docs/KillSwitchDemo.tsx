@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, Power, CheckCircle, Zap, Clock, CreditCard } from "lucide-react";
+import { Wallet, Power, CheckCircle, Zap, Clock, CreditCard } from "@/components/icons";
 
 type DemoState = "disconnected" | "connected" | "revoking" | "revoked";
 

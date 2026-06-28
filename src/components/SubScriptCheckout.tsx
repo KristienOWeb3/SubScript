@@ -25,7 +25,7 @@ import {
   CCTP_CONFIG
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
-import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, ShoppingBag } from "@/components/icons";
 import { sepolia } from "viem/chains";
 
 /* Initialize standard viem public client targeting Arc Testnet */

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useAccount } from "wagmi";
-import { Copy, Check, Terminal, Sparkles } from "lucide-react";
+import { Copy, Check, Terminal, Sparkles } from "@/components/icons";
 import { 
   STANDARD_CONTRACT_ADDRESS, 
   SUBSCRIPT_ROUTER_ADDRESS, 

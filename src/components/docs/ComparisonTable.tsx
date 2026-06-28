@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle } from "@/components/icons";
 
 interface ComparisonRow {
     feature: string;

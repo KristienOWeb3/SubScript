@@ -1,7 +1,7 @@
 /* Premium Analytics and Automations Dashboard Component */
 
 import { useMemo, useState, useEffect } from "react";
-import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "lucide-react";
+import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
 import Link from "next/link";
 
 interface AnalyticsDashboardProps {

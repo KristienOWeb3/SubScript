@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Copy, Check, Terminal, Sparkles } from "lucide-react";
+import { Copy, Check, Terminal, Sparkles } from "@/components/icons";
 import { useAccount } from "wagmi";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 

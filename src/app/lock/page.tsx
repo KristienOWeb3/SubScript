@@ -4,7 +4,7 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { Lock, ArrowRight, Loader2, AlertCircle } from "@/components/icons";
 
 function LockForm() {
     const [password, setPassword] = useState("");

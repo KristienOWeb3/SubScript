@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "lucide-react";
+import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";

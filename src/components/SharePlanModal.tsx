@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Sparkles, Layers, Loader2 } from "lucide-react";
+import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Sparkles, Layers, Loader2 } from "@/components/icons";
 import { QRCodeCanvas } from "qrcode.react";
 
 interface MerchantPlan {

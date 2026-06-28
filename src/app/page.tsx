@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Building2, BarChart3, Zap, ShieldCheck, Webhook, Link2, ReceiptText, Wallet, Code, Users } from "lucide-react";
+import { ArrowRight, Building2, BarChart3, Zap, ShieldCheck, Webhook, Link2, ReceiptText, Wallet, Code, Users } from "@/components/icons";
 import Navbar from "@/components/Navbar";
 
 const subscriptions = [

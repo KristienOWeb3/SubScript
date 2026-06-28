@@ -12,7 +12,7 @@ import {
   ArrowRight,
   Lock,
   MailCheck
-} from "lucide-react";
+} from "@/components/icons";
 import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";

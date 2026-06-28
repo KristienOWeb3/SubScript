@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount, useSignMessage, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, ShieldAlert, Key } from "lucide-react";
+import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, ShieldAlert, Key } from "@/components/icons";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 
 interface ReceiptClientProps {

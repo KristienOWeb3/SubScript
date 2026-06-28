@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/icons";
 import { getCookie, setCookie, deleteCookie } from "cookies-next/client";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 import {

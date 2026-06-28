@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, QrCode, Loader2 } from "lucide-react";
+import { X, Copy, Check, QrCode, Loader2 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
