@@ -554,6 +554,8 @@ export default function DashboardPage() {
     const [isSettingsLoading, setIsSettingsLoading] = useState(false);
     const [dnsDomain, setDnsDomain] = useState("");
     const [dnsSuffix, setDnsSuffix] = useState(".hq");
+    const [dnsConfirmPending, setDnsConfirmPending] = useState<string | null>(null);
+    const [merchantAliasNextChange, setMerchantAliasNextChange] = useState<string | null>(null);
     const [dnsLoading, setDnsLoading] = useState(false);
     const [dnsSuccess, setDnsSuccess] = useState<string | null>(null);
     const [dnsError, setDnsError] = useState<string | null>(null);
@@ -667,31 +669,27 @@ export default function DashboardPage() {
         reader.readAsDataURL(file);
     };
 
-    const handleRegisterDns = async (e: React.FormEvent) => {
+    const handleRegisterDns = (e: React.FormEvent) => {
         e.preventDefault();
-        setDnsLoading(true);
         setDnsError(null);
         setDnsSuccess(null);
 
         const prefix = dnsDomain.trim().toLowerCase();
         if (!prefix) {
             setDnsError("DNS alias cannot be empty");
-            setDnsLoading(false);
             return;
         }
-
         const cleanPrefix = prefix.split(".")[0];
-        const fullAlias = `${cleanPrefix}${dnsSuffix}`;
+        /* Show a branded confirmation step (the name is locked for 365 days after this). */
+        setDnsConfirmPending(`${cleanPrefix}${dnsSuffix}`);
+    };
 
-        /* Surface the once-a-year limit before committing the change. */
-        if (!window.confirm(
-            `Set your DNS name to "${fullAlias}"?\n\n`
-            + `You can only change your DNS name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
-        )) {
-            setDnsLoading(false);
-            return;
-        }
-
+    const confirmDnsRegistration = async () => {
+        const fullAlias = dnsConfirmPending;
+        if (!fullAlias) return;
+        setDnsLoading(true);
+        setDnsError(null);
+        setDnsSuccess(null);
         try {
             const res = await fetch("/api/merchant/alias", {
                 method: "POST",
@@ -703,6 +701,7 @@ export default function DashboardPage() {
                 setDnsSuccess(`DNS Registered: ${fullAlias}`);
                 setUserSettings((prev: any) => ({ ...prev, alias: fullAlias }));
                 setMerchantAlias(fullAlias);
+                setDnsConfirmPending(null);
             } else {
                 setDnsError(data.error || "Registration failed");
             }
@@ -1257,6 +1256,7 @@ export default function DashboardPage() {
                 setMerchantAliasIsAnonymous(!!data.is_anonymous);
                 setAliasInput(data.alias || "");
                 setAliasIsAnonymousInput(!!data.is_anonymous);
+                setMerchantAliasNextChange(data.next_change_at || null);
             }
         } catch (err) {
             console.error("Error fetching merchant alias:", err);
@@ -2834,7 +2834,9 @@ Please complete the following implementation tasks:
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
-                            Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.
+                            {merchantAliasNextChange
+                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change or unregister it again then.</>
+                                : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
                             <div className="p-4 rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 flex items-center justify-between">
@@ -2869,6 +2871,34 @@ Please complete the following implementation tasks:
                                 >
                                     {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
                                 </button>
+                            </div>
+                        ) : dnsConfirmPending ? (
+                            <div className="p-5 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/[0.04] space-y-4">
+                                <div>
+                                    <p className="text-[9px] uppercase tracking-wider font-bold text-[#ccff00]/70">Confirm DNS name</p>
+                                    <h4 className="font-mono text-lg font-bold text-[#ccff00] mt-1">{dnsConfirmPending}</h4>
+                                </div>
+                                <p className="text-[10px] leading-relaxed text-amber-300/80">
+                                    This is locked for <strong>365 days</strong> once registered. Make sure it's right.
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDnsConfirmPending(null)}
+                                        disabled={dnsLoading}
+                                        className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-white/70 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={confirmDnsRegistration}
+                                        disabled={dnsLoading}
+                                        className="flex-1 py-2.5 bg-[#ccff00] hover:bg-[#ccff00]/85 text-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm & Register"}
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
