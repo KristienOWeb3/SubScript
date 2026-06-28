@@ -100,3 +100,69 @@ export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint
         console.error("[mirror] subscription cancel skipped:", err instanceof Error ? err.message : err);
     }
 }
+
+/* Flag a customer subscription to cancel at the end of its already-paid period: stop future
+   billing now but keep it ACTIVE until `nextPaymentSeconds` (the paid-through date). The
+   customer-billing keeper performs the actual on-chain cancel once next_billing_date is reached.
+   Upserts so a sub created before the mirror still gets a row the keeper can find. */
+export async function mirrorSubscriptionCancelAtPeriodEnd({
+    subscriptionId,
+    merchantAddress,
+    subscriber,
+    amountUsdc,
+    periodSeconds,
+    nextPaymentSeconds,
+}: {
+    subscriptionId: string | bigint;
+    merchantAddress: string;
+    subscriber: string;
+    amountUsdc: bigint;
+    periodSeconds: bigint;
+    nextPaymentSeconds: bigint;
+}) {
+    try {
+        const merchant = merchantAddress.toLowerCase();
+        const sub = subscriber.toLowerCase();
+        const id = BigInt(subscriptionId);
+        const now = new Date();
+        const nextBilling = new Date(Number(nextPaymentSeconds) * 1000);
+        /* The DB trigger derives next_billing_date from last_settlement_timestamp + interval, so
+           anchor last settlement to the period start (nextPayment - period) to land next_billing
+           exactly on the paid-through date. next_billing_date is also set explicitly for robustness. */
+        const periodStart = new Date(Number(nextPaymentSeconds - periodSeconds) * 1000);
+
+        await prisma.merchant.upsert({
+            where: { walletAddress: merchant },
+            update: {},
+            create: { walletAddress: merchant },
+        });
+        await prisma.subscription.upsert({
+            where: { subscriptionId: id },
+            update: {
+                status: "ACTIVE",
+                kind: "CUSTOMER",
+                cancelAtPeriodEnd: true,
+                cancelRequestedAt: now,
+                lastSettlementTimestamp: periodStart,
+                nextBillingDate: nextBilling,
+                updatedAt: now,
+            },
+            create: {
+                subscriptionId: id,
+                merchantAddress: merchant,
+                subscriber: sub,
+                status: "ACTIVE",
+                tier: 0,
+                kind: "CUSTOMER",
+                amountCapUsdc: amountUsdc.toString(),
+                billingIntervalSeconds: periodSeconds,
+                lastSettlementTimestamp: periodStart,
+                nextBillingDate: nextBilling,
+                cancelAtPeriodEnd: true,
+                cancelRequestedAt: now,
+            },
+        });
+    } catch (err) {
+        console.error("[mirror] cancel-at-period-end skipped:", err instanceof Error ? err.message : err);
+    }
+}

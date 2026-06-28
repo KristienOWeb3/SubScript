@@ -888,7 +888,7 @@ export default function UserDashboard() {
     }
     if (!window.confirm("Cancel this subscription on-chain now? Access may stop immediately.")) return;
     await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
-      setPlanManagerStatus("Cancelling subscription on-chain...");
+      setPlanManagerStatus("Cancelling subscription...");
       setPlanManagerError(null);
       const res = await fetch("/api/user/subscription/cancel", {
         method: "POST",
@@ -897,8 +897,14 @@ export default function UserDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      setPlanManagerStatus("Subscription cancelled on-chain.");
-      triggerToast("Subscription cancelled on-chain");
+      if (data.cancelAtPeriodEnd && data.accessUntil) {
+        const until = new Date(data.accessUntil).toLocaleDateString();
+        setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
+        triggerToast(`Cancelled — access until ${until}`);
+      } else {
+        setPlanManagerStatus("Subscription cancelled on-chain.");
+        triggerToast("Subscription cancelled on-chain");
+      }
       await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
     }).catch((err: any) => {
       setPlanManagerError(err.message || "Cancel transaction failed.");
