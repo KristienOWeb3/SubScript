@@ -4045,7 +4045,11 @@ function MerchantPlanManager({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3">
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 400, damping: 22, mass: 0.8 }}
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
+      >
         <div className="min-w-0 flex-1">
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Merchant plan controls</p>
           <p className="truncate text-xs font-bold text-white">
@@ -4056,9 +4060,11 @@ function MerchantPlanManager({
         </div>
         {hasActiveSubscription && (
           <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
             type="button"
             onClick={onCancel}
             disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
@@ -4070,24 +4076,25 @@ function MerchantPlanManager({
           </motion.button>
         )}
         <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.97 }}
-          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.92 }}
+          transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
           type="button"
           onClick={onToggle}
           className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
         >
           {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
         </motion.button>
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 20, mass: 0.8 }}
+            initial={{ opacity: 0, y: 16, scale: 0.92, scaleY: 0.85 }}
+            animate={{ opacity: 1, y: 0, scale: 1, scaleY: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
+            transition={{ type: "spring", stiffness: 380, damping: 16, mass: 0.7 }}
+            style={{ transformOrigin: "top center" }}
             className="space-y-3 rounded-2xl border border-white/10 bg-black/45 p-3"
           >
             {loading ? (
@@ -4101,7 +4108,7 @@ function MerchantPlanManager({
               </div>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
-                {plans.map((plan) => {
+                {plans.map((plan, index) => {
                   const isCurrent = activeSubscription
                     ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
                       activeSubscription.billingIntervalSeconds === plan.periodSeconds
@@ -4110,8 +4117,12 @@ function MerchantPlanManager({
                   return (
                     <motion.div
                       key={plan.id}
-                      whileHover={{ scale: 1.015 }}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3 transition-all duration-300"
+                      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 18, mass: 0.7, delay: index * 0.04 }}
+                      whileHover={{ scale: 1.025, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -4121,15 +4132,20 @@ function MerchantPlanManager({
                           </p>
                         </div>
                         {isCurrent && (
-                           <span className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]">
-                             Current
-                           </span>
+                          <motion.span
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 14 }}
+                            className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
+                          >
+                            Current
+                          </motion.span>
                         )}
                       </div>
                       <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.93 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
                         disabled={isCurrent || loadingAction === loadingKey}
@@ -4155,6 +4171,7 @@ function MerchantPlanManager({
     </div>
   );
 }
+
 
 function DmRequestComposer({
   open,
