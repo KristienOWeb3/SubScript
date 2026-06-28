@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
+import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import { 
     ARC_TESTNET_CHAIN_ID, 
@@ -72,14 +73,14 @@ const tabs = [
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
-    { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
+    { id: "payroll", label: "Payroll", icon: Building2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
     { id: "settings", label: "Profile", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll";
 
 type MerchantPlan = {
     id: string;
@@ -295,7 +296,7 @@ export default function DashboardPage() {
             /* Check for upgrade success and show toast */
             const urlParams = new URLSearchParams(window.location.search);
             const tabParam = urlParams.get("tab");
-            if (tabParam && tabs.some(t => t.id === tabParam && t.id !== "payroll")) {
+            if (tabParam && tabs.some(t => t.id === tabParam)) {
                 setActiveTab(tabParam as TabId);
             }
             if (urlParams.get("upgradeSuccess") === "true") {
@@ -3194,6 +3195,9 @@ Please complete the following implementation tasks:
                         merchantAddress={address || ""}
                     />
                 );
+
+            case "payroll":
+                return <PayrollContent embedded />;
 
             case "overview":
                 return (

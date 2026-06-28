@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
