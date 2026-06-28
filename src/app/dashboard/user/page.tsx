@@ -60,9 +60,21 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
+
+/* Minimal client-side ABIs for external/browser-wallet vault actions (the embedded path is
+   signed server-side instead). */
+const VAULT_TOKEN_ABI = [
+  { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
+] as const;
+
+const VAULT_CONTRACT_ABI = [
+  { type: "function", name: "commit", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] },
+  { type: "function", name: "withdrawSurplus", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] },
+] as const;
 
 const publicClient = createPublicClient({
   chain: arcTestnet,
@@ -1163,14 +1175,64 @@ export default function UserDashboard() {
         if (!resolved) throw new Error("Could not resolve that merchant name to an address.");
         merchantAddress = resolved;
       }
-      const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
+      if (isEmbeddedWalletSession) {
+        // Embedded wallet: SubScript signs server-side (and sponsors gas).
+        const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
+      } else {
+        // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
+        if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
+        if (chainId !== ARC_TESTNET_CHAIN_ID) {
+          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        }
+        const amountMicros = parseUnits(vaultActionAmount, 6);
+
+        if (vaultActionMode === "commit") {
+          const allowance = (await publicClient.readContract({
+            address: USDC_NATIVE_GAS_ADDRESS,
+            abi: VAULT_TOKEN_ABI,
+            functionName: "allowance",
+            args: [accountAddress as `0x${string}`, SUBSCRIPT_VAULT_ADDRESS],
+          })) as bigint;
+          if (allowance < amountMicros) {
+            const approveHash = await writeContractAsync({
+              address: USDC_NATIVE_GAS_ADDRESS,
+              abi: VAULT_TOKEN_ABI,
+              functionName: "approve",
+              args: [SUBSCRIPT_VAULT_ADDRESS, amountMicros],
+            });
+            await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          }
+          const commitHash = await writeContractAsync({
+            address: SUBSCRIPT_VAULT_ADDRESS,
+            abi: VAULT_CONTRACT_ABI,
+            functionName: "commit",
+            args: [merchantAddress as `0x${string}`, amountMicros],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: commitHash });
+        } else {
+          const withdrawHash = await writeContractAsync({
+            address: SUBSCRIPT_VAULT_ADDRESS,
+            abi: VAULT_CONTRACT_ABI,
+            functionName: "withdrawSurplus",
+            args: [merchantAddress as `0x${string}`, amountMicros],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: withdrawHash });
+        }
+
+        // Refresh the off-chain mirror from chain (read-only on the server).
+        await fetch("/api/user/vault/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress }),
+        }).catch(() => {});
+      }
       triggerToast(vaultActionMode === "commit" ? "Committed to vault" : "Withdrew from vault");
       setVaultActionOpen(false);
       await loadVaults().catch(() => {});
