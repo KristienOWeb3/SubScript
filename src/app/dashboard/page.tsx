@@ -15,6 +15,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
+import SharePlanModal from "@/components/SharePlanModal";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -38,7 +39,7 @@ import {
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -185,6 +186,7 @@ export default function DashboardPage() {
     const [webhooksPage, setWebhooksPage] = useState(0);
 
     const [premiumSubId, setPremiumSubId] = useState<number | null>(null);
+    const [sharingPlan, setSharingPlan] = useState<MerchantPlan | null>(null);
     const [isCancellingPremium, setIsCancellingPremium] = useState(false);
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
     const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
@@ -2807,7 +2809,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
                                 ))}
                             </div>
                         )}
@@ -2825,7 +2827,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
                                 ))}
                             </div>
                         )}
@@ -5045,6 +5047,12 @@ Please complete the following implementation tasks:
                 onSuccess={handleDepositSuccess}
                 executeContractWrite={executeContractWrite}
             />
+            <SharePlanModal
+                isOpen={sharingPlan !== null}
+                onClose={() => setSharingPlan(null)}
+                plan={sharingPlan}
+                subscribeUrl={sharingPlan ? buildSubscribeUrl(sharingPlan.id, typeof window !== "undefined" ? window.location.origin : undefined) : ""}
+            />
             {activeQrCodeLink && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md font-sans">
                     <motion.div
@@ -5163,10 +5171,12 @@ function MerchantPlanRow({
     plan,
     busy,
     onToggle,
+    onShare,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
+    onShare: (plan: MerchantPlan) => void;
 }) {
     const [copied, setCopied] = useState(false);
     const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
@@ -5232,6 +5242,15 @@ function MerchantPlanRow({
                     >
                         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                         {copied ? "Copied" : "Copy link"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onShare(plan)}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white"
+                        title="Create sharing poster card"
+                    >
+                        <Share2 className="h-3 w-3" />
+                        Share
                     </button>
                 </div>
             )}
