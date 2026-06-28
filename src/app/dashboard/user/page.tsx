@@ -5425,7 +5425,7 @@ function ConfigureVaultModal({
 
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant (Address or .sub DNS)</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant wallet address (0x…)</span>
                 {editingVault ? (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
                     {merchantAddress}

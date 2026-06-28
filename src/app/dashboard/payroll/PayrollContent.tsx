@@ -42,7 +42,7 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
-    { id: "settings", label: "Profile", icon: User },
+    { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
