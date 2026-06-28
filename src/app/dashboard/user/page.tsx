@@ -239,7 +239,7 @@ export default function UserDashboard() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
+      setIsMobile(window.innerWidth < 768);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -1600,11 +1600,11 @@ export default function UserDashboard() {
         <AnimatedGradientBg />
         
         {/* Desktop Sidebar Skeleton */}
-        <aside className="hidden lg:flex w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
+        <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
           <div className="space-y-8">
-            <div className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/5 rounded-2xl">
+            <div className="flex items-center justify-center lg:justify-start gap-3 p-2 lg:px-3 lg:py-2 bg-white/[0.02] border border-white/5 rounded-2xl">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-sm font-black text-white/20">S</span>
-              <div className="space-y-1.5 flex-1">
+              <div className="hidden lg:block space-y-1.5 flex-1">
                 <div className="h-3 w-16 subscript-skeleton rounded-full" />
                 <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
@@ -1612,17 +1612,17 @@ export default function UserDashboard() {
 
             <nav className="space-y-1.5">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="w-full flex items-center gap-3.5 px-5 py-4 bg-white/[0.01] border border-white/5 rounded-2xl">
-                  <div className="h-4 w-4 subscript-skeleton rounded-lg" />
-                  <div className="h-3 w-24 subscript-skeleton rounded-full" />
+                <div key={i} className="w-full flex items-center justify-center lg:justify-start gap-3.5 px-3 py-4 lg:px-5 rounded-2xl border border-white/5 bg-white/[0.01]">
+                  <div className="h-4 w-4 subscript-skeleton rounded-lg shrink-0" />
+                  <div className="hidden lg:block h-3 w-24 subscript-skeleton rounded-full" />
                 </div>
               ))}
             </nav>
           </div>
-          <div className="space-y-4 pt-4 border-t border-white/5">
-            <div className="flex items-center gap-3 px-2">
+          <div className="space-y-4 pt-4 border-t border-white/5 flex flex-col items-center lg:items-stretch">
+            <div className="flex items-center justify-center lg:justify-start gap-3 lg:px-2">
               <div className="h-10 w-10 subscript-skeleton rounded-full shrink-0" />
-              <div className="space-y-1.5 flex-1">
+              <div className="hidden lg:block space-y-1.5 flex-1">
                 <div className="h-2.5 w-20 subscript-skeleton rounded-full" />
                 <div className="h-2 w-12 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
@@ -1801,10 +1801,10 @@ export default function UserDashboard() {
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] lg:h-[100dvh] lg:overflow-hidden">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden">
       <AnimatedGradientBg />
 
-      <div className="relative z-10 lg:flex lg:h-[calc(100dvh-4px)] lg:min-h-0">
+      <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {!isMobile && (
           <UserDesktopSidebar
             activeTab={activeTab}
@@ -1821,7 +1821,7 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className={`min-w-0 flex-1 lg:h-full ${activeTab === "inbox" ? "lg:overflow-hidden" : "lg:overflow-y-auto"}`}>
+        <div className={`min-w-0 flex-1 md:h-full ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -2008,7 +2008,7 @@ export default function UserDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -16 }}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
-                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 lg:h-[calc(100dvh-104px)] lg:max-w-none lg:flex-row"
+                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row"
               >
                 {isMobile ? (
                   /* Mobile View Thread Selection Toggle */
@@ -2092,7 +2092,7 @@ export default function UserDashboard() {
                   /* Desktop Split Multi-Column DM Layout */
                   <div className="flex flex-1 flex-row gap-5 h-full overflow-hidden items-stretch">
                     {/* List of opened DMs (middle column in blueprint) */}
-                    <div className="w-[340px] border-r border-white/5 pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
+                    <div className="w-[280px] lg:w-[340px] border-r border-white/5 pr-4 lg:pr-5 flex flex-col overflow-y-auto will-change-transform translate-z-0 space-y-4 shrink-0">
                       <DmThreadSelect
                         threads={dmThreads}
                         onSelect={(peerAddress) => setSelectedDmPeer(peerAddress)}
@@ -2102,51 +2102,66 @@ export default function UserDashboard() {
 
                     {/* Active thread message bubble display (right column in blueprint) */}
                     <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
-                      {selectedDmPeer ? (
-                        <div className="flex flex-col h-full justify-between gap-5 overflow-hidden">
-                          {/* Desktop Chat Pane Header */}
-                          <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
-                            <div className="flex items-center gap-3">
-                              <Avatar profilePic={activeThread?.peerProfilePic || null} />
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <h4 className="text-sm font-black uppercase tracking-wider text-white">
-                                    {activeThreadLabel}
-                                  </h4>
-                                  {isActiveDmMerchant && (
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                                  )}
+                      <AnimatePresence mode="wait">
+                        {selectedDmPeer ? (
+                          <motion.div
+                            key={selectedDmPeer}
+                            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: -12 }}
+                            transition={{ type: "spring", stiffness: 380, damping: 20 }}
+                            className="flex flex-col h-full justify-between gap-5 overflow-hidden"
+                          >
+                            {/* Desktop Chat Pane Header */}
+                            <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
+                              <div className="flex items-center gap-3">
+                                <Avatar profilePic={activeThread?.peerProfilePic || null} />
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <h4 className="text-sm font-black uppercase tracking-wider text-white">
+                                      {activeThreadLabel}
+                                    </h4>
+                                    {isActiveDmMerchant && (
+                                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
                                 </div>
-                                <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                {/* Back to thread select on tablet only */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedDmPeer(null)}
+                                  className="md:hidden p-2 text-white/60 hover:text-white bg-white/[0.02] border border-white/5 rounded-full transition-all shrink-0 animate-fade-in"
+                                >
+                                  <ArrowLeft className="h-4 w-4" />
+                                </button>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                                    setSendFundsOpen(true);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+                                >
+                                  Send Funds
+                                </button>
                               </div>
                             </div>
-                            {/* No direct "Send Funds" to a merchant: users pay merchants via their
-                                payment link/request, not by learning the merchant's address off-chain. */}
-                            {!isActiveDmMerchant && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                                  setSendFundsOpen(true);
-                                }}
-                                className="px-4 py-2.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
-                              >
-                                Send Funds
-                              </button>
-                            )}
-                          </div>
 
-                          {/* Desktop Messages Scroll View */}
-                          <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 pr-2">
-                            <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
-                              {isActiveDmMerchant
-                                ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
-                                : "Direct peer-to-peer system messages only"}
-                            </div>
-                            <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
-                              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </div>
-                            <div className="space-y-4">
+                            {/* Message bubbles pane */}
+                            <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 pr-1 space-y-4 min-h-0">
+                              <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
+                                {isActiveDmMerchant
+                                  ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
+                                  : "Direct peer-to-peer system messages only"}
+                              </div>
+                              <div className="mx-auto w-fit rounded-full bg-white/10 px-6 py-1 text-[10px] font-bold text-white/55">
+                                {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </div>
                               {selectedThreadDms.map((dm) => (
                                 <DmBubble
                                   key={dm.id}
@@ -2165,51 +2180,57 @@ export default function UserDashboard() {
                               ))}
                               <div ref={dmBottomRef} />
                             </div>
-                          </div>
 
-                          {/* Bottom Action Footer for Desktop */}
-                          <div className="pt-4 border-t border-white/5 shrink-0">
-                            {isActiveDmMerchant ? (
-                              <MerchantPlanManager
-                                open={planManagerOpen}
-                                merchantLabel={activeThreadLabel}
-                                plans={threadPlans}
-                                activeSubscription={activeThreadSubscription}
-                                loading={isThreadPlansLoading}
-                                loadingAction={loadingAction}
-                                status={planManagerStatus}
-                                error={planManagerError}
-                                onToggle={handleTogglePlanManager}
-                                onSubscribe={handleSubscribeOrSwitchPlan}
-                                onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
-                              />
-                            ) : (
-                              <DmRequestComposer
-                                open={dmRequestOpen}
-                                amount={dmRequestAmount}
-                                note={dmRequestNote}
-                                duration={dmRequestDuration}
-                                status={dmRequestStatus}
-                                loading={loadingAction === "create-dm-request"}
-                                onToggle={() => {
-                                  setDmRequestOpen((open) => !open);
-                                  setDmRequestStatus(null);
-                                }}
-                                onSubmit={handleCreateDmRequest}
-                                onAmountChange={setDmRequestAmount}
-                                onNoteChange={setDmRequestNote}
-                                onDurationChange={setDmRequestDuration}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3">
-                          <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
-                          <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
-                          <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
-                        </div>
-                      )}
+                            {/* Bottom Action Footer for Desktop */}
+                            <div className="pt-4 border-t border-white/5 shrink-0">
+                              {isActiveDmMerchant ? (
+                                <MerchantPlanManager
+                                  open={planManagerOpen}
+                                  merchantLabel={activeThreadLabel}
+                                  plans={threadPlans}
+                                  activeSubscription={activeThreadSubscription}
+                                  loading={isThreadPlansLoading}
+                                  loadingAction={loadingAction}
+                                  status={planManagerStatus}
+                                  error={planManagerError}
+                                  onToggle={handleTogglePlanManager}
+                                  onSubscribe={handleSubscribeOrSwitchPlan}
+                                  onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                                />
+                              ) : (
+                                <DmRequestComposer
+                                  open={dmRequestOpen}
+                                  amount={dmRequestAmount}
+                                  note={dmRequestNote}
+                                  duration={dmRequestDuration}
+                                  status={dmRequestStatus}
+                                  loading={loadingAction === "create-dm-request"}
+                                  onToggle={() => {
+                                    setDmRequestOpen((open) => !open);
+                                    setDmRequestStatus(null);
+                                  }}
+                                  onSubmit={handleCreateDmRequest}
+                                  onAmountChange={setDmRequestAmount}
+                                  onNoteChange={setDmRequestNote}
+                                  onDurationChange={setDmRequestDuration}
+                                />
+                              )}
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="no-chat"
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.98 }}
+                            className="flex flex-col items-center justify-center h-full text-center py-20 text-white/40 space-y-3"
+                          >
+                            <MessageSquare className="w-12 h-12 text-white/15 animate-pulse" />
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white/60">Select a Chat to continue</h3>
+                            <p className="text-xs max-w-xs leading-relaxed text-white/45">Choose a merchant or user thread from the list on the left to view receipts, approve payment requests, or view transaction status.</p>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
                 )}
@@ -3342,15 +3363,15 @@ function UserDesktopSidebar({
   onLogout: () => void;
 }) {
   return (
-    <aside className="hidden lg:flex h-full w-72 shrink-0 flex-col justify-between border-r border-white/5 bg-black/45 p-5 backdrop-blur-2xl">
+    <aside className="hidden md:flex h-full w-20 lg:w-72 shrink-0 flex-col justify-between border-r border-white/5 bg-black/45 p-4 lg:p-5 backdrop-blur-2xl">
       <div className="space-y-8">
-        <div className="flex items-center gap-3 rounded-3xl border border-white/5 bg-white/[0.03] px-4 py-3">
+        <div className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-3xl border border-white/5 bg-white/[0.03] p-2.5 lg:px-4 lg:py-3">
           <img
             src="/logo.png"
             alt="SubScript Logo"
             className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(204,255,0,0.35)]"
           />
-          <div className="min-w-0">
+          <div className="hidden lg:block min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
             <p className="truncate text-xs font-bold text-white/55">User account</p>
           </div>
@@ -3365,20 +3386,21 @@ function UserDesktopSidebar({
                 key={tab.id}
                 type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`group flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left text-xs font-black uppercase tracking-[0.13em] transition-all ${
+                className={`group flex w-full items-center justify-center lg:justify-between rounded-full lg:rounded-2xl border p-3.5 lg:px-4 lg:py-3.5 text-left text-xs font-black uppercase tracking-[0.13em] transition-all relative ${
                   isActive
                     ? "border-[#ccff00]/30 bg-[#ccff00]/10 text-white shadow-[0_0_28px_rgba(204,255,0,0.08)]"
                     : "border-white/5 bg-white/[0.015] text-white/45 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
                 }`}
+                title={tab.label}
               >
-                <span className="flex min-w-0 items-center gap-3">
+                <span className="flex min-w-0 items-center justify-center lg:justify-start gap-3">
                   <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/35 group-hover:text-white/70"}`} />
-                  <span className="truncate">{tab.label}</span>
+                  <span className="hidden lg:inline truncate">{tab.label}</span>
                 </span>
                 {tab.id === "inbox" && pendingDmCount > 0 && (
-                  <span className={`ml-3 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-black ${
+                  <span className={`lg:ml-3 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-black ${
                     isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
-                  }`}>
+                  } ${isActive ? "" : "absolute -top-1 -right-1 lg:static"}`}>
                     {pendingDmCount > 9 ? "9+" : pendingDmCount}
                   </span>
                 )}
@@ -3388,32 +3410,35 @@ function UserDesktopSidebar({
         </nav>
       </div>
 
-      <div className="space-y-4">
-        <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4">
+      <div className="space-y-4 flex flex-col items-center lg:items-stretch">
+        <div className="hidden lg:block rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4">
           <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/35">Arc USDC Balance</p>
           <p className="mt-2 text-2xl font-black tracking-tight text-white">${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
-          <button
-            type="button"
-            onClick={() => onTabChange("dns")}
-            className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-white/5 bg-black/25 px-3 py-3 text-left transition hover:border-[#ccff00]/20 hover:bg-[#ccff00]/5"
-          >
-            <Avatar profilePic={profilePic} size="xs" />
-            <div className="min-w-0">
-              <p className="truncate text-[11px] font-black uppercase tracking-[0.1em] text-white">
-                {registeredDomain || "Profile & DNS"}
-              </p>
-              <p className="mt-0.5 truncate text-[10px] font-mono text-white/35">{formatAddress(userWallet)}</p>
-            </div>
-          </button>
         </div>
 
         <button
           type="button"
-          onClick={onLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-red-500/25 hover:bg-red-500/10 hover:text-red-300"
+          onClick={() => onTabChange("dns")}
+          className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-2xl border border-white/5 bg-black/25 p-3 lg:px-3 lg:py-3 text-left transition hover:border-[#ccff00]/20 hover:bg-[#ccff00]/5"
+          title={registeredDomain || "Profile & DNS"}
         >
-          <LogOut className="h-4 w-4" />
-          Log out
+          <Avatar profilePic={profilePic} size="xs" />
+          <div className="hidden lg:block min-w-0">
+            <p className="truncate text-[11px] font-black uppercase tracking-[0.1em] text-white">
+              {registeredDomain || "Profile & DNS"}
+            </p>
+            <p className="mt-0.5 truncate text-[10px] font-mono text-white/35">{formatAddress(userWallet)}</p>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex w-full items-center justify-center gap-2 rounded-full lg:rounded-2xl border border-white/5 bg-white/[0.02] p-3.5 lg:px-4 lg:py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-red-500/25 hover:bg-red-500/10 hover:text-red-300"
+          title="Logout"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span className="hidden lg:inline">Logout</span>
         </button>
       </div>
     </aside>
@@ -3631,11 +3656,14 @@ function DmThreadSelect({
             const peerLabel = formatPeerDisplayName(thread.peerName, thread.peerAddress);
             const latestPreview = shortenWalletsInText(thread.latest.title || thread.latest.description || "SubScript payment message");
             return (
-              <button
+              <motion.button
                 key={thread.peerAddress}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ type: "spring", stiffness: 450, damping: 16 }}
                 type="button"
                 onClick={() => onSelect(thread.peerAddress)}
-                className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition active:scale-[0.99] ${
+                className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition-colors duration-300 ${
                   isSelected
                     ? "border-[#ccff00] bg-[#ccff00]/[0.06] shadow-[0_0_15px_rgba(204,255,0,0.1)]"
                     : "border-white/5 bg-black/25 hover:border-[#ccff00]/30 hover:bg-[#ccff00]/[0.04]"
@@ -3659,7 +3687,7 @@ function DmThreadSelect({
                     {thread.pendingCount}
                   </span>
                 )}
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -3763,8 +3791,8 @@ function DmBubble({
   /* iMessage-style entrance: bubbles pop in from their own corner with a soft
      spring overshoot. Outgoing messages get a touch more bounce, like a sent text. */
   const bubbleSpring = incoming
-    ? { type: "spring" as const, stiffness: 480, damping: 26, mass: 0.8 }
-    : { type: "spring" as const, stiffness: 520, damping: 17, mass: 0.85 };
+    ? { type: "spring" as const, stiffness: 380, damping: 14, mass: 0.8 }
+    : { type: "spring" as const, stiffness: 420, damping: 12, mass: 0.85 };
   const bubbleOrigin = incoming ? "bottom left" : "bottom right";
 
   if (isReactionMessage(dm.messageType)) {
@@ -4030,6 +4058,7 @@ function MerchantPlanManager({
           <motion.button
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 500, damping: 15 }}
             type="button"
             onClick={onCancel}
             disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
@@ -4043,6 +4072,7 @@ function MerchantPlanManager({
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 500, damping: 15 }}
           type="button"
           onClick={onToggle}
           className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
@@ -4099,6 +4129,7 @@ function MerchantPlanManager({
                       <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.97 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 15 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
                         disabled={isCurrent || loadingAction === loadingKey}
@@ -4207,6 +4238,7 @@ function DmRequestComposer({
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
                 type="button"
                 onClick={onToggle}
                 disabled={loading}
@@ -4217,6 +4249,7 @@ function DmRequestComposer({
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
                 type="submit"
                 disabled={loading}
                 className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
@@ -4238,10 +4271,11 @@ function DmRequestComposer({
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 500, damping: 15 }}
         type="button"
         onClick={onToggle}
         disabled={loading}
-        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${loading ? "quick-action-loading" : ""} ${
+        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${
           open
             ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
             : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"
