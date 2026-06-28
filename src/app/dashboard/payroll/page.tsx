@@ -9,7 +9,7 @@ import {
     ArrowLeft, Plus, Pause, Play, Trash2, Users, Calendar,
     Shield, ShieldOff, Loader2, CheckCircle, AlertTriangle,
     DollarSign, Clock, Building2, Lock, Crown, Zap, Activity,
-    BarChart3, Link2, Key, Code2, Webhook, PlugZap
+    BarChart3, Link2, Sliders, User, Key, Code2, Webhook, PlugZap
 } from "lucide-react";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
@@ -37,14 +37,15 @@ const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Payment Links", icon: Link2 },
+    { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2, href: "/merchant/payroll" },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "settings", label: "Profile", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
