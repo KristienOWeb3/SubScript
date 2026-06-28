@@ -60,6 +60,22 @@ export async function POST(request: Request) {
                             forbidden: true,
                         };
                     }
+
+                    /* Merchant accounts must be email/embedded (server-recoverable) wallets, never an
+                       external/self-custody wallet — more professional, and required for server-signed
+                       merchant operations (payouts, tier changes, vault draws). */
+                    const merchantKeyRow = await client.query(
+                        "select encrypted_private_key from user_embedded_wallets where wallet_address = $1 limit 1",
+                        [normalizedWallet]
+                    );
+                    if (!merchantKeyRow.rows[0]?.encrypted_private_key) {
+                        await client.query("rollback");
+                        return {
+                            role: "ENTERPRISE",
+                            alreadyRegistered: false,
+                            externalWalletMerchant: true,
+                        };
+                    }
                 }
 
                 if (emailVal) {
@@ -124,6 +140,12 @@ export async function POST(request: Request) {
         if (accountRole.forbidden) {
             return NextResponse.json({
                 error: "Merchant onboarding is invite-only. Sign up as a user or use a valid merchant invite link.",
+            }, { status: 403 });
+        }
+
+        if (accountRole.externalWalletMerchant) {
+            return NextResponse.json({
+                error: "Merchant accounts must be created with email or Google sign-in — an external wallet can't open a merchant account.",
             }, { status: 403 });
         }
 

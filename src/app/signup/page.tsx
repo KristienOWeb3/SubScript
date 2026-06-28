@@ -584,13 +584,19 @@ export default function SignupPage() {
                 Continue with Email Wallet
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
-                Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody.
+                {merchantSignupIntent
+                  ? "Merchant accounts use email or Google sign-in for security, recovery, and professional invoicing."
+                  : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
               </p>
 
               <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
                 <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
               </div>
 
+              {/* External/self-custody wallets are for USERS only — merchant accounts must be
+                  email/embedded (server-recoverable) for a more professional, recoverable account. */}
+              {!merchantSignupIntent && (
+                <>
               <div className="relative py-2 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-white/5"></div>
@@ -615,6 +621,8 @@ export default function SignupPage() {
                 )}
                 Connect Web3 Wallet
               </button>
+                </>
+              )}
 
               {siweError && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
