@@ -4927,9 +4927,13 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
           return;
         }
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
+        try {
+          // Phones: prefer the rear camera.
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        } catch {
+          // Desktops / devices without a rear camera have no "environment" facing mode — use any camera.
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
         if (stopped) {
           stream.getTracks().forEach((t) => t.stop());
           return;
