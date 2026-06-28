@@ -1292,9 +1292,15 @@ export default function UserDashboard() {
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
       return trimmed;
     }
-    if (trimmed.toLowerCase().endsWith(".sub") || trimmed.toLowerCase().endsWith(".hq") || trimmed.toLowerCase().endsWith(".biz")) {
+    const lower = trimmed.toLowerCase();
+    // Merchant (.hq/.biz) names are intentionally NOT resolvable for users — a user can only pay a
+    // merchant via their payment link/request, or an on-chain address they looked up themselves.
+    if (lower.endsWith(".hq") || lower.endsWith(".biz")) {
+      return null;
+    }
+    if (lower.endsWith(".sub")) {
       try {
-        const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed.toLowerCase())}`);
+        const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(lower)}`);
         const data = await res.json();
         if (data.success && data.address) {
           return data.address;
@@ -1332,7 +1338,14 @@ export default function UserDashboard() {
         return;
       }
 
-      if (trimmed.endsWith(".sub") || trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
+      // Merchant (.hq/.biz) names aren't resolvable for users — only .sub (user) names are.
+      if (trimmed.endsWith(".hq") || trimmed.endsWith(".biz")) {
+        setSingleResolved({ address: null, alias: trimmed, profilePic: null });
+        setSingleResolving(false);
+        return;
+      }
+
+      if (trimmed.endsWith(".sub")) {
         try {
           const res = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(trimmed)}`);
           const data = await res.json();
@@ -2039,16 +2052,20 @@ export default function UserDashboard() {
                                 <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
-                                setSendFundsOpen(true);
-                              }}
-                              className="px-4 py-2.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
-                            >
-                              Send Funds
-                            </button>
+                            {/* No direct "Send Funds" to a merchant: users pay merchants via their
+                                payment link/request, not by learning the merchant's address off-chain. */}
+                            {!isActiveDmMerchant && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
+                                  setSendFundsOpen(true);
+                                }}
+                                className="px-4 py-2.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[10px] rounded-xl hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
+                              >
+                                Send Funds
+                              </button>
+                            )}
                           </div>
 
                           {/* Desktop Messages Scroll View */}
@@ -2264,7 +2281,7 @@ export default function UserDashboard() {
                 </div>
                 {sendMode === "single" ? (
                   <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <Field label="Recipient Wallet Address or DNS Name (.sub, .hq, .biz)">
+                    <Field label="Recipient Wallet Address or .sub Name">
                       <div className="relative">
                         <input
                           value={singleRecipient}
@@ -3072,7 +3089,7 @@ export default function UserDashboard() {
                 <input
                   value={vaultActionMerchant}
                   onChange={(event) => setVaultActionMerchant(event.target.value)}
-                  placeholder="0x... or acme.biz"
+                  placeholder="0x... or alice.sub"
                   className="subscript-input"
                   disabled={vaultActionMerchantLocked}
                   required
@@ -3437,14 +3454,16 @@ function ChatHeader({
             {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
           </div>
 
-          {/* Action button */}
-          <button
-            type="button"
-            onClick={onSendFunds}
-            className="ml-auto px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
-          >
-            Send Funds
-          </button>
+          {/* No direct "Send Funds" to a merchant — pay via their payment link/request instead. */}
+          {!isMerchant && (
+            <button
+              type="button"
+              onClick={onSendFunds}
+              className="ml-auto px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
+            >
+              Send Funds
+            </button>
+          )}
         </div>
       </header>
     </div>
