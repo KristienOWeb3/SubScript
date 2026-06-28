@@ -4998,6 +4998,7 @@ Please complete the following implementation tasks:
                                 level="H"
                                 bgColor="#ffffff"
                                 fgColor="#000000"
+                                imageSettings={{ src: "/logo.png", height: 38, width: 38, excavate: true }}
                             />
                         </div>
 

@@ -968,6 +968,7 @@ export default function PublicPayClient({
                                                 level="H"
                                                 bgColor="#ffffff"
                                                 fgColor="#000000"
+                                                imageSettings={{ src: "/logo.png", height: 30, width: 30, excavate: true }}
                                             />
                                         </div>
                                     </motion.div>
