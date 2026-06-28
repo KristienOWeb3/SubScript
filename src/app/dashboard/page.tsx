@@ -39,7 +39,8 @@ import {
     RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
-    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2
+    Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
+    ShieldCheck, Save
 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -116,6 +117,45 @@ const formatPlanPeriod = (seconds: string) => {
     if (days >= 28 && days <= 31) return "month";
     if (days >= 364 && days <= 366) return "year";
     return `${days} days`;
+};
+
+const formatUsdcMicros = (value: any) => {
+    try {
+        const micros = BigInt(String(value ?? "0"));
+        const unit = BigInt(1_000_000);
+        const sign = micros < BigInt(0) ? "-" : "";
+        const absolute = micros < BigInt(0) ? -micros : micros;
+        const whole = absolute / unit;
+        const fraction = (absolute % unit).toString().padStart(6, "0").slice(0, 2);
+        return `${sign}${whole.toString()}.${fraction}`;
+    } catch {
+        return "0.00";
+    }
+};
+
+const formatUsdcInput = (value: any) => {
+    try {
+        const micros = BigInt(String(value ?? "0"));
+        const unit = BigInt(1_000_000);
+        const sign = micros < BigInt(0) ? "-" : "";
+        const absolute = micros < BigInt(0) ? -micros : micros;
+        const whole = absolute / unit;
+        const fraction = (absolute % unit).toString().padStart(6, "0").replace(/0+$/, "");
+        return `${sign}${whole.toString()}${fraction ? `.${fraction}` : ""}`;
+    } catch {
+        return "0";
+    }
+};
+
+const microsToNumber = (value: any) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const shortenHash = (value: string | undefined) => {
+    if (!value) return "";
+    if (value.length <= 14) return value;
+    return `${value.slice(0, 8)}...${value.slice(-6)}`;
 };
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
@@ -556,6 +596,155 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+    const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    const [vaults, setVaults] = useState<any[]>([]);
+    const [isVaultsLoading, setIsVaultsLoading] = useState(false);
+    const [requiredCommit, setRequiredCommit] = useState("0");
+    const [commitInput, setCommitInput] = useState("0");
+    const [claimableAmount, setClaimableAmount] = useState("0");
+    const [isVaultOpsLoading, setIsVaultOpsLoading] = useState(false);
+    const [isSavingCommit, setIsSavingCommit] = useState(false);
+    const [isClaimingVault, setIsClaimingVault] = useState(false);
+    const [vaultOpsStatus, setVaultOpsStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
+    const [usageSecretKey, setUsageSecretKey] = useState("");
+    const [selectedApiKey, setSelectedApiKey] = useState("");
+
+    const fetchVaults = useCallback(async () => {
+        setIsVaultsLoading(true);
+        try {
+            const res = await fetch("/api/user/vault/config");
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    setVaults(data.vaults || []);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load customer vaults:", err);
+        } finally {
+            setIsVaultsLoading(false);
+        }
+    }, []);
+
+    const fetchVaultOps = useCallback(async () => {
+        setIsVaultOpsLoading(true);
+        try {
+            const [commitRes, claimRes] = await Promise.all([
+                fetch("/api/merchant/vault/commit-config"),
+                fetch("/api/merchant/vault/claim")
+            ]);
+
+            const commitData = await commitRes.json().catch(() => null);
+            const claimData = await claimRes.json().catch(() => null);
+
+            if (commitRes.ok && commitData?.success) {
+                const nextCommit = commitData.commitUsdc || "0";
+                setRequiredCommit(nextCommit);
+                setCommitInput(formatUsdcInput(nextCommit));
+            }
+            if (claimRes.ok && claimData?.success) {
+                setClaimableAmount(claimData.claimableUsdc || "0");
+            }
+            if (!commitRes.ok || !claimRes.ok) {
+                setVaultOpsStatus({
+                    text: commitData?.error || claimData?.error || "Vault controls could not be loaded.",
+                    type: "error"
+                });
+            }
+        } catch (err) {
+            console.error("Failed to load merchant vault controls:", err);
+        } finally {
+            setIsVaultOpsLoading(false);
+        }
+    }, []);
+
+    const fetchVaultApiKeys = useCallback(async () => {
+        try {
+            const res = await fetch("/api/merchant/api-keys");
+            if (res.ok) {
+                const data = await res.json();
+                const keys = data.keys || [];
+                const usableKey = keys.find((key: any) => key.secretKeyAvailable && key.secretKeyPlain);
+                if (usableKey) {
+                    setSelectedApiKey(usableKey.secretKeyPlain);
+                } else {
+                    setSelectedApiKey("");
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load API keys:", err);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === "payment-links" && subTab === "commit" && isPremium && address) {
+            fetchVaults();
+            fetchVaultOps();
+            fetchVaultApiKeys();
+        }
+    }, [activeTab, subTab, isPremium, address, fetchVaults, fetchVaultOps, fetchVaultApiKeys]);
+
+    const handleSaveCommitConfig = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (commitInput === "" || isNaN(Number(commitInput)) || Number(commitInput) < 0) {
+            setVaultOpsStatus({ text: "Required commit must be zero or greater.", type: "error" });
+            return;
+        }
+
+        setIsSavingCommit(true);
+        setVaultOpsStatus(null);
+        try {
+            const res = await fetch("/api/merchant/vault/commit-config", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amountUsdc: commitInput })
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                const nextCommit = data.commitUsdc || "0";
+                setRequiredCommit(nextCommit);
+                setCommitInput(formatUsdcInput(nextCommit));
+                setVaultOpsStatus({
+                    text: `Required commit saved. Tx ${shortenHash(data.txHash)}.`,
+                    type: "success"
+                });
+                fetchVaults();
+            } else {
+                setVaultOpsStatus({ text: data?.error || "Failed to save required commit.", type: "error" });
+            }
+        } catch (err: any) {
+            setVaultOpsStatus({ text: err.message || "Failed to save required commit.", type: "error" });
+        } finally {
+            setIsSavingCommit(false);
+        }
+    };
+
+    const handleClaimVaultFunds = async () => {
+        setIsClaimingVault(true);
+        setVaultOpsStatus(null);
+        try {
+            const res = await fetch("/api/merchant/vault/claim", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                setVaultOpsStatus({
+                    text: `Funds claimed successfully. Tx ${shortenHash(data.txHash)}.`,
+                    type: "success"
+                });
+                setClaimableAmount("0");
+                fetchVaultOps();
+                handleManualRefreshBalances();
+            } else {
+                setVaultOpsStatus({ text: data?.error || "Failed to claim settled funds.", type: "error" });
+            }
+        } catch (err: any) {
+            setVaultOpsStatus({ text: err.message || "Failed to claim settled funds.", type: "error" });
+        } finally {
+            setIsClaimingVault(false);
+        }
+    };
 
     const [userSettings, setUserSettings] = useState<any>(null);
     const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
@@ -3255,17 +3444,227 @@ Please complete the following implementation tasks:
             return renderPremiumLock(labelMap[activeTab as "apikeys" | "checkout" | "webhooks"]);
         }
 
+        const renderSubTabs = () => {
+            const tabsConfig = [
+                { id: "subscriptions", label: "Subscriptions", icon: Sliders },
+                { id: "one-time", label: "One-Time Payments", icon: Link2 },
+                { id: "commit", label: "Vault Commits", icon: ShieldCheck }
+            ];
+
+            return (
+                <div className="relative flex items-center gap-1 border-b border-white/5 pb-0 mb-8 w-full overflow-x-auto scrollbar-hide">
+                    {tabsConfig.map((tab) => {
+                        const isActive = subTab === tab.id;
+                        const Icon = tab.icon;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setSubTab(tab.id as any)}
+                                className="group relative flex items-center pb-3 pt-2 px-4 cursor-pointer select-none transition-all duration-300 ease-out focus:outline-none"
+                            >
+                                <div className="flex items-center">
+                                    <Icon 
+                                        className={`w-4 h-4 transition-colors duration-300 ${
+                                            isActive ? "text-[#00d2b4]" : "text-white/40 group-hover:text-white/80"
+                                        }`} 
+                                    />
+                                    <div 
+                                        className={`transition-all duration-300 ease-out overflow-hidden flex items-center ${
+                                            isActive 
+                                                ? "max-w-[150px] opacity-100 ml-2" 
+                                                : "max-w-0 opacity-0 ml-0"
+                                        }`}
+                                    >
+                                        <span className={`text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap ${
+                                            isActive ? "text-white" : "text-white/40"
+                                        }`}>
+                                            {tab.label}
+                                        </span>
+                                    </div>
+                                </div>
+                                {/* Underline Indicator */}
+                                <div 
+                                    className={`absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4] transition-all duration-300 origin-center ${
+                                        isActive ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
+                                    }`} 
+                                />
+                            </button>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        const renderCommitTab = () => {
+            if (!isPremium) {
+                return renderPremiumLock("Vault Commits Setup");
+            }
+
+            return (
+                <div className="space-y-8 font-sans">
+                    {/* Vault Config Form and Claim Settlement */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4 text-[#00d2b4]" />
+                                    Vault Commits Control
+                                </h2>
+                                <p className="text-[11px] text-white/40">
+                                    Configure user escrow commitments, claim settled funds, and view customer balances.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    fetchVaultOps();
+                                    fetchVaults();
+                                }}
+                                disabled={isVaultOpsLoading || isVaultsLoading}
+                                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/55 transition hover:border-[#00d2b4]/30 hover:text-white disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${(isVaultOpsLoading || isVaultsLoading) ? "animate-spin" : ""}`} />
+                                Refresh
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Required Commit form */}
+                            <form onSubmit={handleSaveCommitConfig} className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Required Commit</p>
+                                    <p className="text-[9px] text-white/35 mt-1">
+                                        Minimum escrow each customer must restore before usage can continue.
+                                    </p>
+                                </div>
+                                <div className="flex flex-col gap-3">
+                                    <label className="space-y-1.5">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">USDC</span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.000001"
+                                            value={commitInput}
+                                            onChange={(e) => setCommitInput(e.target.value)}
+                                            disabled={isSavingCommit}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
+                                            placeholder="0"
+                                        />
+                                    </label>
+                                    <button
+                                        type="submit"
+                                        disabled={isSavingCommit}
+                                        className="w-full py-2 bg-[#00d2b4] text-[#111111] hover:brightness-110 disabled:opacity-50 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                    >
+                                        {isSavingCommit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        Save Commit
+                                    </button>
+                                </div>
+                                <p className="text-[9px] text-white/35 uppercase tracking-wider">
+                                    Current on-chain setting: <span className="font-mono text-[#ccff00]">${formatUsdcMicros(requiredCommit)} USDC</span>
+                                </p>
+                            </form>
+
+                            {/* Claim Settled Funds card */}
+                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 flex flex-col justify-between gap-4">
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Claimable Settled Funds</p>
+                                    <p className="text-3xl font-black text-white mt-2">${formatUsdcMicros(claimableAmount)}</p>
+                                    <p className="text-[9px] text-white/35 mt-1">
+                                        Funds become claimable after the keeper draws accrued cycle usage from escrow.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleClaimVaultFunds}
+                                    disabled={isClaimingVault || isVaultOpsLoading || microsToNumber(claimableAmount) <= 0}
+                                    className="w-full py-2 bg-white/[0.08] border border-white/10 hover:bg-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                                >
+                                    {isClaimingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5 text-[#00d2b4]" />}
+                                    Claim Funds
+                                </button>
+                            </div>
+
+                            {/* Usage Test Key */}
+                            <div className="rounded-2xl border border-white/5 bg-black/20 p-5 space-y-4">
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Usage Test Key</p>
+                                    <p className="text-[9px] text-white/35 mt-1">
+                                        Paste a one-time revealed secret key to test usage reports from this dashboard.
+                                    </p>
+                                </div>
+                                <label className="block space-y-1.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Secret key</span>
+                                    <input
+                                        type="password"
+                                        value={usageSecretKey}
+                                        onChange={(e) => setUsageSecretKey(e.target.value)}
+                                        autoComplete="off"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono"
+                                        placeholder="sk_test_..."
+                                    />
+                                </label>
+                                <p className="text-[9px] text-white/30">
+                                    Keys are only returned as hints after creation; this field stays in local state.
+                                </p>
+                            </div>
+                        </div>
+
+                        {vaultOpsStatus && (
+                            <p className={`text-[10px] font-bold tracking-wide ${
+                                vaultOpsStatus.type === "success" ? "text-emerald-400" : "text-red-400"
+                            }`}>
+                                {vaultOpsStatus.text}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Customer Vaults list */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div>
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-white">Active Customer Escrows</h3>
+                            <p className="text-[10px] text-white/40">A live register of active customer commitments and owed usages.</p>
+                        </div>
+
+                        {isVaultsLoading ? (
+                            <div className="flex h-24 items-center justify-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
+                            </div>
+                        ) : vaults.length === 0 ? (
+                            <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
+                                <p className="text-xs text-white/45">No customers have committed escrow to your metered service yet.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 gap-3">
+                                    {vaults.map((vault) => (
+                                        <LocalCustomerVaultRow
+                                            key={vault.id}
+                                            vault={vault}
+                                            apiKey={usageSecretKey.trim() || selectedApiKey}
+                                            onRefresh={fetchVaults}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
         switch (activeTab) {
             case "settings":
                 return renderSettingsTab();
-
-            case "payment-links":
-                /* "Subscriptions" tab: subscription plans first (the headline for
-                   merchants without a site), then one-time payment links below. */
+ 
+             case "payment-links":
                 return (
-                    <div className="space-y-10">
-                        {renderPlansTab()}
-                        {renderPaymentLinksTab()}
+                    <div className="space-y-6">
+                        {renderSubTabs()}
+                        {subTab === "subscriptions" && renderPlansTab()}
+                        {subTab === "one-time" && renderPaymentLinksTab()}
+                        {subTab === "commit" && renderCommitTab()}
                     </div>
                 );
 
@@ -5253,6 +5652,140 @@ function MerchantPlanRow({
                         Share
                     </button>
                 </div>
+            )}
+        </div>
+    );
+}
+
+function LocalCustomerVaultRow({
+    vault,
+    apiKey,
+    onRefresh,
+}: {
+    vault: any;
+    apiKey: string;
+    onRefresh: () => void;
+}) {
+    const [chargeAmount, setChargeAmount] = useState("1.50");
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+    const handleReportUsage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!apiKey) {
+            setStatus({ text: "A newly revealed secret key is required to test usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
+            return;
+        }
+        if (!chargeAmount || isNaN(Number(chargeAmount)) || Number(chargeAmount) <= 0) {
+            setStatus({ text: "Invalid usage amount.", type: "error" });
+            return;
+        }
+
+        setLoading(true);
+        setStatus(null);
+
+        try {
+            const res = await fetch("/api/user/vault/report-usage", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    userAddress: vault.userAddress,
+                    amountUsdc: chargeAmount
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setStatus({
+                    text: `Usage accrued. Cycle total: $${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
+                    type: "success"
+                });
+                onRefresh();
+            } else {
+                setStatus({ text: data.error || "Usage report failed.", type: "error" });
+            }
+        } catch (err: any) {
+            setStatus({ text: err.message || "Failed to report usage.", type: "error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const cycleStart = vault.cycleStart ? new Date(vault.cycleStart).toLocaleDateString() : "Not started";
+    const owedMicros = microsToNumber(vault.owedUsdc);
+    const isActive = Boolean(vault.active);
+
+    return (
+        <div className="flex flex-col gap-4 rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <p className="font-mono text-xs font-bold text-white break-all">{vault.userAddress}</p>
+                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
+                            isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        }`}>
+                            {isActive ? "Active" : "Inactive"}
+                        </span>
+                    </div>
+                    <p className="text-[10px] text-white/30 mt-1">
+                        Vault cycle start: <span className="text-white/50">{cycleStart}</span>
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                    <div>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Escrow Balance</span>
+                        <p className="text-sm font-black text-[#ccff00] mt-1">${formatUsdcMicros(vault.balanceUsdc)}</p>
+                    </div>
+                    <div>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Escrow Commit</span>
+                        <p className="text-sm font-black text-white mt-1">${formatUsdcMicros(vault.commitUsdc)}</p>
+                    </div>
+                    <div>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Accrued Usage</span>
+                        <p className="text-sm font-black text-[#00d2b4] mt-1">${formatUsdcMicros(vault.accruedUsageUsdc)}</p>
+                    </div>
+                    <div>
+                        <span className="text-[8px] text-white/30 uppercase tracking-wider block font-bold">Owed Debt</span>
+                        <p className={`text-sm font-black mt-1 ${owedMicros > 0 ? "text-red-300" : "text-white"}`}>${formatUsdcMicros(vault.owedUsdc)}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Test report usage tool */}
+            <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-white/5 pt-3">
+                <label className="flex-1 space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">Test Report Usage (USDC)</span>
+                    <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        disabled={loading}
+                        value={chargeAmount}
+                        onChange={(e) => setChargeAmount(e.target.value)}
+                        className="w-full max-w-xs bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
+                        placeholder="1.50"
+                    />
+                </label>
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white rounded-xl flex items-center justify-center gap-1.5 transition-all"
+                >
+                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-[#ccff00]" />}
+                    Report Charge
+                </button>
+            </form>
+
+            {status && (
+                <p className={`text-[9px] font-bold tracking-wide ${
+                    status.type === "success" ? "text-emerald-400" : "text-red-400"
+                }`}>
+                    {status.text}
+                </p>
             )}
         </div>
     );
