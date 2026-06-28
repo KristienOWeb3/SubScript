@@ -3846,9 +3846,9 @@ Please complete the following implementation tasks:
                                         {/* Operational switch for Shielded Batch Payouts */}
                                         <div className="flex items-center justify-between bg-black/40 border border-white/5 rounded-2xl p-5">
                                             <div>
-                                                <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Shielded Batch Payouts</h4>
+                                                <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Confidential Batch Payouts <span className="text-[#d4a853]/80">(Preview)</span></h4>
                                                 <p className="text-[10px] text-white/50 leading-normal max-w-md">
-                                                    Enable confidential transaction shielding on-chain. When active, batch payout counterparties and individual transfer amounts will be hidden from public event logs.
+                                                    Masks recipient addresses and transfer amounts in SubScript&apos;s batch event log. Note: the underlying USDC transfers are still recorded on Arc&apos;s public ledger today &mdash; full on-chain shielding activates once Arc&apos;s Privacy Sector (APS) is live.
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-3">
@@ -3874,7 +3874,7 @@ Please complete the following implementation tasks:
                                             <div>
                                                 <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Governed View Key</h4>
                                                 <p className="text-[10px] text-white/50 leading-normal">
-                                                    Generate and register a cryptographic View Key. This key allows you to decrypt and retrieve your plaintext transaction history on-chain. The private key never leaves your browser; only its hash is registered.
+                                                    Generate and register a View Key. Its hash is stored on-chain and gates retrieval of your batch payout history. The key itself never leaves your browser; only its hash is registered.
                                                 </p>
                                             </div>
 

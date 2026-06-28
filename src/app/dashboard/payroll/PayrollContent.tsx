@@ -1019,9 +1019,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             <ShieldOff size={18} className="text-white/40" />
                                                                         )}
                                                                         <span className="text-xs font-bold uppercase tracking-wider font-sans">
-                                                                            {formShielded ? "Shielded (Private)" : "Standard (Public)"}
+                                                                            {formShielded ? "Confidential (Preview)" : "Standard (Public)"}
                                                                         </span>
                                                                     </div>
+                                                                    {formShielded && (
+                                                                        <p className="text-[10px] text-white/40 leading-normal mt-2 font-sans">
+                                                                            Masks recipient and amount metadata in SubScript&apos;s batch event log. The underlying USDC transfers stay visible on Arc&apos;s public ledger &mdash; full on-chain privacy activates when Arc&apos;s Privacy Sector (APS) goes live.
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                             </div>
 
@@ -1246,9 +1251,12 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                         </span>
 
                                                                         {campaign.isShielded && (
-                                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4]">
+                                                                            <span
+                                                                                title="Metadata-masked in SubScript's batch event log. On-chain USDC transfers remain public until Arc's Privacy Sector (APS) is live."
+                                                                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#00d2b4]/10 border border-[#00d2b4]/20 text-[#00d2b4]"
+                                                                            >
                                                                                 <Shield size={12} />
-                                                                                Shielded
+                                                                                Confidential (Preview)
                                                                             </span>
                                                                         )}
                                                                     </div>
