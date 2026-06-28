@@ -653,14 +653,12 @@ export default function PublicPayClient({
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
                             <div className="text-right">
                                 <p className="text-2xl font-extrabold text-[#00d2b4] tracking-tight">
-                                    {displayCurrency && displayAmount !== undefined 
-                                        ? `${fiatSymbol}${displayAmount.toFixed(2)}` 
-                                        : `$${(Number(linkData.amount_usdc) / 1000000).toFixed(2)}`}
+                                    {`${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC`}
                                 </p>
                                 <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">
-                                    {displayCurrency && displayCurrency !== "USD" 
-                                        ? `${displayCurrency} Equivalent (Settled in USDC)` 
-                                        : "USDC (Arc Network)"}
+                                    {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined
+                                        ? `≈ ${fiatSymbol}${displayAmount.toFixed(2)} ${displayCurrency} · Arc Network`
+                                        : "Arc Network"}
                                 </p>
                             </div>
                         </div>
@@ -939,9 +937,7 @@ export default function PublicPayClient({
                                                     </>
                                                 ) : (
                                                     <>
-                                                        Pay {displayCurrency && displayAmount !== undefined 
-                                                            ? `${fiatSymbol}${displayAmount.toFixed(2)}` 
-                                                            : `$${(Number(linkData.amount_usdc) / 1000000).toFixed(2)}`}{displayCurrency && displayCurrency !== "USD" ? ` (${(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC)` : " USDC"} <ArrowRight className="w-4 h-4" />
+                                                        Pay {(Number(linkData.amount_usdc) / 1000000).toFixed(2)} USDC{displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined ? ` (≈ ${fiatSymbol}${displayAmount.toFixed(2)})` : ""} <ArrowRight className="w-4 h-4" />
                                                     </>
                                                 )}
                                             </button>
