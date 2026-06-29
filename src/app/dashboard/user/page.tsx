@@ -4375,12 +4375,19 @@ function DepositModal({
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
 
-  // Fiat On-ramp State
+  // Fiat On-ramp State (Transak)
   const [fiatAmount, setFiatAmount] = useState("50");
   const [fiatCurrency, setFiatCurrency] = useState("USD");
-  const [fiatProvider, setFiatProvider] = useState<"moonpay" | "transak" | "stripe">("moonpay");
   const [fiatStatus, setFiatStatus] = useState<"idle" | "connecting" | "authorizing" | "minting" | "success">("idle");
   const [fiatMessage, setFiatMessage] = useState<string | null>(null);
+  const transakRef = useRef<{ close?: () => void; cleanup?: () => void } | null>(null);
+
+  /* Tear down any open Transak widget when the modal unmounts. */
+  useEffect(() => {
+    return () => {
+      try { transakRef.current?.cleanup?.(); } catch { /* noop */ }
+    };
+  }, []);
 
   const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
 
@@ -4552,25 +4559,52 @@ function DepositModal({
     }
   };
 
-  const handleStartFiatOnramp = () => {
+  const handleStartFiatOnramp = async () => {
     if (!fiatAmount || isNaN(Number(fiatAmount)) || Number(fiatAmount) <= 0) {
       return;
     }
     setFiatStatus("connecting");
-    setFiatMessage(`Establishing secure connection with ${fiatProvider.toUpperCase()}...`);
-    setTimeout(() => {
-      setFiatStatus("authorizing");
-      setFiatMessage("Awaiting bank/card 3DS authorization...");
-      setTimeout(() => {
-        setFiatStatus("minting");
-        setFiatMessage(`Payment authorized. Minting ${Number(fiatAmount).toFixed(2)} USDC to your connected Arc address...`);
-        setTimeout(() => {
-          setFiatStatus("success");
-          setFiatMessage(`Success! Simulated deposit of ${Number(fiatAmount).toFixed(2)} USDC completed.`);
-          refetchBalances();
-        }, 2000);
-      }, 2000);
-    }, 1500);
+    setFiatMessage("Opening Transak secure checkout…");
+    try {
+      /* Server builds the widget URL bound to this user's session wallet. */
+      const res = await fetch("/api/onramp/transak/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fiatAmount: Number(fiatAmount), fiatCurrency }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.widgetUrl) {
+        throw new Error(data.error || "Could not start Transak checkout.");
+      }
+
+      /* Loaded on demand so the SDK's window access never runs during SSR. */
+      const { Transak } = await import("@transak/ui-js-sdk");
+      const transak = new Transak({ widgetUrl: data.widgetUrl });
+      transakRef.current = transak;
+      transak.init();
+
+      Transak.on("TRANSAK_ORDER_CREATED", () => {
+        setFiatStatus("authorizing");
+        setFiatMessage("Order created — complete payment in the Transak window…");
+      });
+      Transak.on("TRANSAK_ORDER_SUCCESSFUL", () => {
+        setFiatStatus("success");
+        setFiatMessage("Transak confirmed your purchase. USDC is on its way to your Arc wallet.");
+        try { transak.close(); } catch { /* noop */ }
+        refetchBalances();
+      });
+      Transak.on("TRANSAK_ORDER_FAILED", () => {
+        setFiatStatus("idle");
+        setFiatMessage("Payment failed or was cancelled. Please try again.");
+      });
+      Transak.on("TRANSAK_WIDGET_CLOSE", () => {
+        /* Don't clobber a success state when the widget closes afterward. */
+        setFiatStatus((prev) => (prev === "success" ? prev : "idle"));
+      });
+    } catch (err: any) {
+      setFiatStatus("idle");
+      setFiatMessage(err?.message || "Could not start Transak checkout.");
+    }
   };
 
   return (
@@ -4636,19 +4670,17 @@ function DepositModal({
 
                   <button
                     type="button"
-                    disabled
-                    aria-disabled="true"
-                    title="Fiat on-ramp arrives at mainnet launch"
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.02] p-5 text-left opacity-60 cursor-not-allowed"
+                    onClick={() => setActiveSubMode("fiat")}
+                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/60 shrink-0">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
                       <CreditCard className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white/70">Fiat On-Ramp</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Unavailable for now — arriving at mainnet launch.</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Fiat On-Ramp</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Buy USDC with card or bank via Transak.</p>
                     </div>
-                    <span className="text-[8px] font-black uppercase tracking-wider text-[#ccff00]/80 shrink-0">Soon</span>
+                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
 
                   <button
@@ -4684,8 +4716,8 @@ function DepositModal({
 
             {activeSubMode === "fiat" && (
               <div className="space-y-4 text-left">
-                <p className="text-[10px] text-white/45 leading-relaxed">Simulated fiat-to-cryptocurrency purchase. (Testnet Mode)</p>
-                
+                <p className="text-[10px] text-white/45 leading-relaxed">Buy USDC with card or bank via Transak. Funds are delivered straight to your Arc wallet — Transak handles payment and identity verification.</p>
+
                 {fiatStatus === "idle" ? (
                   <div className="space-y-4">
                     <div className="space-y-1.5">
@@ -4699,23 +4731,16 @@ function DepositModal({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Provider</span>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["moonpay", "transak", "stripe"] as const).map((p) => (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => setFiatProvider(p)}
-                            className={`py-2 px-3 border rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
-                              fiatProvider === p
-                                ? "border-[#ccff00] bg-[#ccff00]/10 text-[#ccff00]"
-                                : "border-white/10 bg-white/[0.02] text-white/60 hover:border-white/20"
-                            }`}
-                          >
-                            {p}
-                          </button>
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Currency</span>
+                      <select
+                        value={fiatCurrency}
+                        onChange={(e) => setFiatCurrency(e.target.value)}
+                        className="subscript-input appearance-none"
+                      >
+                        {["USD", "EUR", "GBP", "NGN", "INR"].map((c) => (
+                          <option key={c} value={c} className="bg-black text-white">{c}</option>
                         ))}
-                      </div>
+                      </select>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
                       <span className="text-white/40">You will receive approx:</span>
