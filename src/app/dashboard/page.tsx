@@ -2986,7 +2986,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 <div className="grid gap-5 md:grid-cols-2">
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div className="liquid-glass min-w-0 overflow-hidden border border-white/5 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Plans</h3>
                             <span className="rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{activePlans.length}</span>
@@ -3004,7 +3004,7 @@ Please complete the following implementation tasks:
                         )}
                     </div>
 
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div className="liquid-glass min-w-0 overflow-hidden border border-white/5 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Inactive Plans</h3>
                             <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold text-white/45">{inactivePlans.length}</span>
@@ -5534,9 +5534,9 @@ Please complete the following implementation tasks:
 
                             {/* Floating Mobile Bottom Navigation Bar (Blueprint aligned) */}
                             {isConnected && (mobileBottomTabs.some((tab) => tab.id === activeTab) || activeTab === "checkout") && (
-                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm flex items-center justify-between gap-3 md:hidden">
+                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex w-[calc(100%-0.75rem)] max-w-sm items-center justify-between gap-2 md:hidden">
                                 {/* Capsule Navigation Menu */}
-                                <div className="flex-1 flex items-center justify-around liquid-glass rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] bg-black/60 backdrop-blur-xl">
+                                <div className="flex min-w-0 flex-1 items-center justify-around liquid-glass rounded-full border border-white/5 bg-black/60 px-2 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
                                     {mobileBottomTabs.map((tab) => (
                                         <AnimatedBottomNavButton
                                             key={tab.id}
@@ -5551,16 +5551,16 @@ Please complete the following implementation tasks:
                                 {/* Checkout Icon Outside Bottom Bar Capsule */}
                                 <button
                                     onClick={() => setActiveTab("checkout")}
-                                    className={`h-12 shrink-0 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl gap-2 px-3 overflow-hidden ${
+                                    className={`flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-full border px-2 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all duration-300 gap-2 ${
                                         activeTab === "checkout"
-                                            ? "bg-[#00d2b4] border-[#00d2b4]/30 text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] scale-105 w-[124px]"
-                                            : "bg-black/60 border-white/5 text-white/50 hover:text-white w-12"
+                                            ? "w-[104px] scale-105 border-[#00d2b4]/30 bg-[#00d2b4] text-[#111111] shadow-[0_0_15px_rgba(0,210,180,0.3)] min-[360px]:w-[124px]"
+                                            : "w-11 border-white/5 bg-black/60 text-white/50 hover:text-white"
                                     }`}
                                     title="Checkout Setup"
                                 >
                                     <Code2 className="w-5 h-5 shrink-0" />
                                     {activeTab === "checkout" && (
-                                        <span className="text-[10px] font-bold uppercase tracking-wider shrink-0 transition-opacity duration-300">
+                                            <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide transition-opacity duration-300 min-[360px]:text-[10px] min-[360px]:tracking-wider">
                                             Checkout
                                         </span>
                                     )}
@@ -5592,9 +5592,9 @@ function MerchantPlanRow({
     };
 
     return (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
+        <div data-testid="merchant-plan-row" className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0 w-full">
                     <p className="truncate text-sm font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
                     <p className="mt-1 text-xs font-bold text-[#00d2b4]">
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
@@ -5607,7 +5607,7 @@ function MerchantPlanRow({
                     type="button"
                     onClick={() => onToggle(plan)}
                     disabled={busy}
-                    className={`rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${
+                    className={`inline-flex w-full shrink-0 items-center justify-center rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition disabled:opacity-50 sm:w-auto ${
                         plan.active
                             ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
                             : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"
@@ -5636,26 +5636,26 @@ function MerchantPlanRow({
             )}
 
             {plan.active && (
-                <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border border-white/5 bg-black/30 p-2 sm:px-3 sm:py-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-white/45 pb-1.5 sm:pb-0 border-b border-white/5 sm:border-none">{subscribeUrl}</span>
-                    <div className="flex items-center justify-end gap-2 w-full sm:w-auto pt-1 sm:pt-0">
+                <div data-testid="merchant-plan-link-strip" className="mt-3 grid min-w-0 gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 p-2 sm:flex sm:items-center sm:px-3 sm:py-2">
+                    <span className="block min-w-0 max-w-full truncate border-b border-white/5 pb-1.5 font-mono text-[10px] text-white/45 sm:flex-1 sm:border-none sm:pb-0">{subscribeUrl}</span>
+                    <div className="grid w-full min-w-0 grid-cols-2 gap-2 pt-1 sm:flex sm:w-auto sm:items-center sm:justify-end sm:pt-0">
                         <button
                             type="button"
                             onClick={handleCopy}
-                            className="flex-1 sm:flex-none flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                            className="flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20 sm:flex-none sm:shrink-0 sm:px-3"
                             title={copied ? "Copied!" : "Copy subscribe link"}
                         >
-                            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                            {copied ? "Copied" : "Copy link"}
+                            {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0" />}
+                            <span className="truncate">{copied ? "Copied" : "Copy link"}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => onShare(plan)}
-                            className="flex-1 sm:flex-none flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white"
+                            className="flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/80 transition hover:bg-white/10 hover:text-white sm:flex-none sm:shrink-0 sm:px-3"
                             title="Create sharing poster card"
                         >
-                            <Share2 className="h-3 w-3" />
-                            Share
+                            <Share2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">Share</span>
                         </button>
                     </div>
                 </div>

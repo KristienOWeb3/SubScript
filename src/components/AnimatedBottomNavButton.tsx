@@ -38,7 +38,7 @@ export default function AnimatedBottomNavButton({
             aria-label={label}
             onClick={handleClick}
             className={`relative h-11 shrink-0 overflow-hidden rounded-full border transition-[width,background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] active:scale-90 ${
-                expanded ? "w-[108px]" : "w-11"
+                expanded ? "w-[92px] min-[360px]:w-[108px]" : "w-11"
             } ${
                 active
                     ? "border-[#00d2b4]/30 bg-[#00d2b4]/10 text-white shadow-[0_8px_24px_rgba(0,210,180,0.08)]"
@@ -54,7 +54,7 @@ export default function AnimatedBottomNavButton({
                 )}
             </span>
             <span
-                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] min-[360px]:text-[10px] min-[360px]:tracking-wider ${
                     expanded ? "translate-x-1 opacity-100" : "-translate-x-4 opacity-0"
                 }`}
             >
