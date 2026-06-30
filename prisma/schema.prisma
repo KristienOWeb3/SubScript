@@ -549,3 +549,54 @@ model MeteredVault {
   @@index([merchantAddress])
   @@map("metered_vaults")
 }
+
+model FiatFundingIntent {
+  id                          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress               String             @map("wallet_address")
+  destinationWallet           String             @map("destination_wallet")
+  idempotencyKey              String             @map("idempotency_key")
+  provider                    String             @default("SUBSCRIPT_SANDBOX")
+  providerReference           String             @unique @map("provider_reference")
+  fiatCurrency                String             @default("NGN") @map("fiat_currency")
+  fiatAmountMinor             BigInt             @map("fiat_amount_minor")
+  quoteRateNgnPerUsdcMinor    BigInt             @map("quote_rate_ngn_per_usdc_minor")
+  grossUsdcMicros             BigInt             @map("gross_usdc_micros")
+  feeFiatMinor                BigInt             @default(0) @map("fee_fiat_minor")
+  netUsdcMicros               BigInt             @map("net_usdc_micros")
+  status                      String             @default("AWAITING_TRANSFER")
+  bankName                    String             @map("bank_name")
+  accountName                 String             @map("account_name")
+  accountNumber               String             @map("account_number")
+  transferReference           String             @unique @map("transfer_reference")
+  destinationChainId          Int                @map("destination_chain_id")
+  settlementTxHash            String?            @unique @map("settlement_tx_hash")
+  expiresAt                   DateTime           @map("expires_at")
+  receivedAt                  DateTime?          @map("received_at")
+  settledAt                   DateTime?          @map("settled_at")
+  createdAt                   DateTime           @default(now()) @map("created_at")
+  updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at")
+  events                      FiatFundingEvent[]
+
+  @@unique([walletAddress, idempotencyKey], map: "fiat_funding_intents_wallet_idempotency_key")
+  @@index([walletAddress, createdAt], map: "fiat_funding_intents_owner_created_idx")
+  @@index([walletAddress, status], map: "fiat_funding_intents_owner_status_idx")
+  @@index([provider, providerReference], map: "fiat_funding_intents_provider_reference_idx")
+  @@map("fiat_funding_intents")
+}
+
+model FiatFundingEvent {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fundingIntentId   String            @map("funding_intent_id") @db.Uuid
+  fundingIntent     FiatFundingIntent @relation(fields: [fundingIntentId], references: [id], onDelete: Restrict)
+  providerEventId   String            @unique @map("provider_event_id")
+  eventType         String            @map("event_type")
+  payload           Json
+  processingResult  String?           @map("processing_result")
+  processingError   String?           @map("processing_error")
+  processedAt       DateTime?         @map("processed_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  @@index([fundingIntentId, createdAt], map: "fiat_funding_events_intent_created_idx")
+  @@map("fiat_funding_events")
+}

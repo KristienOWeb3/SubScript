@@ -98,7 +98,7 @@ The persistent database layer tracks offchain state and audit trails.
 - **Unified Payment Authorization:** one lifecycle for one-time checkout, recurring subscriptions, usage billing, invoices, sponsor payments, and AI-native transactions.
 - **Dollar-card alternative:** avoids card creation fees, maintenance fees, failed-card penalties, FX markups, billing-address failures, and long basic setup flows.
 - **Pay for Me / Sponsored Subscriptions:** product target for parents, employers, teams, or sponsors to cover user costs with privacy boundaries.
-- **Fiat-to-USDC Onboarding:** product target for bank-transfer funding, automatic conversion, and wallet deposit reconciliation.
+- **Fiat-to-USDC Onboarding:** Arc-testnet sandbox for authenticated NGN funding intents, exact quotes, fake one-time bank instructions, and idempotent simulated settlement. Real bank collection and wallet deposits remain licensed-provider and Arc-mainnet work.
 - **Merchant Protection Layer:** product target for service lock windows, minimum commitments, and grace periods, with a 72-hour ceiling for digital goods and 30-day ceiling for SaaS seats.
 - **Smart Dunning Engine:** product target for configurable Day 1, Day 3, and Day 7 retries, top-up reminders, and final suspension events.
 - **Privacy Premium:** 10 USDC/month baseline target for high-volume merchants that need ArcaneVM-style governed visibility.

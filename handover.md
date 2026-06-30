@@ -117,7 +117,7 @@ SubScript is a programmable stablecoin commerce layer on Arc. It uses a Unified 
 These must stay caveated until implemented and verified in production:
 
 - Encrypted private-key export after Google wallet provisioning.
-- Direct fiat-to-USDC onramps.
+- Real fiat-to-USDC onramps (the NGN bank-transfer intent and settlement flow exists as an Arc-testnet sandbox only).
 - Dedicated invoice objects with custom due terms.
 - Merchant commitment windows, minimum terms, and grace periods.
 - Configurable smart dunning schedules.

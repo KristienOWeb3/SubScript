@@ -102,7 +102,9 @@ Third parties such as employers, parents, teams, or sponsors can cover a user's 
 
 ### 3.7 Fiat-to-USDC Onboarding
 
-SubScript integrates direct fiat-to-USDC onramps so users can fund wallets through bank transfers. Once fiat is received, the system swaps it into USDC and deposits it into the user's SubScript wallet, removing the need for external exchanges or bridges.
+SubScript now has a bank-transfer-first funding sandbox: an authenticated user requests an NGN quote, receives deliberately fake one-time transfer instructions, and can exercise persisted, idempotent settlement states against Arc testnet without a card. No real NGN or USDC moves in this mode.
+
+Production funding remains gated on Arc mainnet and a licensed provider that owns bank collection, KYC/AML, conversion, refunds, and signed settlement events. The intended live result is exact quoted USDC delivered to the user's authenticated wallet, with settlement gas paid separately rather than deducted from principal.
 
 ### 3.8 Permit2 Integration
 

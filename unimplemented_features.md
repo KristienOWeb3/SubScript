@@ -21,13 +21,22 @@ Needed:
 
 The product target is bank-transfer funding that converts fiat into USDC and deposits it into the user's SubScript wallet.
 
-Needed:
+Implemented in the Arc-testnet sandbox:
 
-- Onramp provider selection.
-- AML/KYC and jurisdiction boundary.
-- Funding state machine.
-- Fiat receipt reconciliation.
-- USDC deposit reconciliation into the user's wallet.
+- Authenticated, wallet-bound NGN funding intents.
+- Integer kobo and micro-USDC quote math.
+- Wallet-scoped creation idempotency.
+- Persisted funding state and provider-event inbox.
+- Deliberately fake one-time bank instructions.
+- Concurrency-safe simulated settlement.
+
+Still needed for live funding:
+
+- A licensed bank/VASP provider and commercial agreement.
+- AML/KYC, sanctions, sender-name, limits, refund, dispute, and record-retention ownership.
+- Signed provider webhooks and recovery polling.
+- Arc mainnet availability plus verified direct-Arc or CCTP settlement.
+- Independent USDC receipt verification for chain, token, recipient, amount, and finality.
 
 ## 2. Billing Products
 

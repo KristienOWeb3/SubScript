@@ -594,7 +594,6 @@ export default function UserDashboard() {
   const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
 
   const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
-  const localFiatBalance = walletBalance * 1250;
 
   const handleManualRefreshBalances = async () => {
     setIsRefreshingBalances(true);
@@ -1911,7 +1910,7 @@ export default function UserDashboard() {
                         <Wallet className="h-5 w-5 text-white/35" />
                       </div>
                       <p className="mt-2 text-sm font-bold text-white/55">
-                        {balanceVisible ? `₦${localFiatBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                        {balanceVisible ? "USDC on Arc Testnet" : "••••"}
                       </p>
                     </div>
 
@@ -4329,6 +4328,42 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+type FiatFundingMode = "loading" | "disabled" | "sandbox" | "live";
+
+type FiatFundingIntentView = {
+  id: string;
+  status: string;
+  fiatCurrency: string;
+  fiatAmountMinor: string;
+  quoteRateNgnPerUsdcMinor: string;
+  grossUsdcMicros: string;
+  feeFiatMinor: string;
+  netUsdcMicros: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  transferReference: string;
+  destinationWallet: string;
+  destinationChainId: number;
+  expiresAt: string;
+  settledAt: string | null;
+  settlementTxHash: string | null;
+  createdAt: string;
+};
+
+const formatNgnMinor = (minor: string) =>
+  new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+  }).format(Number(minor) / 100);
+
+const formatUsdcMicros = (micros: string) =>
+  `${(Number(micros) / 1_000_000).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  })} USDC`;
+
 function DepositModal({
   open,
   userWallet,
@@ -4375,19 +4410,14 @@ function DepositModal({
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
 
-  // Fiat On-ramp State (Transak)
-  const [fiatAmount, setFiatAmount] = useState("50");
-  const [fiatCurrency, setFiatCurrency] = useState("USD");
-  const [fiatStatus, setFiatStatus] = useState<"idle" | "connecting" | "authorizing" | "minting" | "success">("idle");
+  // Bank-transfer funding state. The backend owns quote math, wallet identity, and mode gates.
+  const [fiatAmount, setFiatAmount] = useState("10000");
+  const [fiatMode, setFiatMode] = useState<FiatFundingMode>("loading");
+  const [fiatIntent, setFiatIntent] = useState<FiatFundingIntentView | null>(null);
+  const [fiatStatus, setFiatStatus] = useState<"idle" | "loading" | "creating" | "awaiting_transfer" | "settling" | "success" | "error">("idle");
   const [fiatMessage, setFiatMessage] = useState<string | null>(null);
-  const transakRef = useRef<{ close?: () => void; cleanup?: () => void } | null>(null);
-
-  /* Tear down any open Transak widget when the modal unmounts. */
-  useEffect(() => {
-    return () => {
-      try { transakRef.current?.cleanup?.(); } catch { /* noop */ }
-    };
-  }, []);
+  const [fiatError, setFiatError] = useState<string | null>(null);
+  const fiatIdempotencyKey = useRef<string | null>(null);
 
   const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
 
@@ -4559,51 +4589,125 @@ function DepositModal({
     }
   };
 
+  useEffect(() => {
+    if (!open || activeSubMode !== "fiat") return;
+
+    let cancelled = false;
+    const loadFundingState = async () => {
+      setFiatStatus("loading");
+      setFiatError(null);
+      try {
+        const response = await fetch("/api/user/funding-intents", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load bank-transfer funding.");
+        }
+        if (cancelled) return;
+
+        const mode = (payload.mode || "disabled") as FiatFundingMode;
+        const latest = Array.isArray(payload.intents) ? payload.intents[0] as FiatFundingIntentView | undefined : undefined;
+        setFiatMode(mode);
+        if (latest?.status === "SIMULATED_SETTLED") {
+          setFiatIntent(latest);
+          setFiatStatus("success");
+          setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
+        } else if (latest?.status === "AWAITING_TRANSFER") {
+          setFiatIntent(latest);
+          setFiatStatus("awaiting_transfer");
+          setFiatMessage("Use the one-time sandbox instructions below.");
+        } else {
+          setFiatIntent(null);
+          fiatIdempotencyKey.current = null;
+          setFiatStatus("idle");
+          setFiatMessage(latest
+            ? `Your previous bank-transfer quote is ${latest.status.toLowerCase().replaceAll("_", " ")}. Create a new quote.`
+            : typeof payload.unavailableReason === "string"
+              ? payload.unavailableReason
+              : null);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setFiatMode("disabled");
+        setFiatStatus("error");
+        setFiatError(error instanceof Error ? error.message : "Could not load bank-transfer funding.");
+      }
+    };
+
+    void loadFundingState();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSubMode, open]);
+
   const handleStartFiatOnramp = async () => {
-    if (!fiatAmount || isNaN(Number(fiatAmount)) || Number(fiatAmount) <= 0) {
+    setFiatError(null);
+    if (!fiatAmount || !/^\d+(?:\.\d{1,2})?$/.test(fiatAmount) || Number(fiatAmount) <= 0) {
+      setFiatError("Enter a valid NGN amount with no more than two decimal places.");
       return;
     }
-    setFiatStatus("connecting");
-    setFiatMessage("Opening Transak secure checkout…");
+
+    setFiatStatus("creating");
+    setFiatMessage("Creating a time-limited bank-transfer quote...");
+    fiatIdempotencyKey.current ||= crypto.randomUUID();
+
     try {
-      /* Server builds the widget URL bound to this user's session wallet. */
-      const res = await fetch("/api/onramp/transak/session", {
+      const response = await fetch("/api/user/funding-intents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fiatAmount: Number(fiatAmount), fiatCurrency }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": fiatIdempotencyKey.current,
+        },
+        body: JSON.stringify({ amountNgn: fiatAmount }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.widgetUrl) {
-        throw new Error(data.error || "Could not start Transak checkout.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not create bank-transfer instructions.");
       }
 
-      /* Loaded on demand so the SDK's window access never runs during SSR. */
-      const { Transak } = await import("@transak/ui-js-sdk");
-      const transak = new Transak({ widgetUrl: data.widgetUrl });
-      transakRef.current = transak;
-      transak.init();
-
-      Transak.on("TRANSAK_ORDER_CREATED", () => {
-        setFiatStatus("authorizing");
-        setFiatMessage("Order created — complete payment in the Transak window…");
-      });
-      Transak.on("TRANSAK_ORDER_SUCCESSFUL", () => {
+      setFiatMode((payload.mode || "sandbox") as FiatFundingMode);
+      if (payload.intent?.status === "SIMULATED_SETTLED") {
+        setFiatIntent(payload.intent as FiatFundingIntentView);
         setFiatStatus("success");
-        setFiatMessage("Transak confirmed your purchase. USDC is on its way to your Arc wallet.");
-        try { transak.close(); } catch { /* noop */ }
-        refetchBalances();
-      });
-      Transak.on("TRANSAK_ORDER_FAILED", () => {
+        setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
+      } else if (payload.intent?.status === "AWAITING_TRANSFER") {
+        setFiatIntent(payload.intent as FiatFundingIntentView);
+        setFiatStatus("awaiting_transfer");
+        setFiatMessage("Use the one-time sandbox instructions below.");
+      } else {
+        setFiatIntent(null);
+        fiatIdempotencyKey.current = null;
         setFiatStatus("idle");
-        setFiatMessage("Payment failed or was cancelled. Please try again.");
+        setFiatMessage("The quote is no longer active. Create a new quote.");
+      }
+    } catch (error) {
+      setFiatStatus("error");
+      setFiatError(error instanceof Error ? error.message : "Could not create bank-transfer instructions.");
+    }
+  };
+
+  const handleSimulateBankTransfer = async () => {
+    if (!fiatIntent) return;
+    setFiatStatus("settling");
+    setFiatError(null);
+    setFiatMessage("Simulating provider confirmation and test settlement...");
+
+    try {
+      const response = await fetch(`/api/user/funding-intents/${encodeURIComponent(fiatIntent.id)}/simulate`, {
+        method: "POST",
       });
-      Transak.on("TRANSAK_WIDGET_CLOSE", () => {
-        /* Don't clobber a success state when the widget closes afterward. */
-        setFiatStatus((prev) => (prev === "success" ? prev : "idle"));
-      });
-    } catch (err: any) {
-      setFiatStatus("idle");
-      setFiatMessage(err?.message || "Could not start Transak checkout.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not simulate the bank transfer.");
+      }
+      setFiatIntent(payload.intent as FiatFundingIntentView);
+      setFiatStatus("success");
+      setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
+      if (payload.intent?.settlementTxHash) {
+        refetchBalances();
+      }
+    } catch (error) {
+      setFiatStatus("error");
+      setFiatError(error instanceof Error ? error.message : "Could not simulate the bank transfer.");
     }
   };
 
@@ -4611,10 +4715,10 @@ function DepositModal({
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass">
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Fiat On-Ramp" : "Circle CCTP Bridge"}
+                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Bank Transfer" : "Circle CCTP Bridge"}
               </h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
             </div>
@@ -4637,7 +4741,7 @@ function DepositModal({
                         : "text-white/50 hover:text-white/85"
                     }`}
                   >
-                    {tab === "direct" ? "Direct" : tab === "fiat" ? "On-Ramp" : "Bridge"}
+                    {tab === "direct" ? "Direct" : tab === "fiat" ? "Bank" : "Bridge"}
                   </button>
                 ))}
               </div>
@@ -4674,11 +4778,11 @@ function DepositModal({
                     className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
                   >
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
-                      <CreditCard className="h-5 w-5" />
+                      <Download className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Fiat On-Ramp</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Buy USDC with card or bank via Transak.</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Bank Transfer</h4>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Fund with NGN. No card required. Sandbox only for now.</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -4716,65 +4820,170 @@ function DepositModal({
 
             {activeSubMode === "fiat" && (
               <div className="space-y-4 text-left">
-                <p className="text-[10px] text-white/45 leading-relaxed">Buy USDC with card or bank via Transak. Funds are delivered straight to your Arc wallet — Transak handles payment and identity verification.</p>
+                <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Bank transfer only</p>
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
+                    Fund with NGN without a bank card. Settlement gas is paid separately, so it is never deducted from the quoted USDC principal.
+                  </p>
+                </div>
 
-                {fiatStatus === "idle" ? (
+                {fiatMode === "sandbox" && (
+                  <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Arc testnet sandbox</p>
+                    <p className="mt-1.5 text-[10px] leading-relaxed text-white/55">
+                      Do not send real NGN. The account details are deliberately fake and the final balance is simulated.
+                    </p>
+                  </div>
+                )}
+
+                {(fiatStatus === "loading" || fiatStatus === "creating" || fiatStatus === "settling") ? (
+                  <div className="flex flex-col items-center gap-4 py-8 text-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
+                    <p className="text-xs leading-normal text-white/70">{fiatMessage || "Loading bank-transfer funding..."}</p>
+                  </div>
+                ) : fiatStatus === "success" && fiatIntent ? (
+                  <div className="space-y-4 py-3 text-center">
+                    <CheckCircle2 className="mx-auto h-12 w-12 text-[#ccff00]" />
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Sandbox flow complete</h4>
+                      <p className="mt-2 text-xs leading-normal text-white/50">{fiatMessage}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
+                      <p className="text-[9px] uppercase tracking-wider text-white/35">Simulated wallet credit</p>
+                      <p className="mt-1 text-base font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-amber-200/70">
+                      No real NGN was received and no real or testnet USDC was transferred.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fiatIdempotencyKey.current = null;
+                        setFiatIntent(null);
+                        setFiatStatus("idle");
+                        setFiatMessage(null);
+                        setFiatError(null);
+                      }}
+                      className="rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
+                    >
+                      Create another quote
+                    </button>
+                  </div>
+                ) : fiatIntent?.status === "AWAITING_TRANSFER" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-white/35">Transfer exactly</p>
+                          <p className="mt-1 text-sm font-black text-white">{formatNgnMinor(fiatIntent.fiatAmountMinor)}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] uppercase tracking-wider text-white/35">You receive</p>
+                          <p className="mt-1 text-sm font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Sandbox bank</p>
+                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.bankName}</p>
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account name</p>
+                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.accountName}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void navigator.clipboard.writeText(fiatIntent.accountNumber)}
+                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
+                      >
+                        <span>
+                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Fake account number</span>
+                          <span className="mt-0.5 block font-mono text-sm font-black text-white">{fiatIntent.accountNumber}</span>
+                        </span>
+                        <Copy className="h-4 w-4 text-white/40" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void navigator.clipboard.writeText(fiatIntent.transferReference)}
+                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
+                      >
+                        <span>
+                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Transfer reference</span>
+                          <span className="mt-0.5 block font-mono text-xs font-black text-[#ccff00]">{fiatIntent.transferReference}</span>
+                        </span>
+                        <Copy className="h-4 w-4 text-white/40" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 rounded-2xl border border-white/5 bg-black/30 p-4 text-[10px] text-white/50">
+                      <div className="flex justify-between gap-3">
+                        <span>Quote rate</span>
+                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.quoteRateNgnPerUsdcMinor)} / USDC</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>Sandbox funding fee</span>
+                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.feeFiatMinor)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>Destination</span>
+                        <span className="font-mono text-white/75">{formatAddress(fiatIntent.destinationWallet)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>Expires</span>
+                        <span className="font-bold text-white/75">{new Date(fiatIntent.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                    </div>
+
+                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
+                    <button
+                      type="button"
+                      onClick={handleSimulateBankTransfer}
+                      disabled={fiatMode !== "sandbox"}
+                      className="subscript-primary-button"
+                    >
+                      Simulate bank transfer received
+                    </button>
+                    <p className="text-center text-[9px] leading-relaxed text-white/35">
+                      Production will replace this simulation with a signed event from a licensed bank/VASP partner.
+                    </p>
+                  </div>
+                ) : (
                   <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (USD)</span>
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (NGN)</span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={fiatAmount}
-                        onChange={(e) => setFiatAmount(e.target.value)}
+                        onChange={(e) => {
+                          setFiatAmount(e.target.value);
+                          fiatIdempotencyKey.current = null;
+                        }}
                         className="subscript-input"
-                        placeholder="50"
+                        placeholder="10000"
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Currency</span>
-                      <select
-                        value={fiatCurrency}
-                        onChange={(e) => setFiatCurrency(e.target.value)}
-                        className="subscript-input appearance-none"
-                      >
-                        {["USD", "EUR", "GBP", "NGN", "INR"].map((c) => (
-                          <option key={c} value={c} className="bg-black text-white">{c}</option>
-                        ))}
-                      </select>
-                    </div>
                     <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
-                      <span className="text-white/40">You will receive approx:</span>
-                      <span className="font-black text-[#ccff00]">${(Number(fiatAmount) || 0).toFixed(2)} USDC</span>
+                      <span className="text-white/40">Quote includes</span>
+                      <span className="font-black text-[#ccff00]">Quoted USDC + zero gas deduction</span>
                     </div>
+                    {fiatMessage && <p className="text-center text-[10px] text-amber-200/70">{fiatMessage}</p>}
+                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
+                    {fiatMode !== "sandbox" && (
+                      <p className="text-center text-[10px] leading-relaxed text-white/45">
+                        Bank-transfer funding is disabled until the sandbox rail is configured.
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={handleStartFiatOnramp}
+                      disabled={fiatMode !== "sandbox"}
                       className="subscript-primary-button mt-2"
                     >
-                      Buy USDC
+                      Get bank details
                     </button>
-                  </div>
-                ) : (
-                  <div className="space-y-5 py-6 text-center">
-                    {fiatStatus !== "success" ? (
-                      <div className="flex flex-col items-center gap-4">
-                        <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
-                        <p className="text-xs text-white/70 leading-normal">{fiatMessage}</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-4">
-                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
-                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Purchase Successful</h4>
-                        <p className="text-xs text-white/50 leading-normal">{fiatMessage}</p>
-                        <button
-                          type="button"
-                          onClick={() => setFiatStatus("idle")}
-                          className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
-                        >
-                          Buy More
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
