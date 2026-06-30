@@ -43,6 +43,10 @@ contract SubScriptPSA is ReentrancyGuard {
     /* Mapping from subscription ID → Authorization data */
     mapping(uint256 => Authorization) public subscriptions;
 
+    /* Exact plan authorization key → active subscription ID. Prevents a subscriber from
+       accidentally creating the same merchant/amount/period/token subscription twice. */
+    mapping(bytes32 => uint256) public activeSubscriptionByPlanKey;
+
     /* Densely packed execution bitmaps: subId => (wordIndex => word) */
     mapping(uint256 => mapping(uint256 => uint256)) public executionBitmaps;
 
@@ -82,6 +86,8 @@ contract SubScriptPSA is ReentrancyGuard {
     error PaymentNotDue(uint256 subId, uint256 expectedPayment, uint256 currentTime);
     error PaymentAlreadyExecuted(uint256 subId, uint256 sequenceId);
     error NotAuthorized(uint256 subId);
+    error PlanReductionNotAllowed(uint256 subId);
+    error DuplicateActiveSubscription(uint256 existingSubscriptionId);
 
     /* ─────────────────────── Constructor ─────────────────────────── */
 
@@ -141,6 +147,8 @@ contract SubScriptPSA is ReentrancyGuard {
         if (_amount == 0) revert InvalidAmount();
         if (_period == 0) revert InvalidPeriod();
 
+        _assertNoActiveDuplicate(msg.sender, _merchant, _amount, _period, _settlementToken, _paymentToken, 0);
+
         subId = nextSubscriptionId++;
 
         subscriptions[subId] = Authorization({
@@ -153,6 +161,15 @@ contract SubScriptPSA is ReentrancyGuard {
             settlementToken: _settlementToken,
             paymentToken: _paymentToken
         });
+        _indexActiveSubscription(
+            subId,
+            msg.sender,
+            _merchant,
+            _amount,
+            _period,
+            _settlementToken,
+            _paymentToken
+        );
 
         /* Mark sequence 0 as executed for the immediate payment */
         uint256 wordIndex = 0;
@@ -240,15 +257,18 @@ contract SubScriptPSA is ReentrancyGuard {
 
     /*
      * @notice Cancel an active subscription.
+     * @dev Only the subscriber can revoke their recurring authorization. A merchant may stop
+     *      offering a plan, but cannot terminate a customer's already-purchased access.
      */
     function cancelSubscription(uint256 _subId) external nonReentrant {
         Authorization storage sub = subscriptions[_subId];
 
         if (!sub.isActive) revert SubscriptionNotActive(_subId);
-        if (msg.sender != sub.subscriber && msg.sender != sub.merchant) {
+        if (msg.sender != sub.subscriber) {
             revert NotAuthorized(_subId);
         }
 
+        _clearActiveSubscriptionIndex(_subId, sub);
         sub.isActive = false;
 
         emit SubscriptionCancelled(_subId, msg.sender);
@@ -268,11 +288,112 @@ contract SubScriptPSA is ReentrancyGuard {
         if (msg.sender != sub.subscriber) revert NotAuthorized(_subId);
         if (_newAmount == 0) revert InvalidAmount();
         if (_newPeriod == 0) revert InvalidPeriod();
+        /* Compare recurring rates with integer cross-multiplication. A longer billing interval
+           must not let a subscriber disguise a lower tier as a nominal amount increase. */
+        if (_newAmount * sub.period < sub.amount * _newPeriod) {
+            revert PlanReductionNotAllowed(_subId);
+        }
+
+        _reindexModifiedSubscription(_subId, sub, _newAmount, _newPeriod);
 
         sub.amount = _newAmount;
         sub.period = _newPeriod;
 
         emit SubscriptionModified(_subId, _newAmount, _newPeriod);
+    }
+
+    function _assertNoActiveDuplicate(
+        address _subscriber,
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        address _settlementToken,
+        address _paymentToken,
+        uint256 _allowedSubscriptionId
+    ) internal view {
+        uint256 existingSubscriptionId = activeSubscriptionByPlanKey[
+            _planKey(_subscriber, _merchant, _amount, _period, _settlementToken, _paymentToken)
+        ];
+        if (
+            existingSubscriptionId != 0
+            && existingSubscriptionId != _allowedSubscriptionId
+            && subscriptions[existingSubscriptionId].isActive
+        ) {
+            revert DuplicateActiveSubscription(existingSubscriptionId);
+        }
+    }
+
+    function _indexActiveSubscription(
+        uint256 _subId,
+        address _subscriber,
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        address _settlementToken,
+        address _paymentToken
+    ) internal {
+        activeSubscriptionByPlanKey[
+            _planKey(_subscriber, _merchant, _amount, _period, _settlementToken, _paymentToken)
+        ] = _subId;
+    }
+
+    function _clearActiveSubscriptionIndex(uint256 _subId, Authorization storage sub) internal {
+        bytes32 planKey = _planKey(
+            sub.subscriber,
+            sub.merchant,
+            sub.amount,
+            sub.period,
+            sub.settlementToken,
+            sub.paymentToken
+        );
+        if (activeSubscriptionByPlanKey[planKey] == _subId) {
+            delete activeSubscriptionByPlanKey[planKey];
+        }
+    }
+
+    function _reindexModifiedSubscription(
+        uint256 _subId,
+        Authorization storage sub,
+        uint256 _newAmount,
+        uint256 _newPeriod
+    ) internal {
+        _assertNoActiveDuplicate(
+            sub.subscriber,
+            sub.merchant,
+            _newAmount,
+            _newPeriod,
+            sub.settlementToken,
+            sub.paymentToken,
+            _subId
+        );
+        _clearActiveSubscriptionIndex(_subId, sub);
+        _indexActiveSubscription(
+            _subId,
+            sub.subscriber,
+            sub.merchant,
+            _newAmount,
+            _newPeriod,
+            sub.settlementToken,
+            sub.paymentToken
+        );
+    }
+
+    function _planKey(
+        address _subscriber,
+        address _merchant,
+        uint256 _amount,
+        uint256 _period,
+        address _settlementToken,
+        address _paymentToken
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(
+            _subscriber,
+            _merchant,
+            _amount,
+            _period,
+            _settlementToken,
+            _paymentToken
+        ));
     }
 
     /* ──────────────────── View Helpers ───────────────────────────── */

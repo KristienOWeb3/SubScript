@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Sparkles, Layers, Loader2 } from "@/components/icons";
+import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Layers, Loader2 } from "@/components/icons";
 import { QRCodeCanvas } from "qrcode.react";
 
 interface MerchantPlan {
     id: string;
     merchantAddress: string;
     name: string;
+    description?: string | null;
+    detailsUrl?: string | null;
     amountUsdc: string;
     periodSeconds: string;
     active: boolean;
@@ -51,11 +53,6 @@ const formatPeriod = (seconds: string) => {
     return `${secs}s`;
 };
 
-function formatAddress(address: string) {
-    if (!address) return "";
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
 export default function SharePlanModal({
     isOpen,
     onClose,
@@ -66,9 +63,9 @@ export default function SharePlanModal({
     const [copied, setCopied] = useState(false);
     const [downloading, setDownloading] = useState(false);
     const [features, setFeatures] = useState<string[]>([
-        "USDC Stablecoin Settlement",
-        "Non-Custodial Account Controls",
-        "Cancel Anytime in One Click",
+        "Secure USDC settlement on Arc",
+        "Customer-controlled cancellation",
+        "Fast hosted checkout",
     ]);
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -77,9 +74,9 @@ export default function SharePlanModal({
     useEffect(() => {
         if (plan) {
             setFeatures([
-                "USDC Stablecoin Settlement",
-                "Non-Custodial Account Controls",
-                "Cancel Anytime in One Click",
+                "Secure USDC settlement on Arc",
+                "Customer-controlled cancellation",
+                "Fast hosted checkout",
             ]);
         }
     }, [plan]);
@@ -121,8 +118,6 @@ export default function SharePlanModal({
 
     const handleDownload = async () => {
         setDownloading(true);
-        // Small delay to ensure state and DOM are in sync
-        await new Promise((resolve) => setTimeout(resolve, 300));
 
         try {
             const canvas = canvasRef.current;
@@ -252,11 +247,16 @@ export default function SharePlanModal({
             ctx.fillText("USDC NATIVE", badgeX + badgeW / 2, badgeY + 15);
             ctx.textAlign = "left"; // reset
 
-            // 4. Draw Plan Name
+            // 4. Draw Plan Name, shrinking long names so they stay inside the card.
             ctx.fillStyle = "#ffffff";
-            ctx.font = "900 36px sans-serif";
             ctx.letterSpacing = "1px";
-            ctx.fillText(plan.name.toUpperCase(), 40, 160);
+            const planTitle = plan.name.toUpperCase();
+            let planTitleSize = 36;
+            do {
+                ctx.font = `900 ${planTitleSize}px sans-serif`;
+                planTitleSize -= 1;
+            } while (ctx.measureText(planTitle).width > W - 80 && planTitleSize > 20);
+            ctx.fillText(planTitle, 40, 160);
 
             // 5. Draw Price Label & Price
             ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
@@ -273,7 +273,8 @@ export default function SharePlanModal({
             ctx.font = "bold 18px sans-serif";
             ctx.fillText(`USDC / ${formattedPeriod}`, 45 + ctx.measureText(`$${formattedAmount}`).width, 260);
 
-            // 6. Draw Details Grid (Billing Period, Merchant)
+            // 6. Draw Details Grid. Never include payout or merchant wallet addresses on a
+            // promotional card; the hosted subscribe URL resolves the merchant safely.
             const detailY = 310;
             // Draw separating line
             ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
@@ -293,18 +294,29 @@ export default function SharePlanModal({
             ctx.font = "bold 14px sans-serif";
             ctx.fillText(`Every ${formattedPeriod}`, 40, detailY + 45);
 
-            // Col 2: Merchant Payout destination
+            // Col 2: Hosted checkout assurance
             ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
             ctx.font = "bold 10px sans-serif";
             ctx.letterSpacing = "1px";
-            ctx.fillText("MERCHANT ADDRESS", W / 2 + 10, detailY + 25);
+            ctx.fillText("CHECKOUT", W / 2 + 10, detailY + 25);
 
             ctx.fillStyle = "#ffffff";
             ctx.font = "bold 14px sans-serif";
-            ctx.fillText(formatAddress(plan.merchantAddress), W / 2 + 10, detailY + 45);
+            ctx.fillText("Hosted by SubScript", W / 2 + 10, detailY + 45);
+
+            // Optional merchant-authored summary.
+            if (plan.description) {
+                const summary = plan.description.length > 74
+                    ? `${plan.description.slice(0, 71).trimEnd()}…`
+                    : plan.description;
+                ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+                ctx.font = "11px sans-serif";
+                ctx.letterSpacing = "0.1px";
+                ctx.fillText(summary, 40, 385);
+            }
 
             // 7. Draw Features List
-            const featureY = 405;
+            const featureY = plan.description ? 430 : 405;
             ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
             ctx.font = "bold 10px sans-serif";
             ctx.letterSpacing = "1px";
@@ -391,8 +403,8 @@ export default function SharePlanModal({
             }
 
             // 9. Draw Footer Banner (White card at the bottom)
-            const footerY = H - 140;
-            const footerH = 100;
+            const footerY = H - 180;
+            const footerH = 140;
             const footerW = W - 80;
             const footerX = 40;
             const footerR = 16;
@@ -407,22 +419,22 @@ export default function SharePlanModal({
             ctx.fillStyle = "#0c0d12";
             ctx.font = "bold 13px sans-serif";
             ctx.letterSpacing = "0.2px";
-            ctx.fillText("Subscribe via stablecoins on Arc.", footerX + 24, footerY + 38);
+            ctx.fillText("Scan to subscribe securely.", footerX + 24, footerY + 48);
 
             ctx.fillStyle = "rgba(12, 13, 18, 0.6)";
             ctx.font = "bold 9px sans-serif";
             ctx.letterSpacing = "1px";
-            ctx.fillText("POWERED BY SUBSCRIPT PROTOCOL", footerX + 24, footerY + 58);
+            ctx.fillText("POWERED BY SUBSCRIPT PROTOCOL", footerX + 24, footerY + 74);
 
             ctx.fillStyle = "#00d2b4";
             ctx.font = "900 11px sans-serif";
-            ctx.fillText("NO CREDIT CARD NEEDED", footerX + 24, footerY + 75);
+            ctx.fillText("NO CREDIT CARD NEEDED", footerX + 24, footerY + 99);
 
             // 10. Draw QR Code
             const qrCanvas = document.getElementById("plan-share-qr-canvas") as HTMLCanvasElement;
             if (qrCanvas) {
-                // Draw QR Code onto the white footer area on the right side
-                ctx.drawImage(qrCanvas, footerX + footerW - 84, footerY + 8, 76, 76);
+                // Large, high-correction QR with a generous white quiet zone for camera scanning.
+                ctx.drawImage(qrCanvas, footerX + footerW - 124, footerY + 8, 116, 116);
             }
 
             // 11. Trigger Download
@@ -458,6 +470,9 @@ export default function SharePlanModal({
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
                         className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto font-sans"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="share-subscription-title"
                     >
                         <div
                             className="bg-[#0b0c0f] border border-white/10 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl relative flex flex-col md:flex-row h-auto md:h-[620px]"
@@ -471,7 +486,7 @@ export default function SharePlanModal({
                                 <div>
                                     <div className="flex items-center justify-between mb-6">
                                         <div>
-                                            <h2 className="text-base font-black uppercase tracking-wider text-white">Share Subscription</h2>
+                                            <h2 id="share-subscription-title" className="text-base font-black uppercase tracking-wider text-white">Share Subscription</h2>
                                             <p className="text-[10px] text-white/40 mt-1 uppercase tracking-wider font-semibold">Promote your subscription plan</p>
                                         </div>
                                         <button
@@ -673,6 +688,11 @@ export default function SharePlanModal({
                                                     USDC / {formattedPeriod}
                                                 </span>
                                             </div>
+                                            {plan.description && (
+                                                <p className="mt-2 line-clamp-2 text-[8px] leading-relaxed text-white/50">
+                                                    {plan.description}
+                                                </p>
+                                            )}
                                         </div>
 
                                         {/* Separator */}
@@ -695,18 +715,18 @@ export default function SharePlanModal({
                                     </div>
 
                                     {/* Bottom White Card Footer */}
-                                    <div className="bg-white rounded-2xl p-2.5 flex items-center justify-between z-10 shadow-lg">
-                                        <div className="space-y-0.5 max-w-[155px]">
-                                            <p className="text-[8px] font-bold text-black leading-none">Subscribe via USDC on Arc.</p>
-                                            <p className="text-[6px] font-black text-black/35 tracking-wider uppercase leading-none">Powered by SubScript</p>
-                                            <p className="text-[6.5px] font-extrabold text-[#00d2b4] leading-none pt-0.5">NO CREDIT CARD NEEDED</p>
+                                    <div className="bg-white rounded-2xl p-2.5 flex items-center justify-between gap-2 z-10 shadow-lg">
+                                        <div className="space-y-1 max-w-[145px]">
+                                            <p className="text-[8px] font-bold text-black leading-tight">Scan to subscribe securely.</p>
+                                            <p className="text-[6px] font-black text-black/35 tracking-wider uppercase leading-tight">Powered by SubScript</p>
+                                            <p className="text-[6.5px] font-extrabold text-[#00d2b4] leading-tight">NO CREDIT CARD NEEDED</p>
                                         </div>
                                         {/* QR Code Canvas */}
-                                        <div className="bg-white p-0.5 rounded-lg border border-black/5 shrink-0 shadow-inner">
+                                        <div className="bg-white p-1 rounded-lg border border-black/5 shrink-0 shadow-inner">
                                             <QRCodeCanvas
                                                 value={subscribeUrl}
-                                                size={40}
-                                                level="M"
+                                                size={72}
+                                                level="H"
                                                 bgColor="#ffffff"
                                                 fgColor="#0c0d12"
                                             />

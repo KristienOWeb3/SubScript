@@ -134,6 +134,41 @@ describe("SubScript", function () {
           .createSubscription(merchant.address, AMOUNT, 0)
       ).to.be.revertedWithCustomError(subScript, "InvalidPeriod");
     });
+
+    it("should reject the same active plan for the same subscriber twice", async function () {
+      const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      await expect(
+        subScript
+          .connect(subscriber)
+          .createSubscription(merchant.address, AMOUNT, PERIOD)
+      )
+        .to.be.revertedWithCustomError(subScript, "DuplicateActiveSubscription")
+        .withArgs(1);
+    });
+
+    it("should allow the same plan again after the subscriber cancels it", async function () {
+      const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+      await subScript.connect(subscriber).cancelSubscription(1);
+
+      await expect(
+        subScript
+          .connect(subscriber)
+          .createSubscription(merchant.address, AMOUNT, PERIOD)
+      )
+        .to.emit(subScript, "SubscriptionCreated")
+        .withArgs(2, subscriber.address, merchant.address, AMOUNT, PERIOD);
+    });
   });
 
   /* EXECUTE PAYMENT */
@@ -265,7 +300,7 @@ describe("SubScript", function () {
       expect(sub.isActive).to.be.false;
     });
 
-    it("should allow merchant to cancel", async function () {
+    it("should not allow merchant to cancel a subscriber's authorization", async function () {
       const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
@@ -273,12 +308,15 @@ describe("SubScript", function () {
         .connect(subscriber)
         .createSubscription(merchant.address, AMOUNT, PERIOD);
 
-      await expect(subScript.connect(merchant).cancelSubscription(1))
-        .to.emit(subScript, "SubscriptionCancelled")
-        .withArgs(1, merchant.address);
+      await expect(
+        subScript.connect(merchant).cancelSubscription(1)
+      ).to.be.revertedWithCustomError(subScript, "NotAuthorized");
+
+      const sub = await subScript.subscriptions(1);
+      expect(sub.isActive).to.be.true;
     });
 
-    it("should revert if caller is neither subscriber nor merchant", async function () {
+    it("should revert if caller is not the subscriber", async function () {
       const { subScript, subscriber, merchant, stranger, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
@@ -370,6 +408,42 @@ describe("SubScript", function () {
       await expect(
         subScript.connect(subscriber).modifySubscription(1, AMOUNT, 0)
       ).to.be.revertedWithCustomError(subScript, "InvalidPeriod");
+    });
+
+    it("should reject a lower recurring rate", async function () {
+      const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      await expect(
+        subScript.connect(subscriber).modifySubscription(1, AMOUNT / 2n, PERIOD)
+      )
+        .to.be.revertedWithCustomError(subScript, "PlanReductionNotAllowed")
+        .withArgs(1);
+
+      await expect(
+        subScript.connect(subscriber).modifySubscription(1, AMOUNT, PERIOD * 2)
+      )
+        .to.be.revertedWithCustomError(subScript, "PlanReductionNotAllowed")
+        .withArgs(1);
+    });
+
+    it("should allow a different billing interval at the same recurring rate", async function () {
+      const { subScript, subscriber, merchant, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      await expect(
+        subScript.connect(subscriber).modifySubscription(1, AMOUNT * 2n, PERIOD * 2)
+      )
+        .to.emit(subScript, "SubscriptionModified")
+        .withArgs(1, AMOUNT * 2n, PERIOD * 2);
     });
   });
 

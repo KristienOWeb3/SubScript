@@ -101,3 +101,5 @@ export const Webhook = wrap(P.WebhooksLogo);
 export const X = wrap(P.X);
 export const XCircle = wrap(P.XCircle);
 export const Zap = wrap(P.Lightning);
+export const GamepadIcon = wrap(P.GameController);
+export const Trophy = wrap(P.Trophy);

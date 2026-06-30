@@ -3,7 +3,7 @@
 import React from "react";
 import Skeleton from "./ui/Skeleton";
 import { 
-    Activity, Key, Code2, Webhook, Crown, Shield, BarChart3, Link2, Sliders
+    Key, Code2, Webhook, Crown, Shield, BarChart3, Link2, Sliders, Home, Building2, User
 } from "@/components/icons";
 
 interface DashboardSkeletonProps {
@@ -12,20 +12,19 @@ interface DashboardSkeletonProps {
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
     const tabs = [
-        { id: "overview", label: "Overview", icon: Activity },
+        { id: "overview", label: "Overview", icon: Home },
         { id: "premium", label: "Premium", icon: Crown },
         { id: "analytics", label: "Analytics", icon: BarChart3 },
-        { id: "payment-links", label: "Payment Links", icon: Link2 },
-        { id: "plans", label: "Plans", icon: Sliders },
+        { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
+        { id: "payroll", label: "Payroll", icon: Building2 },
         { id: "apikeys", label: "API Keys", icon: Key },
         { id: "checkout", label: "Checkout Setup", icon: Code2 },
         { id: "webhooks", label: "Webhooks", icon: Webhook },
+        { id: "settings", label: "Profile & DNS", icon: User },
     ] as const;
 
     const renderContentSkeleton = () => {
         switch (activeTab) {
-            case "settings":
-            case "analytics":
             case "overview":
                 return (
                     <div className="space-y-8">
@@ -96,6 +95,161 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    </div>
+                );
+
+            case "analytics":
+                return (
+                    <div className="space-y-6">
+                        {/* Top Row: 2 columns, asymmetrical on desktop */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Top Left Card: spans 2 columns on desktop */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 md:col-span-2 flex flex-col justify-between min-h-[240px]">
+                                <div className="space-y-4">
+                                    <Skeleton className="h-3.5 w-24" />
+                                    <Skeleton className="h-10 w-48" />
+                                </div>
+                                <div className="flex justify-between items-end mt-8">
+                                    <Skeleton className="h-3 w-64" />
+                                    <Skeleton className="h-9 w-32" />
+                                </div>
+                            </div>
+
+                            {/* Top Right Card: spans 1 column on desktop */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl relative overflow-hidden col-span-1 flex flex-col justify-between min-h-[240px]">
+                                <div className="space-y-6">
+                                    <div>
+                                        <Skeleton className="h-3 w-28 mb-2" />
+                                        <Skeleton className="h-8 w-16" />
+                                    </div>
+                                    <div>
+                                        <Skeleton className="h-3 w-28 mb-2" />
+                                        <Skeleton className="h-8 w-20" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bottom Row: 2 columns */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Left: Active Subscribers list */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <Skeleton className="h-4 w-36" />
+                                    <Skeleton className="h-6 w-20" />
+                                </div>
+                                <div className="space-y-3">
+                                    {[1, 2, 3].map((i) => (
+                                        <div key={i} className="flex justify-between items-center py-2.5 border-b border-white/5 last:border-0">
+                                            <div className="flex items-center gap-3">
+                                                <Skeleton circle className="w-8 h-8" />
+                                                <div className="space-y-1.5">
+                                                    <Skeleton className="h-3.5 w-28" />
+                                                    <Skeleton className="h-2.5 w-16" />
+                                                </div>
+                                            </div>
+                                            <Skeleton className="h-4 w-20" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Right: Retention Rate Chart */}
+                            <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-xl flex flex-col justify-between min-h-[280px]">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-32" />
+                                    <Skeleton className="h-3 w-48" />
+                                </div>
+                                <div className="flex justify-center py-4">
+                                    <div className="relative w-36 h-36 flex items-center justify-center">
+                                        <Skeleton circle className="w-28 h-28" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case "settings":
+                return (
+                    <div className="space-y-8 max-w-4xl mx-auto">
+                        {/* Profile & Identity Section */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                            <div>
+                                <Skeleton className="h-4 w-36 mb-2" />
+                                <Skeleton className="h-3 w-64" />
+                            </div>
+
+                            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-white/5">
+                                <Skeleton circle className="w-20 h-20 shrink-0" />
+                                <div className="space-y-2 flex-1">
+                                    <Skeleton className="h-4 w-40" />
+                                    <Skeleton className="h-3 w-64" />
+                                </div>
+                            </div>
+
+                            {/* DNS / Alias Section */}
+                            <div className="space-y-4">
+                                <Skeleton className="h-3.5 w-44" />
+                                <Skeleton className="h-8 w-full" />
+                                <div className="flex gap-2">
+                                    <Skeleton className="h-10 flex-1" />
+                                    <Skeleton className="h-10 w-24" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Payout & Settlement Wallet Section */}
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                            <div className="space-y-2">
+                                <Skeleton className="h-4 w-36" />
+                                <Skeleton className="h-3 w-80" />
+                            </div>
+                            <div className="space-y-3">
+                                <Skeleton className="h-10 w-full" />
+                                <div className="flex gap-3">
+                                    <Skeleton className="h-10 flex-1" />
+                                    <Skeleton className="h-10 w-24" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            case "payroll":
+                return (
+                    <div className="space-y-8">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <Skeleton className="h-5 w-48 mb-1" />
+                                <Skeleton className="h-3 w-64" />
+                            </div>
+                            <Skeleton className="h-10 w-36" />
+                        </div>
+
+                        <div className="space-y-4">
+                            {[1, 2, 3].map((n) => (
+                                <div
+                                    key={n}
+                                    className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
+                                >
+                                    <div className="flex justify-between items-start gap-4">
+                                        <div className="flex-1 space-y-3">
+                                            <Skeleton className="h-5 w-48" />
+                                            <div className="flex gap-6">
+                                                <Skeleton className="h-4 w-24" />
+                                                <Skeleton className="h-4 w-32" />
+                                                <Skeleton className="h-4 w-20" />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Skeleton className="h-9 w-20" />
+                                            <Skeleton className="h-9 w-9" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 );
@@ -345,49 +499,24 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
     return (
         <>
         <div className="md:hidden space-y-6 pb-24 font-sans">
-            <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl bg-black/35 backdrop-blur-xl">
-                <div className="space-y-3">
-                    <Skeleton className="h-2.5 w-24 rounded-full" />
-                    <Skeleton className="h-8 w-36 rounded-xl" />
-                    <Skeleton className="h-2.5 w-20 rounded-full" />
+            {/* Header / Title skeleton */}
+            <div className="flex justify-between items-center px-1">
+                <div className="space-y-1.5">
+                    <Skeleton className="h-5 w-32 rounded-full" />
+                    <Skeleton className="h-3 w-48 rounded-full" />
                 </div>
+                <Skeleton circle className="h-9 w-9" />
             </div>
-            <div className="liquid-glass border border-[#00d2b4]/10 rounded-3xl p-6 shadow-xl bg-black/35 backdrop-blur-xl">
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <Skeleton className="h-2.5 w-20 rounded-full" />
-                        <Skeleton className="h-5 w-10 rounded-full" />
-                    </div>
-                    <Skeleton className="h-8 w-32 rounded-xl" />
-                    <div className="flex gap-2">
-                        <Skeleton className="h-2.5 w-10 rounded-full" />
-                        <Skeleton className="h-2.5 w-16 rounded-full" />
-                    </div>
-                </div>
+
+            {/* Content view skeleton */}
+            <div className="min-h-[400px]">
+                {renderContentSkeleton()}
             </div>
-            <div className="grid grid-cols-4 gap-3 py-2">
-                {[1, 2, 3, 4].map((item) => (
-                    <div key={item} className="flex flex-col items-center gap-2">
-                        <Skeleton circle className="h-12 w-12" />
-                        <Skeleton className="h-2 w-12 rounded-full" />
-                    </div>
-                ))}
-            </div>
-            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
-                <Skeleton className="h-3 w-36 rounded-full" />
-                {[1, 2, 3].map((item) => (
-                    <div key={item} className="flex justify-between items-center py-3 border-b border-white/5">
-                        <div className="space-y-1.5">
-                            <Skeleton className="h-3 w-24 rounded-full" />
-                            <Skeleton className="h-2 w-16 rounded-full" />
-                        </div>
-                        <Skeleton className="h-5 w-16 rounded-full" />
-                    </div>
-                ))}
-            </div>
+
+            {/* Bottom Nav Bar */}
             <div className="fixed bottom-6 left-1/2 z-40 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-around rounded-full border border-white/5 bg-black/60 px-3 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
-                {[1, 2, 3, 4].map((item) => (
-                    <Skeleton key={item} circle className="h-11 w-11" />
+                {[1, 2, 3, 4, 5].map((item) => (
+                    <Skeleton key={item} circle className="h-10 w-10" />
                 ))}
             </div>
         </div>

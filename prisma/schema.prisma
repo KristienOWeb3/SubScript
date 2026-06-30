@@ -509,12 +509,93 @@ model SubscriptDm {
   description     String?
   txHash          String?  @map("tx_hash")
   paymentLinkId   String?  @map("payment_link_id") @db.Uuid
+  dmGameId        String?  @map("dm_game_id") @db.Uuid
+  dmGame          DmGame?  @relation(fields: [dmGameId], references: [id], onDelete: SetNull)
+  gameEventKey    String?  @unique @map("game_event_key")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([senderAddress])
   @@index([receiverAddress])
+  @@index([dmGameId])
   @@map("subscript_dms")
+}
+
+model DmGame {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractGameId        String        @unique @map("contract_game_id")
+  gameType              String        @default("CHESS") @map("game_type")
+  mode                  String        @default("sandbox")
+  status                String        @default("INVITED")
+  settlementStatus      String        @default("UNFUNDED") @map("settlement_status")
+  creatorAddress        String        @map("creator_address")
+  opponentAddress       String?       @map("opponent_address")
+  whiteAddress          String?       @map("white_address")
+  blackAddress          String?       @map("black_address")
+  stakePerPlayerUsdc    BigInt        @map("stake_per_player_usdc")
+  feeBps                Int           @default(1000) @map("fee_bps")
+  treasuryAddress       String        @map("treasury_address")
+  chainId               Int           @default(5042002) @map("chain_id")
+  contractAddress       String?       @map("contract_address")
+  currentTurnAddress    String?       @map("current_turn_address")
+  fen                   String
+  positionHistory       Json          @map("position_history")
+  ply                   Int           @default(0)
+  version               Int           @default(0)
+  inviteExpiresAt       DateTime      @map("invite_expires_at")
+  startedAt             DateTime?     @map("started_at")
+  expiresAt             DateTime?     @map("expires_at")
+  completedAt           DateTime?     @map("completed_at")
+  winnerAddress         String?       @map("winner_address")
+  resultReason          String?       @map("result_reason")
+  creatorStakeTxHash    String?       @unique @map("creator_stake_tx_hash")
+  opponentStakeTxHash   String?       @unique @map("opponent_stake_tx_hash")
+  settlementTxHash      String?       @unique @map("settlement_tx_hash")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at")
+  moves                 DmGameMove[]
+  events                DmGameEvent[]
+  dms                   SubscriptDm[]
+
+  @@index([creatorAddress, status])
+  @@index([opponentAddress, status])
+  @@index([status, expiresAt])
+  @@map("dm_games")
+}
+
+model DmGameMove {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gameId          String   @map("game_id") @db.Uuid
+  game            DmGame   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  ply             Int
+  playerAddress   String   @map("player_address")
+  uci             String
+  san             String?
+  fenBefore       String   @map("fen_before")
+  fenAfter        String   @map("fen_after")
+  stateHash       String   @map("state_hash")
+  idempotencyKey  String   @map("idempotency_key")
+  onchainTxHash   String?  @unique @map("onchain_tx_hash")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([gameId, ply])
+  @@unique([gameId, idempotencyKey])
+  @@index([gameId, createdAt])
+  @@map("dm_game_moves")
+}
+
+model DmGameEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gameId      String   @map("game_id") @db.Uuid
+  game        DmGame   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  eventKey    String   @unique @map("event_key")
+  eventType   String   @map("event_type")
+  actor       String?
+  payload     Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([gameId, createdAt])
+  @@map("dm_game_events")
 }
 
 model MeteredVault {

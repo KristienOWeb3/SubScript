@@ -405,9 +405,9 @@ export async function POST(request: Request) {
 }
 
 /* ---------------------------------- DELETE --------------------------------- */
-/* Cancel a subscription by id.
-   - sub_<uuid>   -> cancels a checkout session that hasn't activated yet
-   - sub_<number> -> flags the on-chain subscription to cancel at period end */
+/* Cancel a subscription checkout by id.
+   - sub_<uuid>   -> a merchant may withdraw an offer that has not activated yet
+   - sub_<number> -> active authorizations are customer-controlled and cannot be revoked here */
 export async function DELETE(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
@@ -420,30 +420,12 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Bad Request: missing subscription id" }, { status: 400 });
         }
 
-        // On-chain subscription id (numeric): flag cancel-at-period-end on the mirror row.
+        // An active on-chain authorization belongs to the subscriber. Merchants can deactivate
+        // plans and unaccepted checkout sessions, but cannot revoke customer access.
         if (/^\d+$/.test(idParam)) {
-            const subscriptionId = BigInt(idParam);
-            const existing = await prisma.subscription.findUnique({ where: { subscriptionId } });
-            if (!existing || existing.merchantAddress.toLowerCase() !== merchantAddress) {
-                return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
-            }
-            const updated = await prisma.subscription.update({
-                where: { subscriptionId },
-                data: { cancelAtPeriodEnd: true, cancelRequestedAt: new Date() },
-            });
-            await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
-                subscriptionId: idParam,
-                status: "canceled",
-                subscriber: existing.subscriber,
-                merchantAddress,
-                reason: "Cancel requested at period end",
-            })).catch(() => { /* delivery is best-effort */ });
             return NextResponse.json({
-                id: `sub_${idParam}`,
-                object: "subscription",
-                status: "active",
-                cancelAtPeriodEnd: updated.cancelAtPeriodEnd,
-            }, { status: 200 });
+                error: "Forbidden: active subscriptions can only be canceled by the subscriber.",
+            }, { status: 403 });
         }
 
         // Checkout-session subscription (uuid): cancel it only if it hasn't activated on-chain.

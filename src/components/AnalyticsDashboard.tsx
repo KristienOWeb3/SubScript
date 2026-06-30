@@ -379,14 +379,22 @@ export default function AnalyticsDashboard({
             }));
     }, [ledgers]);
 
-    /* Filter to display list of inactive subscriptions */
+    /* Past-due subscriptions may retry; hard-canceled/ended subscriptions never do. */
     const inactiveList = useMemo(() => {
         return ledgers
-            .filter((sub) => !sub.active)
+            .filter((sub) => !sub.active || sub.billingStatus === "PAST_DUE" || sub.cancelAtPeriodEnd)
             .map((sub: any) => ({
                 id: sub.rawId,
-                address: sub.shortSubAddress || "0x0000...0000",
-                timestamp: sub.nextBilling || new Date().toLocaleDateString()
+                address: sub.displayAddress || sub.shortSubAddress || "Unknown subscriber",
+                timestamp: sub.nextBilling || new Date().toLocaleDateString(),
+                retrying: sub.active && sub.billingStatus === "PAST_DUE" && !sub.cancelAtPeriodEnd,
+                statusLabel: sub.cancelAtPeriodEnd
+                    ? "Ends at renewal"
+                    : sub.billingStatus === "CANCELED"
+                        ? "Canceled"
+                        : !sub.active
+                            ? "Ended"
+                            : "Payment overdue",
             }));
     }, [ledgers]);
 
@@ -587,7 +595,7 @@ export default function AnalyticsDashboard({
                                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[320px]">
                                     <div>
                                         <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Inactive Subscriptions</p>
-                                        <p className="text-xs text-white/60">Failed or unpaid accounts</p>
+                                        <p className="text-xs text-white/60">Past-due and ended accounts</p>
                                     </div>
 
                                     <div className="space-y-3 my-4 overflow-y-auto max-h-[280px]">
@@ -610,11 +618,11 @@ export default function AnalyticsDashboard({
                                                                 <p className="text-[8px] text-white/30">Due: {item.timestamp}</p>
                                                             </div>
                                                         </div>
-                                                        {/* Renewals retry automatically on a schedule (see the customer-billing keeper) —
-                                                            merchants can't trigger charges manually. */}
-                                                        <span className="px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-white/30 flex items-center gap-1">
-                                                            <RefreshCw className="w-3 h-3" />
-                                                            Auto-retrying
+                                                        <span className={`px-4 py-2 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                                                            item.retrying ? "text-amber-300" : "text-white/30"
+                                                        }`}>
+                                                            {item.retrying && <RefreshCw className="w-3 h-3" />}
+                                                            {item.retrying ? "Auto-retrying" : item.statusLabel}
                                                         </span>
                                                     </div>
                                                 ));

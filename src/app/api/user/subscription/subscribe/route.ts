@@ -10,6 +10,7 @@ import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
+import { withPgClient } from "@/lib/serverPg";
 
 export const maxDuration = 120;
 
@@ -32,30 +33,83 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Plan has an invalid merchant" }, { status: 400 });
         }
 
-        await ensureGasSponsored(wallet.toLowerCase());
-        const { txHash, subId } = await subscribeFromEmbedded(wallet, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
+        const subscriber = wallet.toLowerCase();
+        const merchant = plan.merchantAddress.toLowerCase();
+        const lockKey = `customer-subscription:${subscriber}:${merchant}`;
 
-        /* Mirror to the subscriptions table so it shows in the dashboard + enables plan-switch. */
-        if (subId) {
-            await mirrorSubscriptionCreated({
-                subscriptionId: subId,
-                merchantAddress: plan.merchantAddress,
-                subscriber: wallet.toLowerCase(),
-                amountUsdc: plan.amountUsdc,
-                periodSeconds: plan.periodSeconds,
-            });
-        }
+        /* Serialize subscription creation per user + merchant. Without this database-backed lock,
+           two fast clicks can both pass the duplicate check before either on-chain transaction is
+           mirrored. The second request waits, then sees the first active subscription. */
+        return await withPgClient(async (client) => {
+            await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
+            try {
+                const existingResult = await client.query(
+                    `select subscription_id, amount_cap_usdc, billing_interval_seconds
+                       from subscriptions
+                      where subscriber = $1
+                        and merchant_address = $2
+                        and kind = 'CUSTOMER'
+                        and status in ('ACTIVE', 'PAST_DUE')
+                      order by created_at desc
+                      limit 1`,
+                    [subscriber, merchant]
+                );
+                const existing = existingResult.rows[0];
+                if (existing) {
+                    const isSamePlan =
+                        String(existing.amount_cap_usdc) === plan.amountUsdc.toString()
+                        && String(existing.billing_interval_seconds) === plan.periodSeconds.toString();
+                    return NextResponse.json({
+                        error: isSamePlan
+                            ? "You are already subscribed to this plan."
+                            : "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
+                        code: isSamePlan ? "ALREADY_SUBSCRIBED" : "ACTIVE_MERCHANT_SUBSCRIPTION",
+                        subscriptionId: String(existing.subscription_id),
+                    }, { status: 409 });
+                }
 
-        /* Open the merchant→user DM thread for this subscription (best-effort). */
-        await createSubscriptionStartedDm({
-            merchantAddress: plan.merchantAddress,
-            subscriberAddress: wallet.toLowerCase(),
-            planName: plan.name,
-            amountUsdc: plan.amountUsdc,
-            periodSeconds: plan.periodSeconds,
-        }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
+                await ensureGasSponsored(subscriber);
+                const { txHash, subId } = await subscribeFromEmbedded(
+                    subscriber,
+                    merchant,
+                    plan.amountUsdc,
+                    plan.periodSeconds
+                );
 
-        return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name }, { status: 200 });
+                /* Mirror before releasing the advisory lock, so the next request observes this
+                   active subscription and cannot create a duplicate. */
+                if (subId) {
+                    await mirrorSubscriptionCreated({
+                        subscriptionId: subId,
+                        merchantAddress: merchant,
+                        subscriber,
+                        amountUsdc: plan.amountUsdc,
+                        periodSeconds: plan.periodSeconds,
+                    });
+                }
+
+                /* Open the merchant→user DM thread for this subscription (best-effort). */
+                await createSubscriptionStartedDm({
+                    merchantAddress: merchant,
+                    subscriberAddress: subscriber,
+                    planName: plan.name,
+                    amountUsdc: plan.amountUsdc,
+                    periodSeconds: plan.periodSeconds,
+                }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
+
+                return NextResponse.json({
+                    success: true,
+                    txHash,
+                    subscriptionId: subId,
+                    planName: plan.name,
+                }, { status: 200 });
+            } finally {
+                await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [lockKey])
+                    .catch((unlockError: unknown) =>
+                        console.error("[subscription/subscribe] advisory unlock failed:", unlockError)
+                    );
+            }
+        });
     } catch (error: any) {
         console.error("Subscribe failed:", error);
         return NextResponse.json({ error: error.message || "Failed to subscribe" }, { status: 500 });

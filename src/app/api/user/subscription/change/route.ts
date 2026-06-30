@@ -1,10 +1,11 @@
 /* Change plan from a DM. Uses the contract's in-place modifySubscription (no cancel/recreate,
    no double charge):
      - "scheduled" (default): the current paid period runs out, then the next renewal bills the
-       new amount. Right for downgrades and unhurried upgrades.
+       new amount. Used for unhurried upgrades.
      - "immediate": same in-place modify, plus a one-time prorated charge for the remainder of
        the current period so an upgrade takes effect now without paying twice for the overlap.
-   If there's no existing subscription, falls back to a fresh subscribe. Server-signed; gas on us. */
+   Reductions are rejected, and this endpoint never creates a second subscription.
+   Server-signed; gas on us. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
@@ -12,14 +13,14 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import {
-    subscribeFromEmbedded,
     modifyFromEmbedded,
     transferUsdcFromEmbedded,
     getSubscriptionOnChain,
     proratedUpgradeDelta,
 } from "@/lib/subscriptions/onchain";
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
-import { mirrorSubscriptionCreated, mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
+import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
+import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 
 export const maxDuration = 150;
 
@@ -48,26 +49,13 @@ export async function POST(request: Request) {
             ? await getSubscriptionOnChain(fromSubscriptionId)
             : null;
 
-        /* No existing subscription to change → just subscribe fresh. */
+        /* A plan-change endpoint must never silently create a second subscription. The caller can
+           use the subscribe endpoint only when no active subscription exists for this merchant. */
         if (!current || current.subscriber !== subscriber || !current.isActive) {
-            const { txHash, subId } = await subscribeFromEmbedded(subscriber, plan.merchantAddress, plan.amountUsdc, plan.periodSeconds);
-            if (subId) {
-                await mirrorSubscriptionCreated({
-                    subscriptionId: subId,
-                    merchantAddress: plan.merchantAddress,
-                    subscriber,
-                    amountUsdc: plan.amountUsdc,
-                    periodSeconds: plan.periodSeconds,
-                });
-            }
-            await createSubscriptionStartedDm({
-                merchantAddress: plan.merchantAddress,
-                subscriberAddress: subscriber,
-                planName: plan.name,
-                amountUsdc: plan.amountUsdc,
-                periodSeconds: plan.periodSeconds,
-            }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
-            return NextResponse.json({ success: true, txHash, subscriptionId: subId, planName: plan.name, mode: "new" }, { status: 200 });
+            return NextResponse.json({
+                error: "No active subscription was found to change. Refresh your dashboard and try again.",
+                code: "ACTIVE_SUBSCRIPTION_REQUIRED",
+            }, { status: 409 });
         }
 
         if (current.merchant !== plan.merchantAddress.toLowerCase()) {
@@ -77,10 +65,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "You're already on this plan." }, { status: 409 });
         }
 
-        const isUpgrade = plan.amountUsdc > current.amount;
+        const rateComparison = compareRecurringRates(
+            plan.amountUsdc,
+            plan.periodSeconds,
+            current.amount,
+            current.period,
+        );
+        if (rateComparison < 0) {
+            return NextResponse.json({
+                error: "Plan reductions are not available. You can keep your current plan or choose a higher tier.",
+                code: "PLAN_REDUCTION_NOT_ALLOWED",
+            }, { status: 403 });
+        }
+
+        const isUpgrade = rateComparison > 0;
 
         /* Immediate upgrade: charge only the prorated difference for the rest of the current
-           period now (downgrades never charge — they simply take effect next cycle). */
+           period now. */
         let proratedChargeMicros = BigInt(0);
         let proratedTxHash: string | null = null;
         if (mode === "immediate" && isUpgrade) {

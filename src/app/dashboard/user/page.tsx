@@ -1,6 +1,7 @@
 /* Mobile-first user dashboard: wallet home, system-DM chat, DNS, payment links, and batch send. */
 "use client";
 
+import { ethers } from "ethers";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { enablePush, disablePush, isPushEnabled, pushSupported } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
@@ -26,6 +27,7 @@ import { QRCodeSVG } from "qrcode.react";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import { GamesModals, ESCROW_CONTRACT_ABI } from "@/components/games/GamesModals";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { getDashboardUrl } from "@/utils/navigation";
 import {
@@ -58,9 +60,12 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  GamepadIcon,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
+import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
+import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -122,6 +127,7 @@ interface DmMessage {
   description: string | null;
   txHash: string | null;
   paymentLinkId: string | null;
+  dmGameId?: string | null;
   createdAt: string;
 }
 
@@ -129,6 +135,8 @@ interface MerchantPlan {
   id: string;
   merchantAddress: string;
   name: string;
+  description?: string | null;
+  detailsUrl?: string | null;
   amountUsdc: string;
   periodSeconds: string;
   active: boolean;
@@ -294,6 +302,23 @@ export default function UserDashboard() {
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
+
+  // Games state variables
+  const [gamesMenuOpen, setGamesMenuOpen] = useState(false);
+  const [selectedGameForInvite, setSelectedGameForInvite] = useState<string | null>(null);
+  const [gameStakeAmount, setGameStakeAmount] = useState("1");
+  const [isCreatingGame, setIsCreatingGame] = useState(false);
+  const [activePlayingGame, setActivePlayingGame] = useState<any | null>(null);
+  const [isChessBoardModalOpen, setIsChessBoardModalOpen] = useState(false);
+  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
+  const [isClaimingPayout, setIsClaimingPayout] = useState(false);
+  const [chessSelectedSquare, setChessSelectedSquare] = useState<string | null>(null);
+  const [chessLegalMoves, setChessLegalMoves] = useState<string[]>([]);
+  const [gameErrorMessage, setGameErrorMessage] = useState<string | null>(null);
+  const [gameStatusMessage, setGameStatusMessage] = useState<string | null>(null);
+
+  // Link type selection in links tab
+  const [linkType, setLinkType] = useState<"payment" | "game">("payment");
   const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
@@ -847,12 +872,28 @@ export default function UserDashboard() {
   const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
     const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
 
-    /* When switching, let the user pick the timing of an *upgrade*: now (prorated) vs at the
-       next renewal. Downgrades always take effect at the next renewal (no refund, no charge). */
+    /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
+       longer billing period cannot disguise a cheaper tier as an upgrade. */
     let mode: "scheduled" | "immediate" = "scheduled";
     if (activeSub) {
       let isUpgrade = false;
-      try { isUpgrade = BigInt(plan.amountUsdc) > BigInt(activeSub.amountCapUsdc); } catch { isUpgrade = false; }
+      try {
+        const comparison = compareRecurringRates(
+          BigInt(plan.amountUsdc),
+          BigInt(plan.periodSeconds),
+          BigInt(activeSub.amountCapUsdc),
+          BigInt(activeSub.billingIntervalSeconds),
+        );
+        if (comparison < 0) {
+          setPlanManagerStatus(null);
+          setPlanManagerError("Plan reductions are not available. Choose your current plan or a higher tier.");
+          return;
+        }
+        isUpgrade = comparison > 0;
+      } catch {
+        setPlanManagerError("This plan could not be compared with your current subscription.");
+        return;
+      }
       if (isUpgrade) {
         const now = window.confirm(
           `Upgrade to ${plan.name}?\n\n`
@@ -1040,6 +1081,53 @@ export default function UserDashboard() {
       await new Promise(resolve => setTimeout(resolve, 700));
       await sendDmReaction(dm, "Thanks ❤️", "Sent thanks response");
     });
+  };
+
+  const handlePlayGame = async (gameId: string) => {
+    try {
+      const res = await fetch(`/api/user/dms/games/${gameId}`, {
+        headers: { "x-session-wallet": userWallet || "" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load game details");
+      }
+
+      const game = data.game;
+      setActivePlayingGame(game);
+
+      if (game.status === "INVITED") {
+        const isHost = userWallet?.toLowerCase() === game.creatorAddress?.toLowerCase();
+
+        if (!isHost) {
+          if (game.mode === "sandbox") {
+            const acceptRes = await fetch(`/api/user/dms/games/${game.id}/accept`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-session-wallet": userWallet!,
+              },
+            });
+            const acceptData = await acceptRes.json();
+            if (!acceptRes.ok) throw new Error(acceptData.error || "Failed to accept challenge");
+            
+            triggerToast("Challenge accepted!");
+            setActivePlayingGame(acceptData.game);
+            setIsChessBoardModalOpen(true);
+            await loadDms();
+          } else {
+            // For testnet, redirect to the stake invite page
+            router.push(`/pay/game/${game.id}`);
+          }
+        } else {
+          triggerToast("Waiting for opponent to join and stake.");
+        }
+      } else {
+        setIsChessBoardModalOpen(true);
+      }
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to launch game board");
+    }
   };
 
   const handleCancelPlanSuggestion = async (dm: DmMessage) => {
@@ -1253,22 +1341,94 @@ export default function UserDashboard() {
     }
     setLinkLoading(true);
     try {
-      const res = await fetch("/api/user/payment-links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amountUsdc: linkAmount,
-          title: linkMemo.trim() || "USDC payment",
-          description: linkMemo.trim() || "SubScript payment link.",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
-      setLinkResultUrl(data.checkoutUrl as string);
-      setLinkAmount("");
-      setLinkMemo("");
+      if (linkType === "game") {
+        const stakeMicros = BigInt(Math.round(Number(linkAmount) * 1_000_000));
+        
+        // 1. Register lobby
+        const res = await fetch("/api/user/dms/games", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-session-wallet": userWallet!,
+          },
+          body: JSON.stringify({
+            opponentAddress: null, // Public invite link
+            stakeUsdc: linkAmount,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to create game lobby");
+
+        const game = data.game;
+
+        // 2. Escrow deposit on-chain
+        if (chainId !== ARC_TESTNET_CHAIN_ID) {
+          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        }
+
+        const escrowAddress = (process.env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D") as `0x${string}`;
+        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+        const tokenContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, [
+            "function allowance(address owner, address spender) view returns (uint256)"
+        ], provider);
+        const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
+
+        if (BigInt(allowance.toString()) < stakeMicros) {
+          const approveTx = await writeContractAsync({
+            address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+            abi: VAULT_TOKEN_ABI,
+            functionName: "approve",
+            args: [escrowAddress, stakeMicros],
+            chainId: ARC_TESTNET_CHAIN_ID,
+          });
+          await provider.waitForTransaction(approveTx, 1, 30_000);
+        }
+
+        const initialStateHash = ethers.id("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        const stakeTx = await writeContractAsync({
+          address: escrowAddress,
+          abi: ESCROW_CONTRACT_ABI,
+          // Since it's a public invite, the opponent is address(0)
+          functionName: "createGame",
+          args: [ethers.ZeroAddress as `0x${string}`, stakeMicros, initialStateHash as `0x${string}`],
+          chainId: ARC_TESTNET_CHAIN_ID,
+        });
+
+        // 3. Verify stake deposit
+        const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-session-wallet": userWallet!,
+          },
+          body: JSON.stringify({ txHash: stakeTx }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyData.error || "Referee failed to verify stake deposit");
+
+        setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
+        setLinkAmount("");
+        setLinkMemo("");
+        triggerToast("Chess game invite link created!");
+        refetchUsdc();
+      } else {
+        const res = await fetch("/api/user/payment-links", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountUsdc: linkAmount,
+            title: linkMemo.trim() || "USDC payment",
+            description: linkMemo.trim() || "SubScript payment link.",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
+        setLinkResultUrl(data.checkoutUrl as string);
+        setLinkAmount("");
+        setLinkMemo("");
+      }
     } catch (err: any) {
-      setLinkError(err.message || "Could not create the payment link.");
+      setLinkError(err.message || "Could not create the link.");
     } finally {
       setLinkLoading(false);
     }
@@ -2044,6 +2204,7 @@ export default function UserDashboard() {
                               onThanks={() => handleThanksSuggestion(dm)}
                               onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
+                              onPlayGame={handlePlayGame}
                             />
                           ))}
                           <div ref={dmBottomRef} />
@@ -2066,22 +2227,37 @@ export default function UserDashboard() {
                               onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
                             />
                           ) : (
-                            <DmRequestComposer
-                              open={dmRequestOpen}
-                              amount={dmRequestAmount}
-                              note={dmRequestNote}
-                              duration={dmRequestDuration}
-                              status={dmRequestStatus}
-                              loading={loadingAction === "create-dm-request"}
-                              onToggle={() => {
-                                setDmRequestOpen((open) => !open);
-                                setDmRequestStatus(null);
-                              }}
-                              onSubmit={handleCreateDmRequest}
-                              onAmountChange={setDmRequestAmount}
-                              onNoteChange={setDmRequestNote}
-                              onDurationChange={setDmRequestDuration}
-                            />
+                            <div className="flex flex-col gap-2">
+                              <DmRequestComposer
+                                open={dmRequestOpen}
+                                amount={dmRequestAmount}
+                                note={dmRequestNote}
+                                duration={dmRequestDuration}
+                                status={dmRequestStatus}
+                                loading={loadingAction === "create-dm-request"}
+                                onToggle={() => {
+                                  setDmRequestOpen((open) => !open);
+                                  setDmRequestStatus(null);
+                                }}
+                                onSubmit={handleCreateDmRequest}
+                                onAmountChange={setDmRequestAmount}
+                                onNoteChange={setDmRequestNote}
+                                onDurationChange={setDmRequestDuration}
+                              />
+                              {!dmRequestOpen && (
+                                <motion.button
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                                  type="button"
+                                  onClick={() => setGamesMenuOpen(true)}
+                                  className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
+                                >
+                                  <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
+                                  <span>Games Menu</span>
+                                </motion.button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -2175,6 +2351,7 @@ export default function UserDashboard() {
                                   onThanks={() => handleThanksSuggestion(dm)}
                                   onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
+                                  onPlayGame={handlePlayGame}
                                 />
                               ))}
                               <div ref={dmBottomRef} />
@@ -2197,22 +2374,37 @@ export default function UserDashboard() {
                                   onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
                                 />
                               ) : (
-                                <DmRequestComposer
-                                  open={dmRequestOpen}
-                                  amount={dmRequestAmount}
-                                  note={dmRequestNote}
-                                  duration={dmRequestDuration}
-                                  status={dmRequestStatus}
-                                  loading={loadingAction === "create-dm-request"}
-                                  onToggle={() => {
-                                    setDmRequestOpen((open) => !open);
-                                    setDmRequestStatus(null);
-                                  }}
-                                  onSubmit={handleCreateDmRequest}
-                                  onAmountChange={setDmRequestAmount}
-                                  onNoteChange={setDmRequestNote}
-                                  onDurationChange={setDmRequestDuration}
-                                />
+                                <div className="flex flex-col gap-2">
+                                  <DmRequestComposer
+                                    open={dmRequestOpen}
+                                    amount={dmRequestAmount}
+                                    note={dmRequestNote}
+                                    duration={dmRequestDuration}
+                                    status={dmRequestStatus}
+                                    loading={loadingAction === "create-dm-request"}
+                                    onToggle={() => {
+                                      setDmRequestOpen((open) => !open);
+                                      setDmRequestStatus(null);
+                                    }}
+                                    onSubmit={handleCreateDmRequest}
+                                    onAmountChange={setDmRequestAmount}
+                                    onNoteChange={setDmRequestNote}
+                                    onDurationChange={setDmRequestDuration}
+                                  />
+                                  {!dmRequestOpen && (
+                                    <motion.button
+                                      whileHover={{ scale: 1.02 }}
+                                      whileTap={{ scale: 0.97 }}
+                                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                                      type="button"
+                                      onClick={() => setGamesMenuOpen(true)}
+                                      className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
+                                    >
+                                      <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
+                                      <span>Games Menu</span>
+                                    </motion.button>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </motion.div>
@@ -2245,37 +2437,102 @@ export default function UserDashboard() {
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
+                
+                {/* Link Type Selector */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-full border border-white/5 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkType("payment");
+                      setLinkResultUrl(null);
+                      setLinkError(null);
+                    }}
+                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
+                      linkType === "payment"
+                        ? "bg-[#ccff00] text-black shadow-md"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    Standard Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkType("game");
+                      setLinkResultUrl(null);
+                      setLinkError(null);
+                    }}
+                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
+                      linkType === "game"
+                        ? "bg-[#ccff00] text-black shadow-md"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    Host Chess Game
+                  </button>
+                </div>
+
                 <form onSubmit={handleCreateShareableLink} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                  <Field label="USDC Amount">
+                  <Field label={linkType === "game" ? "Staked USDC Amount" : "USDC Amount"}>
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
-                      placeholder="25.00"
+                      placeholder={linkType === "game" ? "1.00" : "25.00"}
                       inputMode="decimal"
                       className="subscript-input"
                       required
                     />
                   </Field>
-                  <Field label="What's it for (optional)">
-                    <input
-                      value={linkMemo}
-                      onChange={(event) => setLinkMemo(event.target.value)}
-                      placeholder="Invoice #1042, split the bill, donation..."
-                      className="subscript-input"
-                      maxLength={120}
-                    />
-                  </Field>
+
+                  {linkType === "payment" && (
+                    <Field label="What's it for (optional)">
+                      <input
+                        value={linkMemo}
+                        onChange={(event) => setLinkMemo(event.target.value)}
+                        placeholder="Invoice #1042, split the bill, donation..."
+                        className="subscript-input"
+                        maxLength={120}
+                      />
+                    </Field>
+                  )}
+
+                  {linkType === "game" && (
+                    <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2 text-[10px] text-white/50 font-bold uppercase tracking-wider">
+                      <p className="text-white font-black">Chess Stake Economics:</p>
+                      <div className="flex justify-between">
+                        <span>Your Stake:</span>
+                        <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Guest Stake:</span>
+                        <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
+                      </div>
+                      <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
+                        <span>Winner Payout (90%):</span>
+                        <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
+                      </div>
+                    </div>
+                  )}
+
                   {linkError && (
                     <div className="rounded-2xl border border-red-400/20 bg-red-500/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">
                       {linkError}
                     </div>
                   )}
+                  
                   <button
                     type="submit"
                     disabled={linkLoading}
                     className={`dm-quick-button dm-action-menu-trigger relative w-full min-w-0 overflow-hidden py-3 text-center ${linkLoading ? "quick-action-loading" : ""}`}
                   >
-                    {linkLoading ? "Creating link" : "Create payment link"}
+                    {linkLoading ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {linkType === "game" ? "Staking & Deploying Match..." : "Creating payment link..."}
+                      </span>
+                    ) : (
+                      <span>{linkType === "game" ? "Stake & Host Game" : "Create payment link"}</span>
+                    )}
                   </button>
                 </form>
 
@@ -3145,6 +3402,21 @@ export default function UserDashboard() {
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
+      <GamesModals
+        gamesMenuOpen={gamesMenuOpen}
+        setGamesMenuOpen={setGamesMenuOpen}
+        selectedDmPeer={selectedDmPeer}
+        activePlayingGame={activePlayingGame}
+        setActivePlayingGame={setActivePlayingGame}
+        isChessBoardModalOpen={isChessBoardModalOpen}
+        setIsChessBoardModalOpen={setIsChessBoardModalOpen}
+        userWallet={userWallet}
+        triggerToast={triggerToast}
+        refetchDms={loadDms}
+        writeContractAsync={writeContractAsync}
+        refetchUsdc={refetchUsdc}
+      />
+
       <AnimatePresence>
         {vaultActionOpen && (
           <motion.div
@@ -3707,6 +3979,7 @@ function DmBubble({
   onThanks,
   onCancelPlan,
   onSurveySubmit,
+  onPlayGame,
 }: {
   dm: DmMessage;
   focused: boolean;
@@ -3719,6 +3992,7 @@ function DmBubble({
   onThanks?: () => void;
   onCancelPlan?: () => void;
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
+  onPlayGame?: (gameId: string) => void;
 }) {
   const isPending = dm.status === "PENDING";
   const displayTitle = shortenWalletsInText(dm.title);
@@ -3793,6 +4067,76 @@ function DmBubble({
     ? { type: "spring" as const, stiffness: 380, damping: 14, mass: 0.8 }
     : { type: "spring" as const, stiffness: 420, damping: 12, mass: 0.85 };
   const bubbleOrigin = incoming ? "bottom left" : "bottom right";
+
+  if (["GAME_INVITE", "GAME_STARTED", "GAME_RESULT"].includes(dm.messageType)) {
+    const isInvite = dm.messageType === "GAME_INVITE";
+    const isStarted = dm.messageType === "GAME_STARTED";
+    const buttonLabel = isInvite 
+      ? (incoming ? "Accept Challenge" : "Manage Invite") 
+      : isStarted 
+        ? "Play Move" 
+        : "View Results";
+
+    return (
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0, y: 12 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        whileHover={{ scale: 1.01 }}
+        transition={bubbleSpring}
+        style={{ transformOrigin: bubbleOrigin }}
+        className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
+      >
+        {incoming && <Avatar profilePic={dm.senderProfilePic} />}
+        <div className={`max-w-[80%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
+          <div
+            className={`px-5 py-4 border shadow-xl rounded-[24px] ${
+              incoming
+                ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-[#0d0d11]/95 text-white"} rounded-bl-[4px]`
+                : "border-[#00b2ff]/30 bg-[#002b4d]/40 text-white rounded-br-[4px]"
+            }`}
+          >
+            <p className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.2em] ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
+              ♟ Chess Match
+            </p>
+            
+            <h3 className="text-sm font-black uppercase leading-snug text-white tracking-wide">
+              {displayTitle || "Chess Game"}
+            </h3>
+            
+            <p className="mt-2 text-xs leading-relaxed text-white/70 whitespace-pre-wrap">
+              {displayDescription}
+            </p>
+
+            <div className="mt-4 flex items-center justify-between gap-6 border-t border-white/5 pt-3">
+              <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[9px] font-bold text-white/40">
+                {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+              </span>
+              {dm.amountUsdc && (
+                <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
+                  ${(Number(dm.amountUsdc) / 1000000).toFixed(2)} USDC
+                </span>
+              )}
+            </div>
+
+            {dm.dmGameId && onPlayGame && (
+              <button
+                type="button"
+                onClick={() => onPlayGame(dm.dmGameId!)}
+                className={`mt-3.5 w-full rounded-full py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-1.5 ${
+                  incoming 
+                    ? "bg-[#ccff00] text-black hover:opacity-90"
+                    : "bg-[#00b2ff] text-white hover:opacity-90"
+                }`}
+              >
+                <GamepadIcon className="w-3.5 h-3.5" />
+                <span>{buttonLabel}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   if (isReactionMessage(dm.messageType)) {
     return (
@@ -4112,6 +4456,19 @@ function MerchantPlanManager({
                     ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
                       activeSubscription.billingIntervalSeconds === plan.periodSeconds
                     : false;
+                  let isReduction = false;
+                  if (activeSubscription) {
+                    try {
+                      isReduction = compareRecurringRates(
+                        BigInt(plan.amountUsdc),
+                        BigInt(plan.periodSeconds),
+                        BigInt(activeSubscription.amountCapUsdc),
+                        BigInt(activeSubscription.billingIntervalSeconds),
+                      ) < 0;
+                    } catch {
+                      isReduction = true;
+                    }
+                  }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
                   return (
                     <motion.div
@@ -4129,6 +4486,21 @@ function MerchantPlanManager({
                           <p className="mt-1 text-[10px] font-bold text-[#ccff00]">
                             {formatUsdc(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                           </p>
+                          {plan.description && (
+                            <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-white/45">
+                              {plan.description}
+                            </p>
+                          )}
+                          {plan.detailsUrl && (
+                            <a
+                              href={plan.detailsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.1em] text-[#00d2b4] hover:text-[#00d2b4]/80"
+                            >
+                              View full plan <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                         {isCurrent && (
                           <motion.span
@@ -4147,14 +4519,20 @@ function MerchantPlanManager({
                         transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
-                        disabled={isCurrent || loadingAction === loadingKey}
+                        disabled={isCurrent || isReduction || loadingAction === loadingKey}
                         className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
-                          isCurrent
+                          isCurrent || isReduction
                             ? "border-white/5 bg-white/[0.03] text-white/25"
                             : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
-                        {isCurrent ? "Active now" : hasActiveSubscription ? "Switch" : "Subscribe"}
+                        {isCurrent
+                          ? "Active now"
+                          : isReduction
+                            ? "Lower tier unavailable"
+                            : hasActiveSubscription
+                              ? "Upgrade"
+                              : "Subscribe"}
                       </motion.button>
                     </motion.div>
                   );
@@ -4291,7 +4669,7 @@ function DmRequestComposer({
         type="button"
         onClick={onToggle}
         disabled={loading}
-        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${
+        className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${
           open
             ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
             : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"

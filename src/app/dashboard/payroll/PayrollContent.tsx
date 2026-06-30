@@ -12,6 +12,7 @@ import {
     BarChart3, Link2, Sliders, User, Key, Code2, Webhook, PlugZap
 } from "@/components/icons";
 import DashboardHeader from "@/components/DashboardHeader";
+import Skeleton from "@/components/ui/Skeleton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
@@ -1152,20 +1153,20 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                     {[1, 2, 3].map((n) => (
                                                         <div
                                                             key={`skel-${n}`}
-                                                            className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden animate-pulse"
+                                                            className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
                                                         >
                                                             <div className="flex justify-between items-start gap-4">
                                                                 <div className="flex-1 space-y-3">
-                                                                    <div className="h-5 w-48 bg-white/5 rounded-lg" />
+                                                                    <Skeleton className="h-5 w-48" />
                                                                     <div className="flex gap-6">
-                                                                        <div className="h-4 w-24 bg-white/5 rounded-lg" />
-                                                                        <div className="h-4 w-32 bg-white/5 rounded-lg" />
-                                                                        <div className="h-4 w-20 bg-white/5 rounded-lg" />
+                                                                        <Skeleton className="h-4 w-24" />
+                                                                        <Skeleton className="h-4 w-32" />
+                                                                        <Skeleton className="h-4 w-20" />
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex gap-2">
-                                                                    <div className="h-9 w-20 bg-white/5 rounded-xl" />
-                                                                    <div className="h-9 w-9 bg-white/5 rounded-xl" />
+                                                                    <Skeleton className="h-9 w-20" />
+                                                                    <Skeleton className="h-9 w-9" />
                                                                 </div>
                                                             </div>
                                                         </div>

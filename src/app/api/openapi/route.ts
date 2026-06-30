@@ -222,11 +222,12 @@ const spec = {
                 },
             },
             delete: {
-                summary: "Cancel a subscription",
-                description: "`sub_<uuid>` cancels a not-yet-activated checkout session; `sub_<number>` flags an on-chain subscription to cancel at period end.",
+                summary: "Withdraw an unaccepted subscription checkout",
+                description: "`sub_<uuid>` cancels a not-yet-activated checkout session. Active `sub_<number>` authorizations are customer-controlled and return 403.",
                 parameters: [{ name: "id", in: "query", required: true, schema: { type: "string" } }],
                 responses: {
                     "200": { description: "Canceled", content: { "application/json": { schema: { $ref: "#/components/schemas/Subscription" } } } },
+                    "403": { description: "Only the subscriber can cancel an active subscription", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },

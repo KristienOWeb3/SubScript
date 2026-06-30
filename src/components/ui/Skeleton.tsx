@@ -7,6 +7,7 @@ interface SkeletonProps {
     width?: string | number;
     height?: string | number;
     circle?: boolean;
+    variant?: "default" | "faint" | "glass";
 }
 
 export default function Skeleton({
@@ -14,17 +15,26 @@ export default function Skeleton({
     width,
     height,
     circle = false,
+    variant = "default",
 }: SkeletonProps) {
     const style: React.CSSProperties = {};
     if (width !== undefined) style.width = width;
     if (height !== undefined) style.height = height;
 
+    const baseClass = 
+        variant === "glass" 
+            ? "liquid-glass-skeleton" 
+            : variant === "faint"
+            ? "subscript-skeleton subscript-skeleton--faint"
+            : "subscript-skeleton";
+
     return (
         <div
-            className={`liquid-glass-skeleton ${
+            className={`${baseClass} ${
                 circle ? "rounded-full" : "rounded-2xl"
             } ${className}`}
             style={style}
         />
     );
 }
+

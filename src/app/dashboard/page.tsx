@@ -36,7 +36,7 @@ import { arcTestnet } from "@/lib/wagmi";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
-    RefreshCw, Sliders, ShieldX, CheckCircle, AlertTriangle, 
+    RefreshCw, Sliders, CheckCircle, AlertTriangle,
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
@@ -759,6 +759,13 @@ export default function DashboardPage() {
     const [uploadingPic, setUploadingPic] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+    const [merchantWalletBackupLoading, setMerchantWalletBackupLoading] = useState(false);
+    const [merchantWalletBackupError, setMerchantWalletBackupError] = useState<string | null>(null);
+    const [merchantExportOtpStage, setMerchantExportOtpStage] = useState(false);
+    const [merchantExportOtpCode, setMerchantExportOtpCode] = useState("");
+    const [merchantExportOtpSending, setMerchantExportOtpSending] = useState(false);
+    const [merchantExportedPrivateKey, setMerchantExportedPrivateKey] = useState<string | null>(null);
+    const [merchantPrivateKeyVisible, setMerchantPrivateKeyVisible] = useState(false);
 
     const fetchSettings = useCallback(async () => {
         if (!address) return;
@@ -787,6 +794,81 @@ export default function DashboardPage() {
             fetchSettings();
         }
     }, [address, fetchSettings]);
+
+    const requestMerchantExportOtp = async () => {
+        const email = userSettings?.walletBackup?.email || embeddedWallet?.email;
+        if (!email) {
+            setMerchantWalletBackupError("No verified email is linked to this merchant wallet.");
+            return;
+        }
+        setMerchantExportOtpSending(true);
+        setMerchantWalletBackupError(null);
+        setMerchantExportedPrivateKey(null);
+        setMerchantPrivateKeyVisible(false);
+        try {
+            const res = await fetch("/api/auth/otp/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Could not send a verification code.");
+            }
+            setMerchantExportOtpStage(true);
+            setMerchantExportOtpCode("");
+            setToastMessage(`Verification code sent to ${email}`);
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+        } catch (error: any) {
+            setMerchantWalletBackupError(error.message || "Could not send a verification code.");
+        } finally {
+            setMerchantExportOtpSending(false);
+        }
+    };
+
+    const handleMerchantWalletExport = async () => {
+        setMerchantWalletBackupLoading(true);
+        setMerchantWalletBackupError(null);
+        try {
+            const res = await fetch("/api/user/wallet/export", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ otpCode: merchantExportOtpCode.trim() }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Could not export this merchant wallet.");
+            }
+            setMerchantExportedPrivateKey(data.privateKey);
+            setMerchantPrivateKeyVisible(true);
+            setMerchantExportOtpStage(false);
+            setMerchantExportOtpCode("");
+        } catch (error: any) {
+            setMerchantWalletBackupError(error.message || "Could not export this merchant wallet.");
+        } finally {
+            setMerchantWalletBackupLoading(false);
+        }
+    };
+
+    const downloadMerchantWalletBackup = () => {
+        if (!merchantExportedPrivateKey || !address) return;
+        const blob = new Blob([[
+            "SubScript merchant wallet private key backup",
+            `Wallet: ${address.toLowerCase()}`,
+            `Created: ${new Date().toISOString()}`,
+            "",
+            merchantExportedPrivateKey,
+            "",
+            "Store this offline. Anyone with this key can control this wallet.",
+        ].join("\n")], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `subscript-merchant-wallet-${address.slice(2, 8).toLowerCase()}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
 
     const handleToggleSetting = async (field: string, currentValue: boolean) => {
         if (comingSoonMerchantSettings.has(field)) return;
@@ -1665,37 +1747,68 @@ export default function DashboardPage() {
         async function fetchOnChainData() {
             if (!merchantAddress) return;
             setIsLoadingContract(true);
+            if (isTestMode) {
+                setLedgers([]);
+                setIsLoadingContract(false);
+                setInitialContractFetched(true);
+                return;
+            }
             try {
-                const nextId = await publicClient.readContract({
+                const mirrorRequest = fetch("/api/merchant/subscriptions").catch(() => null);
+                const nextIdRequest = publicClient.readContract({
                     address: STANDARD_CONTRACT_ADDRESS,
                     abi: STANDARD_ABI,
                     functionName: "nextSubscriptionId",
                 });
+                const [mirrorResponse, nextId] = await Promise.all([mirrorRequest, nextIdRequest]);
+
+                const mirrorById = new Map<string, {
+                    subscriberName: string | null;
+                    status: string;
+                    cancelAtPeriodEnd: boolean;
+                    nextBillingDate: string | null;
+                }>();
+                if (mirrorResponse?.ok) {
+                    const mirrorPayload = await mirrorResponse.json().catch(() => null);
+                    for (const subscription of mirrorPayload?.subscriptions || []) {
+                        mirrorById.set(String(subscription.subscriptionId), subscription);
+                    }
+                }
                 
                 const nextIdNum = Number(nextId);
                 const fetchedLedgers = [];
-                
-                for (let i = 1; i < nextIdNum; i++) {
-                    const sub = await publicClient.readContract({
-                        address: STANDARD_CONTRACT_ADDRESS,
-                        abi: STANDARD_ABI,
-                        functionName: "subscriptions",
-                        args: [BigInt(i)],
-                    });
-                    
+                const onChainSubscriptions = await Promise.all(
+                    Array.from({ length: Math.max(0, nextIdNum - 1) }, async (_, index) => {
+                        const id = index + 1;
+                        const subscription = await publicClient.readContract({
+                            address: STANDARD_CONTRACT_ADDRESS,
+                            abi: STANDARD_ABI,
+                            functionName: "subscriptions",
+                            args: [BigInt(id)],
+                        });
+                        return { id, subscription };
+                    })
+                );
+
+                for (const { id, subscription: sub } of onChainSubscriptions) {
                     const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-                    
+
                     if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
+                        const mirror = mirrorById.get(String(id));
+                        const shortAddress = `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`;
                         fetchedLedgers.push({
-                            id: `agent-run-${i}`,
-                            rawId: String(i),
+                            id: `agent-run-${id}`,
+                            rawId: String(id),
                             address: subscriber,
-                            shortSubAddress: `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`,
+                            displayAddress: mirror?.subscriberName || shortAddress,
+                            shortSubAddress: mirror?.subscriberName || shortAddress,
                             limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
                             rawAmount: formatUnits(amount, 6),
                             rawPeriod: String(period),
                             nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
                             active: isActive,
+                            billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
+                            cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
                         });
                     }
                 }
@@ -1723,7 +1836,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger]);
+    }, [isConnected, address, isPremium, refreshTrigger, isTestMode]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -1752,25 +1865,6 @@ export default function DashboardPage() {
             console.error("Error rolling keys:", err);
         } finally {
             setIsRolling(false);
-        }
-    };
-
-    const handleRevokeCustomer = async (rawId: string) => {
-        try {
-            await executeContractWrite({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "cancelSubscription",
-                args: [BigInt(rawId)],
-            });
-            setLedgers(prev => prev.map(item => {
-                if (item.rawId === rawId) {
-                    return { ...item, active: false };
-                }
-                return item;
-            }));
-        } catch (err) {
-            console.error("Error revoking subscription on-chain:", err);
         }
     };
 
@@ -3192,6 +3286,128 @@ Please complete the following implementation tasks:
                     </div>
                 </div>
 
+                {/* Wallet Recovery & Backup */}
+                {userSettings.walletBackup && (
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <Lock className="w-4 h-4 text-[#00d2b4]" />
+                                    Wallet Recovery & Backup
+                                </h2>
+                                <p className="text-[11px] text-white/40 font-sans leading-relaxed max-w-xl">
+                                    Export the private key for your email-created merchant wallet after email verification.
+                                    Importing this key into a wallet app lets you use <strong className="text-white/65">Sign in with Wallet</strong> and
+                                    opens this same merchant account.
+                                </p>
+                            </div>
+                            <span className={`self-start rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
+                                userSettings.walletBackup.available
+                                    ? "border border-[#00d2b4]/25 bg-[#00d2b4]/10 text-[#00d2b4]"
+                                    : "border border-white/10 bg-white/5 text-white/45"
+                            }`}>
+                                {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                            </span>
+                        </div>
+
+                        {merchantExportedPrivateKey && (
+                            <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4">
+                                <p className="text-[10px] font-bold text-amber-200">
+                                    Keep this secret offline. SubScript will never ask you to paste it into the app.
+                                </p>
+                                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/50 px-3 py-2.5">
+                                    <code className="min-w-0 flex-1 truncate text-[10px] text-white/75">
+                                        {merchantPrivateKeyVisible ? merchantExportedPrivateKey : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
+                                    </code>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMerchantPrivateKeyVisible((visible) => !visible)}
+                                        className="p-1.5 text-white/45 hover:text-white"
+                                        aria-label={merchantPrivateKeyVisible ? "Hide private key" : "Show private key"}
+                                    >
+                                        {merchantPrivateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopy(merchantExportedPrivateKey, "Merchant Wallet Private Key")}
+                                        className="p-1.5 text-white/45 hover:text-white"
+                                        aria-label="Copy private key"
+                                    >
+                                        {copiedText === "Merchant Wallet Private Key"
+                                            ? <Check className="h-4 w-4 text-[#00d2b4]" />
+                                            : <Copy className="h-4 w-4" />}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={downloadMerchantWalletBackup}
+                                        className="p-1.5 text-white/45 hover:text-white"
+                                        aria-label="Download private key backup"
+                                    >
+                                        <ArrowDownToLine className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {merchantWalletBackupError && (
+                            <p className="text-[11px] text-red-300">{merchantWalletBackupError}</p>
+                        )}
+
+                        {merchantExportOtpStage ? (
+                            <div className="space-y-3">
+                                <p className="text-[10px] text-white/45">
+                                    Enter the 6-digit code sent to {userSettings.walletBackup.email}.
+                                </p>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="one-time-code"
+                                    maxLength={6}
+                                    value={merchantExportOtpCode}
+                                    onChange={(event) => setMerchantExportOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                                    placeholder="000000"
+                                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#00d2b4]/50 focus:outline-none"
+                                />
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleMerchantWalletExport}
+                                        disabled={merchantWalletBackupLoading || merchantExportOtpCode.length !== 6}
+                                        className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {merchantWalletBackupLoading ? "Unlocking…" : "Confirm & Reveal"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setMerchantExportOtpStage(false);
+                                            setMerchantExportOtpCode("");
+                                            setMerchantWalletBackupError(null);
+                                        }}
+                                        disabled={merchantWalletBackupLoading}
+                                        className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-xs font-black uppercase tracking-[0.14em] text-white/65 transition hover:bg-white/10 disabled:opacity-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={requestMerchantExportOtp}
+                                disabled={merchantExportOtpSending || !userSettings.walletBackup.available}
+                                className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {merchantExportOtpSending
+                                    ? "Sending verification code…"
+                                    : userSettings.walletBackup.available
+                                        ? "Verify email & export wallet"
+                                        : "Private-key export unavailable"}
+                            </button>
+                        )}
+                    </div>
+                )}
+
                 {/* Payout & Settlement Wallet Section */}
                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                     <div>
@@ -3452,7 +3668,7 @@ Please complete the following implementation tasks:
             ];
 
             return (
-                <div className="relative flex items-center gap-1 border-b border-white/5 pb-0 mb-8 w-full overflow-x-auto scrollbar-hide">
+                <div className="relative grid grid-cols-3 sm:flex sm:items-center gap-1 border-b border-white/5 pb-0 mb-8 w-full">
                     {tabsConfig.map((tab) => {
                         const isActive = subTab === tab.id;
                         const Icon = tab.icon;
@@ -3461,7 +3677,7 @@ Please complete the following implementation tasks:
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setSubTab(tab.id as any)}
-                                className="group relative flex items-center pb-3 pt-2 px-4 cursor-pointer select-none transition-all duration-300 ease-out focus:outline-none"
+                                className="group relative flex min-w-0 items-center justify-center sm:justify-start pb-3 pt-2 px-2 sm:px-4 cursor-pointer select-none transition-all duration-300 ease-out focus:outline-none"
                             >
                                 <div className="flex items-center">
                                     <Icon 
@@ -3470,10 +3686,10 @@ Please complete the following implementation tasks:
                                         }`} 
                                     />
                                     <div 
-                                        className={`transition-all duration-300 ease-out overflow-hidden flex items-center ${
+                                        className={`max-w-[110px] opacity-100 ml-1.5 transition-all duration-300 ease-out overflow-hidden flex items-center ${
                                             isActive 
-                                                ? "max-w-[150px] opacity-100 ml-2" 
-                                                : "max-w-0 opacity-0 ml-0"
+                                                ? "sm:max-w-[150px] sm:opacity-100 sm:ml-2"
+                                                : "sm:max-w-0 sm:opacity-0 sm:ml-0"
                                         }`}
                                     >
                                         <span className={`text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap ${
@@ -3481,7 +3697,7 @@ Please complete the following implementation tasks:
                                         }`}>
                                             <span className="hidden sm:inline">{tab.label}</span>
                                             <span className="inline sm:hidden">
-                                                {tab.id === "subscriptions" ? "Subs" : tab.id === "one-time" ? "One-Time" : "Commits"}
+                                                {tab.id === "subscriptions" ? "Plans" : tab.id === "one-time" ? "One-Time" : "Commits"}
                                             </span>
                                         </span>
                                     </div>
@@ -3694,7 +3910,7 @@ Please complete the following implementation tasks:
                 return (
                     <>
                         {/* Desktop Overview Layout */}
-                        <div className="hidden lg:block space-y-8">
+                        <div className="hidden md:block space-y-8">
                             {/* Stats Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                                 {/* Wallet Balance */}
@@ -3816,7 +4032,7 @@ Please complete the following implementation tasks:
                                                 <th className="pb-3">Allowance</th>
                                                 <th className="pb-3">Next Billing</th>
                                                 <th className="pb-3">Status</th>
-                                                <th className="pb-3 text-right">Actions</th>
+                                                <th className="pb-3 text-right">Control</th>
                                             </tr>
                                         </thead>
                                         <tbody className="text-xs text-white/70 font-mono">
@@ -3839,7 +4055,7 @@ Please complete the following implementation tasks:
                                                     return paginatedLedgers.map((item) => (
                                                         <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                             <td className="py-4 font-semibold text-white">{item.id}</td>
-                                                            <td className="py-4 text-white/40" title={item.address}>{item.shortSubAddress}</td>
+                                                            <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
                                                             <td className="py-4 text-[#d4a853]">{item.limit}</td>
                                                             <td className="py-4">{item.nextBilling}</td>
                                                             <td className="py-4">
@@ -3852,17 +4068,9 @@ Please complete the following implementation tasks:
                                                                 </span>
                                                             </td>
                                                             <td className="py-4 text-right">
-                                                                {item.active ? (
-                                                                    <button 
-                                                                        onClick={() => handleRevokeCustomer(item.rawId)}
-                                                                        className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                                        title="Revoke Allowance"
-                                                                    >
-                                                                        <ShieldX className="w-4 h-4" />
-                                                                    </button>
-                                                                ) : (
-                                                                    <span className="text-[9px] text-white/20 uppercase tracking-widest font-bold">Ended</span>
-                                                                )}
+                                                                <span className="text-[9px] text-white/25 uppercase tracking-widest font-bold">
+                                                                    {item.active ? "Customer controlled" : "Ended"}
+                                                                </span>
                                                             </td>
                                                         </tr>
                                                     ));
@@ -3906,7 +4114,7 @@ Please complete the following implementation tasks:
                         </div>
 
                         {/* Mobile Overview Layout (Strictly blueprint aligned) */}
-                        <div className="lg:hidden space-y-6 pb-24 font-sans">
+                        <div className="md:hidden space-y-6 pb-24 font-sans">
                             {/* Wallet Balance Card */}
                             <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
                                 <div className="space-y-1 relative z-10">
@@ -4089,7 +4297,7 @@ Please complete the following implementation tasks:
                                                     <div className="flex justify-between items-start pr-8">
                                                         <div>
                                                             <p className="text-[10px] font-bold text-white uppercase tracking-wide">{item.id}</p>
-                                                            <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.shortSubAddress}</p>
+                                                            <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
                                                         </div>
                                                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
                                                             item.active 
@@ -4110,13 +4318,9 @@ Please complete the following implementation tasks:
                                                         </div>
                                                     </div>
                                                     {item.active && (
-                                                        <button 
-                                                            onClick={() => handleRevokeCustomer(item.rawId)}
-                                                            className="absolute right-3.5 top-3.5 p-1.5 text-red-400 hover:text-white hover:bg-red-500/10 rounded-lg transition-all"
-                                                            title="Revoke Allowance"
-                                                        >
-                                                            <ShieldX className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-white/20">
+                                                            Only the customer can cancel
+                                                        </span>
                                                     )}
                                                 </div>
                                             ));

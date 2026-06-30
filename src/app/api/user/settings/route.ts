@@ -115,6 +115,11 @@ export async function GET(request: Request) {
                     churnSurveyEnabled: merchant.churnSurveyEnabled,
                     payoutDestination: merchant.payoutDestination,
                     availableBalanceUsdc: merchant.availableBalanceUsdc.toString(),
+                    walletBackup: embeddedWalletRecord ? {
+                        email: embeddedWalletRecord.email,
+                        provider: embeddedWalletRecord.provider,
+                        available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                    } : null,
                 };
             }
         } else {
