@@ -21,7 +21,11 @@ describe("SubScript Hardening & Chaos Testing", function () {
 
     /* Deploy SubScriptPSA */
     const SubScript = await ethers.getContractFactory("SubScriptPSA");
-    const subScript = await SubScript.deploy(await usdc.getAddress(), await stableFX.getAddress());
+    const subScript = await SubScript.deploy(
+      await usdc.getAddress(),
+      await stableFX.getAddress(),
+      owner.address
+    );
 
     /* Mint USDC and approve */
     const INITIAL_BAL = ethers.parseUnits("5000", 6);
@@ -59,7 +63,11 @@ describe("SubScript Hardening & Chaos Testing", function () {
       
       /* Deploy SubScriptPSA pointing to MaliciousToken and MockStableFX */
       const SubScript = await ethers.getContractFactory("SubScriptPSA");
-      const subScript = await SubScript.deploy(await malToken.getAddress(), await stableFX.getAddress());
+      const subScript = await SubScript.deploy(
+        await malToken.getAddress(),
+        await stableFX.getAddress(),
+        owner.address
+      );
       
       /* Deploy ReentrancyAttacker pointing to subScript */
       const ReentrancyAttacker = await ethers.getContractFactory("ReentrancyAttacker");

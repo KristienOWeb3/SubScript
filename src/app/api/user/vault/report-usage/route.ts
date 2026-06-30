@@ -6,10 +6,146 @@
  * the required commit) it refuses usage until the user re-commits. Gating reads the
  * on-chain mirror, which the commit/withdraw/draw flows keep in sync.
  */
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { withPgClient } from "@/lib/serverPg";
+import { sendPushToWallet } from "@/lib/push";
+
+type VaultUsageRow = {
+    id: string;
+    balance_usdc: string;
+    commit_usdc: string;
+    owed_usdc: string;
+    accrued_usage_usdc: string;
+    active: boolean;
+};
+
+type UsageResult =
+    | { kind: "missing" }
+    | { kind: "inactive"; vault: VaultUsageRow }
+    | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notificationCreated: boolean }
+    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notificationCreated: boolean };
+
+async function insertExhaustionNotification(
+    client: any,
+    merchantAddress: string,
+    userAddress: string,
+    commitUsdc: bigint,
+) {
+    const existing = await client.query(
+        `select id
+           from subscript_dms
+          where sender_address = $1
+            and receiver_address = $2
+            and message_type = 'COMMIT_EXHAUSTED'
+            and status = 'PENDING'
+          limit 1`,
+        [merchantAddress, userAddress],
+    );
+    if (existing.rowCount > 0) return false;
+
+    await client.query(
+        `insert into subscript_dms
+            (sender_address, receiver_address, message_type, status, amount_usdc, title, description)
+         values ($1, $2, 'COMMIT_EXHAUSTED', 'PENDING', $3, $4, $5)`,
+        [
+            merchantAddress,
+            userAddress,
+            commitUsdc.toString(),
+            "Committed balance exhausted",
+            "Your committed service balance is fully used. Re-commit before requesting more service.",
+        ],
+    );
+    return true;
+}
+
+async function accrueUsageAtomically(
+    userAddress: string,
+    merchantAddress: string,
+    amountMicros: bigint,
+): Promise<UsageResult> {
+    return withPgClient(async (client) => {
+        await client.query("begin");
+        try {
+            const selected = await client.query(
+                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active
+                   from metered_vaults
+                  where user_address = $1 and merchant_address = $2
+                  for update`,
+                [userAddress, merchantAddress],
+            );
+            if (selected.rowCount === 0) {
+                await client.query("commit");
+                return { kind: "missing" } as const;
+            }
+
+            const vault = selected.rows[0] as VaultUsageRow;
+            const balance = BigInt(vault.balance_usdc);
+            const accrued = BigInt(vault.accrued_usage_usdc);
+            const commit = BigInt(vault.commit_usdc);
+
+            if (!vault.active) {
+                await client.query("commit");
+                return { kind: "inactive", vault } as const;
+            }
+
+            const nextAccrued = accrued + amountMicros;
+            if (nextAccrued > balance) {
+                const notificationCreated = await insertExhaustionNotification(
+                    client,
+                    merchantAddress,
+                    userAddress,
+                    commit,
+                );
+                await client.query("commit");
+                return {
+                    kind: "exhausted",
+                    vault,
+                    remaining: balance > accrued ? balance - accrued : BigInt(0),
+                    notificationCreated,
+                } as const;
+            }
+
+            const updated = await client.query(
+                `update metered_vaults
+                    set accrued_usage_usdc = $1,
+                        updated_at = now()
+                  where id = $2
+              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active`,
+                [nextAccrued.toString(), vault.id],
+            );
+            const exhausted = nextAccrued === balance;
+            const notificationCreated = exhausted
+                ? await insertExhaustionNotification(client, merchantAddress, userAddress, commit)
+                : false;
+
+            await client.query("commit");
+            return {
+                kind: "accrued",
+                vault: updated.rows[0] as VaultUsageRow,
+                exhausted,
+                notificationCreated,
+            } as const;
+        } catch (error) {
+            await client.query("rollback");
+            throw error;
+        }
+    });
+}
+
+function scheduleExhaustionPush(userAddress: string, merchantAddress: string, created: boolean) {
+    if (!created) return;
+    after(() =>
+        sendPushToWallet(userAddress, {
+            title: "Committed balance exhausted",
+            body: "Re-commit before requesting more service.",
+            url: `/user?tab=inbox&chat=${merchantAddress}`,
+            tag: `commit-exhausted-${merchantAddress}`,
+        }),
+    );
+}
 
 export async function POST(request: Request) {
     try {
@@ -64,56 +200,46 @@ export async function POST(request: Request) {
 
         const normalizedUser = userAddress.toLowerCase();
 
-        const vault = await prisma.meteredVault.findUnique({
-            where: {
-                userAddress_merchantAddress: { userAddress: normalizedUser, merchantAddress }
-            }
-        });
+        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros);
 
-        if (!vault) {
+        if (result.kind === "missing") {
             return NextResponse.json({
                 error: "No vault for this user. Ask them to commit to your service before reporting usage.",
                 code: "NO_VAULT",
             }, { status: 404 });
         }
 
-        // Gate: an inactive vault (below the required commit) cannot be used.
-        if (!vault.active) {
+        if (result.kind === "inactive") {
             return NextResponse.json({
                 error: "Vault inactive. The user must commit to your service before using it again.",
                 code: "VAULT_INACTIVE",
-                commitUsdc: vault.commitUsdc.toString(),
-                balanceUsdc: vault.balanceUsdc.toString(),
+                commitUsdc: result.vault.commit_usdc,
+                balanceUsdc: result.vault.balance_usdc,
             }, { status: 402 });
         }
 
-        // Cap usage at the committed escrow — never let usage exceed what was committed
-        // (no debt/negative balance). When the commit is exhausted, service stops.
-        if (vault.accruedUsageUsdc + amountMicros > vault.balanceUsdc) {
-            const remaining = vault.balanceUsdc - vault.accruedUsageUsdc;
+        if (result.kind === "exhausted") {
+            scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
             return NextResponse.json({
                 error: "Committed balance exhausted. The user must re-commit to keep using the service.",
                 code: "COMMIT_EXHAUSTED",
-                commitUsdc: vault.commitUsdc.toString(),
-                balanceUsdc: vault.balanceUsdc.toString(),
-                accruedUsageUsdc: vault.accruedUsageUsdc.toString(),
-                remainingUsdc: (remaining > BigInt(0) ? remaining : BigInt(0)).toString(),
+                commitUsdc: result.vault.commit_usdc,
+                balanceUsdc: result.vault.balance_usdc,
+                accruedUsageUsdc: result.vault.accrued_usage_usdc,
+                remainingUsdc: result.remaining.toString(),
             }, { status: 402 });
         }
 
-        // Accrue usage for the current cycle; the keeper draws it at cycle end.
-        const updated = await prisma.meteredVault.update({
-            where: { id: vault.id },
-            data: { accruedUsageUsdc: vault.accruedUsageUsdc + amountMicros }
-        });
+        scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
 
         return NextResponse.json({
             success: true,
-            active: updated.active,
-            accruedUsageUsdc: updated.accruedUsageUsdc.toString(),
-            balanceUsdc: updated.balanceUsdc.toString(),
-            commitUsdc: updated.commitUsdc.toString(),
-            owedUsdc: updated.owedUsdc.toString(),
+            active: result.vault.active,
+            exhausted: result.exhausted,
+            accruedUsageUsdc: result.vault.accrued_usage_usdc,
+            balanceUsdc: result.vault.balance_usdc,
+            commitUsdc: result.vault.commit_usdc,
+            owedUsdc: result.vault.owed_usdc,
         }, { status: 200 });
     } catch (err: any) {
         console.error("Usage reporting error:", err);

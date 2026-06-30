@@ -1,12 +1,13 @@
 const hre = require("hardhat");
 
-/* Upgrades the SubScriptVault UUPS proxy to the current implementation
-   (no-negative model + 30-day withdraw lock). Run as the proxy owner. */
+/* Upgrades the SubScriptVault UUPS proxy to the current implementation and
+   initializes the appended treasury slot atomically. Run as the proxy owner. */
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
   console.log("Upgrading SubScriptVault with account:", deployer.address);
 
   const proxyAddress = process.env.SUBSCRIPT_VAULT_ADDRESS || "0x853581e119dDED32DB886a4533A11789cF60bBFc";
+  const routerAddress = process.env.SUBSCRIPT_ROUTER_ADDRESS || "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
 
   console.log("\n--- Deploying new SubScriptVault implementation ---");
   const SubScriptVault = await hre.ethers.getContractFactory("SubScriptVault");
@@ -27,8 +28,20 @@ async function main() {
     throw new Error("Deployer is not the proxy owner. Upgrade cannot be executed.");
   }
 
-  console.log("Executing upgradeToAndCall...");
-  const tx = await proxy.upgradeToAndCall(newImplAddress, "0x");
+  const router = new hre.ethers.Contract(
+    routerAddress,
+    ["function treasury() view returns (address)"],
+    deployer,
+  );
+  const treasury = process.env.TREASURY_ADDRESS || await router.treasury();
+  if (!hre.ethers.isAddress(treasury) || treasury === hre.ethers.ZeroAddress) {
+    throw new Error("A valid TREASURY_ADDRESS or router treasury is required.");
+  }
+  console.log("Vault treasury:", treasury);
+
+  const initData = SubScriptVault.interface.encodeFunctionData("initializeV2", [treasury]);
+  console.log("Executing atomic upgradeToAndCall...");
+  const tx = await proxy.upgradeToAndCall(newImplAddress, initData);
   console.log("Tx:", tx.hash);
   const receipt = await tx.wait();
   console.log("Upgrade status:", receipt.status);

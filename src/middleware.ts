@@ -413,8 +413,7 @@ export async function middleware(request: NextRequest) {
                         pathname === "/api/auth/login" ||
                         pathname === "/api/auth/otp/verify" ||
                         pathname === "/api/auth/verify-signature" ||
-                        pathname === "/api/auth/otp/send" ||
-                        pathname === "/api/auth/social";
+                        pathname === "/api/auth/otp/send";
 
                     if (isAuthRoute) {
                         const { success } = await authLimiter.limit(ip);
@@ -448,8 +447,7 @@ export async function middleware(request: NextRequest) {
                     pathname === "/api/auth/login" ||
                     pathname === "/api/auth/otp/verify" ||
                     pathname === "/api/auth/verify-signature" ||
-                    pathname === "/api/auth/otp/send" ||
-                    pathname === "/api/auth/social";
+                    pathname === "/api/auth/otp/send";
 
                 const limiter = isAuthRoute ? authMemoryLimiter : globalMemoryLimiter;
                 rateLimitPassed = limiter.limit(ip);

@@ -11,7 +11,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
 import {
     modifyFromEmbedded,
     transferUsdcFromEmbedded,
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         if (!plan || !plan.active) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
 
         const subscriber = wallet.toLowerCase();
-        await ensureGasSponsored(subscriber);
+        await requireGasSponsored(subscriber);
 
         /* Resolve the current subscription (must belong to caller, be active, and be with the
            same merchant — you can only switch between a merchant's own plans). */

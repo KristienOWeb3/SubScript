@@ -5,7 +5,7 @@ const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 describe("SubScriptConfidential", function () {
   /* Shared Fixture for deployments */
   async function deployConfidentialFixture() {
-    const [owner, subscriber, merchant, recipient1, recipient2, stranger] =
+    const [owner, subscriber, merchant, recipient1, recipient2, stranger, treasury] =
       await ethers.getSigners();
 
     /* Deploy MockUSDC */
@@ -23,6 +23,7 @@ describe("SubScriptConfidential", function () {
     const confidentialContract = await SubScriptConfidential.deploy(
       usdcAddress,
       stableFXAddress,
+      treasury.address,
       owner.address
     );
     const contractAddress = await confidentialContract.getAddress();
@@ -44,14 +45,16 @@ describe("SubScriptConfidential", function () {
       recipient1,
       recipient2,
       stranger,
+      treasury,
       TEN_K,
     };
   }
 
   describe("Deployment", function () {
     it("should set the correct initial configurations", async function () {
-      const { confidentialContract, owner, usdc } = await loadFixture(deployConfidentialFixture);
+      const { confidentialContract, owner, treasury, usdc } = await loadFixture(deployConfidentialFixture);
       expect(await confidentialContract.paymentToken()).to.equal(await usdc.getAddress());
+      expect(await confidentialContract.treasury()).to.equal(treasury.address);
       expect(await confidentialContract.owner()).to.equal(owner.address);
     });
   });

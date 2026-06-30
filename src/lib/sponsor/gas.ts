@@ -5,16 +5,15 @@
  * funded sponsor wallet just-in-time tops up the user's embedded wallet so the gas
  * never comes out of their principal. The platform recoups it via the 1% merchant fee.
  *
- * Opt-in: set SPONSOR_PRIVATE_KEY (a SubScript-funded EOA). If unset, sponsorship is a
- * no-op and users pay their own gas (current behavior). Strictly for embedded wallets
- * on user→merchant flows — never peer transfers or external wallets.
+ * Required for sponsored flows: set SPONSOR_PRIVATE_KEY to a funded SubScript EOA.
+ * Sponsored callers fail closed when a top-up cannot be delivered, so the advertised
+ * payment amount is never silently reduced by gas.
  */
 import { ethers } from "ethers";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 const TOPUP_USDC = process.env.SPONSOR_GAS_TOPUP_USDC || "0.10";
-const MIN_USDC = process.env.SPONSOR_GAS_MIN_USDC || "0.02";
 
 export function isGasSponsorshipEnabled() {
     return Boolean(process.env.SPONSOR_PRIVATE_KEY);
@@ -23,9 +22,9 @@ export function isGasSponsorshipEnabled() {
 export type SponsorResult = { sponsored: boolean; txHash?: string; reason?: string };
 
 /**
- * Ensure `beneficiary` has enough native (USDC) gas to submit a tx, topping up from the
- * sponsor wallet when low. Best-effort: never throws — if it fails, the caller's tx
- * simply falls back to the user paying their own gas.
+ * Credit `beneficiary` with a dedicated native-USDC gas amount before a sponsored action.
+ * We always top up instead of inspecting the user's balance: an existing balance is the
+ * user's payment principal and must not be reclassified as gas.
  */
 export async function ensureGasSponsored(beneficiary: string): Promise<SponsorResult> {
     try {
@@ -34,15 +33,10 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
         if (!ethers.isAddress(beneficiary)) return { sponsored: false, reason: "invalid_beneficiary" };
 
         const { provider } = await getRpcProviderForWrite();
-        const balance = await provider.getBalance(beneficiary);
-        if (balance >= ethers.parseEther(MIN_USDC)) {
-            return { sponsored: false, reason: "sufficient_gas" };
-        }
-
-        /* Abuse guard: at most one top-up per wallet per 30s. Top-ups are tiny and are
-           consumed by gas, so this is belt-and-suspenders against accidental loops. */
+        /* A single sponsored product action can submit approval + payment transactions.
+           Repeated requests inside 30 seconds reuse the first dedicated gas credit. */
         const rl = checkProviderRateLimit({ provider: "gas-sponsor", key: beneficiary.toLowerCase(), limit: 1, windowMs: 30_000 });
-        if (!rl.ok) return { sponsored: false, reason: "rate_limited" };
+        if (!rl.ok) return { sponsored: true, reason: "recently_sponsored" };
 
         const sponsor = new ethers.Wallet(key, provider);
         const tx = await sponsor.sendTransaction({ to: beneficiary, value: ethers.parseEther(TOPUP_USDC) });
@@ -52,4 +46,12 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
         console.error("[gas-sponsor] top-up failed:", error?.message || error);
         return { sponsored: false, reason: "error" };
     }
+}
+
+export async function requireGasSponsored(beneficiary: string): Promise<SponsorResult> {
+    const result = await ensureGasSponsored(beneficiary);
+    if (!result.sponsored) {
+        throw new Error(`Gas sponsorship unavailable (${result.reason || "unknown"}). No payment was submitted.`);
+    }
+    return result;
 }

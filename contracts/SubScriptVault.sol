@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -20,19 +21,15 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  *  - A merchant sets the commit amount required to use their metered service.
  *  - A user commits (escrows) USDC. While the vault is active, the merchant renders
  *    the service for the cycle (~30 days).
- *  - At cycle end the merchant (or an authorized SubScript drawer) draws the period's
- *    usage cost from the escrow into their claimable balance.
- *      - If usage <= escrow: the surplus stays; the user may withdraw it or leave it.
- *      - If usage  > escrow: escrow goes to 0 and the excess is recorded as `owed`
- *        (unsecured debt). The protocol NEVER pulls from the user's main wallet.
- *  - A vault with owed > 0, or balance below the required commit, is INACTIVE: the
- *    service must be refused (SubScript gates this off-chain too). To resume, the user
- *    must deposit enough to clear `owed` AND restore the required commit.
+ *  - Only at cycle end, the merchant (or an authorized SubScript drawer) settles the
+ *    period's usage cost from escrow. Usage is capped at the committed balance.
+ *  - Every unused unit is returned to the user during settlement. The vault is then
+ *    inactive and must receive a fresh minimum commitment before service resumes.
+ *  - Merchant claims are charged the protocol's flat 1% treasury fee.
  *
  * Trust notes:
  *  - On-chain escrow guarantees the merchant is paid up to the committed balance.
- *    The `owed` overage is only recovered when the user re-commits — it cannot be
- *    force-collected (matches product intent).
+ *    The protocol never creates debt or pulls from the user's main wallet.
  *  - `drawUsage` trusts the merchant's reported amount. SubScript reports usage off
  *    chain; this contract only enforces the escrow accounting and gating.
  */
@@ -66,6 +63,15 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     /* cycle length in seconds (default 30 days) */
     uint64 public cycleLength;
 
+    /*
+     * Treasury receiving the flat merchant fee.
+     * APPEND-ONLY: SubScriptVault is UUPS upgradeable; never reorder prior fields.
+     */
+    address public treasury;
+
+    uint256 public constant PROTOCOL_FEE_BPS = 100; // 1%
+    uint256 public constant BPS_DENOMINATOR = 10_000;
+
     /* ──────────────────────────── Events ─────────────────────────── */
 
     event RequiredCommitSet(address indexed merchant, uint256 amount);
@@ -73,8 +79,17 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     event UsageDrawn(address indexed user, address indexed merchant, uint256 requested, uint256 drawn, uint256 owed, bool active);
     event SurplusWithdrawn(address indexed user, address indexed merchant, uint256 amount, bool active);
     event MerchantClaimed(address indexed merchant, uint256 amount);
+    event ProtocolFeePaid(address indexed merchant, address indexed treasury, uint256 amount);
     event AuthorizedDrawerSet(address indexed drawer, bool allowed);
     event CycleLengthSet(uint64 seconds_);
+    event TreasurySet(address indexed treasury);
+    event CycleSettled(
+        address indexed user,
+        address indexed merchant,
+        uint256 requested,
+        uint256 drawn,
+        uint256 refunded
+    );
 
     /* ──────────────────────────── Init ───────────────────────────── */
 
@@ -89,6 +104,15 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         require(_paymentToken != address(0), "token=0");
         paymentToken = IERC20(_paymentToken);
         cycleLength = 30 days;
+        treasury = _owner;
+    }
+
+    /**
+     * @notice Initializes treasury storage when upgrading an existing V1 proxy.
+     * @dev Execute atomically through upgradeToAndCall to avoid a fee-free claim window.
+     */
+    function initializeV2(address _treasury) external reinitializer(2) onlyOwner {
+        _setTreasury(_treasury);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
@@ -151,6 +175,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         Vault storage v = vaults[msg.sender][merchant];
         require(v.owed == 0, "settle owed first");
         require(block.timestamp >= v.lockedUntil, "locked");
+        require(!v.active, "active cycle");
         require(amount > 0 && amount <= v.balance, "bad amount");
 
         v.balance -= amount;
@@ -177,29 +202,46 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     function _draw(address merchant, address user, uint256 amount) internal {
         Vault storage v = vaults[user][merchant];
-        require(amount > 0, "amount=0");
+        require(v.active, "inactive");
+        require(v.lockedUntil != 0 && block.timestamp >= v.lockedUntil, "cycle not mature");
 
         // Never create debt: the merchant can only draw up to the escrowed balance.
         // Usage is gated off-chain so it should not exceed the commit in the first place.
         uint256 drawn = amount <= v.balance ? amount : v.balance;
-        v.balance -= drawn;
+        uint256 refunded = v.balance - drawn;
+
+        // Close the cycle before either party receives funds. A fresh commit is required.
+        v.balance = 0;
+        v.active = false;
+        v.cycleStart = 0;
+        v.lockedUntil = 0;
         merchantClaimable[merchant] += drawn;
 
-        // Active only if still funded to the required commit for the next cycle.
-        v.active = (v.balance >= requiredCommit[merchant]);
-        v.cycleStart = uint64(block.timestamp);
+        if (refunded > 0) {
+            paymentToken.safeTransfer(user, refunded);
+        }
 
-        emit UsageDrawn(user, merchant, amount, drawn, 0, v.active);
+        emit UsageDrawn(user, merchant, amount, drawn, 0, false);
+        emit CycleSettled(user, merchant, amount, drawn, refunded);
     }
 
     /* ──────────────────────────── Merchant settlement ────────────── */
 
     function merchantClaim() external nonReentrant {
-        uint256 amount = merchantClaimable[msg.sender];
-        require(amount > 0, "nothing to claim");
+        uint256 grossAmount = merchantClaimable[msg.sender];
+        require(grossAmount > 0, "nothing to claim");
+        require(treasury != address(0), "treasury=0");
+
+        uint256 fee = Math.mulDiv(grossAmount, PROTOCOL_FEE_BPS, BPS_DENOMINATOR);
+        uint256 netAmount = grossAmount - fee;
         merchantClaimable[msg.sender] = 0;
-        paymentToken.safeTransfer(msg.sender, amount);
-        emit MerchantClaimed(msg.sender, amount);
+
+        if (fee > 0) {
+            paymentToken.safeTransfer(treasury, fee);
+            emit ProtocolFeePaid(msg.sender, treasury, fee);
+        }
+        paymentToken.safeTransfer(msg.sender, netAmount);
+        emit MerchantClaimed(msg.sender, netAmount);
     }
 
     /* ──────────────────────────── Views ──────────────────────────── */
@@ -228,6 +270,16 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         require(seconds_ >= 1 days, "too short");
         cycleLength = seconds_;
         emit CycleLengthSet(seconds_);
+    }
+
+    function setTreasury(address _treasury) external onlyOwner {
+        _setTreasury(_treasury);
+    }
+
+    function _setTreasury(address _treasury) internal {
+        require(_treasury != address(0), "treasury=0");
+        treasury = _treasury;
+        emit TreasurySet(_treasury);
     }
 
     function pause() external onlyOwner { _pause(); }

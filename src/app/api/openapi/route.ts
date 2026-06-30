@@ -50,6 +50,26 @@ const spec = {
                     },
                 },
             },
+            PaymentLink: {
+                type: "object",
+                properties: {
+                    id: { type: "string", description: "Hosted payment-link id." },
+                    merchant_address: { type: "string" },
+                    beneficiary_address: {
+                        type: ["string", "null"],
+                        description: "Registered SubScript USER whose account the merchant must fulfill after payment.",
+                    },
+                    beneficiaryAddress: {
+                        type: ["string", "null"],
+                        description: "Camel-case alias of beneficiary_address.",
+                    },
+                    title: { type: "string" },
+                    description: { type: ["string", "null"] },
+                    amount_usdc: { type: "string", description: "Integer micro-USDC." },
+                    receiptToken: { type: ["string", "null"] },
+                    checkoutUrl: { type: "string", format: "uri" },
+                },
+            },
             Subscription: {
                 type: "object",
                 properties: {
@@ -87,6 +107,14 @@ const spec = {
                             currency: { type: "string", const: "USDC" },
                             receipt_id: { type: ["string", "null"] },
                             transaction_hash: { type: "string" },
+                            payer_address: {
+                                type: "string",
+                                description: "Wallet that signed and settled the verified on-chain payment.",
+                            },
+                            beneficiary_address: {
+                                type: "string",
+                                description: "Registered USER account the merchant must fulfill; may differ from payer_address.",
+                            },
                             chain_id: { type: "integer" },
                             usdc_address: { type: "string" },
                             explorer_url: { type: ["string", "null"], description: "Direct Arc explorer link to the tx." },
@@ -128,6 +156,75 @@ const spec = {
         },
     },
     paths: {
+        "/api/payment-links": {
+            post: {
+                summary: "Create a hosted payment link",
+                description:
+                    "Set beneficiary_address for Pay For Me. The beneficiary must already be a registered USER, cannot be the merchant, and is returned in the signed payment.succeeded webhook for fulfillment.",
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["title", "amount_usdc"],
+                                properties: {
+                                    title: { type: "string" },
+                                    description: { type: "string" },
+                                    amount_usdc: { type: "string", description: "Integer micro-USDC." },
+                                    beneficiary_address: {
+                                        type: "string",
+                                        description: "Registered USER wallet receiving the service or entitlement.",
+                                    },
+                                    external_reference: { type: "string" },
+                                    idempotency_key: { type: "string" },
+                                    max_uses: { type: "integer", minimum: 1, maximum: 10000 },
+                                    expires_at: { type: ["integer", "string"] },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "201": {
+                        description: "Created",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        link: { $ref: "#/components/schemas/PaymentLink" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": { description: "Invalid or unregistered beneficiary", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            get: {
+                summary: "List this merchant's payment links",
+                responses: {
+                    "200": {
+                        description: "OK",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        links: {
+                                            type: "array",
+                                            items: { $ref: "#/components/schemas/PaymentLink" },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
         "/api/intent": {
             post: {
                 summary: "Create a one-time payment intent",

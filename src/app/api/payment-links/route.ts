@@ -8,6 +8,7 @@ import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMi
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -57,10 +58,12 @@ async function parseBody(request: Request) {
 }
 
 function formatPaymentLinkResponse(link: any) {
+    const beneficiaryAddress = link.beneficiary_address || link.beneficiaryAddress || null;
     return {
         ...link,
         checkoutUrl: buildCheckoutUrl(link.id),
         receiptToken: link.receipt_token || link.receiptToken || null,
+        beneficiaryAddress,
     };
 }
 
@@ -170,12 +173,44 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
         }
 
-        const { title, description, amount_usdc, expires_at, external_reference, idempotency_key, merchant_name, max_uses, sandbox } = body;
+        const {
+            title,
+            description,
+            amount_usdc,
+            expires_at,
+            external_reference,
+            idempotency_key,
+            merchant_name,
+            max_uses,
+            sandbox,
+            beneficiary_address,
+            beneficiaryAddress,
+        } = body;
         const isSandboxRequest = sandbox === true || auth.apiKeyMode === "test";
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
         }
+
+        if (
+            beneficiary_address !== undefined &&
+            beneficiaryAddress !== undefined &&
+            String(beneficiary_address).toLowerCase() !== String(beneficiaryAddress).toLowerCase()
+        ) {
+            return NextResponse.json(
+                { error: "Bad Request: beneficiary_address and beneficiaryAddress must match" },
+                { status: 400 },
+            );
+        }
+
+        const beneficiaryValidation = validateBeneficiaryAddress(
+            beneficiary_address ?? beneficiaryAddress,
+            merchantAddress,
+        );
+        if (!beneficiaryValidation.ok) {
+            return NextResponse.json({ error: beneficiaryValidation.error }, { status: 400 });
+        }
+        const normalizedBeneficiary = beneficiaryValidation.address;
 
         /* Parse and validate amount_usdc as positive bigint */
         let amountBigInt: bigint;
@@ -205,6 +240,25 @@ export async function POST(request: Request) {
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+        if (normalizedBeneficiary) {
+            const { data: beneficiaryRole, error: beneficiaryRoleError } = await supabase
+                .from("account_roles")
+                .select("role")
+                .eq("address", normalizedBeneficiary)
+                .maybeSingle();
+
+            if (beneficiaryRoleError) {
+                console.error("Error validating payment-link beneficiary:", beneficiaryRoleError.message);
+                return NextResponse.json({ error: "Failed to validate beneficiary account" }, { status: 500 });
+            }
+            if (beneficiaryRole?.role !== "USER") {
+                return NextResponse.json(
+                    { error: "Bad Request: beneficiary_address must belong to a registered SubScript USER" },
+                    { status: 400 },
+                );
+            }
+        }
+
         /* Idempotency Check */
         if (idempotency_key && typeof idempotency_key === "string" && idempotency_key.trim() !== "") {
             const { data: existingLink } = await supabase
@@ -214,6 +268,19 @@ export async function POST(request: Request) {
                 .maybeSingle();
 
             if (existingLink) {
+                if (existingLink.merchant_address?.toLowerCase() !== merchantAddress.toLowerCase()) {
+                    return NextResponse.json(
+                        { error: "Conflict: Idempotency key is already in use" },
+                        { status: 409 },
+                    );
+                }
+                const existingBeneficiary = existingLink.beneficiary_address?.toLowerCase() || null;
+                if (existingBeneficiary !== normalizedBeneficiary) {
+                    return NextResponse.json(
+                        { error: "Conflict: Idempotency key was used with a different beneficiary" },
+                        { status: 409 },
+                    );
+                }
                 let link = existingLink;
                 if (!link.receipt_token) {
                     const receiptToken = generateReceiptId(link.title);
@@ -290,7 +357,8 @@ export async function POST(request: Request) {
                 idempotency_key: idempotency_key || null,
                 merchant_name_snapshot: merchant_name || null,
                 receipt_token: generateReceiptId(title),
-                max_uses: maxUses
+                max_uses: maxUses,
+                beneficiary_address: normalizedBeneficiary,
             })
             .select()
             .single();

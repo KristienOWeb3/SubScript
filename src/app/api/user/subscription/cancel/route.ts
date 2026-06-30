@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         }
 
         /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately. */
-        await ensureGasSponsored(wallet.toLowerCase());
+        await requireGasSponsored(wallet.toLowerCase());
         const txHash = await cancelFromEmbedded(wallet, subscriptionId);
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */

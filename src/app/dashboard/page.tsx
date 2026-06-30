@@ -1491,54 +1491,6 @@ export default function DashboardPage() {
         }
     };
 
-    const handleSocialLogin = (provider: "google" | "apple") => {
-        const width = 500;
-        const height = 650;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-        
-        const popup = window.open(
-            `/auth/popup?provider=${provider}`,
-            `SubScript - Continue with ${provider}`,
-            `width=${width},height=${height},left=${left},top=${top}`
-        );
-
-        const handleMessage = async (event: MessageEvent) => {
-            if (event.origin !== window.location.origin) return;
-            if (event.data?.type === "social-login-success") {
-                const { email } = event.data;
-                setOtpLoading(true);
-                setOtpError(null);
-                try {
-                    const res = await fetch("/api/auth/social", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ email, provider, rememberMe }),
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        setEmbeddedWallet({
-                            wallet: data.wallet,
-                            email: data.email
-                        });
-                        setSessionWallet(data.wallet.toLowerCase());
-                    } else {
-                        setOtpError(data.error || `Failed to log in with ${provider}`);
-                    }
-                } catch (err) {
-                    console.error("Social login verify error:", err);
-                    setOtpError(`Network error logging in with ${provider}`);
-                } finally {
-                    setOtpLoading(false);
-                }
-                window.removeEventListener("message", handleMessage);
-            }
-        };
-
-        window.addEventListener("message", handleMessage);
-    };
-
-
     const fetchAlias = useCallback(async () => {
         try {
             const res = await fetch("/api/merchant/alias");

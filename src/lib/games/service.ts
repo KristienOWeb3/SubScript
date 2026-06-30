@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import { withPgClient } from "@/lib/serverPg";
 import type { ApplyChessMoveResult, PromotionPiece } from "./chess";
 import { applyChessMove, INITIAL_FEN, positionKey } from "./chess";
+import { CHECKERS_INITIAL_FEN } from "./checkers";
 import type { ReturnTypeOfGetDmGamesConfig } from "./types";
 import {
     gameBadRequest,
@@ -217,8 +218,9 @@ async function insertGameDm(
 
 export async function createDmGame(input: {
     creatorAddress: string;
-    opponentAddress?: string | null;
+    opponentAddress: string | null;
     stakePerPlayerUsdc: bigint;
+    gameType?: string;
     config: ReturnTypeOfGetDmGamesConfig;
     now?: Date;
 }) {
@@ -243,7 +245,12 @@ export async function createDmGame(input: {
     const id = crypto.randomUUID();
     const contractGameId = ethers.keccak256(ethers.toUtf8Bytes(`subscript:dm-game:${id}`));
     const inviteExpiresAt = new Date(now.getTime() + config.inviteTtlMs);
-    const history = [positionKey(INITIAL_FEN)];
+    const gameType = (input.gameType || "CHESS").toUpperCase();
+    if (gameType !== "CHESS" && gameType !== "CHECKERS") {
+        throw gameBadRequest("Invalid game type", "INVALID_GAME_TYPE");
+    }
+    const initialFen = gameType === "CHECKERS" ? CHECKERS_INITIAL_FEN : INITIAL_FEN;
+    const history = [positionKey(initialFen)];
     const economics = calculateGameEconomics(input.stakePerPlayerUsdc);
 
     return serializable(async (client) => {
@@ -313,7 +320,7 @@ export async function createDmGame(input: {
                 created_at,
                 updated_at
              ) values (
-                $1, $2, 'CHESS', $3, 'INVITED', $4, $5, $6, $7, 1000,
+                $1, $2, $15, $3, 'INVITED', $4, $5, $6, $7, 1000,
                 $8, $9, $10, $11, $12::jsonb, $13, $14, $14
              )
              returning *`,
@@ -328,10 +335,11 @@ export async function createDmGame(input: {
                 config.treasuryAddress,
                 config.chainId,
                 config.contractAddress,
-                INITIAL_FEN,
+                initialFen,
                 JSON.stringify(history),
                 inviteExpiresAt,
                 now,
+                gameType, // $15
             ],
         );
 
@@ -490,7 +498,9 @@ type TerminalReason =
     | "STALEMATE"
     | "INSUFFICIENT_MATERIAL"
     | "FIFTY_MOVE"
-    | "THREEFOLD_REPETITION";
+    | "THREEFOLD_REPETITION"
+    | "ELIMINATION"
+    | "DRAW";
 
 async function finalizeGame(
     client: PoolClient,
@@ -628,95 +638,181 @@ export async function submitDmGameMove(input: {
             throw gameForbidden("It is not your turn", "OUT_OF_TURN");
         }
 
-        const moveResult: ApplyChessMoveResult = applyChessMove({
-            fen: game.fen,
-            from: input.from,
-            to: input.to,
-            promotion: (input.promotion || undefined) as PromotionPiece | undefined,
-            positionHistory: game.positionHistory,
-        });
-        const nextTurnAddress = moveResult.turn === "w" ? game.whiteAddress : game.blackAddress;
-        const nextHistory = [...game.positionHistory, positionKey(moveResult.fen)];
-        const nextPly = game.ply + 1;
-        const stateHash = ethers.keccak256(ethers.toUtf8Bytes(moveResult.fen));
-
-        await client.query(
-            `insert into dm_game_moves (
-                game_id, ply, player_address, uci, san, fen_before, fen_after,
-                state_hash, idempotency_key
-             ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [
-                game.id,
-                nextPly,
-                player,
-                moveResult.uci,
-                moveResult.san,
-                game.fen,
-                moveResult.fen,
-                stateHash,
-                input.idempotencyKey,
-            ],
-        );
-
-        const updated = await client.query<DbGameRow>(
-            `update dm_games
-             set fen = $2,
-                 position_history = $3::jsonb,
-                 current_turn_address = $4,
-                 ply = $5,
-                 version = version + 1,
-                 updated_at = $6
-             where id = $1
-               and status = 'ACTIVE'
-               and version = $7
-               and current_turn_address = $8
-               and expires_at > $6
-             returning *`,
-            [
-                game.id,
-                moveResult.fen,
-                JSON.stringify(nextHistory),
-                nextTurnAddress,
-                nextPly,
-                now,
-                game.version,
-                player,
-            ],
-        );
-        if (!updated.rows[0]) {
-            throw gameConflict("Move lost a state race; refresh and retry", "GAME_VERSION_CONFLICT");
-        }
-        const afterMove = mapDmGameRow(updated.rows[0]);
-        await insertGameEvent(client, {
-            gameId: game.id,
-            eventKey: `${game.id}:PLY:${nextPly}`,
-            eventType: "CHESS_MOVE",
-            actor: player,
-            payload: { uci: moveResult.uci, san: moveResult.san, stateHash },
-        });
-
-        if (moveResult.outcome.status === "CHECKMATE") {
-            return finalizeGame(client, afterMove, {
-                winnerAddress: player,
-                reason: "CHECKMATE",
-                now,
+        if (game.gameType === "CHECKERS") {
+            const { applyCheckersMove } = await import("./checkers");
+            const checkersRes = applyCheckersMove({
+                fen: game.fen,
+                from: input.from,
+                to: input.to,
+                positionHistory: game.positionHistory,
             });
-        }
-        if (moveResult.outcome.status === "DRAW") {
-            const drawReasons: Record<string, TerminalReason> = {
-                stalemate: "STALEMATE",
-                insufficient_material: "INSUFFICIENT_MATERIAL",
-                fifty_move: "FIFTY_MOVE",
-                threefold_repetition: "THREEFOLD_REPETITION",
-            };
-            const mappedReason = drawReasons[moveResult.outcome.reason] || "STALEMATE";
-            return finalizeGame(client, afterMove, {
-                winnerAddress: null,
-                reason: mappedReason,
-                now,
+            const nextTurnAddress = checkersRes.turn === "w" ? game.whiteAddress : game.blackAddress;
+            const nextHistory = [...game.positionHistory, positionKey(checkersRes.fen)];
+            const nextPly = game.ply + 1;
+            const stateHash = ethers.keccak256(ethers.toUtf8Bytes(checkersRes.fen));
+
+            await client.query(
+                `insert into dm_game_moves (
+                    game_id, ply, player_address, uci, san, fen_before, fen_after,
+                    state_hash, idempotency_key
+                 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    game.id,
+                    nextPly,
+                    player,
+                    checkersRes.uci,
+                    checkersRes.san,
+                    game.fen,
+                    checkersRes.fen,
+                    stateHash,
+                    input.idempotencyKey,
+                ],
+            );
+
+            const updated = await client.query<DbGameRow>(
+                `update dm_games
+                 set fen = $2,
+                     position_history = $3::jsonb,
+                     current_turn_address = $4,
+                     ply = $5,
+                     version = version + 1,
+                     updated_at = $6
+                 where id = $1
+                   and status = 'ACTIVE'
+                   and version = $7
+                   and current_turn_address = $8
+                   and expires_at > $6
+                 returning *`,
+                [
+                    game.id,
+                    checkersRes.fen,
+                    JSON.stringify(nextHistory),
+                    nextTurnAddress,
+                    nextPly,
+                    now,
+                    game.version,
+                    player,
+                ],
+            );
+            if (!updated.rows[0]) {
+                throw gameConflict("Move lost a state race; refresh and retry", "GAME_VERSION_CONFLICT");
+            }
+            const afterMove = mapDmGameRow(updated.rows[0]);
+            await insertGameEvent(client, {
+                gameId: game.id,
+                eventKey: `${game.id}:PLY:${nextPly}`,
+                eventType: "CHECKERS_MOVE",
+                actor: player,
+                payload: { uci: checkersRes.uci, san: checkersRes.san, stateHash },
             });
+
+            if (checkersRes.status === "WHITE_WON" || checkersRes.status === "BLACK_WON") {
+                const winnerAddress = checkersRes.winner === "w" ? game.whiteAddress : game.blackAddress;
+                return finalizeGame(client, afterMove, {
+                    winnerAddress,
+                    reason: (checkersRes.reason || "ELIMINATION") as TerminalReason,
+                    now,
+                });
+            }
+            if (checkersRes.status === "DRAW") {
+                return finalizeGame(client, afterMove, {
+                    winnerAddress: null,
+                    reason: "DRAW",
+                    now,
+                });
+            }
+            return afterMove;
+        } else {
+            const moveResult: ApplyChessMoveResult = applyChessMove({
+                fen: game.fen,
+                from: input.from,
+                to: input.to,
+                promotion: (input.promotion || undefined) as PromotionPiece | undefined,
+                positionHistory: game.positionHistory,
+            });
+            const nextTurnAddress = moveResult.turn === "w" ? game.whiteAddress : game.blackAddress;
+            const nextHistory = [...game.positionHistory, positionKey(moveResult.fen)];
+            const nextPly = game.ply + 1;
+            const stateHash = ethers.keccak256(ethers.toUtf8Bytes(moveResult.fen));
+
+            await client.query(
+                `insert into dm_game_moves (
+                    game_id, ply, player_address, uci, san, fen_before, fen_after,
+                    state_hash, idempotency_key
+                 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [
+                    game.id,
+                    nextPly,
+                    player,
+                    moveResult.uci,
+                    moveResult.san,
+                    game.fen,
+                    moveResult.fen,
+                    stateHash,
+                    input.idempotencyKey,
+                ],
+            );
+
+            const updated = await client.query<DbGameRow>(
+                `update dm_games
+                 set fen = $2,
+                     position_history = $3::jsonb,
+                     current_turn_address = $4,
+                     ply = $5,
+                     version = version + 1,
+                     updated_at = $6
+                 where id = $1
+                   and status = 'ACTIVE'
+                   and version = $7
+                   and current_turn_address = $8
+                   and expires_at > $6
+                 returning *`,
+                [
+                    game.id,
+                    moveResult.fen,
+                    JSON.stringify(nextHistory),
+                    nextTurnAddress,
+                    nextPly,
+                    now,
+                    game.version,
+                    player,
+                ],
+            );
+            if (!updated.rows[0]) {
+                throw gameConflict("Move lost a state race; refresh and retry", "GAME_VERSION_CONFLICT");
+            }
+            const afterMove = mapDmGameRow(updated.rows[0]);
+            await insertGameEvent(client, {
+                gameId: game.id,
+                eventKey: `${game.id}:PLY:${nextPly}`,
+                eventType: "CHESS_MOVE",
+                actor: player,
+                payload: { uci: moveResult.uci, san: moveResult.san, stateHash },
+            });
+
+            if (moveResult.outcome.status === "CHECKMATE") {
+                return finalizeGame(client, afterMove, {
+                    winnerAddress: player,
+                    reason: "CHECKMATE",
+                    now,
+                });
+            }
+            if (moveResult.outcome.status === "DRAW") {
+                const drawReasons: Record<string, TerminalReason> = {
+                    stalemate: "STALEMATE",
+                    insufficient_material: "INSUFFICIENT_MATERIAL",
+                    fifty_move: "FIFTY_MOVE",
+                    threefold_repetition: "THREEFOLD_REPETITION",
+                };
+                const mappedReason = drawReasons[moveResult.outcome.reason] || "STALEMATE";
+                return finalizeGame(client, afterMove, {
+                    winnerAddress: null,
+                    reason: mappedReason,
+                    now,
+                });
+            }
+            return afterMove;
         }
-        return afterMove;
     });
 }
 

@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         }
 
         const sanitized = sanitizeInput(body);
-        const { opponentAddress, stakeUsdc } = sanitized;
+        const { opponentAddress, stakeUsdc, gameType } = sanitized;
 
         const config = getDmGamesConfig();
         if (!config.enabled) {
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
             creatorAddress: wallet!,
             opponentAddress: opponentAddress || null,
             stakePerPlayerUsdc: stakeMicros,
+            gameType: typeof gameType === "string" ? gameType : undefined,
             config,
         });
 

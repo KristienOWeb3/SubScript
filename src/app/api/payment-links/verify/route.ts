@@ -54,6 +54,10 @@ import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_
 import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
 import { sendPushToWallet } from "@/lib/push";
+import {
+    resolveFulfillmentAddress,
+    validateBeneficiaryAddress,
+} from "@/lib/paymentLinks/beneficiary";
 
 export const maxDuration = 120;
 
@@ -189,6 +193,38 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
         const settlesDirectlyToUser = isUserPaymentLink(paymentLink);
+        const beneficiaryValidation = validateBeneficiaryAddress(
+            paymentLink.beneficiary_address,
+            paymentLink.merchant_address,
+        );
+        if (!beneficiaryValidation.ok) {
+            return NextResponse.json(
+                { error: "Payment link has an invalid beneficiary configuration" },
+                { status: 409 },
+            );
+        }
+        const explicitBeneficiary = beneficiaryValidation.address;
+        const normalizedBeneficiary = resolveFulfillmentAddress(explicitBeneficiary, normalizedPayer);
+
+        if (explicitBeneficiary) {
+            const { data: beneficiaryRole, error: beneficiaryRoleError } = await supabase
+                .from("account_roles")
+                .select("role")
+                .eq("address", explicitBeneficiary)
+                .maybeSingle();
+
+            if (beneficiaryRoleError) {
+                console.error("[verify] Failed to validate payment-link beneficiary:", beneficiaryRoleError.message);
+                return NextResponse.json({ error: "Failed to validate beneficiary account" }, { status: 500 });
+            }
+            if (beneficiaryRole?.role !== "USER") {
+                return NextResponse.json(
+                    { error: "Payment link beneficiary is no longer a registered SubScript USER" },
+                    { status: 409 },
+                );
+            }
+        }
+
         const paymentLinkReceiptId = isReceiptId(paymentLink.receipt_token) ? paymentLink.receipt_token : null;
         const finalReceiptId = paymentLinkReceiptId || submittedReceiptId;
         if (!finalReceiptId) {
@@ -214,12 +250,21 @@ export async function POST(request: Request) {
         /* Verify no duplicate credit exists in payment_link_payments */
         const { data: priorPayment } = await supabase
             .from("payment_link_payments")
-            .select("id")
+            .select("id, payer_address, beneficiary_address")
             .eq("tx_hash", normalizedTx)
             .maybeSingle();
 
         if (priorPayment) {
-            const responsePayload = { success: true, message: "Transaction already processed" };
+            const responsePayload = {
+                success: true,
+                message: "Transaction already processed",
+                paymentId: priorPayment.id,
+                payerAddress: priorPayment.payer_address,
+                beneficiaryAddress: resolveFulfillmentAddress(
+                    priorPayment.beneficiary_address,
+                    priorPayment.payer_address,
+                ),
+            };
             return NextResponse.json(responsePayload, { status: 200 });
         }
 
@@ -551,6 +596,7 @@ export async function POST(request: Request) {
                                 .insert({
                                     payment_link_id: paymentLink.id,
                                     payer_address: normalizedPayer,
+                                    beneficiary_address: normalizedBeneficiary,
                                     amount_usdc: paymentLink.amount_usdc.toString(),
                                     tx_hash: normalizedTx,
                                     merchant_address: paymentLink.merchant_address.toLowerCase(),
@@ -589,12 +635,20 @@ export async function POST(request: Request) {
                                     resource_id: paymentLink.id,
                                     metadata: {
                                         tx_hash: normalizedTx,
-                                        amount_usdc: paymentLink.amount_usdc.toString()
+                                        amount_usdc: paymentLink.amount_usdc.toString(),
+                                        payer_address: normalizedPayer,
+                                        beneficiary_address: normalizedBeneficiary,
                                     }
                                 });
 
                             /* Complete idempotency key */
-                            const successPayload = { success: true, message: "Payment verified and settled", paymentId: newPayment.id };
+                            const successPayload = {
+                                success: true,
+                                message: "Payment verified and settled",
+                                paymentId: newPayment.id,
+                                payerAddress: normalizedPayer,
+                                beneficiaryAddress: normalizedBeneficiary,
+                            };
                             const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
                             await supabase
                                 .from("receipts")
@@ -610,6 +664,7 @@ export async function POST(request: Request) {
                                         ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
                                         : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
                                     payer_address: normalizedPayer,
+                                    beneficiary_address: normalizedBeneficiary,
                                     merchant_address: paymentLink.merchant_address.toLowerCase(),
                                     amount_usdc: paymentLink.amount_usdc.toString(),
                                     memo_note: finalReceiptId,
@@ -707,6 +762,8 @@ export async function POST(request: Request) {
                                         amountUsdc: paymentLink.amount_usdc,
                                         receiptId: finalReceiptId,
                                         txHash: normalizedTx,
+                                        payerAddress: normalizedPayer,
+                                        beneficiaryAddress: normalizedBeneficiary,
                                     });
                                     for (const endpoint of endpoints) {
                                         sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});

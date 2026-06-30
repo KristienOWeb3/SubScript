@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./interfaces/IStableFX.sol";
 
 /*
@@ -37,6 +38,12 @@ contract SubScriptPSA is ReentrancyGuard {
     /* The Arc Network native StableFX router for multi-currency swaps */
     IStableFX public immutable stableFXRouter;
 
+    /* Treasury receiving the protocol's flat 1% merchant fee */
+    address public immutable treasury;
+
+    uint256 public constant PROTOCOL_FEE_BPS = 100;
+    uint256 public constant BPS_DENOMINATOR = 10_000;
+
     /* Auto-incrementing subscription ID counter; starts at 1 */
     uint256 public nextSubscriptionId = 1;
 
@@ -69,6 +76,13 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 timestamp
     );
 
+    event ProtocolFeePaid(
+        uint256 indexed subId,
+        address indexed merchant,
+        address indexed token,
+        uint256 amount
+    );
+
     event SubscriptionCancelled(uint256 indexed subId, address cancelledBy);
 
     event SubscriptionModified(
@@ -88,17 +102,24 @@ contract SubScriptPSA is ReentrancyGuard {
     error NotAuthorized(uint256 subId);
     error PlanReductionNotAllowed(uint256 subId);
     error DuplicateActiveSubscription(uint256 existingSubscriptionId);
+    error InsufficientSwapOutput(uint256 expected, uint256 received);
 
     /* ─────────────────────── Constructor ─────────────────────────── */
 
     /*
      * @param _paymentToken Address of the default ERC-20 token.
      * @param _stableFXRouter Address of the StableFX router contract.
+     * @param _treasury Address receiving the flat 1% merchant fee.
      */
-    constructor(address _paymentToken, address _stableFXRouter) {
-        if (_paymentToken == address(0) || _stableFXRouter == address(0)) revert InvalidAddress();
+    constructor(address _paymentToken, address _stableFXRouter, address _treasury) {
+        if (
+            _paymentToken == address(0)
+                || _stableFXRouter == address(0)
+                || _treasury == address(0)
+        ) revert InvalidAddress();
         paymentToken = IERC20(_paymentToken);
         stableFXRouter = IStableFX(_stableFXRouter);
+        treasury = _treasury;
     }
 
     /* ──────────────────── External Functions ─────────────────────── */
@@ -176,27 +197,14 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 bitPosition = 0;
         executionBitmaps[subId][wordIndex] = 1 << bitPosition;
 
-        /* Take the first payment immediately */
-        if (_paymentToken != _settlementToken) {
-            uint256 amountIn = stableFXRouter.getAmountIn(_paymentToken, _settlementToken, _amount);
-            
-            /* Pull paymentToken from subscriber to SubScriptPSA contract */
-            IERC20(_paymentToken).safeTransferFrom(msg.sender, address(this), amountIn);
-            
-            /* Approve StableFX router to spend paymentToken */
-            IERC20(_paymentToken).safeIncreaseAllowance(address(stableFXRouter), amountIn);
-            
-            /* Swap to settlementToken and send directly to merchant */
-            stableFXRouter.swap(
-                _paymentToken,
-                _settlementToken,
-                amountIn,
-                _amount,
-                _merchant
-            );
-        } else {
-            IERC20(_paymentToken).safeTransferFrom(msg.sender, _merchant, _amount);
-        }
+        _collectAndDistributePayment(
+            subId,
+            msg.sender,
+            _merchant,
+            _settlementToken,
+            _paymentToken,
+            _amount
+        );
 
         emit SubscriptionCreated(subId, msg.sender, _merchant, _amount, _period);
         emit PaymentExecuted(subId, msg.sender, _merchant, _amount, 0, block.timestamp);
@@ -224,26 +232,14 @@ contract SubScriptPSA is ReentrancyGuard {
         /* Mark sequence as executed before transfer (Checks-Effects-Interactions) */
         _setSequenceExecuted(_subId, _sequenceId);
 
-        if (sub.paymentToken != sub.settlementToken) {
-            uint256 amountIn = stableFXRouter.getAmountIn(sub.paymentToken, sub.settlementToken, sub.amount);
-            
-            /* Pull paymentToken from subscriber to SubScriptPSA contract */
-            IERC20(sub.paymentToken).safeTransferFrom(sub.subscriber, address(this), amountIn);
-            
-            /* Approve StableFX router to spend paymentToken */
-            IERC20(sub.paymentToken).safeIncreaseAllowance(address(stableFXRouter), amountIn);
-            
-            /* Swap to settlementToken and send directly to merchant */
-            stableFXRouter.swap(
-                sub.paymentToken,
-                sub.settlementToken,
-                amountIn,
-                sub.amount,
-                sub.merchant
-            );
-        } else {
-            IERC20(sub.paymentToken).safeTransferFrom(sub.subscriber, sub.merchant, sub.amount);
-        }
+        _collectAndDistributePayment(
+            _subId,
+            sub.subscriber,
+            sub.merchant,
+            sub.settlementToken,
+            sub.paymentToken,
+            sub.amount
+        );
 
         emit PaymentExecuted(
             _subId,
@@ -447,6 +443,68 @@ contract SubScriptPSA is ReentrancyGuard {
     }
 
     /* ────────────────── Internal Helpers ─────────────────────────── */
+
+    function _collectAndDistributePayment(
+        uint256 _subId,
+        address _subscriber,
+        address _merchant,
+        address _settlementToken,
+        address _paymentToken,
+        uint256 _amount
+    ) internal {
+        if (_paymentToken != _settlementToken) {
+            uint256 amountIn = stableFXRouter.getAmountIn(
+                _paymentToken,
+                _settlementToken,
+                _amount
+            );
+            IERC20(_paymentToken).safeTransferFrom(_subscriber, address(this), amountIn);
+            IERC20(_paymentToken).safeIncreaseAllowance(address(stableFXRouter), amountIn);
+
+            IERC20 settlementToken = IERC20(_settlementToken);
+            uint256 balanceBefore = settlementToken.balanceOf(address(this));
+            stableFXRouter.swap(
+                _paymentToken,
+                _settlementToken,
+                amountIn,
+                _amount,
+                address(this)
+            );
+            uint256 amountReceived = settlementToken.balanceOf(address(this)) - balanceBefore;
+            if (amountReceived < _amount) {
+                revert InsufficientSwapOutput(_amount, amountReceived);
+            }
+
+            _distributeSettlement(_subId, _merchant, settlementToken, _amount);
+
+            // Exact-output routes should not leave dust in this contract.
+            if (amountReceived > _amount) {
+                settlementToken.safeTransfer(_subscriber, amountReceived - _amount);
+            }
+        } else {
+            IERC20 token = IERC20(_paymentToken);
+            uint256 fee = Math.mulDiv(_amount, PROTOCOL_FEE_BPS, BPS_DENOMINATOR);
+            token.safeTransferFrom(_subscriber, _merchant, _amount - fee);
+            if (fee > 0) {
+                token.safeTransferFrom(_subscriber, treasury, fee);
+            }
+            emit ProtocolFeePaid(_subId, _merchant, _settlementToken, fee);
+        }
+    }
+
+    function _distributeSettlement(
+        uint256 _subId,
+        address _merchant,
+        IERC20 _settlementToken,
+        uint256 _amount
+    ) internal {
+        uint256 fee = Math.mulDiv(_amount, PROTOCOL_FEE_BPS, BPS_DENOMINATOR);
+        _settlementToken.safeTransfer(_merchant, _amount - fee);
+        if (fee > 0) {
+            _settlementToken.safeTransfer(treasury, fee);
+        }
+        emit ProtocolFeePaid(_subId, _merchant, address(_settlementToken), fee);
+    }
 
     function _setSequenceExecuted(uint256 _subId, uint256 _sequenceId) internal {
         uint256 wordIndex = _sequenceId / 256;

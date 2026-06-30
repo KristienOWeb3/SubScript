@@ -88,6 +88,7 @@ model PaymentLink {
   merchantNameSnapshot String?              @map("merchant_name_snapshot")
   maxUses              Int?                 @map("max_uses")
   useCount             Int                  @default(0) @map("use_count")
+  beneficiaryAddress   String?              @map("beneficiary_address")
   receiverAddress      String?              @map("receiver_address")
   receiverPrivateKey   String?              @map("receiver_private_key")
   status               String               @default("PENDING") @map("status")
@@ -101,6 +102,7 @@ model PaymentLink {
 
   @@index([merchantAddress], map: "payment_links_merchant_idx")
   @@index([active], map: "payment_links_active_idx")
+  @@index([beneficiaryAddress], map: "payment_links_beneficiary_address_idx")
   @@map("payment_links")
 }
 
@@ -109,6 +111,7 @@ model PaymentLinkPayment {
   paymentLinkId       String      @map("payment_link_id") @db.Uuid
   paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Cascade)
   payerAddress        String      @map("payer_address")
+  beneficiaryAddress  String?     @map("beneficiary_address")
   amountUsdc          BigInt      @map("amount_usdc")
   txHash              String      @unique @map("tx_hash")
   merchantAddress     String      @map("merchant_address")
@@ -122,6 +125,7 @@ model PaymentLinkPayment {
   @@index([paymentLinkId])
   @@index([txHash])
   @@index([merchantAddress])
+  @@index([beneficiaryAddress], map: "payment_link_payments_beneficiary_address_idx")
   @@map("payment_link_payments")
 }
 
@@ -413,6 +417,7 @@ model Receipt {
   chainId              Int       @map("chain_id")
   memoContract         String    @map("memo_contract")
   payerAddress         String    @map("payer_address")
+  beneficiaryAddress   String?   @map("beneficiary_address")
   merchantAddress      String    @map("merchant_address")
   amountUsdc           BigInt    @map("amount_usdc")
   memoNote             String?   @map("memo_note")
@@ -426,6 +431,7 @@ model Receipt {
   updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@index([payerAddress])
+  @@index([beneficiaryAddress], map: "receipts_beneficiary_address_idx")
   @@index([merchantAddress])
   @@index([status])
   @@index([paymentLinkId])
@@ -502,7 +508,7 @@ model SubscriptDm {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   senderAddress   String   @map("sender_address")
   receiverAddress String   @map("receiver_address")
-  messageType     String   @map("message_type") // "PAYMENT_REQUEST", "DEBIT_SUCCESS", "EXPIRY_WARNING", "PEER_REQUEST"
+  messageType     String   @map("message_type") // payment, receipt, subscription, commit, and game lifecycle messages
   status          String   @default("PENDING")  // "PENDING", "APPROVED", "DECLINED", "DISMISSED"
   amountUsdc      BigInt?  @map("amount_usdc")
   title           String?

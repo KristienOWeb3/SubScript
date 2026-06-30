@@ -8,7 +8,8 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 120;
 
@@ -38,10 +39,21 @@ export async function POST(request: Request) {
         }
 
         /* Pay For Me: SubScript covers gas for the user committing to a merchant vault. */
-        await ensureGasSponsored(wallet.toLowerCase());
+        await requireGasSponsored(wallet.toLowerCase());
 
         const txHash = await commitFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
+        if (v.active) {
+            await prisma.subscriptDm.updateMany({
+                where: {
+                    senderAddress: merchantAddress.toLowerCase(),
+                    receiverAddress: wallet.toLowerCase(),
+                    messageType: "COMMIT_EXHAUSTED",
+                    status: "PENDING",
+                },
+                data: { status: "DISMISSED" },
+            });
+        }
 
         return NextResponse.json({
             success: true,

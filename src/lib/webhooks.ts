@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
+import { paymentIdentityMetadata } from "@/lib/paymentLinks/beneficiary";
 
 function formatUsdc(value: bigint | string | number) {
     const amount = typeof value === "bigint" ? value : BigInt(value);
@@ -18,6 +19,8 @@ export function createPaymentSucceededWebhook(args: {
     amountUsdc: bigint | string | number;
     receiptId: string | null;
     txHash: string;
+    payerAddress: string;
+    beneficiaryAddress: string;
     chainId?: number;
 }) {
     const amountPaid = formatUsdc(args.amountUsdc);
@@ -44,6 +47,7 @@ export function createPaymentSucceededWebhook(args: {
             receipt_id: args.receiptId,
             txHash: args.txHash,
             transaction_hash: args.txHash,
+            ...paymentIdentityMetadata(args.payerAddress, args.beneficiaryAddress),
             // On-chain reconciliation: verify settlement independently.
             chain_id: settlement.chainId,
             chainId: settlement.chainId,

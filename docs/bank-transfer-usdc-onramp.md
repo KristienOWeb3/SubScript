@@ -17,19 +17,9 @@ Settlement gas is a platform/provider operating cost. It is accounted separately
 
 ## What is implemented now
 
-Arc is still testnet, so the repository implements the complete product shape as a sandbox:
-
-- exact integer NGN (kobo) and USDC (micro-USDC) quote math;
-- wallet-scoped idempotency keys;
-- durable funding intents and immutable provider-event records;
-- owner-scoped authenticated APIs;
-- fake one-time bank details that cannot receive real money;
-- concurrency-safe, idempotent simulated settlement;
-- explicit `disabled | sandbox | live` server configuration;
-- a hard gate that permits sandbox mode only on Arc testnet chain `5042002`;
-- a dashboard flow that resumes the latest intent after refresh.
-
-`SIMULATED_SETTLED` deliberately has no transaction hash and never changes the wallet's onchain balance.
+Bank-transfer funding is not exposed in the product. The funding API returns
+`503 FIAT_ONRAMP_UNAVAILABLE` until Arc mainnet is live and a licensed provider
+is integrated. The repository does not issue bank details or simulate deposits.
 
 ## Why production needs a regulated partner
 
@@ -51,19 +41,8 @@ Do not enable real bank details until all of the following are true:
 - Treasury/provider gas reserves and sponsorship failures are monitored.
 - The product displays rate, fee breakdown, exact net USDC, quote expiry, and transfer expiry before showing bank instructions.
 
-## Configuration
-
-```dotenv
-FIAT_ONRAMP_MODE=disabled
-FIAT_ONRAMP_NETWORK=arc-testnet
-FIAT_ONRAMP_CHAIN_ID=5042002
-FIAT_ONRAMP_MIN_NGN=1000.00
-FIAT_ONRAMP_MAX_NGN=1000000.00
-FIAT_ONRAMP_QUOTE_RATE_NGN_PER_USDC=1600.00
-FIAT_ONRAMP_QUOTE_TTL_SECONDS=900
-```
-
-Use `FIAT_ONRAMP_MODE=sandbox` only with the Arc testnet application environment. `live` intentionally fails closed because no licensed production adapter exists yet.
+There is no configuration switch that enables fiat funding without a licensed
+live adapter.
 
 ## Primary references
 

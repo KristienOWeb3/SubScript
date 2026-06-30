@@ -8,7 +8,7 @@ const {
 describe("SubScript", function () {
   /* Shared Fixture */
   async function deployFixture() {
-    const [owner, subscriber, merchant, keeper, stranger] =
+    const [owner, subscriber, merchant, keeper, stranger, treasury] =
       await ethers.getSigners();
 
     /* Deploy MockUSDC */
@@ -21,7 +21,11 @@ describe("SubScript", function () {
 
     /* Deploy SubScriptPSA */
     const SubScript = await ethers.getContractFactory("SubScriptPSA");
-    const subScript = await SubScript.deploy(await usdc.getAddress(), await stableFX.getAddress());
+    const subScript = await SubScript.deploy(
+      await usdc.getAddress(),
+      await stableFX.getAddress(),
+      treasury.address
+    );
 
     /* Mint 10 000 USDC to the subscriber (6 decimals) */
     const TEN_K = ethers.parseUnits("10000", 6);
@@ -42,6 +46,7 @@ describe("SubScript", function () {
       merchant,
       keeper,
       stranger,
+      treasury,
       AMOUNT,
       PERIOD,
       TEN_K,
@@ -65,18 +70,26 @@ describe("SubScript", function () {
     it("should revert if deployed with address(0)", async function () {
       const SubScript = await ethers.getContractFactory("SubScriptPSA");
       await expect(
-        SubScript.deploy(ethers.ZeroAddress, ethers.ZeroAddress)
+        SubScript.deploy(ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(SubScript, "InvalidAddress");
+    });
+
+    it("should set the configured treasury", async function () {
+      const { subScript, treasury } = await loadFixture(deployFixture);
+      expect(await subScript.treasury()).to.equal(treasury.address);
     });
   });
 
   /* CREATE SUBSCRIPTION */
   describe("createSubscription", function () {
     it("should create a subscription and take the first payment", async function () {
-      const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
+      const { subScript, usdc, subscriber, merchant, treasury, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
       const merchantBalBefore = await usdc.balanceOf(merchant.address);
+      const treasuryBalBefore = await usdc.balanceOf(treasury.address);
+      const fee = AMOUNT / 100n;
+      const merchantAmount = AMOUNT - fee;
 
       await expect(
         subScript
@@ -84,11 +97,15 @@ describe("SubScript", function () {
           .createSubscription(merchant.address, AMOUNT, PERIOD)
       )
         .to.emit(subScript, "SubscriptionCreated")
-        .withArgs(1, subscriber.address, merchant.address, AMOUNT, PERIOD);
+        .withArgs(1, subscriber.address, merchant.address, AMOUNT, PERIOD)
+        .and.to.emit(subScript, "ProtocolFeePaid")
+        .withArgs(1, merchant.address, await usdc.getAddress(), fee);
 
       /* Verify first payment was taken */
       const merchantBalAfter = await usdc.balanceOf(merchant.address);
-      expect(merchantBalAfter - merchantBalBefore).to.equal(AMOUNT);
+      const treasuryBalAfter = await usdc.balanceOf(treasury.address);
+      expect(merchantBalAfter - merchantBalBefore).to.equal(merchantAmount);
+      expect(treasuryBalAfter - treasuryBalBefore).to.equal(fee);
 
       /* Verify subscription data */
       const sub = await subScript.subscriptions(1);
@@ -174,7 +191,7 @@ describe("SubScript", function () {
   /* EXECUTE PAYMENT */
   describe("executePayment", function () {
     it("should execute payment when due", async function () {
-      const { subScript, usdc, subscriber, merchant, keeper, AMOUNT, PERIOD } =
+      const { subScript, usdc, subscriber, merchant, keeper, treasury, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);
 
       /* Create subscription */
@@ -186,12 +203,16 @@ describe("SubScript", function () {
       await time.increase(PERIOD + 1);
 
       const merchantBalBefore = await usdc.balanceOf(merchant.address);
+      const treasuryBalBefore = await usdc.balanceOf(treasury.address);
+      const fee = AMOUNT / 100n;
 
       await expect(subScript.connect(keeper).executePayment(1, 1))
         .to.emit(subScript, "PaymentExecuted");
 
       const merchantBalAfter = await usdc.balanceOf(merchant.address);
-      expect(merchantBalAfter - merchantBalBefore).to.equal(AMOUNT);
+      const treasuryBalAfter = await usdc.balanceOf(treasury.address);
+      expect(merchantBalAfter - merchantBalBefore).to.equal(AMOUNT - fee);
+      expect(treasuryBalAfter - treasuryBalBefore).to.equal(fee);
     });
 
     it("should revert if payment is not yet due", async function () {
@@ -278,7 +299,7 @@ describe("SubScript", function () {
 
       /* Merchant should have received 4 payments total (1 initial + 3) */
       const merchantBal = await usdc.balanceOf(merchant.address);
-      expect(merchantBal).to.equal(AMOUNT * 4n);
+      expect(merchantBal).to.equal((AMOUNT - (AMOUNT / 100n)) * 4n);
     });
   });
 
@@ -491,7 +512,7 @@ describe("SubScript", function () {
   /* STABLEFX MULTI-CURRENCY SWAPPING */
   describe("StableFX Multi-Currency Swapping", function () {
     it("should swap multi-currency subscriptions successfully on creation and execution", async function () {
-      const { subScript, usdc, stableFX, subscriber, merchant, keeper, AMOUNT, PERIOD, TEN_K } =
+      const { subScript, usdc, stableFX, subscriber, merchant, keeper, treasury, AMOUNT, PERIOD, TEN_K } =
         await loadFixture(deployFixture);
 
       /* Deploy MockEURC as settlementToken */
@@ -510,7 +531,9 @@ describe("SubScript", function () {
       await usdc.connect(subscriber).approve(await subScript.getAddress(), TEN_K);
 
       const merchantEurcBefore = await eurc.balanceOf(merchant.address);
+      const treasuryEurcBefore = await eurc.balanceOf(treasury.address);
       const subscriberUsdcBefore = await usdc.balanceOf(subscriber.address);
+      const fee = AMOUNT / 100n;
 
       /* Create multi-currency subscription (merchant gets EURC, subscriber pays USDC) */
       await subScript
@@ -519,7 +542,9 @@ describe("SubScript", function () {
 
       /* Verify first payment took place (swapped) */
       const merchantEurcAfter = await eurc.balanceOf(merchant.address);
-      expect(merchantEurcAfter - merchantEurcBefore).to.equal(AMOUNT);
+      const treasuryEurcAfter = await eurc.balanceOf(treasury.address);
+      expect(merchantEurcAfter - merchantEurcBefore).to.equal(AMOUNT - fee);
+      expect(treasuryEurcAfter - treasuryEurcBefore).to.equal(fee);
 
       /* Verify subscriber paid correct USDC amount (15 EURC * 1.10 = 16.50 USDC) */
       const subscriberUsdcAfter = await usdc.balanceOf(subscriber.address);
@@ -531,13 +556,16 @@ describe("SubScript", function () {
 
       const subscriberUsdcBeforeExecution = await usdc.balanceOf(subscriber.address);
       const merchantEurcBeforeExecution = await eurc.balanceOf(merchant.address);
+      const treasuryEurcBeforeExecution = await eurc.balanceOf(treasury.address);
 
       await subScript.connect(keeper).executePayment(1, 1);
 
       const subscriberUsdcAfterExecution = await usdc.balanceOf(subscriber.address);
       const merchantEurcAfterExecution = await eurc.balanceOf(merchant.address);
+      const treasuryEurcAfterExecution = await eurc.balanceOf(treasury.address);
 
-      expect(merchantEurcAfterExecution - merchantEurcBeforeExecution).to.equal(AMOUNT);
+      expect(merchantEurcAfterExecution - merchantEurcBeforeExecution).to.equal(AMOUNT - fee);
+      expect(treasuryEurcAfterExecution - treasuryEurcBeforeExecution).to.equal(fee);
       expect(subscriberUsdcBeforeExecution - subscriberUsdcAfterExecution).to.equal(expectedUsdcSpent);
     });
   });

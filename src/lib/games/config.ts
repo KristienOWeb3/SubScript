@@ -26,14 +26,17 @@ export function getDmGamesConfig(env: GamesEnvironment = process.env) {
     const mode = parseMode(env.DM_GAMES_MODE);
     const network = env.DM_GAMES_NETWORK?.trim().toLowerCase() || null;
     const chainId = parseChainId(env.DM_GAMES_CHAIN_ID);
-    const treasuryAddress = addressPattern.test(env.DM_GAMES_TREASURY_ADDRESS || "")
-        ? env.DM_GAMES_TREASURY_ADDRESS!.toLowerCase()
+    const treasuryRaw = (env.DM_GAMES_TREASURY_ADDRESS || "").trim();
+    const treasuryAddress = addressPattern.test(treasuryRaw)
+        ? treasuryRaw.toLowerCase()
         : PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase();
-    const contractAddress = addressPattern.test(env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "")
-        ? env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS!.toLowerCase()
+    const contractRaw = (env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "").trim();
+    const contractAddress = addressPattern.test(contractRaw)
+        ? contractRaw.toLowerCase()
         : null;
-    const refereeAddress = addressPattern.test(env.DM_GAMES_REFEREE_ADDRESS || "")
-        ? env.DM_GAMES_REFEREE_ADDRESS!.toLowerCase()
+    const refereeRaw = (env.DM_GAMES_REFEREE_ADDRESS || "").trim();
+    const refereeAddress = addressPattern.test(refereeRaw)
+        ? refereeRaw.toLowerCase()
         : null;
     const minimumStakeMicros = parseGameStakeToMicros(env.DM_GAMES_MIN_STAKE_USDC || "1");
     const maximumStakeMicros = parseGameStakeToMicros(env.DM_GAMES_MAX_STAKE_USDC || "100");

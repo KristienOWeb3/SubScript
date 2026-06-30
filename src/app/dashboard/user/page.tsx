@@ -2244,7 +2244,17 @@ export default function UserDashboard() {
                                 onNoteChange={setDmRequestNote}
                                 onDurationChange={setDmRequestDuration}
                               />
-                              {!dmRequestOpen && (
+                              <DmGamesComposer
+                                open={gamesMenuOpen}
+                                selectedPeer={selectedDmPeer}
+                                userWallet={userWallet}
+                                triggerToast={triggerToast}
+                                refetchDms={loadDms}
+                                writeContractAsync={writeContractAsync}
+                                refetchUsdc={refetchUsdc}
+                                onToggle={() => setGamesMenuOpen(false)}
+                              />
+                              {!gamesMenuOpen && !dmRequestOpen && (
                                 <motion.button
                                   whileHover={{ scale: 1.02 }}
                                   whileTap={{ scale: 0.97 }}
@@ -2278,7 +2288,34 @@ export default function UserDashboard() {
                     {/* Active thread message bubble display (right column in blueprint) */}
                     <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
-                        {selectedDmPeer ? (
+                        {isChessBoardModalOpen && activePlayingGame && (
+                          activePlayingGame.opponentAddress?.toLowerCase() === selectedDmPeer?.toLowerCase() ||
+                          activePlayingGame.creatorAddress?.toLowerCase() === selectedDmPeer?.toLowerCase()
+                        ) ? (
+                          <motion.div
+                            key="active-game-board"
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.98 }}
+                            className="hidden md:flex w-full h-full flex-col justify-between"
+                          >
+                            <GamesModals
+                              gamesMenuOpen={gamesMenuOpen}
+                              setGamesMenuOpen={setGamesMenuOpen}
+                              selectedDmPeer={selectedDmPeer}
+                              activePlayingGame={activePlayingGame}
+                              setActivePlayingGame={setActivePlayingGame}
+                              isChessBoardModalOpen={isChessBoardModalOpen}
+                              setIsChessBoardModalOpen={setIsChessBoardModalOpen}
+                              userWallet={userWallet}
+                              triggerToast={triggerToast}
+                              refetchDms={loadDms}
+                              writeContractAsync={writeContractAsync}
+                              refetchUsdc={refetchUsdc}
+                              inline={true}
+                            />
+                          </motion.div>
+                        ) : selectedDmPeer ? (
                           <motion.div
                             key={selectedDmPeer}
                             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -2391,7 +2428,17 @@ export default function UserDashboard() {
                                     onNoteChange={setDmRequestNote}
                                     onDurationChange={setDmRequestDuration}
                                   />
-                                  {!dmRequestOpen && (
+                                  <DmGamesComposer
+                                    open={gamesMenuOpen}
+                                    selectedPeer={selectedDmPeer}
+                                    userWallet={userWallet}
+                                    triggerToast={triggerToast}
+                                    refetchDms={loadDms}
+                                    writeContractAsync={writeContractAsync}
+                                    refetchUsdc={refetchUsdc}
+                                    onToggle={() => setGamesMenuOpen(false)}
+                                  />
+                                  {!gamesMenuOpen && !dmRequestOpen && (
                                     <motion.button
                                       whileHover={{ scale: 1.02 }}
                                       whileTap={{ scale: 0.97 }}
@@ -4684,6 +4731,242 @@ function DmRequestComposer({
         </motion.span>
         {loading ? "Sending Request" : open ? "Close" : "Request"}
       </motion.button>
+    </div>
+  );
+}
+
+function DmGamesComposer({
+  open,
+  selectedPeer,
+  userWallet,
+  triggerToast,
+  refetchDms,
+  writeContractAsync,
+  refetchUsdc,
+  onToggle,
+}: {
+  open: boolean;
+  selectedPeer: string | null;
+  userWallet: string | null;
+  triggerToast: (msg: string) => void;
+  refetchDms: () => void;
+  writeContractAsync: any;
+  refetchUsdc: () => void;
+  onToggle: () => void;
+}) {
+  const [selectedGameType, setSelectedGameType] = useState<"chess" | "checkers">("chess");
+  const [stakeAmount, setStakeAmount] = useState("1.00");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const escrowAddress = (process.env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D").trim() as `0x${string}`;
+  const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
+
+  const handleCreateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setLoading(true);
+
+    try {
+      const stakeMicros = BigInt(Math.round(Number(stakeAmount) * 1_000_000));
+      if (stakeMicros <= BigInt(0)) {
+        throw new Error("Stake amount must be greater than zero");
+      }
+
+      // 1. Create game invite record on backend
+      setStatusMessage("Registering game lobby...");
+      const res = await fetch("/api/user/dms/games", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-wallet": userWallet!,
+        },
+        body: JSON.stringify({
+          opponentAddress: selectedPeer,
+          stakeUsdc: stakeAmount,
+          gameType: selectedGameType.toUpperCase(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create game lobby");
+      }
+
+      const createdGame = data.game;
+
+      // 2. Perform on-chain stake escrow
+      setStatusMessage("Checking USDC allowance...");
+      const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+      const tokenContract = new ethers.Contract(usdcAddress, [
+        "function allowance(address owner, address spender) view returns (uint256)"
+      ], provider);
+      const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
+
+      if (BigInt(allowance.toString()) < stakeMicros) {
+        setStatusMessage("Approving USDC stake...");
+        const approveTx = await writeContractAsync({
+          address: usdcAddress,
+          abi: VAULT_TOKEN_ABI,
+          functionName: "approve",
+          args: [escrowAddress, stakeMicros],
+          chainId: ARC_TESTNET_CHAIN_ID,
+        });
+        setStatusMessage("Waiting for approval confirmation...");
+        await provider.waitForTransaction(approveTx, 1, 30_000);
+      }
+
+      setStatusMessage("Staking USDC to game escrow...");
+      const initialStateHash = ethers.id(
+        selectedGameType === "checkers"
+          ? "b1b1b1b1/1b1b1b1b/b1b1b1b1/8/8/1w1w1w1w/w1w1w1w1/1w1w1w1w w"
+          : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      );
+      const stakeTx = await writeContractAsync({
+        address: escrowAddress,
+        abi: ESCROW_CONTRACT_ABI,
+        functionName: "createGame",
+        args: [selectedPeer || ethers.ZeroAddress, stakeMicros, initialStateHash],
+        chainId: ARC_TESTNET_CHAIN_ID,
+      });
+
+      // 3. Confirm deposit with backend
+      setStatusMessage("Verifying stake transaction...");
+      const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-wallet": userWallet!,
+        },
+        body: JSON.stringify({ txHash: stakeTx }),
+      });
+
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) {
+        throw new Error(verifyData.error || "Referee failed to verify deposit transaction");
+      }
+
+      triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
+      refetchDms();
+      refetchUsdc();
+      onToggle();
+    } catch (err: any) {
+      console.error("Game creation error:", err);
+      setErrorMessage(err.message || "Failed to initialize game.");
+    } finally {
+      setLoading(false);
+      setStatusMessage(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <AnimatePresence>
+        {open && (
+          <motion.form
+            key="dm-games-form"
+            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
+            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
+            transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
+            style={{ transformOrigin: "bottom center" }}
+            onSubmit={handleCreateInvite}
+            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl text-left"
+          >
+            <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Configure Game Invite</span>
+              {statusMessage && (
+                <span className="text-[9px] font-bold text-[#ccff00] animate-pulse">{statusMessage}</span>
+              )}
+            </div>
+
+            {/* Game Type Selector Segment */}
+            <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/5 mb-3">
+              <button
+                type="button"
+                onClick={() => setSelectedGameType("chess")}
+                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  selectedGameType === "chess"
+                    ? "bg-[#ccff00] text-black shadow-md"
+                    : "text-white/60 hover:text-white"
+                }`}
+              >
+                <span>♞</span> Chess
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedGameType("checkers")}
+                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  selectedGameType === "checkers"
+                    ? "bg-[#ccff00] text-black shadow-md"
+                    : "text-white/60 hover:text-white"
+                }`}
+              >
+                <span>⛀</span> Checkers
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <Field label="Staked USDC Amount">
+                <input
+                  type="number"
+                  step="any"
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(e.target.value)}
+                  className="subscript-input"
+                  placeholder="1.00"
+                  required
+                />
+              </Field>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-3 space-y-1.5 text-[9px] text-white/50 font-bold uppercase tracking-wider">
+                <div className="flex justify-between">
+                  <span>Your Stake</span>
+                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Opponent Stake</span>
+                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
+                </div>
+                <div className="flex justify-between border-t border-white/5 pt-1.5 font-black text-white text-[10px]">
+                  <span>Winner Payout (90%)</span>
+                  <span className="text-[#ccff00]">${(Number(stakeAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
+                </div>
+              </div>
+
+              {errorMessage && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-[9px] font-bold uppercase text-red-300 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  onClick={onToggle}
+                  disabled={loading}
+                  className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                >
+                  Cancel
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
+                  type="submit"
+                  disabled={loading}
+                  className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Send Invite"}
+                </motion.button>
+              </div>
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

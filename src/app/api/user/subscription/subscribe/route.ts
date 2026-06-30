@@ -6,7 +6,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
                     }, { status: 409 });
                 }
 
-                await ensureGasSponsored(subscriber);
+                await requireGasSponsored(subscriber);
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
                     merchant,

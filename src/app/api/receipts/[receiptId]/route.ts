@@ -31,6 +31,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         }
 
         const payer = receipt.payerAddress.toLowerCase();
+        const beneficiary = receipt.beneficiaryAddress?.toLowerCase() || payer;
         const merchant = receipt.merchantAddress.toLowerCase();
         const subscriptTreasury = PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase();
 
@@ -41,6 +42,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 
         const isAuthorized = 
             normalizedViewerWallet === payer ||
+            normalizedViewerWallet === beneficiary ||
             normalizedViewerWallet === merchant ||
             normalizedViewerWallet === subscriptTreasury ||
             invitedList.includes(normalizedViewerWallet);
@@ -58,6 +60,7 @@ export async function GET(request: Request, { params }: RouteContext) {
             chain_id: receipt.chainId,
             memo_contract: receipt.memoContract,
             payer_address: receipt.payerAddress,
+            beneficiary_address: receipt.beneficiaryAddress || receipt.payerAddress,
             merchant_address: receipt.merchantAddress,
             amount_usdc: receipt.amountUsdc.toString(),
             memo_note: receipt.memoNote,

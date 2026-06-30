@@ -76,6 +76,7 @@ export default async function Page({ params }: Props) {
         stakePerPlayerUsdc: game.stakePerPlayerUsdc.toString(),
         status: game.status,
         settlementStatus: game.settlementStatus,
+        gameType: game.gameType,
     };
 
     return (

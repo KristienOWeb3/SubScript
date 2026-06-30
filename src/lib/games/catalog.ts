@@ -26,7 +26,7 @@ export const GAME_CATALOG: readonly GameCatalogItem[] = [
         slug: "checkers",
         name: "Checkers",
         symbol: "⛀",
-        status: "COMING_SOON",
+        status: "PLAYABLE",
         description: "Classic diagonal strategy.",
     },
     {

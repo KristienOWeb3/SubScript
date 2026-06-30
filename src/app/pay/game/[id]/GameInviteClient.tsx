@@ -27,6 +27,7 @@ interface GameProps {
         stakePerPlayerUsdc: string;
         status: string;
         settlementStatus: string;
+        gameType?: string;
     };
 }
 
@@ -184,7 +185,7 @@ export default function GameInviteClient({ game }: GameProps) {
                 <div className="space-y-2">
                     <h2 className="text-xl font-black uppercase tracking-wider text-white">Challenge Accepted!</h2>
                     <p className="text-xs text-white/60 leading-relaxed">
-                        Your stake is deposited. The Chess board is active and the 24-hour timer has started!
+                        Your stake is deposited. The {game.gameType === "CHECKERS" ? "Checkers" : "Chess"} board is active and the 24-hour timer has started!
                     </p>
                 </div>
                 <button
@@ -208,7 +209,9 @@ export default function GameInviteClient({ game }: GameProps) {
                     <GamepadIcon className="w-5 h-5" />
                 </div>
                 <div>
-                    <h2 className="text-xs font-black uppercase tracking-widest text-white/45">CHESS CHALLENGE</h2>
+                    <h2 className="text-xs font-black uppercase tracking-widest text-white/45">
+                        {game.gameType === "CHECKERS" ? "CHECKERS CHALLENGE" : "CHESS CHALLENGE"}
+                    </h2>
                     <h1 className="text-sm font-black uppercase tracking-wider text-white">Join Stake Match</h1>
                 </div>
             </div>

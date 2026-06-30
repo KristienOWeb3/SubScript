@@ -21,7 +21,7 @@
         "start": "next start",
         "check:contracts": "node scripts/check-contracts.mjs",
         "integration:smoke": "node scripts/subscript-integration-smoke.mjs",
-        "test:fiat-onramp": "node scripts/test-fiat-onramp.cjs",
+        "test:live-surface": "node scripts/test-live-surface.cjs",
         "load:test": "node scripts/load-test.mjs",
         "lint": "next lint"
     },
