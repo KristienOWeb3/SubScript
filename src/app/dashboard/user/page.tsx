@@ -2516,6 +2516,7 @@ export default function UserDashboard() {
                               refetchDms={loadDms}
                               writeContractAsync={writeContractAsync}
                               refetchUsdc={refetchUsdc}
+                              isEmbeddedWalletSession={isEmbeddedWalletSession}
                               inline={true}
                             />
                           </motion.div>
@@ -3781,6 +3782,7 @@ export default function UserDashboard() {
         refetchDms={loadDms}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
+        isEmbeddedWalletSession={isEmbeddedWalletSession}
       />
 
       <AnimatePresence>

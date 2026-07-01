@@ -32,6 +32,7 @@ interface GamesModalsProps {
     refetchDms: () => void;
     writeContractAsync: any;
     refetchUsdc: () => void;
+    isEmbeddedWalletSession?: boolean;
     inline?: boolean;
 }
 
@@ -74,6 +75,7 @@ export function GamesModals({
     refetchDms,
     writeContractAsync,
     refetchUsdc,
+    isEmbeddedWalletSession = false,
     inline = false
 }: GamesModalsProps) {
     const [menuStep, setMenuStep] = useState<"catalog" | "stake" | "tx">("catalog");
@@ -310,6 +312,25 @@ export function GamesModals({
         setIsClaimingPayout(true);
 
         try {
+            if (isEmbeddedWalletSession) {
+                // Embedded (email) wallet: SubScript signs the referee result + settleGame from the
+                // server-held key (gas sponsored). No browser connector involved.
+                setStatusMessage("Settling escrow on-chain...");
+                const res = await fetch(`/api/user/dms/games/${activePlayingGame.id}/settle`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
+                    body: JSON.stringify({}),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to settle game on-chain");
+                setActivePlayingGame(data.game);
+                triggerToast("Payout settled on-chain!");
+                setIsChessBoardModalOpen(false);
+                refetchDms();
+                refetchUsdc();
+                return;
+            }
+
             const escrowAddress = requireGameEscrowAddress(activePlayingGame);
             // Refetch game details to load the referee signature payload from GET API
             const res = await fetch(`/api/user/dms/games/${activePlayingGame.id}`, {

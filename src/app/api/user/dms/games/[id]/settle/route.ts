@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
 import { getDmGame, updateGameSettlement } from "@/lib/games/service";
 import { getDmGamesConfig } from "@/lib/games/config";
+import { walletHasEmbeddedKey, settleGameFromEmbedded } from "@/lib/games/onchain";
+import { signGameResult } from "@/lib/games/signing";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { ethers } from "ethers";
 import { sanitizeInput } from "@/utils/security";
 
@@ -18,17 +21,9 @@ export async function POST(request: Request, { params }: Props) {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
 
-        const body = await request.json().catch(() => null);
-        if (!body || typeof body !== "object") {
-            return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
-        }
-
-        const sanitized = sanitizeInput(body);
-        const { txHash } = sanitized;
-
-        if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
-            return NextResponse.json({ error: "Invalid transaction hash" }, { status: 400 });
-        }
+        const body = await request.json().catch(() => ({}));
+        const sanitized = sanitizeInput(body || {});
+        let txHash: string | null = typeof sanitized.txHash === "string" ? sanitized.txHash : null;
 
         const game = await getDmGame(id);
         const config = getDmGamesConfig();
@@ -38,6 +33,47 @@ export async function POST(request: Request, { params }: Props) {
 
         if (game.settlementStatus === "SETTLED") {
             return NextResponse.json({ success: true, game }, { status: 200 });
+        }
+
+        /* Embedded (email) wallet: SubScript signs the referee result and submits settleGame from
+           the caller's server-held key (gas sponsored), then verifies its own tx below. Only a
+           finished game can be settled. */
+        if (!txHash) {
+            if (!(await walletHasEmbeddedKey(wallet!))) {
+                return NextResponse.json({ error: "Invalid transaction hash" }, { status: 400 });
+            }
+            const draw = game.status === "DRAW";
+            const winnerAddress = game.status === "WHITE_WON"
+                ? game.whiteAddress
+                : game.status === "BLACK_WON"
+                    ? game.blackAddress
+                    : null;
+            if (!draw && !winnerAddress) {
+                return NextResponse.json({ error: "Game is not finished yet" }, { status: 409 });
+            }
+            const validUntil = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+            const sig = await signGameResult({
+                gameId: game.contractGameId,
+                winnerAddress,
+                draw,
+                finalFen: game.fen,
+                validUntil,
+            });
+            await requireGasSponsored(wallet!);
+            txHash = await settleGameFromEmbedded({
+                walletAddress: wallet!,
+                escrowAddress: config.contractAddress,
+                contractGameId: game.contractGameId,
+                winnerAddress,
+                draw,
+                finalStateHash: sig.finalStateHash,
+                validUntil: sig.validUntil,
+                signature: sig.signature,
+            });
+        }
+
+        if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
+            return NextResponse.json({ error: "Invalid transaction hash" }, { status: 400 });
         }
 
         // Verify transaction on-chain
