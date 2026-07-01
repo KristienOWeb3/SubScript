@@ -24,7 +24,10 @@ function parseChainId(value: string | undefined) {
 
 export function getDmGamesConfig(env: GamesEnvironment = process.env) {
     const mode = parseMode(env.DM_GAMES_MODE);
-    const network = env.DM_GAMES_NETWORK?.trim().toLowerCase() || null;
+    /* Defaults to Arc testnet (matching the chain-id default) so enabling games is a single
+       deliberate switch: DM_GAMES_MODE=sandbox. The hard safety gates remain — mode is
+       "disabled" unless explicitly set, "live" is always blocked, and a mainnet build is blocked. */
+    const network = env.DM_GAMES_NETWORK?.trim().toLowerCase() || "arc-testnet";
     const chainId = parseChainId(env.DM_GAMES_CHAIN_ID);
     const treasuryRaw = (env.DM_GAMES_TREASURY_ADDRESS || "").trim();
     const treasuryAddress = addressPattern.test(treasuryRaw)
