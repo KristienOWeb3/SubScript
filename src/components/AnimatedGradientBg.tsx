@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
  * Uses a fixed canvas that sits behind all page content.
  * The page <main> backgrounds must be transparent for this to show through.
  */
-export default function AnimatedGradientBg() {
+export default function AnimatedGradientBg({ variant = "default" }: { variant?: "default" | "mono-yellow" } = {}) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -36,7 +36,7 @@ export default function AnimatedGradientBg() {
         window.addEventListener("resize", resize);
 
         // Orb definitions — visible, bold gradients using theme colors
-        const orbs = [
+        const defaultOrbs = [
             // Large primary yellow-green
             { baseX: 0.2,  baseY: 0.15, radius: 420, color: [204, 255, 0],   alpha: 0.32, speedX: 0.25, speedY: 0.18, phaseX: 0,   phaseY: 0.5  },
             // Large teal
@@ -51,13 +51,22 @@ export default function AnimatedGradientBg() {
             { baseX: 0.4,  baseY: 0.35, radius: 260, color: [212, 168, 83],  alpha: 0.14, speedX: 0.15, speedY: 0.3,  phaseX: 3.0, phaseY: 0.4  },
         ];
 
+        // Mono-yellow: a restrained #FFD825 glow on pure black (user dashboard look).
+        const monoYellowOrbs = [
+            { baseX: 0.88, baseY: 0.02, radius: 420, color: [255, 216, 37], alpha: 0.16, speedX: 0.12, speedY: 0.1,  phaseX: 0,   phaseY: 0.5 },
+            { baseX: 0.12, baseY: 0.92, radius: 320, color: [255, 216, 37], alpha: 0.07, speedX: 0.14, speedY: 0.12, phaseX: 1.2, phaseY: 0   },
+        ];
+
+        const orbs = variant === "mono-yellow" ? monoYellowOrbs : defaultOrbs;
+        const baseColor = variant === "mono-yellow" ? "#000000" : "#030303";
+
         const draw = () => {
             const w = window.innerWidth;
             const h = window.innerHeight;
 
             // Clear with dark base
             ctx.globalCompositeOperation = "source-over";
-            ctx.fillStyle = "#030303";
+            ctx.fillStyle = baseColor;
             ctx.fillRect(0, 0, w, h);
 
             // Additive blending for glowing orbs
@@ -95,7 +104,7 @@ export default function AnimatedGradientBg() {
             window.removeEventListener("resize", resize);
             cancelAnimationFrame(animationId);
         };
-    }, []);
+    }, [variant]);
 
     return (
         <canvas

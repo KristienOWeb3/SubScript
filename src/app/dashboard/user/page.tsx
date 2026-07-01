@@ -1773,7 +1773,7 @@ export default function UserDashboard() {
   if (loading) {
     return (
       <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
-        <AnimatedGradientBg />
+        <AnimatedGradientBg variant="mono-yellow" />
         
         {/* Desktop Sidebar Skeleton */}
         <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
@@ -1887,7 +1887,7 @@ export default function UserDashboard() {
   if (redirectMessage) {
     return (
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#000000] px-6 text-white">
-        <AnimatedGradientBg />
+        <AnimatedGradientBg variant="mono-yellow" />
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
           <Loader2 className="h-6 w-6 animate-spin text-[#FFD825]" />
           <div className="space-y-2">
@@ -2022,7 +2022,7 @@ export default function UserDashboard() {
 
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#000000] text-white selection:bg-[#FFD825]/30 selection:text-white border-t-4 border-[#FFD825] md:h-[100dvh] md:overflow-hidden">
-      <AnimatedGradientBg />
+      <AnimatedGradientBg variant="mono-yellow" />
 
       <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {!isMobile && (
@@ -2201,14 +2201,17 @@ export default function UserDashboard() {
                   </div>
                 </div>
 
-                {/* ===== Overview: Recent transactions ===== */}
-                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-5 shadow-2xl text-white">
+                {/* ===== Overview: Recent transactions (light panel, per reference) ===== */}
+                <section
+                  className="liquid-glass rounded-[28px] p-5 shadow-2xl text-black backdrop-blur-xl"
+                  style={{ backgroundColor: "rgba(233,233,233,0.94)" }}
+                >
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-black/70">Recent Transactions</h2>
                     <button
                       type="button"
                       onClick={() => setActiveTab("inbox")}
-                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#FFD825] transition-colors"
+                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/45 hover:text-black transition-colors"
                     >
                       View All <ArrowUpRight className="h-3 w-3" />
                     </button>
@@ -2222,8 +2225,8 @@ export default function UserDashboard() {
                         onClick={() => setTxFilter(value)}
                         className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
-                            ? "bg-[#FFD825] text-black"
-                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
+                            ? "bg-[#171717] text-[#FFD825]"
+                            : "bg-black/[0.06] text-black/50 hover:bg-black/10"
                         }`}
                       >
                         {label}
@@ -2231,26 +2234,26 @@ export default function UserDashboard() {
                     ))}
                   </div>
 
-                  <div className="mt-4 divide-y divide-white/[0.06]">
+                  <div className="mt-4 divide-y divide-black/[0.08]">
                     {filteredTransactions.length === 0 ? (
-                      <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
+                      <div className="flex h-24 items-center justify-center text-center text-xs text-black/40">
                         No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
                       </div>
                     ) : (
                       filteredTransactions.slice(0, 6).map((tx) => (
                         <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                          <div className="h-10 w-10 shrink-0 rounded-full bg-black/[0.08] border border-black/10 flex items-center justify-center overflow-hidden">
                             {tx.pic ? (
                               <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-sm font-black text-[#FFD825]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                              <span className="text-sm font-black text-black/60">{(tx.name || "?").charAt(0).toUpperCase()}</span>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                            <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
+                            <p className="truncate text-sm font-black text-black">{tx.name}</p>
+                            <p className="truncate text-[10px] font-bold text-black/40">{tx.detail}</p>
                           </div>
-                          <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                          <span className="shrink-0 text-base font-extrabold text-black">{tx.amountLabel}</span>
                         </div>
                       ))
                     )}
