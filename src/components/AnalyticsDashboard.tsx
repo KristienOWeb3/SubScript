@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Crown, BarChart3, ArrowUpRight, RefreshCw, Loader2, Sparkles, Save, Lock, Shield } from "@/components/icons";
 import Link from "next/link";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 interface AnalyticsDashboardProps {
     isPremium: boolean;
@@ -65,6 +66,8 @@ export default function AnalyticsDashboard({
     /* Compute metrics based on active subscriptions in ledger */
     const [retryingId, setRetryingId] = useState<string | null>(null);
     const [activeSubTab, setActiveSubTab] = useState<"metrics" | "automations">("metrics");
+    /* Mobile thumb-swipe between Metrics & Automations (Premium only — the tabs only exist then). */
+    const subTabSwipe = useSwipeTabs(["metrics", "automations"] as const, activeSubTab, setActiveSubTab, { enabled: isPremium });
     const [inactivePage, setInactivePage] = useState(0);
 
     /* Automations Tab States */
@@ -314,18 +317,35 @@ export default function AnalyticsDashboard({
         }
     };
 
-    const activeSubscribers = useMemo(() => {
-        return ledgers.filter((sub) => sub.active).length;
-    }, [ledgers]);
+    /* A sub generates recurring revenue only when it is active on-chain, its mirror status is
+       ACTIVE, it is not mid-failed-renewal (downgradeFailures === 0 — the period has lapsed and
+       the renewal hasn't collected), and it is not scheduled to end. PAST_DUE (parked),
+       actively-failing, ending, and ended subs are all excluded so revenue reflects money that
+       is actually recurring. */
+    const isPaying = (sub: any) =>
+        sub.active
+        && sub.billingStatus === "ACTIVE"
+        && Number(sub.downgradeFailures || 0) === 0
+        && !sub.cancelAtPeriodEnd;
+
+    /* The keeper keeps a failing sub ACTIVE and retries it each run (1..MAX-1 failures); only
+       after MAX_RENEWAL_FAILURES does it flip to PAST_DUE and STOP retrying. So "actually
+       auto-retrying" is an ACTIVE sub with at least one recorded failure — never a PAST_DUE
+       (parked) one. Mirror this constant from cron/customer-billing. */
+    const MAX_RENEWAL_FAILURES = 4;
+    const isRetrying = (sub: any) =>
+        sub.active
+        && sub.billingStatus === "ACTIVE"
+        && Number(sub.downgradeFailures || 0) > 0
+        && !sub.cancelAtPeriodEnd;
+
+    const monthlyOf = (sub: any) =>
+        (parseFloat(sub.rawAmount) || 0) * (2592000 / (parseFloat(sub.rawPeriod) || 2592000));
+
+    const activeSubscribers = useMemo(() => ledgers.filter(isPaying).length, [ledgers]);
 
     const mrr = useMemo(() => {
-        return ledgers.reduce((acc, sub) => {
-            if (!sub.active) return acc;
-            const amountNum = parseFloat(sub.rawAmount) || 0;
-            const periodNum = parseFloat(sub.rawPeriod) || 2592000;
-            const monthlyEquivalent = amountNum * (2592000 / periodNum);
-            return acc + monthlyEquivalent;
-        }, 0);
+        return ledgers.reduce((acc, sub) => (isPaying(sub) ? acc + monthlyOf(sub) : acc), 0);
     }, [ledgers]);
 
     /* Annual run rate = current monthly recurring revenue × 12. Honest, derived from live ledgers. */
@@ -352,25 +372,32 @@ export default function AnalyticsDashboard({
         return 251.2 - (251.2 * stats.retention) / 100;
     }, [stats.retention]);
 
-    /* Real revenue mix: each bar is a top active subscriber's monthly recurring contribution,
-       relative to the largest. No fabricated history. */
-    const barHeights = useMemo(() => {
-        const monthly = ledgers
-            .filter((s) => s.active)
-            .map((s: any) => (parseFloat(s.rawAmount) || 0) * (2592000 / (parseFloat(s.rawPeriod) || 2592000)))
-            .sort((a: number, b: number) => b - a)
+    /* Real revenue mix: each bar is a top paying subscriber's monthly recurring contribution.
+       Heights are relative to the largest; the actual dollar amount and subscriber are surfaced
+       so the chart shows accurate detail, not just anonymous relative bars. No fabricated history. */
+    const revenueBars = useMemo(() => {
+        const top = ledgers
+            .filter(isPaying)
+            .map((s: any) => ({
+                monthly: monthlyOf(s),
+                label: s.shortSubAddress || s.displayAddress || "Subscriber",
+            }))
+            .sort((a, b) => b.monthly - a.monthly)
             .slice(0, 6);
-        if (monthly.length === 0) return [0, 0, 0, 0, 0, 0];
-        const maxVal = Math.max(...monthly);
-        const bars = monthly.map((v: number) => (maxVal > 0 ? (v / maxVal) * 100 : 0));
-        while (bars.length < 6) bars.push(0);
+        const maxVal = top.length ? Math.max(...top.map((t) => t.monthly)) : 0;
+        const bars = top.map((t) => ({
+            height: maxVal > 0 ? (t.monthly / maxVal) * 100 : 0,
+            monthly: t.monthly,
+            label: t.label,
+        }));
+        while (bars.length < 6) bars.push({ height: 0, monthly: 0, label: "" });
         return bars;
     }, [ledgers]);
 
-    /* Display list of actual active premium subscribers */
+    /* Display list of subscribers actually generating revenue. */
     const displayList = useMemo(() => {
         return ledgers
-            .filter((sub) => sub.active)
+            .filter(isPaying)
             .slice(0, 5)
             .map((sub: any) => ({
                 address: sub.shortSubAddress || "0x0000...0000",
@@ -379,23 +406,34 @@ export default function AnalyticsDashboard({
             }));
     }, [ledgers]);
 
-    /* Past-due subscriptions may retry; hard-canceled/ended subscriptions never do. */
+    /* Everything not currently paying: actively-retrying (still ACTIVE, renewal failing),
+       ending (cancel-at-period-end), parked (PAST_DUE — retries stopped), and ended subs.
+       Only the genuinely auto-retrying ones get the "Auto-retrying" treatment — a PAST_DUE sub
+       is parked, not retrying, so it is labelled "Past due" instead. */
     const inactiveList = useMemo(() => {
         return ledgers
-            .filter((sub) => !sub.active || sub.billingStatus === "PAST_DUE" || sub.cancelAtPeriodEnd)
-            .map((sub: any) => ({
-                id: sub.rawId,
-                address: sub.displayAddress || sub.shortSubAddress || "Unknown subscriber",
-                timestamp: sub.nextBilling || new Date().toLocaleDateString(),
-                retrying: sub.active && sub.billingStatus === "PAST_DUE" && !sub.cancelAtPeriodEnd,
-                statusLabel: sub.cancelAtPeriodEnd
-                    ? "Ends at renewal"
-                    : sub.billingStatus === "CANCELED"
-                        ? "Canceled"
-                        : !sub.active
-                            ? "Ended"
-                            : "Payment overdue",
-            }));
+            .filter((sub) => !isPaying(sub))
+            .map((sub: any) => {
+                const retrying = isRetrying(sub);
+                const attempts = Number(sub.downgradeFailures || 0);
+                return {
+                    id: sub.rawId,
+                    address: sub.displayAddress || sub.shortSubAddress || "Unknown subscriber",
+                    timestamp: sub.nextBilling || new Date().toLocaleDateString(),
+                    retrying,
+                    statusLabel: retrying
+                        ? `Auto-retrying (${Math.min(attempts, MAX_RENEWAL_FAILURES)}/${MAX_RENEWAL_FAILURES})`
+                        : sub.cancelAtPeriodEnd
+                            ? "Ends at renewal"
+                            : sub.billingStatus === "PAST_DUE"
+                                ? "Past due — paused"
+                                : sub.billingStatus === "CANCELED"
+                                    ? "Canceled"
+                                    : !sub.active
+                                        ? "Ended"
+                                        : "Payment overdue",
+                };
+            });
     }, [ledgers]);
 
     return (
@@ -466,7 +504,7 @@ export default function AnalyticsDashboard({
                 )}
 
                 {/* Dashboard layout */}
-                <div className={`transition-all duration-300 ${isPremium ? "" : "filter blur-[6px] pointer-events-none select-none"}`}>
+                <div className={`transition-all duration-300 ${isPremium ? "" : "filter blur-[6px] pointer-events-none select-none"}`} {...subTabSwipe}>
                     {activeSubTab === "metrics" ? (
                         <div className="space-y-6">
                             {/* Top Row: 2 columns, asymmetrical on desktop */}
@@ -538,13 +576,18 @@ export default function AnalyticsDashboard({
                                     </div>
                                     
                                     <div className="flex items-end justify-between h-40 pt-6 px-1">
-                                        {barHeights.map((h, idx) => (
-                                            <div key={idx} className="flex flex-col items-center gap-2 flex-1">
+                                        {revenueBars.map((bar, idx) => (
+                                            <div key={idx} className="flex flex-col items-center gap-1.5 flex-1 group" title={bar.monthly > 0 ? `${bar.label} · $${bar.monthly.toFixed(2)}/mo` : ""}>
+                                                <span className="text-[8px] text-[#00d2b4]/80 font-mono font-bold h-3">
+                                                    {bar.monthly > 0 ? `$${bar.monthly.toFixed(bar.monthly < 100 ? 2 : 0)}` : ""}
+                                                </span>
                                                 <div
                                                     className="w-7 bg-[#00d2b4]/15 border border-[#00d2b4]/30 rounded-t-md transition-all duration-500 hover:bg-[#00d2b4]/40"
-                                                    style={{ height: `${h}%` }}
+                                                    style={{ height: `${bar.height}%` }}
                                                 ></div>
-                                                <span className="text-[9px] text-white/40 font-mono">#{idx + 1}</span>
+                                                <span className="text-[8px] text-white/40 font-mono truncate max-w-[44px]">
+                                                    {bar.label || `#${idx + 1}`}
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -622,7 +665,7 @@ export default function AnalyticsDashboard({
                                                             item.retrying ? "text-amber-300" : "text-white/30"
                                                         }`}>
                                                             {item.retrying && <RefreshCw className="w-3 h-3" />}
-                                                            {item.retrying ? "Auto-retrying" : item.statusLabel}
+                                                            {item.statusLabel}
                                                         </span>
                                                     </div>
                                                 ));

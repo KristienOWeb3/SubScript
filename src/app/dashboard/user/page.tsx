@@ -67,6 +67,7 @@ import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contract
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
 import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -582,6 +583,8 @@ export default function UserDashboard() {
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
   const [sendMode, setSendMode] = useState<"single" | "batch">("single");
+  /* Mobile thumb-swipe between the Single / Batch send sub-tabs (tap still works). */
+  const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode, { enabled: isMobile });
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -2036,14 +2039,20 @@ export default function UserDashboard() {
         <div className="grid grid-cols-1 gap-8 items-start">
           {/* Right main view content */}
           <div className="col-span-1 min-h-[500px]">
+            {/* One keyed child per active tab. AnimatePresence must track a SINGLE child whose key
+                changes only on tab switch — otherwise an unrelated re-render (the 8s DM poll) landing
+                mid exit-animation drops the presence and the screen goes blank. */}
             <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              className="min-h-0"
+            >
             {activeTab === "home" && (
-              <motion.section
-                key="home"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              <section
                 className="space-y-7 max-w-2xl"
               >
                 <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
@@ -2166,16 +2175,11 @@ export default function UserDashboard() {
                     </div>
                   )}
                 </section>
-              </motion.section>
+              </section>
             )}
 
             {activeTab === "inbox" && (
-              <motion.section
-                key="inbox"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              <section
                 className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row"
               >
                 {isMobile ? (
@@ -2481,15 +2485,11 @@ export default function UserDashboard() {
                     </div>
                   </div>
                 )}
-              </motion.section>
+              </section>
             )}
 
             {activeTab === "links" && (
-              <motion.section
-                key="links"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
+              <section
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
               >
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
@@ -2640,16 +2640,13 @@ export default function UserDashboard() {
                     Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request — those are receiver-bound and can't be shared.
                   </p>
                 </div>
-              </motion.section>
+              </section>
             )}
 
             {activeTab === "batch" && (
-              <motion.section
-                key="batch"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
+              <section
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
+                {...sendSwipe}
               >
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
@@ -2881,15 +2878,11 @@ export default function UserDashboard() {
                     </button>
                   </div>
                 )}
-              </motion.section>
+              </section>
             )}
 
             {activeTab === "dns" && (
-              <motion.section
-                key="dns"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
+              <section
                 className="space-y-6 pb-20 max-w-2xl"
               >
                 <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
@@ -3327,8 +3320,9 @@ export default function UserDashboard() {
                     </table>
                   </div>
                 </div>
-              </motion.section>
+              </section>
             )}
+            </motion.div>
           </AnimatePresence>
           </div>
         </div>
@@ -5388,11 +5382,23 @@ function DepositModal({
     }
   };
 
+  /* Mobile thumb-swipe across the Direct / Bank / Bridge deposit modes. Off on the chooser menu. */
+  const depositSwipe = useSwipeTabs(
+    ["direct", "fiat", "cctp"] as const,
+    activeSubMode as "direct" | "fiat" | "cctp",
+    (mode) => {
+      setActiveSubMode(mode);
+      setCctpStatus("idle");
+      setFiatStatus("idle");
+    },
+    { enabled: activeSubMode !== "menu" },
+  );
+
   return (
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
                 {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Bank Transfer" : "Circle CCTP Bridge"}

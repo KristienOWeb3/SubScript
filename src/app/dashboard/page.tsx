@@ -57,6 +57,7 @@ import {
     CONFIDENTIAL_CONTRACT_ADDRESS
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI, CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
+import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
@@ -597,6 +598,9 @@ export default function DashboardPage() {
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    /* Mobile thumb-swipe across the Payments & Subscriptions sub-tabs (tap still works). Touch-only,
+       so it stays inert for desktop mouse users. */
+    const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
     const [requiredCommit, setRequiredCommit] = useState("0");
@@ -1719,6 +1723,7 @@ export default function DashboardPage() {
                     status: string;
                     cancelAtPeriodEnd: boolean;
                     nextBillingDate: string | null;
+                    downgradeFailures: number;
                 }>();
                 if (mirrorResponse?.ok) {
                     const mirrorPayload = await mirrorResponse.json().catch(() => null);
@@ -1761,6 +1766,7 @@ export default function DashboardPage() {
                             active: isActive,
                             billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
                             cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
+                            downgradeFailures: Number(mirror?.downgradeFailures || 0),
                         });
                     }
                 }
@@ -3831,7 +3837,7 @@ Please complete the following implementation tasks:
  
              case "payment-links":
                 return (
-                    <div className="space-y-6">
+                    <div className="space-y-6" {...paymentSwipe}>
                         {renderSubTabs()}
                         {subTab === "subscriptions" && renderPlansTab()}
                         {subTab === "one-time" && renderPaymentLinksTab()}
