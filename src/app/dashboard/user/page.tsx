@@ -5296,11 +5296,15 @@ function DepositModal({
               ? payload.unavailableReason
               : null);
         }
-      } catch (error) {
+      } catch {
         if (cancelled) return;
+        /* The funding rail returns 503 until it goes live at mainnet. That is not an error state
+           for the user — present it as "coming at mainnet" (handled in the render), never as a
+           failure or a disabled feature. */
         setFiatMode("disabled");
-        setFiatStatus("error");
-        setFiatError(error instanceof Error ? error.message : "Could not load bank-transfer funding.");
+        setFiatStatus("idle");
+        setFiatError(null);
+        setFiatMessage(null);
       }
     };
 
@@ -5465,7 +5469,7 @@ function DepositModal({
                     </div>
                     <div className="flex-1">
                       <h4 className="text-xs font-black uppercase tracking-wider text-white">Bank Transfer</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Fund with NGN. No card required. Sandbox only for now.</p>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Fund with NGN. No card required. Arriving at mainnet.</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -5523,6 +5527,20 @@ function DepositModal({
                   <div className="flex flex-col items-center gap-4 py-8 text-center">
                     <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
                     <p className="text-xs leading-normal text-white/70">{fiatMessage || "Loading bank-transfer funding..."}</p>
+                  </div>
+                ) : (fiatMode !== "sandbox" && fiatMode !== "live") ? (
+                  <div className="space-y-4 py-6 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]">
+                      <Download className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Bank transfer — arriving at mainnet</h4>
+                      <p className="mt-2 text-[11px] leading-relaxed text-white/50">
+                        Fund your wallet by NGN bank transfer, no card needed. This goes live when SubScript
+                        launches on Arc mainnet with a licensed funding partner. Until then, use Direct Deposit
+                        or bridge in USDC from another chain.
+                      </p>
+                    </div>
                   </div>
                 ) : fiatStatus === "success" && fiatIntent ? (
                   <div className="space-y-4 py-3 text-center">
@@ -5654,11 +5672,6 @@ function DepositModal({
                     </div>
                     {fiatMessage && <p className="text-center text-[10px] text-amber-200/70">{fiatMessage}</p>}
                     {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
-                    {fiatMode !== "sandbox" && (
-                      <p className="text-center text-[10px] leading-relaxed text-white/45">
-                        Bank-transfer funding is disabled until the sandbox rail is configured.
-                      </p>
-                    )}
                     <button
                       type="button"
                       onClick={handleStartFiatOnramp}
