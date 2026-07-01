@@ -1773,7 +1773,7 @@ export default function UserDashboard() {
   if (loading) {
     return (
       <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
-        <AnimatedGradientBg variant="mono-yellow" />
+        <AnimatedGradientBg />
         
         {/* Desktop Sidebar Skeleton */}
         <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
@@ -1820,7 +1820,7 @@ export default function UserDashboard() {
         )}
 
         {/* Content Pane Skeleton */}
-        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#000000] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#060608] overflow-hidden">
           {/* Desktop Header Skeleton */}
           <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
             <div className="space-y-2">
@@ -1871,7 +1871,7 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         {isMobile && (
-          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 origin-bottom scale-[0.8] items-center justify-between gap-3">
             <div className="flex-1 flex items-center justify-around rounded-full px-3 py-3.5 border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
@@ -1886,10 +1886,10 @@ export default function UserDashboard() {
 
   if (redirectMessage) {
     return (
-      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#000000] px-6 text-white">
-        <AnimatedGradientBg variant="mono-yellow" />
+      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
+        <AnimatedGradientBg />
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-6 w-6 animate-spin text-[#FFD825]" />
+          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
           <div className="space-y-2">
             <p className="text-sm font-black uppercase tracking-[0.18em] text-white">{redirectMessage}</p>
             <p className="text-xs leading-5 text-white/50">If this takes more than a moment, use the button below.</p>
@@ -2021,8 +2021,8 @@ export default function UserDashboard() {
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#000000] text-white selection:bg-[#FFD825]/30 selection:text-white border-t-4 border-[#FFD825] md:h-[100dvh] md:overflow-hidden">
-      <AnimatedGradientBg variant="mono-yellow" />
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden">
+      <AnimatedGradientBg />
 
       <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {!isMobile && (
@@ -2076,7 +2076,7 @@ export default function UserDashboard() {
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
             <div>
               <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
-                User Wallet <span className="font-serif italic lowercase font-normal text-[#FFD825]">hub</span>
+                User Wallet <span className="font-serif italic lowercase font-normal text-[#ccff00]">hub</span>
               </h1>
               <p className="text-xs text-white/50 font-sans">
                 Manage your payment flows, subscriptions, inbox DMs, and batch distributions.
@@ -2105,10 +2105,10 @@ export default function UserDashboard() {
                 className="space-y-7 max-w-2xl"
               >
                 {/* ===== Overview: Connected wallet balance (mockup) ===== */}
-                <div className="flex items-stretch gap-3">
+                <div className="flex items-center gap-3">
                   <section
-                    className="liquid-glass flex-1 min-w-0 rounded-[28px] p-6 text-black shadow-2xl relative overflow-hidden backdrop-blur-xl"
-                    style={{ backgroundColor: "rgba(255,216,37,0.92)" }}
+                    className="liquid-glass flex-1 min-w-0 rounded-[28px] px-6 py-4 text-black shadow-2xl relative overflow-hidden backdrop-blur-xl"
+                    style={{ backgroundColor: "rgba(204,255,0,0.92)" }}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-[0.18em] text-black/60">Connected Wallet Balance</span>
@@ -2130,10 +2130,10 @@ export default function UserDashboard() {
                         <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight select-all">
+                    <div className="mt-2 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight select-all">
                       {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
                     </div>
-                    <p className="mt-3 text-xl sm:text-2xl font-extrabold text-black/60">
+                    <p className="mt-2 text-xl sm:text-2xl font-extrabold text-black/60">
                       {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                     </p>
                   </section>
@@ -2142,33 +2142,33 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
-                      className="grid h-12 w-12 place-items-center rounded-full bg-[#171717] text-[#FFD825] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
                       aria-label="Send"
                     >
-                      <ArrowUpRight className="h-5 w-5" />
+                      <ArrowUpRight className="h-6 w-6" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setReceiveOpen(true)}
-                      className="grid h-12 w-12 place-items-center rounded-full bg-[#171717] text-[#FFD825] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
                       aria-label="Deposit"
                     >
-                      <ArrowDown className="h-5 w-5" />
+                      <ArrowDown className="h-6 w-6" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setScannerOpen(true)}
-                      className="grid h-12 w-12 place-items-center rounded-full bg-[#171717] text-[#FFD825] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
                       aria-label="Scan QR"
                     >
-                      <QrCode className="h-5 w-5" />
+                      <QrCode className="h-6 w-6" />
                     </button>
                   </div>
                 </div>
 
                 {/* ===== Overview: Spending + Total commit ===== */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(255,216,37,0.92)" }}>
+                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(204,255,0,0.92)" }}>
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Spending past (USDC)</p>
                       <p className="mt-3 text-[11px] font-black text-black/50">30D</p>
@@ -2184,7 +2184,7 @@ export default function UserDashboard() {
                       Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(255,216,37,0.92)" }}>
+                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(204,255,0,0.92)" }}>
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Total Commit (LOCKED)</p>
                       <p className="mt-3 text-3xl font-extrabold tracking-tight">
@@ -2225,7 +2225,7 @@ export default function UserDashboard() {
                         onClick={() => setTxFilter(value)}
                         className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
-                            ? "bg-[#171717] text-[#FFD825]"
+                            ? "bg-[#171717] text-[#ccff00]"
                             : "bg-black/[0.06] text-black/50 hover:bg-black/10"
                         }`}
                       >
@@ -2269,18 +2269,18 @@ export default function UserDashboard() {
                         <button
                           type="button"
                           onClick={() => setVaultInfoOpen(true)}
-                          className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[9px] font-black text-white/50 transition hover:border-[#FFD825]/50 hover:text-[#FFD825]"
+                          className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[9px] font-black text-white/50 transition hover:border-[#ccff00]/50 hover:text-[#ccff00]"
                           aria-label="What is a vault?"
                         >
                           ?
                         </button>
                       </div>
-                      <p className="text-[9px] text-white/40 mt-1">Prepaid balance for a metered service — <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#FFD825]/80 hover:underline">what's this?</button></p>
+                      <p className="text-[9px] text-white/40 mt-1">Prepaid balance for a metered service — <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">what's this?</button></p>
                     </div>
                     <button
                       type="button"
                       onClick={() => openVaultCommit()}
-                      className="rounded-xl bg-[#FFD825]/10 border border-[#FFD825]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#FFD825] hover:bg-[#FFD825]/20 transition"
+                      className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/20 transition"
                     >
                       + Commit to a service
                     </button>
@@ -2288,7 +2288,7 @@ export default function UserDashboard() {
 
                   {isVaultsLoading ? (
                     <div className="flex h-36 items-center justify-center">
-                      <Loader2 className="h-6 w-6 animate-spin text-[#FFD825]" />
+                      <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
                     </div>
                   ) : vaults.length === 0 ? (
                     <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
@@ -2297,7 +2297,7 @@ export default function UserDashboard() {
                       <button
                         type="button"
                         onClick={() => openVaultCommit()}
-                        className="mt-2 text-[10px] font-bold text-[#FFD825] hover:underline"
+                        className="mt-2 text-[10px] font-bold text-[#ccff00] hover:underline"
                       >
                         Commit to your first service
                       </button>
@@ -2319,7 +2319,7 @@ export default function UserDashboard() {
                 <section className="min-h-[390px] liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
                   <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                    <span className="rounded-full bg-[#FFD825]/10 px-3 py-1 text-[10px] font-bold text-[#FFD825] border border-[#FFD825]/20">{subscriptions.length} active</span>
+                    <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20">{subscriptions.length} active</span>
                   </div>
 
                   {sortedSubscriptions.length === 0 ? (
@@ -2384,7 +2384,7 @@ export default function UserDashboard() {
                         </div>
 
                         {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
-                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#000000]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
                               open={planManagerOpen}
@@ -2434,9 +2434,9 @@ export default function UserDashboard() {
                                   transition={{ type: "spring", stiffness: 500, damping: 15 }}
                                   type="button"
                                   onClick={() => setGamesMenuOpen(true)}
-                                  className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#FFD825] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
+                                  className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
                                 >
-                                  <GamepadIcon className="w-4 h-4 text-[#FFD825]" />
+                                  <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
                                   <span>Games Menu</span>
                                 </motion.button>
                               )}
@@ -2530,7 +2530,7 @@ export default function UserDashboard() {
                                     setSendFundsRecipient(activeThreadLabel || selectedDmPeer);
                                     setSendFundsOpen(true);
                                   }}
-                                  className="px-3.5 py-1.5 bg-[#FFD825]/10 border border-[#FFD825]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] active:scale-95 shrink-0"
+                                  className="px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
                                 >
                                   Send Funds
                                 </button>
@@ -2618,9 +2618,9 @@ export default function UserDashboard() {
                                       transition={{ type: "spring", stiffness: 500, damping: 15 }}
                                       type="button"
                                       onClick={() => setGamesMenuOpen(true)}
-                                      className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#FFD825] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
+                                      className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
                                     >
-                                      <GamepadIcon className="w-4 h-4 text-[#FFD825]" />
+                                      <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
                                       <span>Games Menu</span>
                                     </motion.button>
                                   )}
@@ -2666,7 +2666,7 @@ export default function UserDashboard() {
                     }}
                     className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
                       linkType === "payment"
-                        ? "bg-[#FFD825] text-black shadow-md"
+                        ? "bg-[#ccff00] text-black shadow-md"
                         : "text-white/60 hover:text-white"
                     }`}
                   >
@@ -2681,7 +2681,7 @@ export default function UserDashboard() {
                     }}
                     className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
                       linkType === "game"
-                        ? "bg-[#FFD825] text-black shadow-md"
+                        ? "bg-[#ccff00] text-black shadow-md"
                         : "text-white/60 hover:text-white"
                     }`}
                   >
@@ -2730,7 +2730,7 @@ export default function UserDashboard() {
                                 }}
                                 className={`relative flex flex-col items-center gap-1 rounded-2xl border px-2 py-3 transition-all ${
                                   selected
-                                    ? "border-[#FFD825] bg-[#FFD825]/10 text-white"
+                                    ? "border-[#ccff00] bg-[#ccff00]/10 text-white"
                                     : playable
                                       ? "border-white/10 bg-black/30 text-white/70 hover:text-white hover:border-white/20"
                                       : "border-white/5 bg-black/20 text-white/30 cursor-not-allowed"
@@ -2759,7 +2759,7 @@ export default function UserDashboard() {
                         </div>
                         <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
                           <span>Winner Payout (90%):</span>
-                          <span className="text-[#FFD825]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
+                          <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
                         </div>
                       </div>
                     </>
@@ -2788,8 +2788,8 @@ export default function UserDashboard() {
                 </form>
 
                 {linkResultUrl && (
-                  <div className="liquid-glass border border-[#FFD825]/20 bg-[#FFD825]/[0.04] rounded-3xl p-5 sm:p-6 space-y-3 shadow-2xl">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-[#FFD825]">Your shareable link</h3>
+                  <div className="liquid-glass border border-[#ccff00]/20 bg-[#ccff00]/[0.04] rounded-3xl p-5 sm:p-6 space-y-3 shadow-2xl">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Your shareable link</h3>
                     <p className="break-all rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/80">{linkResultUrl}</p>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -2832,7 +2832,7 @@ export default function UserDashboard() {
                 <div className="flex items-start gap-3 rounded-3xl border border-white/5 bg-black/30 p-4">
                   <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
                   <p className="text-[11px] leading-relaxed text-white/45">
-                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#FFD825] underline-offset-2 hover:underline">DMs</button> and tap Request — those are receiver-bound and can't be shared.
+                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request — those are receiver-bound and can't be shared.
                   </p>
                 </div>
               </section>
@@ -2853,7 +2853,7 @@ export default function UserDashboard() {
                       onClick={() => setSendMode("single")}
                       className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
                         sendMode === "single"
-                          ? "bg-[#FFD825] text-black shadow-md"
+                          ? "bg-[#ccff00] text-black shadow-md"
                           : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -2864,7 +2864,7 @@ export default function UserDashboard() {
                       onClick={() => setSendMode("batch")}
                       className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
                         sendMode === "batch"
-                          ? "bg-[#FFD825] text-black shadow-md"
+                          ? "bg-[#ccff00] text-black shadow-md"
                           : "text-white/50 hover:text-white/80"
                       }`}
                     >
@@ -2884,7 +2884,7 @@ export default function UserDashboard() {
                           required
                         />
                         {singleResolving ? (
-                          <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#FFD825] animate-spin" />
+                          <Loader2 className="absolute right-3.5 top-3.5 w-4 h-4 text-[#ccff00] animate-spin" />
                         ) : (
                           <User className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                         )}
@@ -2895,7 +2895,7 @@ export default function UserDashboard() {
                     {singleResolved && (
                       <div className={`rounded-2xl border p-4 text-xs flex items-center justify-between transition-all duration-300 ${
                         singleResolved.address 
-                          ? "bg-[#FFD825]/5 border-[#FFD825]/20 text-white/80" 
+                          ? "bg-[#ccff00]/5 border-[#ccff00]/20 text-white/80" 
                           : "bg-red-500/5 border-red-500/20 text-red-400"
                       }`}>
                         <div className="flex items-center gap-3 min-w-0">
@@ -2964,7 +2964,7 @@ export default function UserDashboard() {
                     <button
                       type="submit"
                       disabled={singleSendLoading || !singleResolved?.address || singleSelfSend}
-                      className={`w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] ${
+                      className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
                         singleSendLoading ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -3017,8 +3017,8 @@ export default function UserDashboard() {
                     ))}
 
                     {batchProgress && (
-                      <div className="bg-[#FFD825]/10 border border-[#FFD825]/20 rounded-2xl p-4 flex items-center gap-3">
-                        <Loader2 className="w-4 h-4 animate-spin text-[#FFD825]" />
+                      <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 flex items-center gap-3">
+                        <Loader2 className="w-4 h-4 animate-spin text-[#ccff00]" />
                         <span className="text-xs text-white/80 font-medium">{batchProgress}</span>
                       </div>
                     )}
@@ -3048,7 +3048,7 @@ export default function UserDashboard() {
                     <button
                       type="button"
                       onClick={() => setBatchRows((rows) => [...rows, { address: "", amount: "" }])}
-                      className="w-full rounded-2xl border border-white/5 bg-black/20 hover:bg-[#FFD825]/5 hover:border-[#FFD825]/20 text-[#FFD825] py-3.5 text-xs font-black uppercase tracking-[0.16em] transition"
+                      className="w-full rounded-2xl border border-white/5 bg-black/20 hover:bg-[#ccff00]/5 hover:border-[#ccff00]/20 text-[#ccff00] py-3.5 text-xs font-black uppercase tracking-[0.16em] transition"
                     >
                       Add Recipient
                     </button>
@@ -3057,7 +3057,7 @@ export default function UserDashboard() {
                       type="button"
                       onClick={handleBatchSend}
                       disabled={batchSendLoading || batchSelfSendRows.length > 0}
-                      className={`w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] ${
+                      className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
                         batchSendLoading || batchSelfSendRows.length > 0 ? "opacity-60 cursor-not-allowed" : ""
                       }`}
                     >
@@ -3085,12 +3085,12 @@ export default function UserDashboard() {
                 {/* Profile & DNS Registration */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <User className="h-4 w-4 text-[#FFD825]" /> Profile & Identity
+                    <User className="h-4 w-4 text-[#ccff00]" /> Profile & Identity
                   </h3>
                   <div className="flex items-center gap-4 pb-4 border-b border-white/5">
                     <Avatar profilePic={profilePic} size="lg" />
                     <div className="space-y-2">
-                      <label className="inline-block rounded-2xl border border-white/5 bg-black/20 hover:bg-[#FFD825]/10 hover:border-[#FFD825]/30 text-[#FFD825] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] cursor-pointer transition-all">
+                      <label className="inline-block rounded-2xl border border-white/5 bg-black/20 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 text-[#ccff00] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] cursor-pointer transition-all">
                         Choose Image
                         <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                       </label>
@@ -3105,10 +3105,10 @@ export default function UserDashboard() {
 
                   {registeredDomain ? (
                     <div className="space-y-2">
-                    <div className="rounded-3xl border border-[#FFD825]/15 bg-[#FFD825]/5 p-4 flex items-center justify-between">
+                    <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
                       <div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#FFD825]/70">Registered Domain</p>
-                        <h3 className="mt-1 font-mono text-lg font-black text-[#FFD825]">{registeredDomain}</h3>
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
+                        <h3 className="mt-1 font-mono text-lg font-black text-[#ccff00]">{registeredDomain}</h3>
                       </div>
                       <button
                         onClick={async () => {
@@ -3154,7 +3154,7 @@ export default function UserDashboard() {
                       <button 
                         type="submit" 
                         disabled={dnsLoading} 
-                        className="w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)]"
+                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
                       >
                         {dnsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}
                       </button>
@@ -3167,7 +3167,7 @@ export default function UserDashboard() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="space-y-2">
                         <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <Lock className="h-4 w-4 text-[#FFD825]" /> Wallet Backup
+                          <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
                         </h3>
                         <p className="text-[10px] text-white/40 leading-relaxed">
                           Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
@@ -3175,7 +3175,7 @@ export default function UserDashboard() {
                       </div>
                       <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
                         userSettings.walletBackup.available
-                          ? "border border-[#FFD825]/25 bg-[#FFD825]/10 text-[#FFD825]"
+                          ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
                           : "border border-white/10 bg-white/5 text-white/45"
                       }`}>
                         {userSettings.walletBackup.available ? "Exportable" : "Managed"}
@@ -3204,10 +3204,10 @@ export default function UserDashboard() {
                           <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
                             {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
                           </button>
-                          <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#FFD825]/25 bg-[#FFD825]/10 hover:bg-[#FFD825]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD825] transition flex items-center justify-center gap-2">
+                          <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
                             <Copy className="h-4 w-4" /> Copy
                           </button>
-                          <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#FFD825]/25 bg-[#FFD825]/10 hover:bg-[#FFD825]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD825] transition flex items-center justify-center gap-2">
+                          <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
                             <Download className="h-4 w-4" /> Download
                           </button>
                         </div>
@@ -3229,14 +3229,14 @@ export default function UserDashboard() {
                           value={exportOtpCode}
                           onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                           placeholder="000000"
-                          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#FFD825]/50 focus:outline-none"
+                          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <button
                             type="button"
                             onClick={handleExportWallet}
                             disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                            className="w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                             Confirm & Reveal
@@ -3254,7 +3254,7 @@ export default function UserDashboard() {
                           type="button"
                           onClick={requestExportOtp}
                           disabled={exportOtpSending}
-                          className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#FFD825]/70 hover:text-[#FFD825] transition disabled:opacity-50"
+                          className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
                         >
                           {exportOtpSending ? "Resending…" : "Resend code"}
                         </button>
@@ -3264,7 +3264,7 @@ export default function UserDashboard() {
                         type="button"
                         onClick={requestExportOtp}
                         disabled={exportOtpSending || !userSettings.walletBackup.available}
-                        className="w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                         {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
@@ -3277,7 +3277,7 @@ export default function UserDashboard() {
                 {userSettings && (
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-[#FFD825]" /> Spending Limits
+                      <CreditCard className="h-4 w-4 text-[#ccff00]" /> Spending Limits
                     </h3>
                     <p className="text-[10px] text-white/40 leading-relaxed">
                       Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
@@ -3319,7 +3319,7 @@ export default function UserDashboard() {
                       <button
                         type="submit"
                         disabled={savingSettingsField === "spendingLimits"}
-                        className={`w-full rounded-2xl bg-[#FFD825]/10 border border-[#FFD825]/30 text-white hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] ${
+                        className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
                           savingSettingsField === "spendingLimits" ? "opacity-60 cursor-not-allowed" : ""
                         }`}
                       >
@@ -3333,7 +3333,7 @@ export default function UserDashboard() {
                 {userSettings && (
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Sliders className="h-4 w-4 text-[#FFD825]" /> Notifications
+                      <Sliders className="h-4 w-4 text-[#ccff00]" /> Notifications
                     </h3>
                     <div className="space-y-4 font-sans text-xs">
                       <div className="flex items-center justify-between">
@@ -3344,7 +3344,7 @@ export default function UserDashboard() {
                         <button
                           onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
                           disabled={savingSettingsField === "pushEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#FFD825]" : "bg-white/10"}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
                         </button>
@@ -3362,7 +3362,7 @@ export default function UserDashboard() {
                         <button
                           onClick={handleToggleBrowserPush}
                           disabled={browserPushBusy || !browserPushSupported}
-                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#FFD825]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
                         </button>
@@ -3390,7 +3390,7 @@ export default function UserDashboard() {
                         <button
                           onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
                           disabled={savingSettingsField === "debitSuccessEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#FFD825]" : "bg-white/10"}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
                         </button>
@@ -3404,7 +3404,7 @@ export default function UserDashboard() {
                         <button
                           onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
                           disabled={savingSettingsField === "expiryWarningEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#FFD825]" : "bg-white/10"}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
                         >
                           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
                         </button>
@@ -3417,7 +3417,7 @@ export default function UserDashboard() {
                 {userSettings && (
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-[#FFD825]" /> Security Settings
+                      <Lock className="h-4 w-4 text-[#ccff00]" /> Security Settings
                     </h3>
                     <div className="space-y-4 font-sans text-xs">
                       <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
@@ -3454,7 +3454,7 @@ export default function UserDashboard() {
                 {/* Transactions History */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-[#FFD825]" /> Recent Transactions History
+                    <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left font-sans text-xs">
@@ -3493,7 +3493,7 @@ export default function UserDashboard() {
                                     href={`/receipt/${tx.receiptId}?invite=1`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-white/60 hover:text-[#FFD825] hover:underline inline-flex items-center gap-1"
+                                    className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
                                     title="Grant another address permission to view this private receipt"
                                   >
                                     Grant access
@@ -3502,7 +3502,7 @@ export default function UserDashboard() {
                                     href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[#FFD825] hover:underline inline-flex items-center gap-1"
+                                    className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
                                   >
                                     Tx <ExternalLink className="w-3.5 h-3.5" />
                                   </a>
@@ -3527,7 +3527,7 @@ export default function UserDashboard() {
 
       {/* Mobile-only Bottom Navigation Bar */}
       {isMobile && userWallet && !isActiveMobileDm && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 origin-bottom scale-[0.8] items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
           <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] bg-[#171717]/90 backdrop-blur-xl">
             {userBottomTabs.map((tab) => (
@@ -3554,8 +3554,8 @@ export default function UserDashboard() {
               }}
               className={`relative h-12 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
                 activeTab === "inbox"
-                  ? "bg-[#FFD825] border-[#FFD825] text-black shadow-[0_0_18px_rgba(255,216,37,0.35)] scale-105 w-[108px]"
-                  : "bg-[#171717] backdrop-blur-xl border-white/10 text-[#FFD825] hover:text-white w-12"
+                  ? "bg-[#ccff00] border-[#ccff00] text-black shadow-[0_0_18px_rgba(204,255,0,0.35)] scale-105 w-[108px]"
+                  : "bg-[#171717] backdrop-blur-xl border-white/10 text-[#ccff00] hover:text-white w-12"
               }`}
               aria-label="Open DMs"
             >
@@ -3564,7 +3564,7 @@ export default function UserDashboard() {
             </button>
             {/* Badge lives outside the button so its overflow-hidden never clips it. */}
             {pendingDmCount > 0 && (
-              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#000000] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
+              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
                 {pendingDmCount > 9 ? "9+" : pendingDmCount}
               </span>
             )}
@@ -3678,7 +3678,7 @@ export default function UserDashboard() {
               transition={{ type: "spring", stiffness: 420, damping: 26 }}
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitVaultAction}
-              className="w-full max-w-sm space-y-4 rounded-3xl border border-[#FFD825]/20 bg-[#0c0c10] p-6 shadow-2xl"
+              className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
             >
               <div>
                 <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">
@@ -3740,9 +3740,9 @@ export default function UserDashboard() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md">
           <form
             onSubmit={emailPromptStep === "email" ? handleSendEmailCode : handleVerifyEmailCode}
-            className="w-full max-w-sm space-y-4 rounded-3xl border border-[#FFD825]/20 bg-[#0c0c10] p-6 shadow-2xl"
+            className="w-full max-w-sm space-y-4 rounded-3xl border border-[#ccff00]/20 bg-[#0c0c10] p-6 shadow-2xl"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#FFD825]/25 bg-[#FFD825]/10 text-[#FFD825]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
               <Mail className="h-5 w-5" />
             </div>
             <div>
@@ -3826,7 +3826,7 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
             className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#0c0c10] p-6 shadow-2xl"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#FFD825]/25 bg-[#FFD825]/10 text-[#FFD825]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]">
                 <Shield className="h-5 w-5" />
               </div>
               <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white">What is a prepaid vault?</h2>
@@ -3885,10 +3885,10 @@ function UserDesktopSidebar({
           <img
             src="/logo.png"
             alt="SubScript Logo"
-            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(255,216,37,0.35)]"
+            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(204,255,0,0.35)]"
           />
           <div className="hidden lg:block min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FFD825]">SubScript</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
             <p className="truncate text-xs font-bold text-white/55">User account</p>
           </div>
         </div>
@@ -3904,18 +3904,18 @@ function UserDesktopSidebar({
                 onClick={() => onTabChange(tab.id)}
                 className={`group flex w-full items-center justify-center lg:justify-between rounded-full lg:rounded-2xl border p-3.5 lg:px-4 lg:py-3.5 text-left text-xs font-black uppercase tracking-[0.13em] transition-all relative ${
                   isActive
-                    ? "border-[#FFD825]/30 bg-[#FFD825]/10 text-white shadow-[0_0_28px_rgba(255,216,37,0.08)]"
+                    ? "border-[#ccff00]/30 bg-[#ccff00]/10 text-white shadow-[0_0_28px_rgba(204,255,0,0.08)]"
                     : "border-white/5 bg-white/[0.015] text-white/45 hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
                 }`}
                 title={tab.label}
               >
                 <span className="flex min-w-0 items-center justify-center lg:justify-start gap-3">
-                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#FFD825]" : "text-white/35 group-hover:text-white/70"}`} />
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#ccff00]" : "text-white/35 group-hover:text-white/70"}`} />
                   <span className="hidden lg:inline truncate">{tab.label}</span>
                 </span>
                 {tab.id === "inbox" && pendingDmCount > 0 && (
                   <span className={`lg:ml-3 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[9px] font-black ${
-                    isActive ? "bg-[#FFD825] text-black" : "bg-red-500 text-white"
+                    isActive ? "bg-[#ccff00] text-black" : "bg-red-500 text-white"
                   } ${isActive ? "" : "absolute -top-1 -right-1 lg:static"}`}>
                     {pendingDmCount > 9 ? "9+" : pendingDmCount}
                   </span>
@@ -3927,7 +3927,7 @@ function UserDesktopSidebar({
       </div>
 
       <div className="space-y-4 flex flex-col items-center lg:items-stretch">
-        <div className="hidden lg:block rounded-3xl border border-[#FFD825]/15 bg-[#FFD825]/[0.04] p-4">
+        <div className="hidden lg:block rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4">
           <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/35">Arc USDC Balance</p>
           <p className="mt-2 text-2xl font-black tracking-tight text-white">${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
         </div>
@@ -3935,7 +3935,7 @@ function UserDesktopSidebar({
         <button
           type="button"
           onClick={() => onTabChange("dns")}
-          className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-2xl border border-white/5 bg-black/25 p-3 lg:px-3 lg:py-3 text-left transition hover:border-[#FFD825]/20 hover:bg-[#FFD825]/5"
+          className="flex items-center justify-center lg:justify-start gap-3 rounded-full lg:rounded-2xl border border-white/5 bg-black/25 p-3 lg:px-3 lg:py-3 text-left transition hover:border-[#ccff00]/20 hover:bg-[#ccff00]/5"
           title={registeredDomain || "Profile & DNS"}
         >
           <Avatar profilePic={profilePic} size="xs" />
@@ -3983,7 +3983,7 @@ function HomeHeader({
             <img 
               src="/logo.png" 
               alt="SubScript Logo" 
-              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(255,216,37,0.4)]" 
+              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(204,255,0,0.4)]" 
             />
           </div>
           {/* Actions (Right) */}
@@ -4004,8 +4004,8 @@ function HomeHeader({
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] border border-white/5 rounded-full hover:bg-white/[0.06] transition-all group"
               title="Click to manage account settings"
             >
-              <div className="w-4 h-4 bg-[#FFD825]/10 rounded-full flex items-center justify-center">
-                <Wallet className="w-2 h-2 text-[#FFD825]" />
+              <div className="w-4 h-4 bg-[#ccff00]/10 rounded-full flex items-center justify-center">
+                <Wallet className="w-2 h-2 text-[#ccff00]" />
               </div>
               <span className="text-[10px] font-mono font-semibold text-white/70 group-hover:text-white/90 transition-colors max-w-[100px] truncate">
                 {registeredDomain || formatAddress(userWallet)}
@@ -4057,7 +4057,7 @@ function ChatHeader({
           {/* Peer Info Capsule */}
           <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.04] border border-white/5 rounded-full min-w-0">
             <Avatar profilePic={peerProfilePic} size="xs" />
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#FFD825] truncate max-w-[80px]">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#ccff00] truncate max-w-[80px]">
               {peerName}
             </span>
             {isMerchant && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
@@ -4068,7 +4068,7 @@ function ChatHeader({
             <button
               type="button"
               onClick={onSendFunds}
-              className="ml-auto px-3.5 py-1.5 bg-[#FFD825]/10 border border-[#FFD825]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#FFD825]/20 hover:border-[#FFD825]/50 transition shadow-[0_0_15px_rgba(255,216,37,0.15)] active:scale-95 shrink-0"
+              className="ml-auto px-3.5 py-1.5 bg-[#ccff00]/10 border border-[#ccff00]/30 text-white font-black uppercase tracking-wider text-[9px] rounded-full hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] active:scale-95 shrink-0"
             >
               Send Funds
             </button>
@@ -4099,7 +4099,7 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
       type="button" 
       onClick={onClick} 
       aria-label={label} 
-      className="flex h-14 w-14 items-center justify-center rounded-full border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg text-[#FFD825]/80 hover:text-white hover:bg-[#FFD825]/10 hover:border-[#FFD825]/30 shadow-lg hover:shadow-[#FFD825]/5 transition-all duration-300 active:scale-95 group"
+      className="flex h-14 w-14 items-center justify-center rounded-full border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg text-[#ccff00]/80 hover:text-white hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 shadow-lg hover:shadow-[#ccff00]/5 transition-all duration-300 active:scale-95 group"
     >
       <Icon className="h-6 w-6 group-hover:scale-105 transition-transform" />
     </button>
@@ -4112,7 +4112,7 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
     <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30">
-          {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#FFD825]/70" />}
+          {subscription.merchantProfilePic ? <img src={subscription.merchantProfilePic} alt={subscription.merchantName} className="h-full w-full object-cover" /> : <Shield className="h-5 w-5 text-[#ccff00]/70" />}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
@@ -4123,7 +4123,7 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-xs font-black text-[#FFD825]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
+        <p className="text-xs font-black text-[#ccff00]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
         <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
       </div>
     </div>
@@ -4152,7 +4152,7 @@ function DmThreadSelect({
     <div className="space-y-5">
       <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl relative">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#FFD825]">SubScript DMs</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]">SubScript DMs</p>
           <h1 className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Select a payment thread</h1>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-white/45">
@@ -4181,8 +4181,8 @@ function DmThreadSelect({
                 onClick={() => onSelect(thread.peerAddress)}
                 className={`flex w-full items-center gap-4 rounded-3xl border p-4 text-left shadow-xl transition-colors duration-300 ${
                   isSelected
-                    ? "border-[#FFD825] bg-[#FFD825]/[0.06] shadow-[0_0_15px_rgba(255,216,37,0.1)]"
-                    : "border-white/5 bg-black/25 hover:border-[#FFD825]/30 hover:bg-[#FFD825]/[0.04]"
+                    ? "border-[#ccff00] bg-[#ccff00]/[0.06] shadow-[0_0_15px_rgba(204,255,0,0.1)]"
+                    : "border-white/5 bg-black/25 hover:border-[#ccff00]/30 hover:bg-[#ccff00]/[0.04]"
                 }`}
               >
                 <Avatar profilePic={thread.peerProfilePic} />
@@ -4196,10 +4196,10 @@ function DmThreadSelect({
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[11px] text-white/45">{latestPreview}</p>
-                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#FFD825]/50">{thread.totalCount} system messages</p>
+                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-[#ccff00]/50">{thread.totalCount} system messages</p>
                 </div>
                 {thread.pendingCount > 0 && (
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#FFD825] px-2 text-[10px] font-black text-black">
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#ccff00] px-2 text-[10px] font-black text-black">
                     {thread.pendingCount}
                   </span>
                 )}
@@ -4336,11 +4336,11 @@ function DmBubble({
           <div
             className={`px-5 py-4 border shadow-xl rounded-[24px] ${
               incoming
-                ? `${focused ? "border-[#FFD825]/40 bg-[#FFD825]/[0.08]" : "border-white/10 bg-[#0d0d11]/95 text-white"} rounded-bl-[4px]`
+                ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-[#0d0d11]/95 text-white"} rounded-bl-[4px]`
                 : "border-[#00b2ff]/30 bg-[#002b4d]/40 text-white rounded-br-[4px]"
             }`}
           >
-            <p className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.2em] ${incoming ? "text-[#FFD825]" : "text-[#00b2ff]"}`}>
+            <p className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.2em] ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
               ♟ Chess Match
             </p>
             
@@ -4357,7 +4357,7 @@ function DmBubble({
                 {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
               </span>
               {dm.amountUsdc && (
-                <span className={`text-xs font-black ${incoming ? "text-[#FFD825]" : "text-[#00b2ff]"}`}>
+                <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
                   ${(Number(dm.amountUsdc) / 1000000).toFixed(2)} USDC
                 </span>
               )}
@@ -4369,7 +4369,7 @@ function DmBubble({
                 onClick={() => onPlayGame(dm.dmGameId!)}
                 className={`mt-3.5 w-full rounded-full py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-1.5 ${
                   incoming 
-                    ? "bg-[#FFD825] text-black hover:opacity-90"
+                    ? "bg-[#ccff00] text-black hover:opacity-90"
                     : "bg-[#00b2ff] text-white hover:opacity-90"
                 }`}
               >
@@ -4427,13 +4427,13 @@ function DmBubble({
         <div 
           className={`px-5 py-4 shadow-md select-none transition-all duration-200 ${
             incoming 
-              ? `${focused ? "border-[#FFD825]/40 bg-[#FFD825]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
+              ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/5 bg-[#262629]/95 text-white"} rounded-[20px] rounded-bl-[4px] border` 
               : "bg-gradient-to-br from-[#00b2ff] to-[#007aff] text-white rounded-[20px] rounded-br-[4px] border-none shadow-[0_4px_16px_rgba(0,122,255,0.2)]"
           }`}
         >
           <p 
             className={`mb-2 text-[9px] font-black uppercase tracking-[0.16em] ${
-              incoming ? "text-[#FFD825]" : "text-white/70"
+              incoming ? "text-[#ccff00]" : "text-white/70"
             }`}
           >
             {dm.messageType.replace(/_/g, " ")}
@@ -4490,7 +4490,7 @@ function DmBubble({
               {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
             {dm.amountUsdc && (
-              <span className={`text-xs font-black ${incoming ? "text-[#FFD825]" : "text-white"}`}>
+              <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-white"}`}>
                 {formatUsdc(dm.amountUsdc)} USDC
               </span>
             )}
@@ -4594,7 +4594,7 @@ function DmBubble({
           )}
 
           {dm.messageType === "CHURN_SURVEY" && !isPending && (
-            <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#FFD825] bg-[#FFD825]/10 border border-[#FFD825]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(255,216,37,0.06)]">
+            <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
               Response: {dm.status.replace(/_/g, " ")}
             </span>
           )}
@@ -4636,10 +4636,10 @@ function MerchantPlanManager({
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 400, damping: 22, mass: 0.8 }}
-        className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#FFD825]/15 bg-[#FFD825]/[0.06] p-3"
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#FFD825]/70">Merchant plan controls</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Merchant plan controls</p>
           <p className="truncate text-xs font-bold text-white">
             {hasActiveSubscription
               ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}`
@@ -4728,7 +4728,7 @@ function MerchantPlanManager({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-xs font-black uppercase tracking-[0.08em] text-white">{plan.name}</p>
-                          <p className="mt-1 text-[10px] font-bold text-[#FFD825]">
+                          <p className="mt-1 text-[10px] font-bold text-[#ccff00]">
                             {formatUsdc(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                           </p>
                           {plan.description && (
@@ -4752,7 +4752,7 @@ function MerchantPlanManager({
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
                             transition={{ type: "spring", stiffness: 500, damping: 14 }}
-                            className="rounded-full border border-[#FFD825]/20 bg-[#FFD825]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#FFD825]"
+                            className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
                           >
                             Current
                           </motion.span>
@@ -4768,7 +4768,7 @@ function MerchantPlanManager({
                         className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
                           isCurrent || isReduction
                             ? "border-white/5 bg-white/[0.03] text-white/25"
-                            : "border-[#FFD825]/25 bg-[#FFD825]/10 text-white hover:bg-[#FFD825]/18"
+                            : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent
@@ -4785,7 +4785,7 @@ function MerchantPlanManager({
               </div>
             )}
 
-            {status && <p className="text-[10px] font-bold text-[#FFD825]">{status}</p>}
+            {status && <p className="text-[10px] font-bold text-[#ccff00]">{status}</p>}
             {error && <p className="text-[10px] font-bold text-red-300">{error}</p>}
           </motion.div>
         )}
@@ -4832,7 +4832,7 @@ function DmRequestComposer({
             transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
-            className="rounded-[28px] border border-[#FFD825]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount">
@@ -4869,7 +4869,7 @@ function DmRequestComposer({
               </Field>
             </div>
             {status && (
-              <div className="mt-3 rounded-2xl border border-[#FFD825]/20 bg-[#FFD825]/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD825]">
+              <div className="mt-3 rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
                 {status}
               </div>
             )}
@@ -4901,7 +4901,7 @@ function DmRequestComposer({
       </AnimatePresence>
 
       {status && !open && (
-        <div className="rounded-2xl border border-[#FFD825]/20 bg-[#FFD825]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#FFD825]">
+        <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
           {status}
         </div>
       )}
@@ -4916,14 +4916,14 @@ function DmRequestComposer({
         disabled={loading}
         className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border py-3 text-center text-xs font-black uppercase tracking-[0.16em] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg transition-all ${
           open
-            ? "border-[#FFD825]/40 bg-[#FFD825]/15 text-[#FFD825]"
-            : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#FFD825]"
+            ? "border-[#ccff00]/40 bg-[#ccff00]/15 text-[#ccff00]"
+            : "liquid-glass border-white/5 bg-black/30 text-white hover:text-[#ccff00]"
         }`}
       >
         <motion.span
           animate={{ rotate: open ? 45 : 0 }}
           transition={{ type: "spring", stiffness: 400, damping: 20 }}
-          className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#FFD825]/20 text-[#FFD825]" : "bg-[#FFD825]/15 text-[#FFD825]"}`}
+          className={`grid h-5 w-5 place-items-center rounded-full text-sm leading-none ${open ? "bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ccff00]/15 text-[#ccff00]"}`}
         >
           +
         </motion.span>
@@ -5070,12 +5070,12 @@ function DmGamesComposer({
             transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={handleCreateInvite}
-            className="rounded-[28px] border border-[#FFD825]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl text-left"
+            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl text-left"
           >
             <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
               <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Configure Game Invite</span>
               {statusMessage && (
-                <span className="text-[9px] font-bold text-[#FFD825] animate-pulse">{statusMessage}</span>
+                <span className="text-[9px] font-bold text-[#ccff00] animate-pulse">{statusMessage}</span>
               )}
             </div>
 
@@ -5086,7 +5086,7 @@ function DmGamesComposer({
                 onClick={() => setSelectedGameType("chess")}
                 className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                   selectedGameType === "chess"
-                    ? "bg-[#FFD825] text-black shadow-md"
+                    ? "bg-[#ccff00] text-black shadow-md"
                     : "text-white/60 hover:text-white"
                 }`}
               >
@@ -5097,7 +5097,7 @@ function DmGamesComposer({
                 onClick={() => setSelectedGameType("checkers")}
                 className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                   selectedGameType === "checkers"
-                    ? "bg-[#FFD825] text-black shadow-md"
+                    ? "bg-[#ccff00] text-black shadow-md"
                     : "text-white/60 hover:text-white"
                 }`}
               >
@@ -5129,7 +5129,7 @@ function DmGamesComposer({
                 </div>
                 <div className="flex justify-between border-t border-white/5 pt-1.5 font-black text-white text-[10px]">
                   <span>Winner Payout (90%)</span>
-                  <span className="text-[#FFD825]">${(Number(stakeAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
+                  <span className="text-[#ccff00]">${(Number(stakeAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
                 </div>
               </div>
 
@@ -5612,7 +5612,7 @@ function DepositModal({
                     }}
                     className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all ${
                       activeSubMode === tab
-                        ? "bg-[#FFD825] text-black shadow-md"
+                        ? "bg-[#ccff00] text-black shadow-md"
                         : "text-white/50 hover:text-white/85"
                     }`}
                   >
@@ -5624,7 +5624,7 @@ function DepositModal({
 
             {activeSubMode === "menu" && (
               <div className="space-y-5">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFD825] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
                   <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
@@ -5635,9 +5635,9 @@ function DepositModal({
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-[#FFD825]/20 bg-[#FFD825]/5 p-5 text-left hover:bg-[#FFD825]/10 transition-all group"
+                    className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFD825] text-black group-hover:scale-105 transition-all shrink-0">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
                       <Globe className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
@@ -5682,7 +5682,7 @@ function DepositModal({
 
             {activeSubMode === "direct" && (
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFD825] text-lg font-black text-black">S</div>
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
                 <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
                   <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/favicon-48x48.png", height: 38, width: 38, excavate: true }} />
@@ -5695,8 +5695,8 @@ function DepositModal({
 
             {activeSubMode === "fiat" && (
               <div className="space-y-4 text-left">
-                <div className="rounded-2xl border border-[#FFD825]/20 bg-[#FFD825]/5 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#FFD825]">Bank transfer only</p>
+                <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Bank transfer only</p>
                   <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
                     Fund with NGN without a bank card. Settlement gas is paid separately, so it is never deducted from the quoted USDC principal.
                   </p>
@@ -5713,12 +5713,12 @@ function DepositModal({
 
                 {(fiatStatus === "loading" || fiatStatus === "creating" || fiatStatus === "settling") ? (
                   <div className="flex flex-col items-center gap-4 py-8 text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#FFD825]" />
+                    <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
                     <p className="text-xs leading-normal text-white/70">{fiatMessage || "Loading bank-transfer funding..."}</p>
                   </div>
                 ) : (fiatMode !== "sandbox" && fiatMode !== "live") ? (
                   <div className="space-y-4 py-6 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#FFD825]/20 bg-[#FFD825]/10 text-[#FFD825]">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]">
                       <Download className="h-6 w-6" />
                     </div>
                     <div>
@@ -5732,14 +5732,14 @@ function DepositModal({
                   </div>
                 ) : fiatStatus === "success" && fiatIntent ? (
                   <div className="space-y-4 py-3 text-center">
-                    <CheckCircle2 className="mx-auto h-12 w-12 text-[#FFD825]" />
+                    <CheckCircle2 className="mx-auto h-12 w-12 text-[#ccff00]" />
                     <div>
                       <h4 className="text-sm font-black uppercase tracking-wider text-white">Sandbox flow complete</h4>
                       <p className="mt-2 text-xs leading-normal text-white/50">{fiatMessage}</p>
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
                       <p className="text-[9px] uppercase tracking-wider text-white/35">Simulated wallet credit</p>
-                      <p className="mt-1 text-base font-black text-[#FFD825]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
+                      <p className="mt-1 text-base font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
                     </div>
                     <p className="text-[10px] leading-relaxed text-amber-200/70">
                       No real NGN was received and no real or testnet USDC was transferred.
@@ -5768,7 +5768,7 @@ function DepositModal({
                         </div>
                         <div className="text-right">
                           <p className="text-[9px] uppercase tracking-wider text-white/35">You receive</p>
-                          <p className="mt-1 text-sm font-black text-[#FFD825]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
+                          <p className="mt-1 text-sm font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
                         </div>
                       </div>
                     </div>
@@ -5800,7 +5800,7 @@ function DepositModal({
                       >
                         <span>
                           <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Transfer reference</span>
-                          <span className="mt-0.5 block font-mono text-xs font-black text-[#FFD825]">{fiatIntent.transferReference}</span>
+                          <span className="mt-0.5 block font-mono text-xs font-black text-[#ccff00]">{fiatIntent.transferReference}</span>
                         </span>
                         <Copy className="h-4 w-4 text-white/40" />
                       </button>
@@ -5856,7 +5856,7 @@ function DepositModal({
                     </div>
                     <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
                       <span className="text-white/40">Quote includes</span>
-                      <span className="font-black text-[#FFD825]">Quoted USDC + zero gas deduction</span>
+                      <span className="font-black text-[#ccff00]">Quoted USDC + zero gas deduction</span>
                     </div>
                     {fiatMessage && <p className="text-center text-[10px] text-amber-200/70">{fiatMessage}</p>}
                     {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
@@ -5876,7 +5876,7 @@ function DepositModal({
             {activeSubMode === "cctp" && (
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
-                  <span className="rounded-full bg-[#FFD825]/10 px-3 py-1 text-[9px] font-bold text-[#FFD825]">
+                  <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
                     Sepolia: {totalExternalUsdc.toFixed(2)} USDC
                   </span>
                 </div>
@@ -5896,7 +5896,7 @@ function DepositModal({
                         <button
                           type="button"
                           onClick={() => setCctpAmount(totalExternalUsdc.toString())}
-                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#FFD825] hover:bg-white/20 transition-all"
+                          className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
                         >
                           Max
                         </button>
@@ -5917,7 +5917,7 @@ function DepositModal({
                   <div className="space-y-5 py-4">
                     {cctpStatus === "success" ? (
                       <div className="flex flex-col items-center gap-4 text-center">
-                        <CheckCircle2 className="h-12 w-12 text-[#FFD825]" />
+                        <CheckCircle2 className="h-12 w-12 text-[#ccff00]" />
                         <h4 className="text-sm font-black uppercase tracking-wider text-white">Bridging Successful</h4>
                         <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
                         <button
@@ -5944,7 +5944,7 @@ function DepositModal({
                     ) : (
                       <div className="space-y-6">
                         <div className="flex items-center gap-4 bg-black/30 border border-white/5 rounded-2xl p-4">
-                          <Loader2 className="h-6 w-6 animate-spin text-[#FFD825] shrink-0" />
+                          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00] shrink-0" />
                           <div className="space-y-1">
                             <p className="text-xs font-bold text-white uppercase tracking-wider">CCTP Bridge Progress</p>
                             <p className="text-[10px] text-white/50 leading-normal">{cctpMessage}</p>
@@ -5952,23 +5952,23 @@ function DepositModal({
                         </div>
 
                         <div className="space-y-2 border-t border-white/5 pt-4 text-[10px] font-bold text-white/40">
-                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#FFD825]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "switching" ? "text-[#ccff00]" : ""}`}>
                             <span>1. Network Switch</span>
                             <span>{cctpStatus === "switching" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#FFD825]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "approving" ? "text-[#ccff00]" : ""}`}>
                             <span>2. Approve TokenMessenger</span>
                             <span>{cctpStatus === "approving" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#FFD825]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "burning" ? "text-[#ccff00]" : ""}`}>
                             <span>3. Burn USDC on Sepolia</span>
                             <span>{cctpStatus === "burning" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#FFD825]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "attesting" ? "text-[#ccff00]" : ""}`}>
                             <span>4. Fetch Circle Attestation</span>
                             <span>{cctpStatus === "attesting" ? "In Progress" : ""}</span>
                           </div>
-                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#FFD825]" : ""}`}>
+                          <div className={`flex justify-between items-center ${cctpStatus === "claiming" ? "text-[#ccff00]" : ""}`}>
                             <span>5. Mint USDC on Arc Testnet</span>
                             <span>{cctpStatus === "claiming" ? "In Progress" : ""}</span>
                           </div>
@@ -6125,7 +6125,7 @@ function SendFundsModal({
                 <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">To Recipient</span>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
                   {recipient}
-                  {resolving && <span className="ml-2 text-xs text-[#FFD825] animate-pulse">(Resolving...)</span>}
+                  {resolving && <span className="ml-2 text-xs text-[#ccff00] animate-pulse">(Resolving...)</span>}
                   {resolvedAddress && resolvedAddress !== recipient && (
                     <div className="text-[10px] text-white/40 mt-1 truncate">{resolvedAddress}</div>
                   )}
@@ -6162,7 +6162,7 @@ function SendFundsModal({
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#FFD825]" />
+                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
                   <p className="text-xs text-white/80 font-bold">USDC Transferred successfully!</p>
                 </div>
               )}
@@ -6292,7 +6292,7 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
             exit={{ scale: 0.92, y: 18 }}
             className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl shadow-2xl relative overflow-hidden bg-black/50 backdrop-blur-xl p-6"
           >
-            <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#FFD825]/20 blur-3xl" />
+            <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#ccff00]/20 blur-3xl" />
             <div className="flex items-center justify-between mb-4 relative z-10">
               <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
                 Scan to Pay
@@ -6312,12 +6312,12 @@ function ScannerModal({ open, onClose, onScan }: { open: boolean; onClose: () =>
                   <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
                   {/* Reticle */}
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="h-44 w-44 rounded-2xl border-2 border-[#FFD825]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+                    <div className="h-44 w-44 rounded-2xl border-2 border-[#ccff00]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center text-center py-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#FFD825]/30 bg-[#FFD825]/10 text-[#FFD825] mb-4">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-[#ccff00]/30 bg-[#ccff00]/10 text-[#ccff00] mb-4">
                     <QrCode className="h-9 w-9" />
                   </div>
                   <p className="text-xs text-white/65 leading-relaxed">
@@ -6362,10 +6362,10 @@ function BalanceRoutingNotice({
 
   if (numericAmount <= walletBalance) {
     return (
-      <div className="bg-[#FFD825]/5 border border-[#FFD825]/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
-        <p className="font-bold text-[#FFD825] uppercase tracking-wider text-[9px] flex items-center gap-1.5">
+      <div className="bg-[#ccff00]/5 border border-[#ccff00]/25 rounded-2xl p-4 text-xs text-white/80 space-y-1">
+        <p className="font-bold text-[#ccff00] uppercase tracking-wider text-[9px] flex items-center gap-1.5">
           Direct Routing
-          <span className="h-1.5 w-1.5 rounded-full bg-[#FFD825] animate-pulse" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#ccff00] animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
           This transaction will execute directly and instantly on Arc Testnet using your native Arc USDC.
@@ -6427,7 +6427,7 @@ function MeteredVaultRow({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/30 shrink-0">
-            <Shield className="h-5 w-5 text-[#FFD825]/70" />
+            <Shield className="h-5 w-5 text-[#ccff00]/70" />
           </div>
           <div className="min-w-0">
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
@@ -6443,14 +6443,14 @@ function MeteredVaultRow({
 
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-[#FFD825]">{formatUsdc(vault.balanceUsdc)} USDC</p>
+          <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
           <p className="text-[9px] uppercase text-white/35">committed balance</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onCommit(vault)}
-            className="rounded-xl bg-[#FFD825]/10 border border-[#FFD825]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#FFD825] hover:bg-[#FFD825]/25 transition"
+            className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/25 transition"
           >
             {blocked ? "Re-commit" : "Add commit"}
           </button>
@@ -6628,7 +6628,7 @@ function ConfigureVaultModal({
                     required
                   />
                 )}
-                {!editingVault && resolving && <span className="text-[9px] text-[#FFD825] animate-pulse">Resolving...</span>}
+                {!editingVault && resolving && <span className="text-[9px] text-[#ccff00] animate-pulse">Resolving...</span>}
                 {!editingVault && resolvedAddress && (
                   <div className="text-[9px] text-white/40 truncate mt-1">Resolved: {resolvedAddress}</div>
                 )}
@@ -6695,7 +6695,7 @@ function ConfigureVaultModal({
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#FFD825]" />
+                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
                   <p className="text-xs text-white/80 font-bold">prepaid vault configured!</p>
                 </div>
               )}
@@ -6809,7 +6809,7 @@ function TopupVaultModal({
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <CheckCircle2 className="h-10 w-10 text-[#FFD825]" />
+                  <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
                   <p className="text-xs text-white/80 font-bold">deposit success!</p>
                 </div>
               )}

@@ -437,9 +437,9 @@ export function GamesModals({
                         className={`relative aspect-square flex items-center justify-center transition-all ${
                             isDark ? "bg-[#18181b]" : "bg-[#27272a]"
                         } ${
-                            isSelected ? "ring-2 ring-inset ring-[#FFD825] bg-[#FFD825]/10" : ""
+                            isSelected ? "ring-2 ring-inset ring-[#ccff00] bg-[#ccff00]/10" : ""
                         } ${
-                            isLegalTarget ? "after:content-[''] after:absolute after:w-3.5 after:h-3.5 after:rounded-full after:bg-[#FFD825]/60 hover:bg-[#FFD825]/15" : ""
+                            isLegalTarget ? "after:content-[''] after:absolute after:w-3.5 after:h-3.5 after:rounded-full after:bg-[#ccff00]/60 hover:bg-[#ccff00]/15" : ""
                         }`}
                     >
                         {/* Render piece */}
@@ -487,7 +487,7 @@ export function GamesModals({
                 <div className="flex items-center gap-2">
                     <span className="text-2xl">{activePlayingGame.gameType === "CHECKERS" ? "⛀" : "♞"}</span>
                     <div>
-                        <h3 className="text-xs font-black uppercase tracking-widest text-[#FFD825]">
+                        <h3 className="text-xs font-black uppercase tracking-widest text-[#ccff00]">
                             {activePlayingGame.gameType === "CHECKERS" ? "Checkers Match" : "Chess Match"}
                         </h3>
                         <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">
@@ -522,14 +522,14 @@ export function GamesModals({
                         <>
                             <span className="text-white/45 block text-[8px]">Time Remaining</span>
                             <span className="text-white font-mono flex items-center gap-1 text-[11px]">
-                                <Clock className="w-3.5 h-3.5 text-[#FFD825]" />
+                                <Clock className="w-3.5 h-3.5 text-[#ccff00]" />
                                 {liveTimeLeft || "24:00:00"}
                             </span>
                         </>
                     ) : (
                         <>
                             <span className="text-white/45 block text-[8px]">Status</span>
-                            <span className="text-[#FFD825] font-black">
+                            <span className="text-[#ccff00] font-black">
                                 {activePlayingGame.status.replace(/_/g, " ")}
                             </span>
                         </>
@@ -544,7 +544,7 @@ export function GamesModals({
                 {/* Overlay for Game Statuses */}
                 {activePlayingGame.status !== "ACTIVE" && (
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center text-center p-6 space-y-3 z-35 border border-white/5">
-                        <Trophy className="w-10 h-10 text-[#FFD825] animate-bounce" />
+                        <Trophy className="w-10 h-10 text-[#ccff00] animate-bounce" />
                         <div className="space-y-1">
                             <h4 className="text-sm font-black uppercase text-white tracking-widest">Match Concluded</h4>
                             <p className="text-[10px] text-white/55 leading-relaxed uppercase tracking-wider">
@@ -560,7 +560,7 @@ export function GamesModals({
                             <button
                                 onClick={handleClaimPayout}
                                 disabled={isClaimingPayout}
-                                className="relative flex w-44 items-center justify-center gap-2 overflow-hidden rounded-full bg-[#FFD825] py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] text-black hover:opacity-90 transition-all shadow-[0_8px_32px_rgba(255,216,37,0.15)] mt-3"
+                                className="relative flex w-44 items-center justify-center gap-2 overflow-hidden rounded-full bg-[#ccff00] py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] text-black hover:opacity-90 transition-all shadow-[0_8px_32px_rgba(204,255,0,0.15)] mt-3"
                             >
                                 {isClaimingPayout ? (
                                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -571,7 +571,7 @@ export function GamesModals({
                         )}
 
                         {activePlayingGame.settlementStatus === "SETTLED" && (
-                            <div className="flex items-center gap-1.5 text-[#FFD825] text-[10px] font-black uppercase tracking-widest mt-2">
+                            <div className="flex items-center gap-1.5 text-[#ccff00] text-[10px] font-black uppercase tracking-widest mt-2">
                                 <CheckCircle2 className="w-4 h-4" />
                                 <span>Settled On-Chain</span>
                             </div>
@@ -582,15 +582,15 @@ export function GamesModals({
 
             {/* Live Turn indicator or transaction verification overlay */}
             {statusMessage ? (
-                <div className="rounded-2xl border border-[#FFD825]/10 bg-[#FFD825]/[0.02] p-4 flex items-center justify-center gap-3">
-                    <Loader2 className="w-4 h-4 animate-spin text-[#FFD825] shrink-0" />
+                <div className="rounded-2xl border border-[#ccff00]/10 bg-[#ccff00]/[0.02] p-4 flex items-center justify-center gap-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#ccff00] shrink-0" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-white/80">{statusMessage}</span>
                 </div>
             ) : activePlayingGame.status === "ACTIVE" ? (
                 <div className="flex items-center justify-between border-t border-white/5 pt-4">
                     <div className="text-[10px] uppercase font-black tracking-wider">
                         {activePlayingGame.currentTurnAddress?.toLowerCase() === userWallet?.toLowerCase() ? (
-                            <span className="text-[#FFD825] animate-pulse">● Your Turn</span>
+                            <span className="text-[#ccff00] animate-pulse">● Your Turn</span>
                         ) : (
                             <span className="text-white/45">○ Opponent Turn</span>
                         )}
