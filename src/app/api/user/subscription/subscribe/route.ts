@@ -7,7 +7,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
-import { subscribeFromEmbedded } from "@/lib/subscriptions/onchain";
+import { subscribeFromEmbedded, findActiveOnChainSubscriptionId } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
@@ -65,6 +65,18 @@ export async function POST(request: Request) {
                             : "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
                         code: isSamePlan ? "ALREADY_SUBSCRIBED" : "ACTIVE_MERCHANT_SUBSCRIPTION",
                         subscriptionId: String(existing.subscription_id),
+                    }, { status: 409 });
+                }
+
+                /* Belt-and-suspenders: the mirror check above only sees subs we mirrored. Scan the
+                   chain for an already-active sub from this subscriber to this merchant so an
+                   unmirrored on-chain sub can't be duplicated. Best-effort (null on RPC error). */
+                const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+                if (onChainActiveId) {
+                    return NextResponse.json({
+                        error: "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
+                        code: "ACTIVE_MERCHANT_SUBSCRIPTION",
+                        subscriptionId: onChainActiveId,
                     }, { status: 409 });
                 }
 

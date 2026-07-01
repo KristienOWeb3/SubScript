@@ -49,6 +49,38 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
     }
 }
 
+/* Belt-and-suspenders for the double-subscribe guard. The DB advisory-lock + mirror check in
+   the subscribe route only sees subscriptions we ourselves mirrored; a sub that exists on-chain
+   but was never mirrored (e.g. legacy, or a failed mirror write) would slip past it. This scans
+   the chain directly — cheaply, via the `subscriber`+`merchant` indexed topics on
+   SubscriptionCreated, so it reads only this pair's own creations — and returns the id of the
+   first still-active one. Best-effort: any RPC error returns null so a transient failure never
+   blocks a legitimate subscribe (the DB guard already covers the normal path). */
+export async function findActiveOnChainSubscriptionId(
+    subscriber: string,
+    merchant: string,
+): Promise<string | null> {
+    try {
+        const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const sub = subscriber.toLowerCase();
+        const merch = merchant.toLowerCase();
+        const filter = contract.filters.SubscriptionCreated(null, sub, merch);
+        const logs = await contract.queryFilter(filter);
+        for (const log of logs) {
+            const subId = (log as ethers.EventLog).args?.subId;
+            if (subId === undefined || subId === null) continue;
+            const onChain = await getSubscriptionOnChain(subId);
+            if (onChain && onChain.isActive && onChain.merchant === merch && onChain.subscriber === sub) {
+                return subId.toString();
+            }
+        }
+        return null;
+    } catch (err) {
+        console.error("[onchain] active-sub scan failed:", err instanceof Error ? err.message : err);
+        return null;
+    }
+}
+
 /* How many billing cycles of allowance to authorize up front. createSubscription only
    needs one period for the first charge, but the keeper debits each cycle against this
    same allowance (see cron/billing), so approving one period means the sub dies after

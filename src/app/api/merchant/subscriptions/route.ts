@@ -31,6 +31,7 @@ export async function GET(request: Request) {
                 status: true,
                 cancelAtPeriodEnd: true,
                 nextBillingDate: true,
+                downgradeFailures: true,
             },
             orderBy: { createdAt: "desc" },
             take: 500,
@@ -63,6 +64,10 @@ export async function GET(request: Request) {
                     status: subscription.status,
                     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
                     nextBillingDate: subscription.nextBillingDate?.toISOString() || null,
+                    /* Renewal retries in flight. The keeper keeps a failing sub ACTIVE and retries
+                       each run (1..3); only after MAX_RENEWAL_FAILURES does it flip to PAST_DUE and
+                       STOP. So >0 with status ACTIVE = genuinely auto-retrying. */
+                    downgradeFailures: subscription.downgradeFailures,
                 };
             }),
         }, { status: 200 });
