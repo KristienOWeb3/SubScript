@@ -77,6 +77,8 @@ export default async function Page({ params }: Props) {
         status: game.status,
         settlementStatus: game.settlementStatus,
         gameType: game.gameType,
+        mode: game.mode,
+        contractAddress: game.contractAddress,
     };
 
     return (

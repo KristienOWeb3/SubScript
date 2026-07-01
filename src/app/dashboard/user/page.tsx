@@ -66,6 +66,7 @@ import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
+import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -1361,12 +1362,20 @@ export default function UserDashboard() {
 
         const game = data.game;
 
+        if (isSandboxDmGame(game)) {
+          setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
+          setLinkAmount("");
+          setLinkMemo("");
+          triggerToast("Sandbox chess invite link created — no funds moved.");
+          return;
+        }
+
         // 2. Escrow deposit on-chain
+        const escrowAddress = requireGameEscrowAddress(game);
         if (chainId !== ARC_TESTNET_CHAIN_ID) {
           await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
         }
 
-        const escrowAddress = (process.env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D") as `0x${string}`;
         const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
         const tokenContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, [
             "function allowance(address owner, address spender) view returns (uint256)"
@@ -4760,7 +4769,6 @@ function DmGamesComposer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const escrowAddress = (process.env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D").trim() as `0x${string}`;
   const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
 
   const handleCreateInvite = async (e: React.FormEvent) => {
@@ -4796,7 +4804,15 @@ function DmGamesComposer({
 
       const createdGame = data.game;
 
+      if (isSandboxDmGame(createdGame)) {
+        triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} sandbox invite sent — no funds moved.`);
+        refetchDms();
+        onToggle();
+        return;
+      }
+
       // 2. Perform on-chain stake escrow
+      const escrowAddress = requireGameEscrowAddress(createdGame);
       setStatusMessage("Checking USDC allowance...");
       const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
       const tokenContract = new ethers.Contract(usdcAddress, [

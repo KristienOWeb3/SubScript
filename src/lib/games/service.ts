@@ -459,7 +459,7 @@ export async function acceptDmGame(input: {
                 player,
                 whiteAddress,
                 blackAddress,
-                input.config.mode === "sandbox" ? "SIMULATED_FUNDED" : "FUNDED",
+                existing.mode === "sandbox" ? "SIMULATED_FUNDED" : "FUNDED",
                 now,
                 expiresAt,
                 input.opponentStakeTxHash || null,
@@ -948,4 +948,3 @@ export async function updateGameSettlement(input: {
         return mapDmGameRow(result.rows[0] as DbGameRow);
     });
 }
-

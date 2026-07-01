@@ -16,6 +16,7 @@ import {
 } from "@/components/icons";
 import { parseFen as parseChessFen, getLegalTargets as getChessLegalTargets } from "@/lib/games/chess";
 import { parseFen as parseCheckersFen, getLegalTargets as getCheckersLegalTargets } from "@/lib/games/checkers";
+import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
 import { ARC_TESTNET_CHAIN_ID, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 interface GamesModalsProps {
@@ -88,7 +89,6 @@ export function GamesModals({
     const [isSubmittingMove, setIsSubmittingMove] = useState(false);
     const [isClaimingPayout, setIsClaimingPayout] = useState(false);
 
-    const escrowAddress = (process.env.NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS || "0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D") as `0x${string}`;
     const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
 
     // Reset Games Menu states on close
@@ -156,7 +156,15 @@ export function GamesModals({
             const createdGame = data.game;
             setMenuStep("tx");
 
+            if (isSandboxDmGame(createdGame)) {
+                triggerToast("Sandbox chess invite sent — no funds moved.");
+                refetchDms();
+                setGamesMenuOpen(false);
+                return;
+            }
+
             // 2. Perform on-chain stake escrow
+            const escrowAddress = requireGameEscrowAddress(createdGame);
             setStatusMessage("Checking USDC allowance...");
             const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
             const tokenContract = new ethers.Contract(usdcAddress, [
@@ -309,6 +317,7 @@ export function GamesModals({
         setIsClaimingPayout(true);
 
         try {
+            const escrowAddress = requireGameEscrowAddress(activePlayingGame);
             // Refetch game details to load the referee signature payload from GET API
             const res = await fetch(`/api/user/dms/games/${activePlayingGame.id}`, {
                 headers: { "x-session-wallet": userWallet! }
