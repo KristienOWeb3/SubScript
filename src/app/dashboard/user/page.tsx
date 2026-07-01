@@ -1831,37 +1831,53 @@ export default function UserDashboard() {
           </header>
 
           <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
-            {/* Balance Card Skeleton */}
-            <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
-              <div className="flex-1 space-y-4">
-                <div className="h-2.5 w-32 subscript-skeleton rounded-full" />
-                <div className="h-10 w-44 subscript-skeleton rounded-xl" />
-                <div className="h-3 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
+            {/* Balance Card Skeleton (balance block + action buttons beside it) */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0 liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-6 rounded-[28px] shadow-2xl space-y-3">
+                <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
+                <div className="h-12 w-44 subscript-skeleton rounded-xl" />
+                <div className="h-5 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
               </div>
-              <div className="flex sm:flex-col gap-4 justify-center">
+              <div className="flex flex-col gap-3 shrink-0">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 w-12 subscript-skeleton rounded-full" />
+                  <div key={i} className="h-14 w-14 subscript-skeleton rounded-full" />
                 ))}
               </div>
             </div>
 
-            {/* List Skeleton */}
-            <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl space-y-6">
+            {/* Spending + Commit Skeleton */}
+            <div className="grid grid-cols-2 gap-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 rounded-[24px] shadow-xl min-h-[150px] flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
+                    <div className="h-8 w-20 subscript-skeleton rounded-lg" />
+                  </div>
+                  <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                </div>
+              ))}
+            </div>
+
+            {/* Recent Transactions Skeleton */}
+            <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 rounded-[28px] shadow-2xl space-y-4">
               <div className="flex items-center justify-between">
-                <div className="h-3 w-32 subscript-skeleton rounded-full" />
-                <div className="h-5 w-16 subscript-skeleton rounded-full" />
+                <div className="h-3 w-36 subscript-skeleton rounded-full" />
+                <div className="h-4 w-16 subscript-skeleton rounded-full" />
+              </div>
+              <div className="flex gap-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-6 w-16 subscript-skeleton rounded-full" />
+                ))}
               </div>
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex justify-between items-center py-3 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 subscript-skeleton rounded-full" />
-                      <div className="space-y-1.5">
-                        <div className="h-3 w-28 subscript-skeleton rounded-full" />
-                        <div className="h-2 w-16 subscript-skeleton subscript-skeleton--faint rounded-full" />
-                      </div>
+                  <div key={i} className="flex items-center gap-3 py-2">
+                    <div className="h-10 w-10 subscript-skeleton rounded-full" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                      <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
-                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
+                    <div className="h-5 w-14 subscript-skeleton rounded-full" />
                   </div>
                 ))}
               </div>
@@ -2105,17 +2121,14 @@ export default function UserDashboard() {
                 className="space-y-7 max-w-2xl"
               >
                 {/* ===== Overview: Connected wallet balance (mockup) ===== */}
-                <div className="flex items-center gap-3">
-                  <section
-                    className="liquid-glass flex-1 min-w-0 rounded-[28px] px-6 py-4 text-black shadow-2xl relative overflow-hidden backdrop-blur-xl"
-                    style={{ backgroundColor: "rgba(204,255,0,0.92)" }}
-                  >
+                <div className="flex items-stretch gap-3">
+                  <section className="liquid-glass flex-1 min-w-0 rounded-[28px] px-6 py-5 border border-white/5 bg-black/40 text-white shadow-2xl relative overflow-hidden backdrop-blur-xl flex flex-col justify-center">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-black/60">Connected Wallet Balance</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
                       <button
                         type="button"
                         onClick={() => setBalanceVisible((value) => !value)}
-                        className="text-black/45 hover:text-black transition-colors"
+                        className="text-white/40 hover:text-white transition-colors"
                         aria-label="Toggle balance visibility"
                       >
                         {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -2124,16 +2137,16 @@ export default function UserDashboard() {
                         type="button"
                         onClick={handleManualRefreshBalances}
                         disabled={isRefreshingBalances}
-                        className="text-black/45 hover:text-black disabled:opacity-50 transition-all"
+                        className="text-white/40 hover:text-white disabled:opacity-50 transition-all"
                         title="Refresh balance"
                       >
                         <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-2 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight select-all">
+                    <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
                       {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
                     </div>
-                    <p className="mt-2 text-xl sm:text-2xl font-extrabold text-black/60">
+                    <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
                       {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                     </p>
                   </section>
@@ -2168,50 +2181,47 @@ export default function UserDashboard() {
 
                 {/* ===== Overview: Spending + Total commit ===== */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(204,255,0,0.92)" }}>
+                  <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Spending past (USDC)</p>
-                      <p className="mt-3 text-[11px] font-black text-black/50">30D</p>
-                      <p className="mt-1 text-3xl font-extrabold tracking-tight">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
+                      <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
+                      <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
                         ${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setActiveTab("dns")}
-                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider hover:opacity-70 transition-opacity"
+                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                     >
                       Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(204,255,0,0.92)" }}>
+                  <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Total Commit (LOCKED)</p>
-                      <p className="mt-3 text-3xl font-extrabold tracking-tight">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
+                      <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
                         ${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => openVaultCommit()}
-                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider hover:opacity-70 transition-opacity"
+                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                     >
                       Manage Commits <ArrowUpRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
 
-                {/* ===== Overview: Recent transactions (light panel, per reference) ===== */}
-                <section
-                  className="liquid-glass rounded-[28px] p-5 shadow-2xl text-black backdrop-blur-xl"
-                  style={{ backgroundColor: "rgba(233,233,233,0.94)" }}
-                >
+                {/* ===== Overview: Recent transactions ===== */}
+                <section className="liquid-glass rounded-[28px] p-5 border border-white/5 bg-black/40 shadow-2xl text-white backdrop-blur-xl">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-black/70">Recent Transactions</h2>
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
                     <button
                       type="button"
                       onClick={() => setActiveTab("inbox")}
-                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/45 hover:text-black transition-colors"
+                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
                     >
                       View All <ArrowUpRight className="h-3 w-3" />
                     </button>
@@ -2225,8 +2235,8 @@ export default function UserDashboard() {
                         onClick={() => setTxFilter(value)}
                         className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
-                            ? "bg-[#171717] text-[#ccff00]"
-                            : "bg-black/[0.06] text-black/50 hover:bg-black/10"
+                            ? "bg-[#ccff00] text-black"
+                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
                         }`}
                       >
                         {label}
@@ -2234,26 +2244,26 @@ export default function UserDashboard() {
                     ))}
                   </div>
 
-                  <div className="mt-4 divide-y divide-black/[0.08]">
+                  <div className="mt-4 divide-y divide-white/[0.06]">
                     {filteredTransactions.length === 0 ? (
-                      <div className="flex h-24 items-center justify-center text-center text-xs text-black/40">
+                      <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
                         No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
                       </div>
                     ) : (
                       filteredTransactions.slice(0, 6).map((tx) => (
                         <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-black/[0.08] border border-black/10 flex items-center justify-center overflow-hidden">
+                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
                             {tx.pic ? (
                               <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-sm font-black text-black/60">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                              <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-black">{tx.name}</p>
-                            <p className="truncate text-[10px] font-bold text-black/40">{tx.detail}</p>
+                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
+                            <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                           </div>
-                          <span className="shrink-0 text-base font-extrabold text-black">{tx.amountLabel}</span>
+                          <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
                         </div>
                       ))
                     )}
