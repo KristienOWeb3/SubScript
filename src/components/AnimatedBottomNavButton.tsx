@@ -10,6 +10,7 @@ interface AnimatedBottomNavButtonProps {
     onClick: () => void;
     accentClassName?: string;
     badgeCount?: number;
+    compact?: boolean;
 }
 
 export default function AnimatedBottomNavButton({
@@ -19,6 +20,7 @@ export default function AnimatedBottomNavButton({
     onClick,
     accentClassName = "text-[#00d2b4]",
     badgeCount = 0,
+    compact = false,
 }: AnimatedBottomNavButtonProps) {
     const [expanded, setExpanded] = useState(active);
 
@@ -38,7 +40,13 @@ export default function AnimatedBottomNavButton({
             aria-label={label}
             onClick={handleClick}
             className={`relative h-11 shrink-0 overflow-hidden rounded-full border transition-[width,background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] active:scale-90 ${
-                expanded ? "w-[92px] min-[360px]:w-[108px]" : "w-11"
+                expanded
+                    ? compact
+                        ? "w-20 min-[360px]:w-[92px]"
+                        : "w-[92px] min-[360px]:w-[108px]"
+                    : compact
+                        ? "w-10 min-[360px]:w-11"
+                        : "w-11"
             } ${
                 active
                     ? "border-[#00d2b4]/30 bg-[#00d2b4]/10 text-white shadow-[0_8px_24px_rgba(0,210,180,0.08)]"

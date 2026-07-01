@@ -146,16 +146,18 @@ interface MerchantPlan {
   active: boolean;
 }
 
-type UserTab = "home" | "links" | "batch" | "inbox" | "dns";
+type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns";
 
 const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
+  { id: "commit", label: "Commit", icon: Shield },
   { id: "links", label: "Links", icon: Link2 },
   { id: "batch", label: "Send Out", icon: Send },
 ] as const;
 
 const userDesktopTabs = [
   { id: "home", label: "Home Hub", icon: Home },
+  { id: "commit", label: "Manage Commit", icon: Shield },
   { id: "links", label: "Payment Links", icon: Link2 },
   { id: "batch", label: "Send Out", icon: Send },
   { id: "inbox", label: "Direct Messages", icon: MessageSquare },
@@ -769,6 +771,7 @@ export default function UserDashboard() {
     const requestedTab = params.get("tab");
     const intent = params.get("intent");
     if (requestedTab === "inbox") setActiveTab("inbox");
+    if (requestedTab === "commit") setActiveTab("commit");
     if (intent) setFocusIntentId(intent);
   }, []);
 
@@ -1907,13 +1910,13 @@ export default function UserDashboard() {
 
         {/* Mobile Bottom Bar Skeleton */}
         {isMobile && (
-          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 origin-bottom scale-[0.8] items-center justify-between gap-3">
-            <div className="flex-1 flex items-center justify-around rounded-full px-3 py-3.5 border border-white/5 liquid-glass bg-black/30 backdrop-blur-lg">
-              {[1, 2, 3].map((i) => (
+          <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
+            <div className="liquid-glass liquid-bottom-bar flex flex-1 items-center justify-around rounded-full border border-white/10 px-3 py-[1.1rem]">
+              {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
               ))}
             </div>
-            <div className="h-12 w-12 subscript-skeleton rounded-full shrink-0" />
+            <div className="h-[3.3rem] w-[3.3rem] shrink-0 rounded-full subscript-skeleton" />
           </div>
         )}
       </div>
@@ -2138,10 +2141,10 @@ export default function UserDashboard() {
             >
             {activeTab === "home" && (
               <section
-                className="space-y-7 max-w-2xl"
+                className="grid grid-cols-1 items-stretch gap-7 md:grid-cols-2"
               >
                 {/* ===== Overview: Connected wallet balance (mockup) ===== */}
-                <div className="flex items-stretch gap-3">
+                <div className="flex h-full items-stretch gap-3 md:order-1">
                   <section className="liquid-glass flex-1 min-w-0 rounded-[28px] px-6 py-5 border border-white/5 bg-black/40 text-white shadow-2xl relative overflow-hidden backdrop-blur-xl flex flex-col justify-center">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
@@ -2200,7 +2203,7 @@ export default function UserDashboard() {
                 </div>
 
                 {/* ===== Overview: Spending + Total commit ===== */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="hidden grid-cols-2 gap-3">
                   <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
@@ -2235,7 +2238,7 @@ export default function UserDashboard() {
                 </div>
 
                 {/* ===== Overview: Recent transactions ===== */}
-                <section className="liquid-glass rounded-[28px] p-5 border border-white/5 bg-black/40 shadow-2xl text-white backdrop-blur-xl">
+                <section className="liquid-glass hidden rounded-[28px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl md:order-3 md:col-span-2 md:block">
                   <div className="flex items-center justify-between">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
                     <button
@@ -2290,9 +2293,37 @@ export default function UserDashboard() {
                   </div>
                 </section>
 
-                {/* PREPAID METERED VAULTS SECTION */}
-                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
-                  <div className="mb-6 flex items-center justify-between">
+                <section className="hidden min-h-[390px] rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass md:order-2 md:block sm:p-8">
+                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
+                    <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20">{subscriptions.length} active</span>
+                  </div>
+
+                  {sortedSubscriptions.length === 0 ? (
+                    <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
+                      <CreditCard className="mb-3 h-8 w-8 text-white/25" />
+                      <p className="text-xs text-white/45">No active subscription streams yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {sortedSubscriptions.map((sub) => (
+                        <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </section>
+            )}
+
+            {activeTab === "commit" && (
+              <section className="max-w-3xl space-y-6">
+                <SectionTitle
+                  title="Manage Commit"
+                  subtitle="Fund, replenish, or withdraw prepaid balances for metered services."
+                />
+
+                <section className="liquid-glass rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl sm:p-8">
+                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Prepaid Metered Vaults</h2>
@@ -2305,12 +2336,17 @@ export default function UserDashboard() {
                           ?
                         </button>
                       </div>
-                      <p className="text-[9px] text-white/40 mt-1">Prepaid balance for a metered service — <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">what's this?</button></p>
+                      <p className="mt-1 text-[9px] text-white/40">
+                        Prepaid balance for a metered service —{" "}
+                        <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">
+                          what&apos;s this?
+                        </button>
+                      </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => openVaultCommit()}
-                      className="rounded-xl bg-[#ccff00]/10 border border-[#ccff00]/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-[#ccff00]/20 transition"
+                      className="self-start rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/20"
                     >
                       + Commit to a service
                     </button>
@@ -2321,7 +2357,7 @@ export default function UserDashboard() {
                       <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
                     </div>
                   ) : vaults.length === 0 ? (
-                    <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
+                    <div className="flex h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-center">
                       <Shield className="mb-2 h-6 w-6 text-white/20" />
                       <p className="text-xs text-white/45">No vaults yet.</p>
                       <button
@@ -2341,26 +2377,6 @@ export default function UserDashboard() {
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
                         />
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                <section className="min-h-[390px] liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 sm:p-8 rounded-3xl shadow-2xl">
-                  <div className="mb-6 flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                    <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20">{subscriptions.length} active</span>
-                  </div>
-
-                  {sortedSubscriptions.length === 0 ? (
-                    <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
-                      <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                      <p className="text-xs text-white/45">No active subscription streams yet.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {sortedSubscriptions.map((sub) => (
-                        <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
                       ))}
                     </div>
                   )}
@@ -3560,9 +3576,12 @@ export default function UserDashboard() {
 
       {/* Mobile-only Bottom Navigation Bar */}
       {isMobile && userWallet && !isActiveMobileDm && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 origin-bottom scale-[0.8] items-center justify-between gap-3">
+        <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
-          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] bg-[#171717]/90 backdrop-blur-xl">
+          <nav
+            aria-label="Primary navigation"
+            className="liquid-glass liquid-bottom-bar flex flex-1 items-center justify-around rounded-full border border-white/10 px-3 py-[1.1rem]"
+          >
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
@@ -3573,6 +3592,7 @@ export default function UserDashboard() {
                   setSelectedDmPeer(null);
                   setActiveTab(tab.id);
                 }}
+                compact
               />
             ))}
           </nav>
@@ -3585,10 +3605,10 @@ export default function UserDashboard() {
                 setSelectedDmPeer(null);
                 setActiveTab("inbox");
               }}
-              className={`relative h-12 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
+              className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
                 activeTab === "inbox"
-                  ? "bg-[#ccff00] border-[#ccff00] text-black shadow-[0_0_18px_rgba(204,255,0,0.35)] scale-105 w-[108px]"
-                  : "bg-[#171717] backdrop-blur-xl border-white/10 text-[#ccff00] hover:text-white w-12"
+                  ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
+                  : "liquid-glass liquid-bottom-bar border-white/10 text-white/50 hover:text-white w-[3.3rem]"
               }`}
               aria-label="Open DMs"
             >

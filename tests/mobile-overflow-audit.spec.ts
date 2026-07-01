@@ -60,12 +60,17 @@ const merchantRoutes = [
 const userRoutes = [
   "/user",
   "/dashboard/user",
+  "/dashboard/user?tab=commit",
   "/dashboard/user?tab=inbox",
 ];
 
 type Role = "anonymous" | "merchant" | "user";
 
-async function newAuditContext(browser: Browser, viewport: (typeof viewports)[number], role: Role) {
+async function newAuditContext(
+  browser: Browser,
+  viewport: { readonly name: string; readonly width: number; readonly height: number },
+  role: Role
+) {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
     colorScheme: "dark",
@@ -374,6 +379,81 @@ async function auditOverflow(page: Page, label: string) {
 
 test.describe("mobile overflow audit", () => {
   test.setTimeout(600_000);
+
+  test("uses the requested responsive user-home layout", async ({ browser }, testInfo) => {
+    const desktopContext = await newAuditContext(
+      browser,
+      { name: "desktop", width: 1280, height: 800 },
+      "user"
+    );
+    const desktopPage = await desktopContext.newPage();
+    await desktopPage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+
+    const sidebar = desktopPage.getByRole("complementary");
+    const walletLabel = desktopPage.getByText("Connected Wallet Balance", { exact: true });
+    const subscriptionsTitle = desktopPage.getByText("Active Subscriptions", { exact: true });
+
+    await expect(sidebar).toBeVisible();
+    await expect(walletLabel).toBeVisible({ timeout: 120_000 });
+    await expect(subscriptionsTitle).toBeVisible();
+    await expect(desktopPage.getByRole("button", { name: "Manage Commit" })).toBeVisible();
+
+    const walletCard = walletLabel.locator("xpath=ancestor::section[1]");
+    const subscriptionsCard = subscriptionsTitle.locator("xpath=ancestor::section[1]");
+    const [sidebarBox, walletBox, subscriptionsBox] = await Promise.all([
+      sidebar.boundingBox(),
+      walletCard.boundingBox(),
+      subscriptionsCard.boundingBox(),
+    ]);
+    expect(sidebarBox).not.toBeNull();
+    expect(walletBox).not.toBeNull();
+    expect(subscriptionsBox).not.toBeNull();
+    expect(walletBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
+    expect(subscriptionsBox!.x).toBeGreaterThan(walletBox!.x);
+    expect(Math.abs(subscriptionsBox!.y - walletBox!.y)).toBeLessThan(4);
+    await desktopPage.screenshot({ path: testInfo.outputPath("desktop-user-home.png"), fullPage: true });
+    await desktopContext.close();
+
+    const mobileContext = await newAuditContext(
+      browser,
+      { name: "mobile", width: 390, height: 844 },
+      "user"
+    );
+    const mobilePage = await mobileContext.newPage();
+    await mobilePage.goto(`${baseURL}/dashboard/user`, { waitUntil: "domcontentloaded" });
+
+    await expect(mobilePage.getByText("Connected Wallet Balance", { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(mobilePage.getByText("Active Subscriptions", { exact: true })).toBeHidden();
+    await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toHaveCount(0);
+
+    const bottomNav = mobilePage.locator('nav[aria-label="Primary navigation"]');
+    await expect(bottomNav).toBeVisible();
+    const bottomNavBox = await bottomNav.boundingBox();
+    expect(bottomNavBox).not.toBeNull();
+    expect(bottomNavBox!.height).toBeGreaterThanOrEqual(79);
+
+    const glassStyle = await bottomNav.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      return {
+        backdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+        backgroundImage: style.backgroundImage,
+      };
+    });
+    expect(glassStyle.backdropFilter).toContain("blur");
+    expect(glassStyle.backgroundImage).toContain("gradient");
+    await mobilePage.screenshot({ path: testInfo.outputPath("mobile-user-home.png"), fullPage: true });
+
+    await bottomNav.getByRole("button", { name: "Commit" }).click();
+    await expect(mobilePage.getByRole("heading", { name: "Manage Commit" })).toBeVisible();
+    await expect(mobilePage.getByText("+ Commit to a service", { exact: true })).toBeVisible();
+    await mobilePage.screenshot({ path: testInfo.outputPath("mobile-manage-commit.png"), fullPage: true });
+
+    const overflowResult = await auditOverflow(mobilePage, "mobile manage commit");
+    expect(overflowResult.horizontalOverflow).toBeLessThanOrEqual(1);
+    expect(overflowResult.horizontalProtrusions).toEqual([]);
+    expect(overflowResult.fixedVerticalProtrusions).toEqual([]);
+    await mobileContext.close();
+  });
 
   test("keeps primary app routes inside mobile viewport bounds", async ({ browser }) => {
     const failures: any[] = [];
