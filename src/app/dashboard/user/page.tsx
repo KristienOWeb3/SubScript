@@ -66,7 +66,8 @@ import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
-import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
+import { requireGameEscrowAddress } from "@/lib/games/client";
+import { GAME_CATALOG } from "@/lib/games/catalog";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -321,6 +322,8 @@ export default function UserDashboard() {
 
   // Link type selection in links tab
   const [linkType, setLinkType] = useState<"payment" | "game">("payment");
+  // Which game a "Host Game" link deploys (only the playable catalog entries are selectable).
+  const [linkGameType, setLinkGameType] = useState<"chess" | "checkers">("chess");
   const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
@@ -583,8 +586,15 @@ export default function UserDashboard() {
   const [batchRows, setBatchRows] = useState([{ address: "", amount: "" }]);
 
   const [sendMode, setSendMode] = useState<"single" | "batch">("single");
-  /* Mobile thumb-swipe between the Single / Batch send sub-tabs (tap still works). */
-  const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode, { enabled: isMobile });
+  /* Thumb-swipe between the Single / Batch send sub-tabs (tap still works). Pointer-based, so a
+     55px drag is needed — harmless on desktop, natural on mobile. */
+  const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode);
+  /* Swipe between Standard Link / Host Game in the Payment Links tab. */
+  const linksSwipe = useSwipeTabs(["payment", "game"] as const, linkType, (next) => {
+    setLinkType(next);
+    setLinkResultUrl(null);
+    setLinkError(null);
+  });
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -1358,20 +1368,13 @@ export default function UserDashboard() {
           body: JSON.stringify({
             opponentAddress: null, // Public invite link
             stakeUsdc: linkAmount,
+            gameType: linkGameType.toUpperCase(),
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to create game lobby");
 
         const game = data.game;
-
-        if (isSandboxDmGame(game)) {
-          setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
-          setLinkAmount("");
-          setLinkMemo("");
-          triggerToast("Sandbox chess invite link created — no funds moved.");
-          return;
-        }
 
         // 2. Escrow deposit on-chain
         const escrowAddress = requireGameEscrowAddress(game);
@@ -2491,6 +2494,7 @@ export default function UserDashboard() {
             {activeTab === "links" && (
               <section
                 className="space-y-5 max-w-lg pb-6 lg:pb-0"
+                {...linksSwipe}
               >
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
                 
@@ -2553,21 +2557,55 @@ export default function UserDashboard() {
                   )}
 
                   {linkType === "game" && (
-                    <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2 text-[10px] text-white/50 font-bold uppercase tracking-wider">
-                      <p className="text-white font-black">Chess Stake Economics:</p>
-                      <div className="flex justify-between">
-                        <span>Your Stake:</span>
-                        <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
+                    <>
+                      <Field label="Choose a game">
+                        <div className="grid grid-cols-3 gap-2">
+                          {GAME_CATALOG.map((g) => {
+                            const playable = g.status === "PLAYABLE";
+                            const selected = playable && linkGameType === g.slug;
+                            return (
+                              <button
+                                key={g.slug}
+                                type="button"
+                                onClick={() => {
+                                  if (playable) setLinkGameType(g.slug as "chess" | "checkers");
+                                  else triggerToast(`${g.name} is coming soon`);
+                                }}
+                                className={`relative flex flex-col items-center gap-1 rounded-2xl border px-2 py-3 transition-all ${
+                                  selected
+                                    ? "border-[#ccff00] bg-[#ccff00]/10 text-white"
+                                    : playable
+                                      ? "border-white/10 bg-black/30 text-white/70 hover:text-white hover:border-white/20"
+                                      : "border-white/5 bg-black/20 text-white/30 cursor-not-allowed"
+                                }`}
+                              >
+                                <span className="text-xl leading-none">{g.symbol}</span>
+                                <span className="text-[9px] font-black uppercase tracking-wider text-center leading-tight">{g.name}</span>
+                                {!playable && (
+                                  <span className="absolute right-1 top-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wider text-white/50">Soon</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </Field>
+
+                      <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2 text-[10px] text-white/50 font-bold uppercase tracking-wider">
+                        <p className="text-white font-black">{linkGameType === "checkers" ? "Checkers" : "Chess"} Stake Economics:</p>
+                        <div className="flex justify-between">
+                          <span>Your Stake:</span>
+                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Guest Stake:</span>
+                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
+                        </div>
+                        <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
+                          <span>Winner Payout (90%):</span>
+                          <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span>Guest Stake:</span>
-                        <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
-                      </div>
-                      <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
-                        <span>Winner Payout (90%):</span>
-                        <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
-                      </div>
-                    </div>
+                    </>
                   )}
 
                   {linkError && (
@@ -4797,13 +4835,6 @@ function DmGamesComposer({
       }
 
       const createdGame = data.game;
-
-      if (isSandboxDmGame(createdGame)) {
-        triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} sandbox invite sent — no funds moved.`);
-        refetchDms();
-        onToggle();
-        return;
-      }
 
       // 2. Perform on-chain stake escrow
       const escrowAddress = requireGameEscrowAddress(createdGame);
