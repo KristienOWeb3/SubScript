@@ -2524,7 +2524,7 @@ export default function UserDashboard() {
                         : "text-white/60 hover:text-white"
                     }`}
                   >
-                    Host Chess Game
+                    Host Game
                   </button>
                 </div>
 
@@ -2620,7 +2620,7 @@ export default function UserDashboard() {
                             value={linkResultUrl}
                             size={196}
                             level="H"
-                            imageSettings={{ src: "/logo.png", height: 38, width: 38, excavate: true }}
+                            imageSettings={{ src: "/favicon-48x48.png", height: 40, width: 40, excavate: true }}
                           />
                         </div>
                         <p className="text-[11px] leading-relaxed text-center text-white/45">
@@ -5497,7 +5497,7 @@ function DepositModal({
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
                 <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
-                  <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/logo.png", height: 34, width: 34, excavate: true }} />
+                  <QRCodeSVG value={userWallet} size={178} level="H" imageSettings={{ src: "/favicon-48x48.png", height: 38, width: 38, excavate: true }} />
                 </div>
                 <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
                   <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}

@@ -5659,7 +5659,7 @@ Please complete the following implementation tasks:
                                 level="H"
                                 bgColor="#ffffff"
                                 fgColor="#000000"
-                                imageSettings={{ src: "/logo.png", height: 38, width: 38, excavate: true }}
+                                imageSettings={{ src: "/favicon-48x48.png", height: 40, width: 40, excavate: true }}
                             />
                         </div>
 
