@@ -28,6 +28,7 @@ export async function POST(request: Request, { params }: Props) {
         }
 
         let opponentStakeTxHash = null;
+        let onChainAssignment: { white: string; black: string; expiresAt: Date } | null = null;
 
         if (config.mode === "testnet") {
             if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
@@ -82,68 +83,30 @@ export async function POST(request: Request, { params }: Props) {
             }
 
             opponentStakeTxHash = txHash;
+            onChainAssignment = {
+                white: verifiedEvent.playerWhite,
+                black: verifiedEvent.playerBlack,
+                expiresAt: new Date(verifiedEvent.deadline),
+            };
         }
 
-        // Accept the game (service handles random color allocation in sandbox,
-        // but wait, does it handle random color allocation in testnet?
-        // Wait, on-chain, joinGame determines the color assignment:
-        // game.playerWhite = creatorIsWhite ? creator : msg.sender;
-        // So we should align the DB colors with the on-chain colors if we are in testnet mode!
-        // Wait! In service.ts, acceptDmGame randomizes colors. But we can override this
-        // or just let it randomize. Wait, to be 100% correct, in testnet mode we want
-        // whiteAddress and blackAddress to be exactly what was emitted by the event!)
-        
+        /* Accept atomically. For testnet we pass the colors + deadline the escrow contract emitted
+           in GameJoined, so the DB agrees with the contract (who is White, when it expires) and the
+           "game started" DM names the right first mover. Without an on-chain assignment (should not
+           happen in testnet) the service falls back to a local random color allocation. */
         const acceptedGame = await acceptDmGame({
             gameId: id,
             playerAddress: wallet!,
             config,
             opponentStakeTxHash,
+            whiteAddress: onChainAssignment?.white ?? null,
+            blackAddress: onChainAssignment?.black ?? null,
+            expiresAtOverride: onChainAssignment?.expiresAt ?? null,
         });
 
-        // If in testnet, sync the actual on-chain colors emitted in verifiedEvent!
-        let finalGame = acceptedGame;
-        if (config.mode === "testnet" && opponentStakeTxHash) {
-            // Wait, we need to update the database to match the contract white/black assignment
-            // We can run a direct update using prisma or withPgClient to fix it, or let the accept API handle it.
-            // Let's run a quick query to sync colors to match the blockchain event exactly!
-            const { withPgClient } = await import("@/lib/serverPg");
-            const rpcUrl = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-            const provider = new ethers.JsonRpcProvider(rpcUrl);
-            const receipt = await provider.getTransactionReceipt(opponentStakeTxHash);
-            if (receipt) {
-                const escrowAddress = config.contractAddress!.toLowerCase();
-                for (const log of receipt.logs) {
-                    if (log.address.toLowerCase() !== escrowAddress) continue;
-                    if ((log.topics[0] || "").toLowerCase() !== GAME_JOINED_TOPIC) continue;
-
-                    const playerWhite = ethers.getAddress("0x" + log.topics[2].slice(26)).toLowerCase();
-                    const playerBlack = ethers.getAddress("0x" + log.topics[3].slice(26)).toLowerCase();
-                    const decoded = ethers.AbiCoder.defaultAbiCoder().decode(["uint64"], log.data);
-                    const expiresAt = new Date(Number(decoded[0]) * 1000);
-
-                    finalGame = await withPgClient(async (client) => {
-                        const res = await client.query(
-                            `update dm_games
-                             set white_address = $2,
-                                 black_address = $3,
-                                 current_turn_address = $2,
-                                 expires_at = $4,
-                                 updated_at = now()
-                             where id = $1
-                             returning *`,
-                            [id, playerWhite, playerBlack, expiresAt]
-                        );
-                        const { mapDmGameRow } = await import("@/lib/games/service");
-                        return mapDmGameRow(res.rows[0]);
-                    });
-                    break;
-                }
-            }
-        }
-
         const formatted = {
-            ...finalGame,
-            stakePerPlayerUsdc: finalGame.stakePerPlayerUsdc.toString(),
+            ...acceptedGame,
+            stakePerPlayerUsdc: acceptedGame.stakePerPlayerUsdc.toString(),
         };
 
         return NextResponse.json({ success: true, game: formatted }, { status: 200 });

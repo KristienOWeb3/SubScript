@@ -9,7 +9,7 @@ import {
     ARC_TESTNET_CHAIN_ID, 
     USDC_NATIVE_GAS_ADDRESS 
 } from "@/lib/contracts/constants";
-import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
+import { requireGameEscrowAddress } from "@/lib/games/client";
 import { 
     Award, 
     CheckCircle2, 
@@ -58,7 +58,6 @@ export default function GameInviteClient({ game }: GameProps) {
     const [step, setStep] = useState<"ready" | "success">("ready");
 
     const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
-    const isSandbox = isSandboxDmGame(game);
     const stakeAmount = BigInt(game.stakePerPlayerUsdc);
     const stakeAmountUsdc = Number(stakeAmount) / 1_000_000;
 
@@ -70,7 +69,7 @@ export default function GameInviteClient({ game }: GameProps) {
 
     // Check allowance on network/address changes
     useEffect(() => {
-        if (isSandbox || !isConnected || !address || chainId !== ARC_TESTNET_CHAIN_ID) return;
+        if (!isConnected || !address || chainId !== ARC_TESTNET_CHAIN_ID) return;
 
         const checkAllowance = async () => {
             setIsCheckingAllowance(true);
@@ -96,7 +95,6 @@ export default function GameInviteClient({ game }: GameProps) {
         game.contractAddress,
         game.mode,
         isConnected,
-        isSandbox,
         usdcAddress,
     ]);
 
@@ -114,23 +112,6 @@ export default function GameInviteClient({ game }: GameProps) {
         setActionLoading(true);
 
         try {
-            if (isSandbox) {
-                setStatusMessage("Accepting sandbox challenge...");
-                const res = await fetch(`/api/user/dms/games/${game.id}/accept`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "x-session-wallet": address!,
-                    },
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.error || "Failed to join the sandbox game");
-                }
-                setStep("success");
-                return;
-            }
-
             const escrowAddress = requireGameEscrowAddress(game);
             // 1. Check network
             if (chainId !== ARC_TESTNET_CHAIN_ID) {
@@ -215,9 +196,7 @@ export default function GameInviteClient({ game }: GameProps) {
                 <div className="space-y-2">
                     <h2 className="text-xl font-black uppercase tracking-wider text-white">Challenge Accepted!</h2>
                     <p className="text-xs text-white/60 leading-relaxed">
-                        {isSandbox
-                            ? `Sandbox credits are recorded. The ${game.gameType === "CHECKERS" ? "Checkers" : "Chess"} board is active and the 24-hour timer has started!`
-                            : `Your stake is deposited. The ${game.gameType === "CHECKERS" ? "Checkers" : "Chess"} board is active and the 24-hour timer has started!`}
+                        {`Your stake is deposited. The ${game.gameType === "CHECKERS" ? "Checkers" : "Chess"} board is active and the 24-hour timer has started!`}
                     </p>
                 </div>
                 <button
@@ -245,7 +224,7 @@ export default function GameInviteClient({ game }: GameProps) {
                         {game.gameType === "CHECKERS" ? "CHECKERS CHALLENGE" : "CHESS CHALLENGE"}
                     </h2>
                     <h1 className="text-sm font-black uppercase tracking-wider text-white">
-                        {isSandbox ? "Join Sandbox Match" : "Join Stake Match"}
+                        Join Stake Match
                     </h1>
                 </div>
             </div>
@@ -260,17 +239,17 @@ export default function GameInviteClient({ game }: GameProps) {
                     </div>
                     <div>
                         <span className="block text-[8px] font-black uppercase tracking-widest text-white/40 mb-0.5">
-                            {isSandbox ? "Sandbox Pot" : "Stake Pot"}
+                            Stake Pot
                         </span>
                         <span className="block text-xs font-black text-[#ccff00]">
-                            ${(stakeAmountUsdc * 2).toFixed(2)} {isSandbox ? "credits" : "USDC"}
+                            ${(stakeAmountUsdc * 2).toFixed(2)} USDC
                         </span>
                     </div>
                 </div>
 
                 <div className="border-t border-white/5 pt-3 flex justify-between text-[10px] text-white/45 font-bold uppercase tracking-wider">
-                    <span>Your {isSandbox ? "Credits" : "Stake"}: ${(stakeAmountUsdc).toFixed(2)}</span>
-                    <span>{isSandbox ? "No funds moved" : "Treasury: 10%"}</span>
+                    <span>Your Stake: ${(stakeAmountUsdc).toFixed(2)}</span>
+                    <span>Treasury: 10%</span>
                 </div>
             </div>
 
@@ -278,11 +257,9 @@ export default function GameInviteClient({ game }: GameProps) {
                 <Award className="w-5 h-5 text-[#ccff00] shrink-0 mt-0.5" />
                 <div className="text-[10px] leading-relaxed text-white/60 font-bold uppercase tracking-wider">
                     <p className="text-white font-black mb-0.5">
-                        {isSandbox ? "Sandbox Rules:" : "Pot Settlement Rules:"}
+                        Pot Settlement Rules:
                     </p>
-                    {isSandbox
-                        ? "Credits and payouts are simulated. No wallet approval, escrow deposit, or on-chain payout occurs. Max game limit is 24 hours."
-                        : "Winner claims 90% of the total stakes. The remaining 10% is routed to the SubScript Treasury. Max game limit is 24 hours."}
+                    Winner claims 90% of the total stakes. The remaining 10% is routed to the SubScript Treasury. Max game limit is 24 hours.
                 </div>
             </div>
 
@@ -301,7 +278,7 @@ export default function GameInviteClient({ game }: GameProps) {
                     <Wallet className="w-4 h-4" />
                     Connect Wallet
                 </button>
-            ) : !isSandbox && chainId !== ARC_TESTNET_CHAIN_ID ? (
+            ) : chainId !== ARC_TESTNET_CHAIN_ID ? (
                 <button
                     onClick={async () => {
                         setActionLoading(true);
@@ -332,11 +309,9 @@ export default function GameInviteClient({ game }: GameProps) {
                         </>
                     ) : (
                         <span>
-                            {isSandbox
-                                ? "Join Sandbox Game"
-                                : allowance < stakeAmount
-                                    ? "Approve & Deposit Stake"
-                                    : "Join Game & Stake"}
+                            {allowance < stakeAmount
+                                ? "Approve & Deposit Stake"
+                                : "Join Game & Stake"}
                         </span>
                     )}
                 </button>

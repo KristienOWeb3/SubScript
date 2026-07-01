@@ -328,7 +328,7 @@ export async function createDmGame(input: {
                 id,
                 contractGameId,
                 config.mode,
-                config.mode === "sandbox" ? "SIMULATED_UNFUNDED" : "UNFUNDED",
+                "UNFUNDED",
                 creator,
                 opponent,
                 input.stakePerPlayerUsdc.toString(),
@@ -352,19 +352,20 @@ export async function createDmGame(input: {
                 opponentAddress: opponent,
                 stakePerPlayerUsdc: economics.stakePerPlayerMicros.toString(),
                 totalPotUsdc: economics.totalPotMicros.toString(),
-                sandbox: config.mode === "sandbox",
+                gameType,
             },
         });
 
         if (opponent) {
+            const gameLabel = gameType === "CHECKERS" ? "Checkers" : "Chess";
             await insertGameDm(client, {
                 gameId: id,
                 eventKey: `${id}:INVITE:${opponent}`,
                 sender: creator,
                 receiver: opponent,
                 messageType: "GAME_INVITE",
-                title: "Chess challenge",
-                description: `You were invited to a 24-hour Chess game. Stake: ${economics.stakePerPlayerMicros.toString()} micro-USDC each.`,
+                title: `${gameLabel} challenge`,
+                description: `You were invited to a 24-hour ${gameLabel} game. Stake: ${economics.stakePerPlayerMicros.toString()} micro-USDC each.`,
                 amountUsdc: economics.stakePerPlayerMicros,
             });
         }
@@ -389,6 +390,12 @@ export async function acceptDmGame(input: {
     config: ReturnTypeOfGetDmGamesConfig;
     now?: Date;
     opponentStakeTxHash?: string | null;
+    /* On-chain color/deadline assignment from the verified GameJoined event. When provided we use
+       them (so the DB and the escrow contract agree on who is White and when the game expires)
+       instead of assigning locally; both must be provided together. */
+    whiteAddress?: string | null;
+    blackAddress?: string | null;
+    expiresAtOverride?: Date | null;
 }) {
     const player = input.playerAddress.toLowerCase();
     const now = input.now || new Date();
@@ -432,10 +439,21 @@ export async function acceptDmGame(input: {
             throw gameForbidden("This game is reserved for another player", "INVITE_RECEIVER_MISMATCH");
         }
 
-        const creatorIsWhite = crypto.randomInt(0, 2) === 0;
-        const whiteAddress = creatorIsWhite ? existing.creatorAddress : player;
-        const blackAddress = creatorIsWhite ? player : existing.creatorAddress;
-        const expiresAt = new Date(now.getTime() + input.config.activeGameTtlMs);
+        let whiteAddress: string;
+        let blackAddress: string;
+        if (input.whiteAddress && input.blackAddress) {
+            whiteAddress = input.whiteAddress.toLowerCase();
+            blackAddress = input.blackAddress.toLowerCase();
+            const pair = new Set([whiteAddress, blackAddress]);
+            if (pair.size !== 2 || !pair.has(existing.creatorAddress) || !pair.has(player)) {
+                throw gameConflict("On-chain player colors do not match this game", "COLOR_MISMATCH");
+            }
+        } else {
+            const creatorIsWhite = crypto.randomInt(0, 2) === 0;
+            whiteAddress = creatorIsWhite ? existing.creatorAddress : player;
+            blackAddress = creatorIsWhite ? player : existing.creatorAddress;
+        }
+        const expiresAt = input.expiresAtOverride || new Date(now.getTime() + input.config.activeGameTtlMs);
 
         const updated = await client.query<DbGameRow>(
             `update dm_games
@@ -459,7 +477,7 @@ export async function acceptDmGame(input: {
                 player,
                 whiteAddress,
                 blackAddress,
-                existing.mode === "sandbox" ? "SIMULATED_FUNDED" : "FUNDED",
+                "FUNDED",
                 now,
                 expiresAt,
                 input.opponentStakeTxHash || null,
@@ -476,14 +494,15 @@ export async function acceptDmGame(input: {
             actor: player,
             payload: { whiteAddress, blackAddress, expiresAt: expiresAt.toISOString() },
         });
+        const startedLabel = existing.gameType === "CHECKERS" ? "Checkers" : "Chess";
         await insertGameDm(client, {
             gameId: existing.id,
             eventKey: `${existing.id}:STARTED:${player}`,
             sender: existing.creatorAddress,
             receiver: player,
             messageType: "GAME_STARTED",
-            title: "Chess game started",
-            description: `The fixed 24-hour timer has started. ${whiteAddress === existing.creatorAddress ? "Host" : "Guest"} plays White.`,
+            title: `${startedLabel} game started`,
+            description: `The fixed 24-hour timer has started. ${whiteAddress === existing.creatorAddress ? "Host" : "Guest"} moves first.`,
             amountUsdc: existing.stakePerPlayerUsdc,
         });
 
@@ -521,7 +540,7 @@ async function finalizeGame(
         : input.winnerAddress === game.whiteAddress
             ? "WHITE_WON"
             : "BLACK_WON";
-    const nextSettlementStatus = game.mode === "sandbox" ? "SIMULATED_SETTLED" : "AWAITING_SETTLEMENT";
+    const nextSettlementStatus = "AWAITING_SETTLEMENT";
     const params: unknown[] = [
         game.id,
         nextStatus,
@@ -554,10 +573,11 @@ async function finalizeGame(
     }
     const result = mapDmGameRow(updated.rows[0]);
     const economics = calculateGameEconomics(game.stakePerPlayerUsdc);
-    const title = isDraw ? "Chess game drawn" : "Chess game settled";
+    const gameLabel = game.gameType === "CHECKERS" ? "Checkers" : "Chess";
+    const title = isDraw ? `${gameLabel} game drawn` : `${gameLabel} game settled`;
     const description = isDraw
-        ? `Draw by ${input.reason.toLowerCase().replaceAll("_", " ")}. Both simulated stakes were refunded.`
-        : `${input.winnerAddress} won by ${input.reason.toLowerCase()}. Simulated payout: ${economics.winnerPayoutMicros} micro-USDC; treasury fee: ${economics.treasuryFeeMicros} micro-USDC.`;
+        ? `Draw by ${input.reason.toLowerCase().replaceAll("_", " ")}. Each ${game.stakePerPlayerUsdc} micro-USDC stake is refunded on-chain at settlement.`
+        : `${input.winnerAddress} won by ${input.reason.toLowerCase()}. Payout: ${economics.winnerPayoutMicros} micro-USDC (treasury fee: ${economics.treasuryFeeMicros} micro-USDC). Claim on-chain to settle.`;
 
     await insertGameEvent(client, {
         gameId: game.id,
@@ -570,7 +590,6 @@ async function finalizeGame(
             winnerAddress: input.winnerAddress,
             winnerPayoutMicros: isDraw ? "0" : economics.winnerPayoutMicros.toString(),
             treasuryFeeMicros: isDraw ? "0" : economics.treasuryFeeMicros.toString(),
-            sandbox: true,
         },
     });
     await insertGameDm(client, {

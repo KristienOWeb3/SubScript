@@ -1,8 +1,7 @@
 import { ARC_TESTNET_CHAIN_ID, PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { parseGameStakeToMicros } from "./money";
-import { gameUnavailable } from "./errors";
 
-export type DmGamesMode = "disabled" | "sandbox" | "testnet" | "live";
+export type DmGamesMode = "disabled" | "testnet" | "live";
 
 type GamesEnvironment = Record<string, string | undefined>;
 
@@ -10,10 +9,10 @@ const addressPattern = /^0x[a-fA-F0-9]{40}$/;
 
 function parseMode(value: string | undefined): DmGamesMode {
     const normalized = (value || "disabled").trim().toLowerCase();
-    if (normalized === "disabled" || normalized === "sandbox" || normalized === "testnet" || normalized === "live") {
+    if (normalized === "disabled" || normalized === "testnet" || normalized === "live") {
         return normalized;
     }
-    throw new Error("DM_GAMES_MODE must be disabled, sandbox, testnet, or live");
+    throw new Error("DM_GAMES_MODE must be disabled, testnet, or live");
 }
 
 function parseChainId(value: string | undefined) {
@@ -25,7 +24,7 @@ function parseChainId(value: string | undefined) {
 export function getDmGamesConfig(env: GamesEnvironment = process.env) {
     const mode = parseMode(env.DM_GAMES_MODE);
     /* Defaults to Arc testnet (matching the chain-id default) so enabling games is a single
-       deliberate switch: DM_GAMES_MODE=sandbox. The hard safety gates remain — mode is
+       deliberate switch: DM_GAMES_MODE=testnet. The hard safety gates remain — mode is
        "disabled" unless explicitly set, "live" is always blocked, and a mainnet build is blocked. */
     const network = env.DM_GAMES_NETWORK?.trim().toLowerCase() || "arc-testnet";
     const chainId = parseChainId(env.DM_GAMES_CHAIN_ID);
@@ -56,18 +55,23 @@ export function getDmGamesConfig(env: GamesEnvironment = process.env) {
         unavailableReason = `DM games require explicit Arc testnet configuration (${ARC_TESTNET_CHAIN_ID})`;
     } else if ((env.NEXT_PUBLIC_ENVIRONMENT || "").trim().toLowerCase() === "mainnet") {
         unavailableReason = "DM games cannot run while the application targets mainnet";
-    } else if (mode === "testnet" && (!contractAddress || !refereeAddress)) {
+    } else if (!contractAddress || !refereeAddress) {
         unavailableReason = "Contract-backed testnet games require escrow and referee addresses";
     }
 
-    const enabled = (mode === "sandbox" || mode === "testnet")
+    /* Only "testnet" is playable, and it is contract-backed — so it is enabled only when the escrow
+       and referee addresses are actually configured. Without them there is no valid play path, so
+       we report unavailable rather than half-enabling a broken flow. */
+    const enabled = mode === "testnet"
         && network === "arc-testnet"
         && chainId === ARC_TESTNET_CHAIN_ID
-        && (env.NEXT_PUBLIC_ENVIRONMENT || "").trim().toLowerCase() !== "mainnet";
+        && (env.NEXT_PUBLIC_ENVIRONMENT || "").trim().toLowerCase() !== "mainnet"
+        && !!contractAddress
+        && !!refereeAddress;
 
     return {
         mode,
-        publicMode: enabled ? "sandbox" as const : "disabled" as const,
+        publicMode: enabled ? "testnet" as const : "disabled" as const,
         enabled,
         unavailableReason,
         chainId,
@@ -81,12 +85,5 @@ export function getDmGamesConfig(env: GamesEnvironment = process.env) {
         activeGameTtlMs: 24 * 60 * 60 * 1000,
         maximumOpenGamesPerWallet: 5,
     };
-}
-
-export function requireDmGamesSandbox(config = getDmGamesConfig()) {
-    if (!config.enabled || config.mode !== "sandbox") {
-        throw gameUnavailable(config.unavailableReason || "DM games are unavailable");
-    }
-    return config;
 }
 

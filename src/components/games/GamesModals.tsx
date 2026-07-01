@@ -16,7 +16,7 @@ import {
 } from "@/components/icons";
 import { parseFen as parseChessFen, getLegalTargets as getChessLegalTargets } from "@/lib/games/chess";
 import { parseFen as parseCheckersFen, getLegalTargets as getCheckersLegalTargets } from "@/lib/games/checkers";
-import { isSandboxDmGame, requireGameEscrowAddress } from "@/lib/games/client";
+import { requireGameEscrowAddress } from "@/lib/games/client";
 import { ARC_TESTNET_CHAIN_ID, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 interface GamesModalsProps {
@@ -155,13 +155,6 @@ export function GamesModals({
 
             const createdGame = data.game;
             setMenuStep("tx");
-
-            if (isSandboxDmGame(createdGame)) {
-                triggerToast("Sandbox chess invite sent — no funds moved.");
-                refetchDms();
-                setGamesMenuOpen(false);
-                return;
-            }
 
             // 2. Perform on-chain stake escrow
             const escrowAddress = requireGameEscrowAddress(createdGame);

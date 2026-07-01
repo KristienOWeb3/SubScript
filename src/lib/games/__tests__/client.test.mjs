@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-    isSandboxDmGame,
     requireGameEscrowAddress,
 } from "../client.ts";
 
-test("keeps sandbox games off-chain", () => {
-    assert.equal(isSandboxDmGame({ mode: "sandbox", contractAddress: null }), true);
+test("rejects on-chain escrow for non-testnet games", () => {
     assert.throws(
-        () => requireGameEscrowAddress({ mode: "sandbox", contractAddress: null }),
+        () => requireGameEscrowAddress({ mode: "disabled", contractAddress: null }),
         /only available for testnet games/i,
     );
 });
@@ -44,7 +42,6 @@ test("client entry points do not contain an escrow fallback", () => {
         const source = readFileSync(new URL(entryPoint, import.meta.url), "utf8");
         assert.doesNotMatch(source, /NEXT_PUBLIC_DM_GAME_ESCROW_ADDRESS\s*\|\|/);
         assert.doesNotMatch(source, /0xCFc7Db58d256688Bea3dE0a063d0bCF9137a237D/i);
-        assert.match(source, /isSandboxDmGame/);
         assert.match(source, /requireGameEscrowAddress/);
     }
 });
