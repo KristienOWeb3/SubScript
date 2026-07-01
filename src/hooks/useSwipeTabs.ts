@@ -43,7 +43,14 @@ export function useHorizontalSwipe(
 ) {
     const { enabled = true, threshold = 55 } = options;
     const origin = useRef<
-        { x: number; y: number; guard: boolean; fired: boolean; pointerId: number } | null
+        {
+            x: number;
+            y: number;
+            guard: boolean;
+            fired: boolean;
+            captured: boolean;
+            pointerId: number;
+        } | null
     >(null);
 
     const reset = () => {
@@ -62,14 +69,9 @@ export function useHorizontalSwipe(
                 y: event.clientY,
                 guard: shouldIgnoreSwipeStart(event.target),
                 fired: false,
+                captured: false,
                 pointerId: event.pointerId,
             };
-            /* Keep receiving move events even if a fast swipe leaves the element's bounds. */
-            try {
-                (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-            } catch {
-                /* Some elements/pointers can't be captured — non-fatal, we still get in-bounds moves. */
-            }
         },
         onPointerMove: (event: React.PointerEvent) => {
             const start = origin.current;
@@ -81,8 +83,19 @@ export function useHorizontalSwipe(
             }
             const dx = event.clientX - start.x;
             const dy = event.clientY - start.y;
+            const isHorizontalDrag = Math.abs(dx) > Math.abs(dy);
+            /* Capturing on pointerdown retargets an ordinary tap away from nested buttons. Wait
+               until the pointer has clearly become a horizontal drag so taps keep their click. */
+            if (!start.captured && isHorizontalDrag && Math.abs(dx) >= 8) {
+                try {
+                    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+                    start.captured = true;
+                } catch {
+                    /* Some elements/pointers can't be captured — in-bounds moves still work. */
+                }
+            }
             /* Horizontal-dominant and far enough — a mostly-vertical drag is a scroll, leave it be. */
-            if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy)) {
+            if (Math.abs(dx) >= threshold && isHorizontalDrag) {
                 start.fired = true;
                 onSwipe(dx < 0 ? "left" : "right");
             }

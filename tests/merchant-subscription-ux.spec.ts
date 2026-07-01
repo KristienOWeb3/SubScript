@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 
 const merchantAddress = "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29";
 const plan = {
@@ -69,6 +69,22 @@ test.describe("merchant subscription UX", () => {
     await plansNav.click();
     await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible();
     await expect(page.getByTestId("merchant-plan-row").filter({ hasText: plan.name })).toBeVisible();
+
+    const swipeAcross = async (from: Locator, deltaX: number) => {
+      const box = await from.boundingBox();
+      expect(box).not.toBeNull();
+      const startX = box!.x + box!.width / 2;
+      const y = box!.y + box!.height / 2;
+      await page.mouse.move(startX, y);
+      await page.mouse.down();
+      await page.mouse.move(startX + deltaX, y, { steps: 8 });
+      await page.mouse.up();
+    };
+
+    await swipeAcross(page.getByText("Create Subscription Plan", { exact: true }), -90);
+    await expect(page.getByText("Create Hosted Payment Link", { exact: true })).toBeVisible();
+    await swipeAcross(page.getByText("Create Hosted Payment Link", { exact: true }), 90);
+    await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible();
 
     const planRowOverflow = await page.getByTestId("merchant-plan-row").filter({ hasText: plan.name }).evaluate((row) => ({
       clientWidth: row.clientWidth,

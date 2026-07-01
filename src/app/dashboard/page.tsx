@@ -598,8 +598,7 @@ export default function DashboardPage() {
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
-    /* Mobile thumb-swipe across the Payments & Subscriptions sub-tabs (tap still works). Touch-only,
-       so it stays inert for desktop mouse users. */
+    /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
     const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
