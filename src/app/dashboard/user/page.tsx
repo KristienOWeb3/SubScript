@@ -1820,7 +1820,7 @@ export default function UserDashboard() {
         )}
 
         {/* Content Pane Skeleton */}
-        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#060608] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-[100dvh] bg-[#000000] overflow-hidden">
           {/* Desktop Header Skeleton */}
           <header className="hidden lg:flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/25 sticky top-0 z-30 shrink-0">
             <div className="space-y-2">
@@ -1886,7 +1886,7 @@ export default function UserDashboard() {
 
   if (redirectMessage) {
     return (
-      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
+      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#000000] px-6 text-white">
         <AnimatedGradientBg />
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
           <Loader2 className="h-6 w-6 animate-spin text-[#FFD825]" />
@@ -2021,7 +2021,7 @@ export default function UserDashboard() {
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#FFD825]/30 selection:text-white border-t-4 border-[#FFD825] md:h-[100dvh] md:overflow-hidden">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#000000] text-white selection:bg-[#FFD825]/30 selection:text-white border-t-4 border-[#FFD825] md:h-[100dvh] md:overflow-hidden">
       <AnimatedGradientBg />
 
       <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
@@ -2106,7 +2106,10 @@ export default function UserDashboard() {
               >
                 {/* ===== Overview: Connected wallet balance (mockup) ===== */}
                 <div className="flex items-stretch gap-3">
-                  <section className="flex-1 min-w-0 rounded-[28px] bg-[#FFD825] p-6 text-black shadow-2xl relative overflow-hidden">
+                  <section
+                    className="liquid-glass flex-1 min-w-0 rounded-[28px] p-6 text-black shadow-2xl relative overflow-hidden backdrop-blur-xl"
+                    style={{ backgroundColor: "rgba(255,216,37,0.92)" }}
+                  >
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase tracking-[0.18em] text-black/60">Connected Wallet Balance</span>
                       <button
@@ -2127,10 +2130,10 @@ export default function UserDashboard() {
                         <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-2 text-[40px] leading-none sm:text-5xl font-extrabold tracking-tight select-all">
+                    <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight select-all">
                       {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
                     </div>
-                    <p className="mt-2 text-sm font-bold text-black/55">
+                    <p className="mt-3 text-xl sm:text-2xl font-extrabold text-black/60">
                       {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                     </p>
                   </section>
@@ -2165,7 +2168,7 @@ export default function UserDashboard() {
 
                 {/* ===== Overview: Spending + Total commit ===== */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-[24px] bg-[#FFD825] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px]">
+                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(255,216,37,0.92)" }}>
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Spending past (USDC)</p>
                       <p className="mt-3 text-[11px] font-black text-black/50">30D</p>
@@ -2181,7 +2184,7 @@ export default function UserDashboard() {
                       Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <div className="rounded-[24px] bg-[#FFD825] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px]">
+                  <div className="liquid-glass rounded-[24px] p-5 text-black shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl" style={{ backgroundColor: "rgba(255,216,37,0.92)" }}>
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/60">Total Commit (LOCKED)</p>
                       <p className="mt-3 text-3xl font-extrabold tracking-tight">
@@ -2199,13 +2202,13 @@ export default function UserDashboard() {
                 </div>
 
                 {/* ===== Overview: Recent transactions ===== */}
-                <section className="rounded-[28px] bg-white text-black p-5 shadow-2xl">
+                <section className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-5 shadow-2xl text-white">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-black/70">Recent Transactions</h2>
+                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
                     <button
                       type="button"
                       onClick={() => setActiveTab("inbox")}
-                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/45 hover:text-black transition-colors"
+                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#FFD825] transition-colors"
                     >
                       View All <ArrowUpRight className="h-3 w-3" />
                     </button>
@@ -2219,8 +2222,8 @@ export default function UserDashboard() {
                         onClick={() => setTxFilter(value)}
                         className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
                           txFilter === value
-                            ? "bg-[#171717] text-[#FFD825]"
-                            : "bg-black/[0.05] text-black/50 hover:bg-black/10"
+                            ? "bg-[#FFD825] text-black"
+                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
                         }`}
                       >
                         {label}
@@ -2228,26 +2231,26 @@ export default function UserDashboard() {
                     ))}
                   </div>
 
-                  <div className="mt-4 divide-y divide-black/[0.06]">
+                  <div className="mt-4 divide-y divide-white/[0.06]">
                     {filteredTransactions.length === 0 ? (
-                      <div className="flex h-24 items-center justify-center text-center text-xs text-black/40">
+                      <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
                         No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
                       </div>
                     ) : (
                       filteredTransactions.slice(0, 6).map((tx) => (
                         <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-black/[0.06] flex items-center justify-center overflow-hidden">
+                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
                             {tx.pic ? (
                               <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
                             ) : (
-                              <span className="text-sm font-black text-black/50">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                              <span className="text-sm font-black text-[#FFD825]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-black">{tx.name}</p>
-                            <p className="truncate text-[10px] font-bold text-black/40">{tx.detail}</p>
+                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
+                            <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                           </div>
-                          <span className="shrink-0 text-base font-extrabold text-black">{tx.amountLabel}</span>
+                          <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
                         </div>
                       ))
                     )}
@@ -2378,7 +2381,7 @@ export default function UserDashboard() {
                         </div>
 
                         {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
-                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#000000]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
                               open={planManagerOpen}
@@ -3523,7 +3526,7 @@ export default function UserDashboard() {
       {isMobile && userWallet && !isActiveMobileDm && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
-          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] liquid-glass bg-black/30 backdrop-blur-lg">
+          <nav className="flex flex-1 items-center justify-around rounded-full px-3 py-3.5 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] bg-[#171717]/90 backdrop-blur-xl">
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
@@ -3548,8 +3551,8 @@ export default function UserDashboard() {
               }}
               className={`relative h-12 flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
                 activeTab === "inbox"
-                  ? "bg-[#FFD825] border-[#FFD825]/30 text-[#111111] shadow-[0_0_15px_rgba(255,216,37,0.3)] scale-105 w-[108px]"
-                  : "liquid-glass bg-black/30 backdrop-blur-lg border-white/5 text-white/50 hover:text-white w-12"
+                  ? "bg-[#FFD825] border-[#FFD825] text-black shadow-[0_0_18px_rgba(255,216,37,0.35)] scale-105 w-[108px]"
+                  : "bg-[#171717] backdrop-blur-xl border-white/10 text-[#FFD825] hover:text-white w-12"
               }`}
               aria-label="Open DMs"
             >
@@ -3558,7 +3561,7 @@ export default function UserDashboard() {
             </button>
             {/* Badge lives outside the button so its overflow-hidden never clips it. */}
             {pendingDmCount > 0 && (
-              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#060608] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
+              <span className="pointer-events-none absolute -right-1 -top-1 z-10 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-[#000000] bg-red-500 px-1 text-[10px] font-black leading-none text-white">
                 {pendingDmCount > 9 ? "9+" : pendingDmCount}
               </span>
             )}

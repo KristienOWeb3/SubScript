@@ -17,7 +17,7 @@ export default function AnimatedBottomNavButton({
     icon: Icon,
     active,
     onClick,
-    accentClassName = "text-[#00d2b4]",
+    accentClassName = "text-black",
     badgeCount = 0,
 }: AnimatedBottomNavButtonProps) {
     const [expanded, setExpanded] = useState(active);
@@ -41,7 +41,7 @@ export default function AnimatedBottomNavButton({
                 expanded ? "w-[92px] min-[360px]:w-[108px]" : "w-11"
             } ${
                 active
-                    ? "border-[#00d2b4]/30 bg-[#00d2b4]/10 text-white shadow-[0_8px_24px_rgba(0,210,180,0.08)]"
+                    ? "border-[#FFD825] bg-[#FFD825] text-black shadow-[0_0_18px_rgba(255,216,37,0.35)]"
                     : "border-transparent bg-transparent text-white/40 hover:bg-white/[0.03] hover:text-white"
             }`}
         >
