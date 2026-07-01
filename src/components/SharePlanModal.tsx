@@ -402,9 +402,10 @@ export default function SharePlanModal({
                 ctx.strokeRect(graphX - 10, graphY - 10, 50, 50);
             }
 
-            // 9. Draw Footer Banner (White card at the bottom)
-            const footerY = H - 180;
-            const footerH = 140;
+            // 9. Draw Footer Banner (White card at the bottom). Taller than before so the QR can
+            // dominate it — the card's whole job is to be scanned, so the code gets the space.
+            const footerH = 176;
+            const footerY = H - footerH - 34;
             const footerW = W - 80;
             const footerX = 40;
             const footerR = 16;
@@ -417,24 +418,31 @@ export default function SharePlanModal({
 
             // Footer Text
             ctx.fillStyle = "#0c0d12";
-            ctx.font = "bold 13px sans-serif";
+            ctx.font = "bold 14px sans-serif";
             ctx.letterSpacing = "0.2px";
-            ctx.fillText("Scan to subscribe securely.", footerX + 24, footerY + 48);
+            ctx.fillText("Scan to subscribe securely.", footerX + 24, footerY + 56);
 
             ctx.fillStyle = "rgba(12, 13, 18, 0.6)";
             ctx.font = "bold 9px sans-serif";
             ctx.letterSpacing = "1px";
-            ctx.fillText("POWERED BY SUBSCRIPT PROTOCOL", footerX + 24, footerY + 74);
+            ctx.fillText("POWERED BY SUBSCRIPT PROTOCOL", footerX + 24, footerY + 86);
 
             ctx.fillStyle = "#00d2b4";
             ctx.font = "900 11px sans-serif";
-            ctx.fillText("NO CREDIT CARD NEEDED", footerX + 24, footerY + 99);
+            ctx.fillText("NO CREDIT CARD NEEDED", footerX + 24, footerY + 112);
 
-            // 10. Draw QR Code
+            // 10. Draw QR Code — large (150px) with a white quiet zone, rendered from a 320px source
+            // so it stays crisp at this size. Bigger = easier to scan from across a room / on a phone.
             const qrCanvas = document.getElementById("plan-share-qr-canvas") as HTMLCanvasElement;
             if (qrCanvas) {
-                // Large, high-correction QR with a generous white quiet zone for camera scanning.
-                ctx.drawImage(qrCanvas, footerX + footerW - 124, footerY + 8, 116, 116);
+                const qrDrawSize = 150;
+                ctx.drawImage(
+                    qrCanvas,
+                    footerX + footerW - qrDrawSize - 14,
+                    footerY + (footerH - qrDrawSize) / 2,
+                    qrDrawSize,
+                    qrDrawSize,
+                );
             }
 
             // 11. Trigger Download
@@ -604,7 +612,7 @@ export default function SharePlanModal({
                                     <QRCodeCanvas
                                         id="plan-share-qr-canvas"
                                         value={subscribeUrl}
-                                        size={128}
+                                        size={320}
                                         level="H"
                                         bgColor="#ffffff"
                                         fgColor="#0c0d12"
@@ -716,7 +724,7 @@ export default function SharePlanModal({
 
                                     {/* Bottom White Card Footer */}
                                     <div className="bg-white rounded-2xl p-2.5 flex items-center justify-between gap-2 z-10 shadow-lg">
-                                        <div className="space-y-1 max-w-[145px]">
+                                        <div className="space-y-1 max-w-[118px]">
                                             <p className="text-[8px] font-bold text-black leading-tight">Scan to subscribe securely.</p>
                                             <p className="text-[6px] font-black text-black/35 tracking-wider uppercase leading-tight">Powered by SubScript</p>
                                             <p className="text-[6.5px] font-extrabold text-[#00d2b4] leading-tight">NO CREDIT CARD NEEDED</p>
@@ -725,7 +733,7 @@ export default function SharePlanModal({
                                         <div className="bg-white p-1 rounded-lg border border-black/5 shrink-0 shadow-inner">
                                             <QRCodeCanvas
                                                 value={subscribeUrl}
-                                                size={72}
+                                                size={92}
                                                 level="H"
                                                 bgColor="#ffffff"
                                                 fgColor="#0c0d12"

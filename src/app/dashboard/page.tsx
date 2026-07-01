@@ -40,7 +40,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home
+    ShieldCheck, Save, Home, SquaresFour, Broadcast
 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -72,14 +72,14 @@ const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
 
 const tabs = [
-    { id: "overview", label: "Overview", icon: Home },
+    { id: "overview", label: "Overview", icon: SquaresFour },
     { id: "premium", label: "Premium", icon: Crown },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Payments and Subscriptions", icon: Sliders },
     { id: "payroll", label: "Payroll", icon: Building2 },
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
-    { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "webhooks", label: "Webhooks", icon: Broadcast },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
@@ -162,7 +162,7 @@ const shortenHash = (value: string | undefined) => {
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
-    { id: "overview", label: "Home", icon: Home },
+    { id: "overview", label: "Home", icon: SquaresFour },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "payment-links", label: "Plans", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
