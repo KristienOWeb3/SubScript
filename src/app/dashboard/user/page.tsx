@@ -1380,7 +1380,25 @@ export default function UserDashboard() {
 
         const game = data.game;
 
-        // 2. Escrow deposit on-chain
+        if (isEmbeddedWalletSession) {
+          // Embedded (email) wallet: no browser connector — SubScript stakes to the escrow
+          // server-side (gas sponsored) via fund-creator with no client-signed txHash.
+          const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
+            body: JSON.stringify({}),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
+          setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
+          setLinkAmount("");
+          setLinkMemo("");
+          triggerToast(`${linkGameType === "checkers" ? "Checkers" : "Chess"} game invite link created!`);
+          refetchUsdc();
+          return;
+        }
+
+        // 2. Escrow deposit on-chain (external / browser wallet)
         const escrowAddress = requireGameEscrowAddress(game);
         if (chainId !== ARC_TESTNET_CHAIN_ID) {
           await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
@@ -2438,6 +2456,7 @@ export default function UserDashboard() {
                                 writeContractAsync={writeContractAsync}
                                 refetchUsdc={refetchUsdc}
                                 onToggle={() => setGamesMenuOpen(false)}
+                                isEmbeddedWalletSession={isEmbeddedWalletSession}
                               />
                               {!gamesMenuOpen && !dmRequestOpen && (
                                 <motion.button
@@ -2622,6 +2641,7 @@ export default function UserDashboard() {
                                     writeContractAsync={writeContractAsync}
                                     refetchUsdc={refetchUsdc}
                                     onToggle={() => setGamesMenuOpen(false)}
+                                    isEmbeddedWalletSession={isEmbeddedWalletSession}
                                   />
                                   {!gamesMenuOpen && !dmRequestOpen && (
                                     <motion.button
@@ -5043,6 +5063,7 @@ function DmGamesComposer({
   writeContractAsync,
   refetchUsdc,
   onToggle,
+  isEmbeddedWalletSession,
 }: {
   open: boolean;
   selectedPeer: string | null;
@@ -5052,6 +5073,7 @@ function DmGamesComposer({
   writeContractAsync: any;
   refetchUsdc: () => void;
   onToggle: () => void;
+  isEmbeddedWalletSession: boolean;
 }) {
   const [selectedGameType, setSelectedGameType] = useState<"chess" | "checkers">("chess");
   const [stakeAmount, setStakeAmount] = useState("1.00");
@@ -5094,7 +5116,24 @@ function DmGamesComposer({
 
       const createdGame = data.game;
 
-      // 2. Perform on-chain stake escrow
+      if (isEmbeddedWalletSession) {
+        // Embedded (email) wallet: SubScript stakes to the escrow server-side (gas sponsored).
+        setStatusMessage("Staking to game escrow...");
+        const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
+          body: JSON.stringify({}),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
+        triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
+        refetchDms();
+        refetchUsdc();
+        onToggle();
+        return;
+      }
+
+      // 2. Perform on-chain stake escrow (external / browser wallet)
       const escrowAddress = requireGameEscrowAddress(createdGame);
       setStatusMessage("Checking USDC allowance...");
       const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");

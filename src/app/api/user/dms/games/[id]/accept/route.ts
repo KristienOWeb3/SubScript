@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
 import { getDmGame, acceptDmGame } from "@/lib/games/service";
 import { getDmGamesConfig } from "@/lib/games/config";
+import { walletHasEmbeddedKey, joinGameFromEmbedded } from "@/lib/games/onchain";
+import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { ethers } from "ethers";
 import { sanitizeInput } from "@/utils/security";
 
@@ -17,9 +19,9 @@ export async function POST(request: Request, { params }: Props) {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
 
-        const body = await request.json().catch(() => null);
+        const body = await request.json().catch(() => ({}));
         const sanitized = sanitizeInput(body || {});
-        const { txHash } = sanitized;
+        let txHash: string | null = typeof sanitized.txHash === "string" ? sanitized.txHash : null;
 
         const game = await getDmGame(id);
         const config = getDmGamesConfig();
@@ -31,12 +33,27 @@ export async function POST(request: Request, { params }: Props) {
         let onChainAssignment: { white: string; black: string; expiresAt: Date } | null = null;
 
         if (config.mode === "testnet") {
-            if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
-                return NextResponse.json({ error: "Transaction hash is required for testnet games" }, { status: 400 });
-            }
-
             if (!game.contractGameId) {
                 return NextResponse.json({ error: "Creator has not funded their stake on-chain yet" }, { status: 400 });
+            }
+
+            /* Embedded (email) wallets have no browser connector — SubScript joins on their behalf
+               from their server-held key, gas sponsored, then verifies the resulting tx below. */
+            if (!txHash) {
+                if (!(await walletHasEmbeddedKey(wallet!))) {
+                    return NextResponse.json({ error: "Transaction hash is required for testnet games" }, { status: 400 });
+                }
+                await requireGasSponsored(wallet!);
+                txHash = await joinGameFromEmbedded({
+                    walletAddress: wallet!,
+                    escrowAddress: config.contractAddress!,
+                    contractGameId: game.contractGameId,
+                    stakeMicros: game.stakePerPlayerUsdc,
+                });
+            }
+
+            if (typeof txHash !== "string" || !txHash.startsWith("0x")) {
+                return NextResponse.json({ error: "Transaction hash is required for testnet games" }, { status: 400 });
             }
 
             // Verify joinGame transaction on-chain

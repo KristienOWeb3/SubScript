@@ -56,10 +56,52 @@ export default function GameInviteClient({ game }: GameProps) {
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [step, setStep] = useState<"ready" | "success">("ready");
+    /* Embedded (email) wallet users have no browser connector — detect the logged-in session so we
+       can offer a gasless, server-signed join instead of the wagmi connect/stake flow. */
+    const [session, setSession] = useState<{ wallet: string; isEmbedded: boolean } | null>(null);
 
     const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
     const stakeAmount = BigInt(game.stakePerPlayerUsdc);
     const stakeAmountUsdc = Number(stakeAmount) / 1_000_000;
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/auth/session", { cache: "no-store" });
+                const data = await res.json().catch(() => null);
+                if (!cancelled && res.ok && data?.wallet) {
+                    setSession({ wallet: data.wallet, isEmbedded: Boolean(data.isEmbedded) });
+                }
+            } catch {
+                /* not logged in / no session — fall back to the browser-wallet flow */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const handleEmbeddedJoin = async () => {
+        setErrorMessage(null);
+        setStatusMessage(null);
+        setActionLoading(true);
+        try {
+            // Server stakes + joins from the embedded key (gas sponsored); no txHash from the client.
+            setStatusMessage("Staking and joining game...");
+            const res = await fetch(`/api/user/dms/games/${game.id}/accept`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Failed to join the game");
+            setStep("success");
+        } catch (err: any) {
+            setErrorMessage(err.message || "An unexpected error occurred while joining.");
+        } finally {
+            setActionLoading(false);
+            setStatusMessage(null);
+        }
+    };
 
     const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
         address: address,
@@ -270,7 +312,22 @@ export default function GameInviteClient({ game }: GameProps) {
                 </div>
             )}
 
-            {!isConnected ? (
+            {session?.isEmbedded ? (
+                <button
+                    onClick={handleEmbeddedJoin}
+                    disabled={actionLoading}
+                    className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-[#ccff00] py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] text-black hover:opacity-90 disabled:opacity-50 transition-all shadow-[0_8px_32px_0_rgba(204,255,0,0.2)]"
+                >
+                    {actionLoading ? (
+                        <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>{statusMessage || "Joining..."}</span>
+                        </>
+                    ) : (
+                        <span>Join Game &amp; Stake (gasless)</span>
+                    )}
+                </button>
+            ) : !isConnected ? (
                 <button
                     onClick={handleConnect}
                     className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white py-3.5 text-center text-xs font-black uppercase tracking-[0.16em] text-black hover:opacity-95 transition-all"
