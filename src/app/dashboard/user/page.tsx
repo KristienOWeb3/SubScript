@@ -333,6 +333,8 @@ export default function UserDashboard() {
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [allTxOpen, setAllTxOpen] = useState(false);
+  const [allTxSearch, setAllTxSearch] = useState("");
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -2220,7 +2222,7 @@ export default function UserDashboard() {
                     <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
                     <button
                       type="button"
-                      onClick={() => setActiveTab("inbox")}
+                      onClick={() => { setAllTxSearch(""); setAllTxOpen(true); }}
                       className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
                     >
                       View All <ArrowUpRight className="h-3 w-3" />
@@ -3582,8 +3584,97 @@ export default function UserDashboard() {
         </div>
       )}
 
-      <DepositModal 
-        open={receiveOpen} 
+      {/* All Transactions (full list) */}
+      <AnimatePresence>
+        {allTxOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex flex-col bg-black/80 backdrop-blur-md"
+            onClick={() => setAllTxOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 28, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 28, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              onClick={(event) => event.stopPropagation()}
+              className="mx-auto mt-auto sm:my-auto flex w-full sm:max-w-lg h-[92dvh] sm:h-[80vh] flex-col liquid-glass border border-white/10 bg-[#060608]/95 backdrop-blur-xl rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-white/5">
+                <h2 className="text-sm font-black uppercase tracking-wider text-white">All Transactions</h2>
+                <button
+                  type="button"
+                  onClick={() => setAllTxOpen(false)}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 border-b border-white/5 px-5 py-3">
+                <input
+                  value={allTxSearch}
+                  onChange={(event) => setAllTxSearch(event.target.value)}
+                  placeholder="Search by name or memo…"
+                  className="subscript-input"
+                />
+                <div className="flex gap-2">
+                  {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setTxFilter(value)}
+                      className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                        txFilter === value ? "bg-[#ccff00] text-black" : "bg-white/[0.06] text-white/50 hover:bg-white/10"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-1 divide-y divide-white/[0.06]">
+                {(() => {
+                  const query = allTxSearch.trim().toLowerCase();
+                  const list = filteredTransactions.filter(
+                    (t) => !query || t.name.toLowerCase().includes(query) || t.detail.toLowerCase().includes(query),
+                  );
+                  if (list.length === 0) {
+                    return (
+                      <div className="flex h-40 items-center justify-center text-center text-xs text-white/40">
+                        No transactions found.
+                      </div>
+                    );
+                  }
+                  return list.map((tx) => (
+                    <div key={tx.id} className="flex items-center gap-3 py-3">
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                        {tx.pic ? (
+                          <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-black text-white">{tx.name}</p>
+                        <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
+                      </div>
+                      <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <DepositModal
+        open={receiveOpen}
         userWallet={userWallet} 
         copied={copiedAddress} 
         onCopy={copyAddress} 

@@ -684,20 +684,18 @@ export async function POST(request: Request) {
                                 .maybeSingle();
 
                             if (payerSettings?.push_enabled !== false && payerSettings?.debit_success_enabled !== false) {
-                                /* A one-time merchant→user payment only surfaces as a receipt DM once a
-                                   subscription has opened a thread between them. Otherwise it stays
-                                   backend-only (no DM), so merchants with many one-off payers aren't
-                                   forced into per-user DM threads. */
-                                const { data: subscriptionThread } = await supabase
+                                /* Every settled one-time payment surfaces as a receipt DM to the payer
+                                   (idempotent on tx_hash) so it shows in the inbox by default — no longer
+                                   gated on a pre-existing subscription thread. */
+                                const { data: existingReceipt } = await supabase
                                     .from("subscript_dms")
                                     .select("id")
-                                    .eq("sender_address", paymentLink.merchant_address.toLowerCase())
-                                    .eq("receiver_address", normalizedPayer)
-                                    .in("message_type", ["SUBSCRIPTION_STARTED", "EXPIRY_WARNING", "CHURN_SURVEY"])
+                                    .eq("message_type", "DEBIT_SUCCESS")
+                                    .eq("tx_hash", normalizedTx)
                                     .limit(1)
                                     .maybeSingle();
 
-                                if (subscriptionThread) {
+                                if (!existingReceipt) {
                                     await supabase
                                         .from("subscript_dms")
                                         .insert({
