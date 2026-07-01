@@ -293,10 +293,42 @@ body {
   }
 }
 
-/* Skeleton loading placeholder. Only uses standard opacity pulsing. */
+/* Skeleton loading placeholder. Has a background pulse and a premium shimmer sweep. */
 .subscript-skeleton {
+  position: relative;
+  overflow: hidden;
   background-color: rgba(255, 255, 255, 0.06);
   animation: liquid-pulse 3s infinite ease-in-out;
+}
+
+.subscript-skeleton::after,
+.liquid-glass-skeleton::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.02) 20%,
+    rgba(255, 255, 255, 0.08) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: subscript-shimmer 2s infinite ease-in-out;
+  pointer-events: none;
+}
+
+.liquid-glass-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.03) 20%,
+    rgba(255, 255, 255, 0.12) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
 }
 
 /* Secondary/sub-label bars sit a touch dimmer than primary ones. */
@@ -304,8 +336,29 @@ body {
   background-color: rgba(255, 255, 255, 0.03);
 }
 
+.subscript-skeleton--faint::after {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.01) 20%,
+    rgba(255, 255, 255, 0.05) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+@keyframes subscript-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .subscript-skeleton {
     animation: pulse 2s ease-in-out infinite;
+  }
+  .subscript-skeleton::after,
+  .liquid-glass-skeleton::after {
+    animation: none;
+    display: none;
   }
 }

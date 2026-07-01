@@ -1853,56 +1853,87 @@ export default function UserDashboard() {
             <div className="h-9 w-44 subscript-skeleton rounded-full" />
           </header>
 
-          <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 space-y-7 max-w-2xl">
-            {/* Balance Card Skeleton (balance block + action buttons beside it) */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 min-w-0 liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-6 rounded-[28px] shadow-2xl space-y-3">
-                <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
-                <div className="h-12 w-44 subscript-skeleton rounded-xl" />
-                <div className="h-5 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
-              </div>
-              <div className="flex flex-col gap-3 shrink-0">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-14 w-14 subscript-skeleton rounded-full" />
-                ))}
-              </div>
-            </div>
-
-            {/* Spending + Commit Skeleton */}
-            <div className="grid grid-cols-2 gap-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 rounded-[24px] shadow-xl min-h-[150px] flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
-                    <div className="h-8 w-20 subscript-skeleton rounded-lg" />
+          <main className="flex-1 overflow-y-auto will-change-transform translate-z-0 px-5 lg:px-8 pb-28 pt-24 lg:pt-8 min-h-0 max-w-7xl">
+            <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
+              {/* Left Column Stack */}
+              <div className="flex flex-col gap-7 md:col-span-1">
+                {/* Balance Card Skeleton */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0 bg-[#ccff00]/10 border border-[#ccff00]/20 p-6 rounded-[28px] shadow-2xl space-y-3">
+                    <div className="h-2.5 w-40 subscript-skeleton rounded-full" />
+                    <div className="h-12 w-44 subscript-skeleton rounded-xl" />
+                    <div className="h-5 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
                   </div>
-                  <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                  <div className="flex flex-col gap-3 shrink-0">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-14 w-14 subscript-skeleton rounded-full" />
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Recent Transactions Skeleton */}
-            <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl p-5 rounded-[28px] shadow-2xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="h-3 w-36 subscript-skeleton rounded-full" />
-                <div className="h-4 w-16 subscript-skeleton rounded-full" />
-              </div>
-              <div className="flex gap-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-6 w-16 subscript-skeleton rounded-full" />
-                ))}
-              </div>
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center gap-3 py-2">
-                    <div className="h-10 w-10 subscript-skeleton rounded-full" />
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-3 w-28 subscript-skeleton rounded-full" />
-                      <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                {/* Spending + Commit Skeleton */}
+                <div className="grid grid-cols-2 gap-3">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="bg-[#ccff00]/10 border border-[#ccff00]/20 p-5 rounded-[24px] shadow-xl min-h-[150px] flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <div className="h-2.5 w-24 subscript-skeleton rounded-full" />
+                        <div className="h-8 w-20 subscript-skeleton rounded-lg" />
+                      </div>
+                      <div className="h-3 w-28 subscript-skeleton subscript-skeleton--faint rounded-full" />
                     </div>
-                    <div className="h-5 w-14 subscript-skeleton rounded-full" />
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column: Active Subscriptions Skeleton */}
+              <div className="md:col-span-1">
+                <div className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
+                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
+                    <div className="h-4 w-36 subscript-skeleton rounded-full" />
+                    <div className="h-5 w-16 subscript-skeleton rounded-full" />
                   </div>
-                ))}
+                  <div className="flex-1 space-y-3 overflow-hidden">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 subscript-skeleton rounded-full" />
+                          <div className="space-y-1.5">
+                            <div className="h-3 w-24 subscript-skeleton rounded-full" />
+                            <div className="h-2 w-16 subscript-skeleton rounded-full" />
+                          </div>
+                        </div>
+                        <div className="h-4 w-20 subscript-skeleton rounded-full" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Transactions Skeleton */}
+              <div className="col-span-1 md:col-span-2">
+                <div className="bg-white p-5 rounded-[28px] shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="h-3 w-36 subscript-skeleton rounded-full" />
+                    <div className="h-4 w-16 subscript-skeleton rounded-full" />
+                  </div>
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-6 w-16 subscript-skeleton rounded-full" />
+                    ))}
+                  </div>
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center gap-3 py-2">
+                        <div className="h-10 w-10 subscript-skeleton rounded-full" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-3 w-28 subscript-skeleton rounded-full" />
+                          <div className="h-2 w-20 subscript-skeleton subscript-skeleton--faint rounded-full" />
+                        </div>
+                        <div className="h-5 w-14 subscript-skeleton rounded-full" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </main>
@@ -2140,179 +2171,187 @@ export default function UserDashboard() {
               className="min-h-0"
             >
             {activeTab === "home" && (
-              <section
-                className="grid grid-cols-1 items-stretch gap-7 md:grid-cols-2"
-              >
-                {/* ===== Overview: Connected wallet balance (mockup) ===== */}
-                <div className="flex h-full items-stretch gap-3 md:order-1">
-                  <section className="liquid-glass flex-1 min-w-0 rounded-[28px] px-6 py-5 border border-white/5 bg-black/40 text-white shadow-2xl relative overflow-hidden backdrop-blur-xl flex flex-col justify-center">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
-                      <button
-                        type="button"
-                        onClick={() => setBalanceVisible((value) => !value)}
-                        className="text-white/40 hover:text-white transition-colors"
-                        aria-label="Toggle balance visibility"
-                      >
-                        {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleManualRefreshBalances}
-                        disabled={isRefreshingBalances}
-                        className="text-white/40 hover:text-white disabled:opacity-50 transition-all"
-                        title="Refresh balance"
-                      >
-                        <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
-                      </button>
-                    </div>
-                    <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
-                      {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
-                    </div>
-                    <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                      {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
-                    </p>
-                  </section>
-
-                  <div className="flex flex-col justify-start gap-3 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
-                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                      aria-label="Send"
-                    >
-                      <ArrowUpRight className="h-6 w-6" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReceiveOpen(true)}
-                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                      aria-label="Deposit"
-                    >
-                      <ArrowDown className="h-6 w-6" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScannerOpen(true)}
-                      className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
-                      aria-label="Scan QR"
-                    >
-                      <QrCode className="h-6 w-6" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* ===== Overview: Spending + Total commit ===== */}
-                <div className="hidden grid-cols-2 gap-3">
-                  <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
-                      <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
-                      <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                        ${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("dns")}
-                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
-                    >
-                      Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="liquid-glass rounded-[24px] p-5 border border-white/5 bg-black/40 text-white shadow-xl flex flex-col justify-between min-h-[150px] backdrop-blur-xl">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
-                      <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                        ${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openVaultCommit()}
-                      className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
-                    >
-                      Manage Commits <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* ===== Overview: Recent transactions ===== */}
-                <section className="liquid-glass hidden rounded-[28px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl md:order-3 md:col-span-2 md:block">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
-                    <button
-                      type="button"
-                      onClick={() => { setAllTxSearch(""); setAllTxOpen(true); }}
-                      className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
-                    >
-                      View All <ArrowUpRight className="h-3 w-3" />
-                    </button>
-                  </div>
-
-                  <div className="mt-4 flex gap-2">
-                    {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setTxFilter(value)}
-                        className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
-                          txFilter === value
-                            ? "bg-[#ccff00] text-black"
-                            : "bg-white/[0.06] text-white/50 hover:bg-white/10"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 divide-y divide-white/[0.06]">
-                    {filteredTransactions.length === 0 ? (
-                      <div className="flex h-24 items-center justify-center text-center text-xs text-white/40">
-                        No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
+              <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
+                {/* Left Column Stack */}
+                <div className="flex flex-col gap-7 md:col-span-1">
+                  {/* ===== Overview: Connected wallet balance (mockup) ===== */}
+                  <div className="flex items-stretch gap-3">
+                    <section className="bg-[#ccff00] text-black flex-1 min-w-0 rounded-[28px] px-6 py-5 shadow-2xl relative overflow-hidden flex flex-col justify-center border border-[#ccff00]/20">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-black/75">Connected Wallet Balance</span>
+                        <button
+                          type="button"
+                          onClick={() => setBalanceVisible((value) => !value)}
+                          className="text-black/50 hover:text-black transition-colors"
+                          aria-label="Toggle balance visibility"
+                        >
+                          {balanceVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleManualRefreshBalances}
+                          disabled={isRefreshingBalances}
+                          className="text-black/50 hover:text-black disabled:opacity-50 transition-all"
+                          title="Refresh balance"
+                        >
+                          <RefreshCw className={`h-3 w-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
+                        </button>
                       </div>
-                    ) : (
-                      filteredTransactions.slice(0, 6).map((tx) => (
-                        <div key={tx.id} className="flex items-center gap-3 py-3">
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
-                            {tx.pic ? (
-                              <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
-                            ) : (
-                              <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                            <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
-                          </div>
-                          <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
+                      <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight select-all">
+                        {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
+                      </div>
+                      <p className="mt-3 text-xl sm:text-2xl font-extrabold text-black/60">
+                        {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                      </p>
+                    </section>
 
-                <section className="hidden min-h-[390px] rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass md:order-2 md:block sm:p-8">
-                  <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                    <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20">{subscriptions.length} active</span>
-                  </div>
-
-                  {sortedSubscriptions.length === 0 ? (
-                    <div className="flex h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
-                      <CreditCard className="mb-3 h-8 w-8 text-white/25" />
-                      <p className="text-xs text-white/45">No active subscription streams yet.</p>
+                    <div className="flex flex-col justify-start gap-3 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedDmPeer(null); setActiveTab("batch"); }}
+                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                        aria-label="Send"
+                      >
+                        <ArrowUpRight className="h-6 w-6" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReceiveOpen(true)}
+                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                        aria-label="Deposit"
+                      >
+                        <ArrowDown className="h-6 w-6" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScannerOpen(true)}
+                        className="grid h-14 w-14 place-items-center rounded-full bg-[#171717] text-[#ccff00] border border-white/10 shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                        aria-label="Scan QR"
+                      >
+                        <QrCode className="h-6 w-6" />
+                      </button>
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {sortedSubscriptions.map((sub) => (
-                        <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
+                  </div>
+
+                  {/* ===== Overview: Spending + Total commit ===== */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-[#ccff00] text-black rounded-[24px] p-5 shadow-xl flex flex-col justify-between min-h-[150px] border border-[#ccff00]/20">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/65">Spending past (USDC)</p>
+                        <p className="mt-3 text-[11px] font-black text-black/45">30D</p>
+                        <p className="mt-1 text-3xl font-extrabold tracking-tight">
+                          ${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("dns")}
+                        className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-black hover:opacity-70 transition-opacity"
+                      >
+                        Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="bg-[#ccff00] text-black rounded-[24px] p-5 shadow-xl flex flex-col justify-between min-h-[150px] border border-[#ccff00]/20">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-black/65">Total Commit (LOCKED)</p>
+                        <p className="mt-3 text-3xl font-extrabold tracking-tight">
+                          ${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openVaultCommit()}
+                        className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-black hover:opacity-70 transition-opacity"
+                      >
+                        Manage Commits <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Active Subscriptions */}
+                <div className="md:col-span-1">
+                  <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
+                    <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
+                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.length} active</span>
+                    </div>
+
+                    <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
+                      {sortedSubscriptions.length === 0 ? (
+                        <div className="flex h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
+                          <CreditCard className="mb-3 h-8 w-8 text-white/25" />
+                          <p className="text-xs text-white/45">No active subscription streams yet.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {sortedSubscriptions.map((sub) => (
+                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                {/* ===== Overview: Recent transactions (spanning full width on desktop) ===== */}
+                <div className="col-span-1 md:col-span-2">
+                  <section className="bg-white rounded-[28px] p-5 text-black shadow-2xl">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-black/70">Recent Transactions</h2>
+                      <button
+                        type="button"
+                        onClick={() => { setAllTxSearch(""); setAllTxOpen(true); }}
+                        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-black/45 hover:text-black transition-colors"
+                      >
+                        View All <ArrowUpRight className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      {([["all", "All"], ["recurring", "Recurring"], ["one-time", "One Time"]] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setTxFilter(value)}
+                          className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all ${
+                            txFilter === value
+                              ? "bg-black text-white"
+                              : "bg-black/[0.06] text-black/55 hover:bg-black/10"
+                          }`}
+                        >
+                          {label}
+                        </button>
                       ))}
                     </div>
-                  )}
-                </section>
-              </section>
+
+                    <div className="mt-4 divide-y divide-black/[0.06]">
+                      {filteredTransactions.length === 0 ? (
+                        <div className="flex h-24 items-center justify-center text-center text-xs text-black/40">
+                          No {txFilter === "all" ? "" : txFilter === "recurring" ? "recurring " : "one-time "}transactions yet.
+                        </div>
+                      ) : (
+                        filteredTransactions.slice(0, 6).map((tx) => (
+                          <div key={tx.id} className="flex items-center gap-3 py-3">
+                            <div className="h-10 w-10 shrink-0 rounded-full bg-black/[0.06] border border-black/10 flex items-center justify-center overflow-hidden">
+                              {tx.pic ? (
+                                <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                              ) : (
+                                <span className="text-sm font-black text-black">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-black text-black">{tx.name}</p>
+                              <p className="truncate text-[10px] font-bold text-black/45">{tx.detail}</p>
+                            </div>
+                            <span className="shrink-0 text-base font-extrabold text-black">{tx.amountLabel}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
             )}
 
             {activeTab === "commit" && (
@@ -3613,7 +3652,7 @@ export default function UserDashboard() {
               aria-label="Open DMs"
             >
               <MessageSquare className="h-5 w-5 shrink-0" />
-              {activeTab === "inbox" && <span className="text-[10px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
+              {activeTab === "inbox" && <span className="text-[7px] font-bold uppercase tracking-wider shrink-0">DMs</span>}
             </button>
             {/* Badge lives outside the button so its overflow-hidden never clips it. */}
             {pendingDmCount > 0 && (

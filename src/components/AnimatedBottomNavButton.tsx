@@ -62,7 +62,7 @@ export default function AnimatedBottomNavButton({
                 )}
             </span>
             <span
-                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] min-[360px]:text-[10px] min-[360px]:tracking-wider ${
+                className={`absolute left-10 top-1/2 -translate-y-1/2 whitespace-nowrap text-[6px] font-bold uppercase tracking-wide transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] min-[360px]:text-[7px] min-[360px]:tracking-wider ${
                     expanded ? "translate-x-1 opacity-100" : "-translate-x-4 opacity-0"
                 }`}
             >
