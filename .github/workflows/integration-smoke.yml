@@ -57,7 +57,9 @@ jobs:
   # configured) creates a sandbox intent + checks its status. Failing here means the deploy is
   # broken for integrators even though the build succeeded.
   post-deploy-smoke:
-    if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
+    # Production only: preview deployments sit behind Vercel deployment protection (SSO),
+    # so every API call there 401s with "Protected deployment" — not a real signal.
+    if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
