@@ -1942,7 +1942,7 @@ export default function UserDashboard() {
         {/* Mobile Bottom Bar Skeleton */}
         {isMobile && (
           <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
-            <div className="liquid-glass liquid-bottom-bar flex flex-1 items-center justify-around rounded-full border border-white/10 px-3 py-[1.1rem]">
+            <div className="liquid-glass flex flex-1 items-center justify-around rounded-full bg-black/30 backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-6 w-6 subscript-skeleton rounded-full" />
               ))}
@@ -3619,7 +3619,7 @@ export default function UserDashboard() {
           {/* Capsule Navigation Menu */}
           <nav
             aria-label="Primary navigation"
-            className="liquid-glass liquid-bottom-bar flex flex-1 items-center justify-around rounded-full border border-white/10 px-3 py-[1.1rem]"
+            className="liquid-glass flex flex-1 items-center justify-around rounded-full bg-black/30 backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
           >
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
@@ -3647,7 +3647,7 @@ export default function UserDashboard() {
               className={`relative h-[3.3rem] flex items-center justify-center rounded-full border transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] gap-2 px-3 overflow-hidden ${
                 activeTab === "inbox"
                   ? "bg-[#ccff00] border-[#ccff00]/30 text-[#111111] shadow-[0_0_15px_rgba(204,255,0,0.3)] scale-105 w-[108px]"
-                  : "liquid-glass liquid-bottom-bar border-white/10 text-white/50 hover:text-white w-[3.3rem]"
+                  : "liquid-glass bg-black/30 backdrop-blur-lg border-transparent text-white/50 hover:text-white w-[3.3rem]"
               }`}
               aria-label="Open DMs"
             >
