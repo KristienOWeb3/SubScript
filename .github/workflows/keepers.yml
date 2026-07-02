@@ -20,7 +20,6 @@ name: Keepers
 on:
   schedule:
     - cron: "*/15 * * * *"   # reconcile        — recover stuck premium-upgrade sessions
-    - cron: "0 * * * *"      # games-timeout     — settle expired games / relay / reclaim invites
     - cron: "0 2 * * *"      # cron/billing      — premium recurring billing + downgrades
     - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
     - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
@@ -47,19 +46,6 @@ jobs:
         run: |
           curl -fsS --retry 3 --retry-delay 5 --max-time 60 -X GET \
             "${BASE:-https://www.subscriptonarc.com}/api/cron/reconcile" \
-            -H "Authorization: Bearer ${SECRET}"
-
-  games-timeout:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 * * * *'
-    runs-on: ubuntu-latest
-    steps:
-      - name: cron/games-timeout
-        env:
-          BASE: ${{ secrets.KEEPER_BASE_URL }}
-          SECRET: ${{ secrets.KEEPER_SECRET }}
-        run: |
-          curl -fsS --retry 3 --retry-delay 5 --max-time 120 -X GET \
-            "${BASE:-https://www.subscriptonarc.com}/api/cron/games-timeout" \
             -H "Authorization: Bearer ${SECRET}"
 
   premium-billing:
@@ -115,7 +101,6 @@ jobs:
           BASE="${BASE:-https://www.subscriptonarc.com}"
           for path in \
             /api/cron/reconcile \
-            /api/cron/games-timeout \
             /api/cron/billing \
             /api/internal/payroll \
             /api/internal/billing; do

@@ -27,7 +27,6 @@ import { QRCodeSVG } from "qrcode.react";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
-import { GamesModals, ESCROW_CONTRACT_ABI } from "@/components/games/GamesModals";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { getDashboardUrl } from "@/utils/navigation";
 import {
@@ -61,14 +60,10 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
-  GamepadIcon,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import { parseFen, getLegalTargets, INITIAL_FEN } from "@/lib/games/chess";
-import { requireGameEscrowAddress } from "@/lib/games/client";
-import { GAME_CATALOG } from "@/lib/games/catalog";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -131,7 +126,6 @@ interface DmMessage {
   description: string | null;
   txHash: string | null;
   paymentLinkId: string | null;
-  dmGameId?: string | null;
   createdAt: string;
 }
 
@@ -309,24 +303,6 @@ export default function UserDashboard() {
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
   const [plansMerchantAddress, setPlansMerchantAddress] = useState<string | null>(null);
 
-  // Games state variables
-  const [gamesMenuOpen, setGamesMenuOpen] = useState(false);
-  const [selectedGameForInvite, setSelectedGameForInvite] = useState<string | null>(null);
-  const [gameStakeAmount, setGameStakeAmount] = useState("1");
-  const [isCreatingGame, setIsCreatingGame] = useState(false);
-  const [activePlayingGame, setActivePlayingGame] = useState<any | null>(null);
-  const [isChessBoardModalOpen, setIsChessBoardModalOpen] = useState(false);
-  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
-  const [isClaimingPayout, setIsClaimingPayout] = useState(false);
-  const [chessSelectedSquare, setChessSelectedSquare] = useState<string | null>(null);
-  const [chessLegalMoves, setChessLegalMoves] = useState<string[]>([]);
-  const [gameErrorMessage, setGameErrorMessage] = useState<string | null>(null);
-  const [gameStatusMessage, setGameStatusMessage] = useState<string | null>(null);
-
-  // Link type selection in links tab
-  const [linkType, setLinkType] = useState<"payment" | "game">("payment");
-  // Which game a "Host Game" link deploys (only the playable catalog entries are selectable).
-  const [linkGameType, setLinkGameType] = useState<"chess" | "checkers">("chess");
   const [isThreadPlansLoading, setIsThreadPlansLoading] = useState(false);
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
@@ -595,12 +571,6 @@ export default function UserDashboard() {
   /* Thumb-swipe between the Single / Batch send sub-tabs (tap still works). Pointer-based, so a
      55px drag is needed — harmless on desktop, natural on mobile. */
   const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode);
-  /* Swipe between Standard Link / Host Game in the Payment Links tab. */
-  const linksSwipe = useSwipeTabs(["payment", "game"] as const, linkType, (next) => {
-    setLinkType(next);
-    setLinkResultUrl(null);
-    setLinkError(null);
-  });
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -1104,53 +1074,6 @@ export default function UserDashboard() {
     });
   };
 
-  const handlePlayGame = async (gameId: string) => {
-    try {
-      const res = await fetch(`/api/user/dms/games/${gameId}`, {
-        headers: { "x-session-wallet": userWallet || "" },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load game details");
-      }
-
-      const game = data.game;
-      setActivePlayingGame(game);
-
-      if (game.status === "INVITED") {
-        const isHost = userWallet?.toLowerCase() === game.creatorAddress?.toLowerCase();
-
-        if (!isHost) {
-          if (game.mode === "sandbox") {
-            const acceptRes = await fetch(`/api/user/dms/games/${game.id}/accept`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "x-session-wallet": userWallet!,
-              },
-            });
-            const acceptData = await acceptRes.json();
-            if (!acceptRes.ok) throw new Error(acceptData.error || "Failed to accept challenge");
-            
-            triggerToast("Challenge accepted!");
-            setActivePlayingGame(acceptData.game);
-            setIsChessBoardModalOpen(true);
-            await loadDms();
-          } else {
-            // For testnet, redirect to the stake invite page
-            router.push(`/pay/game/${game.id}`);
-          }
-        } else {
-          triggerToast("Waiting for opponent to join and stake.");
-        }
-      } else {
-        setIsChessBoardModalOpen(true);
-      }
-    } catch (err: any) {
-      triggerToast(err.message || "Failed to launch game board");
-    }
-  };
-
   const handleCancelPlanSuggestion = async (dm: DmMessage) => {
     const merchantAddress = dm.senderAddress.toLowerCase();
     await handleCancelSubscriptionForMerchant(merchantAddress);
@@ -1362,111 +1285,20 @@ export default function UserDashboard() {
     }
     setLinkLoading(true);
     try {
-      if (linkType === "game") {
-        const stakeMicros = BigInt(Math.round(Number(linkAmount) * 1_000_000));
-        
-        // 1. Register lobby
-        const res = await fetch("/api/user/dms/games", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-wallet": userWallet!,
-          },
-          body: JSON.stringify({
-            opponentAddress: null, // Public invite link
-            stakeUsdc: linkAmount,
-            gameType: linkGameType.toUpperCase(),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to create game lobby");
-
-        const game = data.game;
-
-        if (isEmbeddedWalletSession) {
-          // Embedded (email) wallet: no browser connector — SubScript stakes to the escrow
-          // server-side (gas sponsored) via fund-creator with no client-signed txHash.
-          const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
-            body: JSON.stringify({}),
-          });
-          const verifyData = await verifyRes.json();
-          if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
-          setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
-          setLinkAmount("");
-          setLinkMemo("");
-          triggerToast(`${linkGameType === "checkers" ? "Checkers" : "Chess"} game invite link created!`);
-          refetchUsdc();
-          return;
-        }
-
-        // 2. Escrow deposit on-chain (external / browser wallet)
-        const escrowAddress = requireGameEscrowAddress(game);
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-        }
-
-        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-        const tokenContract = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, [
-            "function allowance(address owner, address spender) view returns (uint256)"
-        ], provider);
-        const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
-
-        if (BigInt(allowance.toString()) < stakeMicros) {
-          const approveTx = await writeContractAsync({
-            address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-            abi: VAULT_TOKEN_ABI,
-            functionName: "approve",
-            args: [escrowAddress, stakeMicros],
-            chainId: ARC_TESTNET_CHAIN_ID,
-          });
-          await provider.waitForTransaction(approveTx, 1, 30_000);
-        }
-
-        const initialStateHash = ethers.id("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        const stakeTx = await writeContractAsync({
-          address: escrowAddress,
-          abi: ESCROW_CONTRACT_ABI,
-          // Since it's a public invite, the opponent is address(0)
-          functionName: "createGame",
-          args: [ethers.ZeroAddress as `0x${string}`, stakeMicros, initialStateHash as `0x${string}`],
-          chainId: ARC_TESTNET_CHAIN_ID,
-        });
-
-        // 3. Verify stake deposit
-        const verifyRes = await fetch(`/api/user/dms/games/${game.id}/fund-creator`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-wallet": userWallet!,
-          },
-          body: JSON.stringify({ txHash: stakeTx }),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok) throw new Error(verifyData.error || "Referee failed to verify stake deposit");
-
-        setLinkResultUrl(`${window.location.origin}/pay/game/${game.id}`);
-        setLinkAmount("");
-        setLinkMemo("");
-        triggerToast("Chess game invite link created!");
-        refetchUsdc();
-      } else {
-        const res = await fetch("/api/user/payment-links", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amountUsdc: linkAmount,
-            title: linkMemo.trim() || "USDC payment",
-            description: linkMemo.trim() || "SubScript payment link.",
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
-        setLinkResultUrl(data.checkoutUrl as string);
-        setLinkAmount("");
-        setLinkMemo("");
-      }
+      const res = await fetch("/api/user/payment-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsdc: linkAmount,
+          title: linkMemo.trim() || "USDC payment",
+          description: linkMemo.trim() || "SubScript payment link.",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create the payment link.");
+      setLinkResultUrl(data.checkoutUrl as string);
+      setLinkAmount("");
+      setLinkMemo("");
     } catch (err: any) {
       setLinkError(err.message || "Could not create the link.");
     } finally {
@@ -2462,7 +2294,6 @@ export default function UserDashboard() {
                               onThanks={() => handleThanksSuggestion(dm)}
                               onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                               onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
-                              onPlayGame={handlePlayGame}
                             />
                           ))}
                           <div ref={dmBottomRef} />
@@ -2502,30 +2333,6 @@ export default function UserDashboard() {
                                 onNoteChange={setDmRequestNote}
                                 onDurationChange={setDmRequestDuration}
                               />
-                              <DmGamesComposer
-                                open={gamesMenuOpen}
-                                selectedPeer={selectedDmPeer}
-                                userWallet={userWallet}
-                                triggerToast={triggerToast}
-                                refetchDms={loadDms}
-                                writeContractAsync={writeContractAsync}
-                                refetchUsdc={refetchUsdc}
-                                onToggle={() => setGamesMenuOpen(false)}
-                                isEmbeddedWalletSession={isEmbeddedWalletSession}
-                              />
-                              {!gamesMenuOpen && !dmRequestOpen && (
-                                <motion.button
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.97 }}
-                                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                  type="button"
-                                  onClick={() => setGamesMenuOpen(true)}
-                                  className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
-                                >
-                                  <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
-                                  <span>Games Menu</span>
-                                </motion.button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -2547,35 +2354,7 @@ export default function UserDashboard() {
                     {/* Active thread message bubble display (right column in blueprint) */}
                     <div className="flex-1 flex flex-col overflow-hidden liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 min-h-0 justify-between">
                       <AnimatePresence mode="wait">
-                        {isChessBoardModalOpen && activePlayingGame && (
-                          activePlayingGame.opponentAddress?.toLowerCase() === selectedDmPeer?.toLowerCase() ||
-                          activePlayingGame.creatorAddress?.toLowerCase() === selectedDmPeer?.toLowerCase()
-                        ) ? (
-                          <motion.div
-                            key="active-game-board"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            className="hidden md:flex w-full h-full flex-col justify-between"
-                          >
-                            <GamesModals
-                              gamesMenuOpen={gamesMenuOpen}
-                              setGamesMenuOpen={setGamesMenuOpen}
-                              selectedDmPeer={selectedDmPeer}
-                              activePlayingGame={activePlayingGame}
-                              setActivePlayingGame={setActivePlayingGame}
-                              isChessBoardModalOpen={isChessBoardModalOpen}
-                              setIsChessBoardModalOpen={setIsChessBoardModalOpen}
-                              userWallet={userWallet}
-                              triggerToast={triggerToast}
-                              refetchDms={loadDms}
-                              writeContractAsync={writeContractAsync}
-                              refetchUsdc={refetchUsdc}
-                              isEmbeddedWalletSession={isEmbeddedWalletSession}
-                              inline={true}
-                            />
-                          </motion.div>
-                        ) : selectedDmPeer ? (
+                        {selectedDmPeer ? (
                           <motion.div
                             key={selectedDmPeer}
                             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -2648,7 +2427,6 @@ export default function UserDashboard() {
                                   onThanks={() => handleThanksSuggestion(dm)}
                                   onCancelPlan={() => handleCancelPlanSuggestion(dm)}
                                   onSurveySubmit={(dmMsg, ans) => handleSurveySubmit(dmMsg, ans)}
-                                  onPlayGame={handlePlayGame}
                                 />
                               ))}
                               <div ref={dmBottomRef} />
@@ -2688,30 +2466,6 @@ export default function UserDashboard() {
                                     onNoteChange={setDmRequestNote}
                                     onDurationChange={setDmRequestDuration}
                                   />
-                                  <DmGamesComposer
-                                    open={gamesMenuOpen}
-                                    selectedPeer={selectedDmPeer}
-                                    userWallet={userWallet}
-                                    triggerToast={triggerToast}
-                                    refetchDms={loadDms}
-                                    writeContractAsync={writeContractAsync}
-                                    refetchUsdc={refetchUsdc}
-                                    onToggle={() => setGamesMenuOpen(false)}
-                                    isEmbeddedWalletSession={isEmbeddedWalletSession}
-                                  />
-                                  {!gamesMenuOpen && !dmRequestOpen && (
-                                    <motion.button
-                                      whileHover={{ scale: 1.02 }}
-                                      whileTap={{ scale: 0.97 }}
-                                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                      type="button"
-                                      onClick={() => setGamesMenuOpen(true)}
-                                      className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-white/5 bg-black/30 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-white hover:text-[#ccff00] transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-lg"
-                                    >
-                                      <GamepadIcon className="w-4 h-4 text-[#ccff00]" />
-                                      <span>Games Menu</span>
-                                    </motion.button>
-                                  )}
                                 </div>
                               )}
                             </div>
@@ -2737,121 +2491,30 @@ export default function UserDashboard() {
             )}
 
             {activeTab === "links" && (
-              <section
-                className="space-y-5 max-w-lg pb-6 lg:pb-0"
-                {...linksSwipe}
-              >
+              <section className="space-y-5 max-w-lg pb-6 lg:pb-0">
                 <SectionTitle title="Payment Links" subtitle="Create a shareable link to receive USDC. Anyone who pays is auto-onboarded and a DM opens with them." />
-                
-                {/* Link Type Selector */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-full border border-white/5 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLinkType("payment");
-                      setLinkResultUrl(null);
-                      setLinkError(null);
-                    }}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
-                      linkType === "payment"
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/60 hover:text-white"
-                    }`}
-                  >
-                    Standard Link
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLinkType("game");
-                      setLinkResultUrl(null);
-                      setLinkError(null);
-                    }}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-full transition-all ${
-                      linkType === "game"
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/60 hover:text-white"
-                    }`}
-                  >
-                    Host Game
-                  </button>
-                </div>
 
                 <form onSubmit={handleCreateShareableLink} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                  <Field label={linkType === "game" ? "Staked USDC Amount" : "USDC Amount"}>
+                  <Field label="USDC Amount">
                     <input
                       value={linkAmount}
                       onChange={(event) => setLinkAmount(event.target.value)}
-                      placeholder={linkType === "game" ? "1.00" : "25.00"}
+                      placeholder="25.00"
                       inputMode="decimal"
                       className="subscript-input"
                       required
                     />
                   </Field>
 
-                  {linkType === "payment" && (
-                    <Field label="What's it for (optional)">
-                      <input
-                        value={linkMemo}
-                        onChange={(event) => setLinkMemo(event.target.value)}
-                        placeholder="Invoice #1042, split the bill, donation..."
-                        className="subscript-input"
-                        maxLength={120}
-                      />
-                    </Field>
-                  )}
-
-                  {linkType === "game" && (
-                    <>
-                      <Field label="Choose a game">
-                        <div className="grid grid-cols-3 gap-2">
-                          {GAME_CATALOG.map((g) => {
-                            const playable = g.status === "PLAYABLE";
-                            const selected = playable && linkGameType === g.slug;
-                            return (
-                              <button
-                                key={g.slug}
-                                type="button"
-                                onClick={() => {
-                                  if (playable) setLinkGameType(g.slug as "chess" | "checkers");
-                                  else triggerToast(`${g.name} is coming soon`);
-                                }}
-                                className={`relative flex flex-col items-center gap-1 rounded-2xl border px-2 py-3 transition-all ${
-                                  selected
-                                    ? "border-[#ccff00] bg-[#ccff00]/10 text-white"
-                                    : playable
-                                      ? "border-white/10 bg-black/30 text-white/70 hover:text-white hover:border-white/20"
-                                      : "border-white/5 bg-black/20 text-white/30 cursor-not-allowed"
-                                }`}
-                              >
-                                <span className="text-xl leading-none">{g.symbol}</span>
-                                <span className="text-[9px] font-black uppercase tracking-wider text-center leading-tight">{g.name}</span>
-                                {!playable && (
-                                  <span className="absolute right-1 top-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wider text-white/50">Soon</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </Field>
-
-                      <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2 text-[10px] text-white/50 font-bold uppercase tracking-wider">
-                        <p className="text-white font-black">{linkGameType === "checkers" ? "Checkers" : "Chess"} Stake Economics:</p>
-                        <div className="flex justify-between">
-                          <span>Your Stake:</span>
-                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Guest Stake:</span>
-                          <span>${Number(linkAmount || 0).toFixed(2)} USDC</span>
-                        </div>
-                        <div className="flex justify-between border-t border-white/5 pt-2 font-black text-white">
-                          <span>Winner Payout (90%):</span>
-                          <span className="text-[#ccff00]">${(Number(linkAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  <Field label="What's it for (optional)">
+                    <input
+                      value={linkMemo}
+                      onChange={(event) => setLinkMemo(event.target.value)}
+                      placeholder="Invoice #1042, split the bill, donation..."
+                      className="subscript-input"
+                      maxLength={120}
+                    />
+                  </Field>
 
                   {linkError && (
                     <div className="rounded-2xl border border-red-400/20 bg-red-500/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">
@@ -2867,10 +2530,10 @@ export default function UserDashboard() {
                     {linkLoading ? (
                       <span className="flex items-center justify-center gap-1.5">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        {linkType === "game" ? "Staking & Deploying Match..." : "Creating payment link..."}
+                        Creating payment link...
                       </span>
                     ) : (
-                      <span>{linkType === "game" ? "Stake & Host Game" : "Create payment link"}</span>
+                      <span>Create payment link</span>
                     )}
                   </button>
                 </form>
@@ -3828,22 +3491,6 @@ export default function UserDashboard() {
 
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
-      <GamesModals
-        gamesMenuOpen={gamesMenuOpen}
-        setGamesMenuOpen={setGamesMenuOpen}
-        selectedDmPeer={selectedDmPeer}
-        activePlayingGame={activePlayingGame}
-        setActivePlayingGame={setActivePlayingGame}
-        isChessBoardModalOpen={isChessBoardModalOpen}
-        setIsChessBoardModalOpen={setIsChessBoardModalOpen}
-        userWallet={userWallet}
-        triggerToast={triggerToast}
-        refetchDms={loadDms}
-        writeContractAsync={writeContractAsync}
-        refetchUsdc={refetchUsdc}
-        isEmbeddedWalletSession={isEmbeddedWalletSession}
-      />
-
       <AnimatePresence>
         {vaultActionOpen && (
           <motion.div
@@ -4406,7 +4053,6 @@ function DmBubble({
   onThanks,
   onCancelPlan,
   onSurveySubmit,
-  onPlayGame,
 }: {
   dm: DmMessage;
   focused: boolean;
@@ -4419,7 +4065,6 @@ function DmBubble({
   onThanks?: () => void;
   onCancelPlan?: () => void;
   onSurveySubmit?: (dm: DmMessage, response: string) => void;
-  onPlayGame?: (gameId: string) => void;
 }) {
   const isPending = dm.status === "PENDING";
   const displayTitle = shortenWalletsInText(dm.title);
@@ -4494,76 +4139,6 @@ function DmBubble({
     ? { type: "spring" as const, stiffness: 380, damping: 14, mass: 0.8 }
     : { type: "spring" as const, stiffness: 420, damping: 12, mass: 0.85 };
   const bubbleOrigin = incoming ? "bottom left" : "bottom right";
-
-  if (["GAME_INVITE", "GAME_STARTED", "GAME_RESULT"].includes(dm.messageType)) {
-    const isInvite = dm.messageType === "GAME_INVITE";
-    const isStarted = dm.messageType === "GAME_STARTED";
-    const buttonLabel = isInvite 
-      ? (incoming ? "Accept Challenge" : "Manage Invite") 
-      : isStarted 
-        ? "Play Move" 
-        : "View Results";
-
-    return (
-      <motion.div
-        initial={{ scale: 0.85, opacity: 0, y: 12 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        whileHover={{ scale: 1.01 }}
-        transition={bubbleSpring}
-        style={{ transformOrigin: bubbleOrigin }}
-        className={`flex gap-2.5 ${incoming ? "justify-start" : "justify-end"}`}
-      >
-        {incoming && <Avatar profilePic={dm.senderProfilePic} />}
-        <div className={`max-w-[80%] ${incoming ? "items-start" : "items-end"} flex flex-col gap-1.5`}>
-          <div
-            className={`px-5 py-4 border shadow-xl rounded-[24px] ${
-              incoming
-                ? `${focused ? "border-[#ccff00]/40 bg-[#ccff00]/[0.08]" : "border-white/10 bg-[#0d0d11]/95 text-white"} rounded-bl-[4px]`
-                : "border-[#00b2ff]/30 bg-[#002b4d]/40 text-white rounded-br-[4px]"
-            }`}
-          >
-            <p className={`mb-1.5 text-[8px] font-black uppercase tracking-[0.2em] ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
-              ♟ Chess Match
-            </p>
-            
-            <h3 className="text-sm font-black uppercase leading-snug text-white tracking-wide">
-              {displayTitle || "Chess Game"}
-            </h3>
-            
-            <p className="mt-2 text-xs leading-relaxed text-white/70 whitespace-pre-wrap">
-              {displayDescription}
-            </p>
-
-            <div className="mt-4 flex items-center justify-between gap-6 border-t border-white/5 pt-3">
-              <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-[9px] font-bold text-white/40">
-                {new Date(dm.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-              </span>
-              {dm.amountUsdc && (
-                <span className={`text-xs font-black ${incoming ? "text-[#ccff00]" : "text-[#00b2ff]"}`}>
-                  ${(Number(dm.amountUsdc) / 1000000).toFixed(2)} USDC
-                </span>
-              )}
-            </div>
-
-            {dm.dmGameId && onPlayGame && (
-              <button
-                type="button"
-                onClick={() => onPlayGame(dm.dmGameId!)}
-                className={`mt-3.5 w-full rounded-full py-2.5 text-center text-[10px] font-black uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-1.5 ${
-                  incoming 
-                    ? "bg-[#ccff00] text-black hover:opacity-90"
-                    : "bg-[#00b2ff] text-white hover:opacity-90"
-                }`}
-              >
-                <GamepadIcon className="w-3.5 h-3.5" />
-                <span>{buttonLabel}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
 
   if (isReactionMessage(dm.messageType)) {
     return (
@@ -5111,261 +4686,6 @@ function DmRequestComposer({
         </motion.span>
         {loading ? "Sending Request" : open ? "Close" : "Request"}
       </motion.button>
-    </div>
-  );
-}
-
-function DmGamesComposer({
-  open,
-  selectedPeer,
-  userWallet,
-  triggerToast,
-  refetchDms,
-  writeContractAsync,
-  refetchUsdc,
-  onToggle,
-  isEmbeddedWalletSession,
-}: {
-  open: boolean;
-  selectedPeer: string | null;
-  userWallet: string | null;
-  triggerToast: (msg: string) => void;
-  refetchDms: () => void;
-  writeContractAsync: any;
-  refetchUsdc: () => void;
-  onToggle: () => void;
-  isEmbeddedWalletSession: boolean;
-}) {
-  const [selectedGameType, setSelectedGameType] = useState<"chess" | "checkers">("chess");
-  const [stakeAmount, setStakeAmount] = useState("1.00");
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-
-  const usdcAddress = USDC_NATIVE_GAS_ADDRESS as `0x${string}`;
-
-  const handleCreateInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setLoading(true);
-
-    try {
-      const stakeMicros = BigInt(Math.round(Number(stakeAmount) * 1_000_000));
-      if (stakeMicros <= BigInt(0)) {
-        throw new Error("Stake amount must be greater than zero");
-      }
-
-      // 1. Create game invite record on backend
-      setStatusMessage("Registering game lobby...");
-      const res = await fetch("/api/user/dms/games", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session-wallet": userWallet!,
-        },
-        body: JSON.stringify({
-          opponentAddress: selectedPeer,
-          stakeUsdc: stakeAmount,
-          gameType: selectedGameType.toUpperCase(),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create game lobby");
-      }
-
-      const createdGame = data.game;
-
-      if (isEmbeddedWalletSession) {
-        // Embedded (email) wallet: SubScript stakes to the escrow server-side (gas sponsored).
-        setStatusMessage("Staking to game escrow...");
-        const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-session-wallet": userWallet! },
-          body: JSON.stringify({}),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyRes.ok) throw new Error(verifyData.error || "Failed to stake your game escrow");
-        triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
-        refetchDms();
-        refetchUsdc();
-        onToggle();
-        return;
-      }
-
-      // 2. Perform on-chain stake escrow (external / browser wallet)
-      const escrowAddress = requireGameEscrowAddress(createdGame);
-      setStatusMessage("Checking USDC allowance...");
-      const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-      const tokenContract = new ethers.Contract(usdcAddress, [
-        "function allowance(address owner, address spender) view returns (uint256)"
-      ], provider);
-      const allowance = await tokenContract.allowance(userWallet!, escrowAddress);
-
-      if (BigInt(allowance.toString()) < stakeMicros) {
-        setStatusMessage("Approving USDC stake...");
-        const approveTx = await writeContractAsync({
-          address: usdcAddress,
-          abi: VAULT_TOKEN_ABI,
-          functionName: "approve",
-          args: [escrowAddress, stakeMicros],
-          chainId: ARC_TESTNET_CHAIN_ID,
-        });
-        setStatusMessage("Waiting for approval confirmation...");
-        await provider.waitForTransaction(approveTx, 1, 30_000);
-      }
-
-      setStatusMessage("Staking USDC to game escrow...");
-      const initialStateHash = ethers.id(
-        selectedGameType === "checkers"
-          ? "b1b1b1b1/1b1b1b1b/b1b1b1b1/8/8/1w1w1w1w/w1w1w1w1/1w1w1w1w w"
-          : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-      );
-      const stakeTx = await writeContractAsync({
-        address: escrowAddress,
-        abi: ESCROW_CONTRACT_ABI,
-        functionName: "createGame",
-        args: [selectedPeer || ethers.ZeroAddress, stakeMicros, initialStateHash],
-        chainId: ARC_TESTNET_CHAIN_ID,
-      });
-
-      // 3. Confirm deposit with backend
-      setStatusMessage("Verifying stake transaction...");
-      const verifyRes = await fetch(`/api/user/dms/games/${createdGame.id}/fund-creator`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session-wallet": userWallet!,
-        },
-        body: JSON.stringify({ txHash: stakeTx }),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) {
-        throw new Error(verifyData.error || "Referee failed to verify deposit transaction");
-      }
-
-      triggerToast(`${selectedGameType === "checkers" ? "Checkers" : "Chess"} game invite sent successfully!`);
-      refetchDms();
-      refetchUsdc();
-      onToggle();
-    } catch (err: any) {
-      console.error("Game creation error:", err);
-      setErrorMessage(err.message || "Failed to initialize game.");
-    } finally {
-      setLoading(false);
-      setStatusMessage(null);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <AnimatePresence>
-        {open && (
-          <motion.form
-            key="dm-games-form"
-            initial={{ opacity: 0, y: 24, scaleY: 0.7, scaleX: 0.94 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1, scaleX: 1 }}
-            exit={{ opacity: 0, y: 16, scaleY: 0.8, scaleX: 0.96 }}
-            transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
-            style={{ transformOrigin: "bottom center" }}
-            onSubmit={handleCreateInvite}
-            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl text-left"
-          >
-            <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Configure Game Invite</span>
-              {statusMessage && (
-                <span className="text-[9px] font-bold text-[#ccff00] animate-pulse">{statusMessage}</span>
-              )}
-            </div>
-
-            {/* Game Type Selector Segment */}
-            <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/5 mb-3">
-              <button
-                type="button"
-                onClick={() => setSelectedGameType("chess")}
-                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                  selectedGameType === "chess"
-                    ? "bg-[#ccff00] text-black shadow-md"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                <span>♞</span> Chess
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGameType("checkers")}
-                className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                  selectedGameType === "checkers"
-                    ? "bg-[#ccff00] text-black shadow-md"
-                    : "text-white/60 hover:text-white"
-                }`}
-              >
-                <span>⛀</span> Checkers
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <Field label="Staked USDC Amount">
-                <input
-                  type="number"
-                  step="any"
-                  value={stakeAmount}
-                  onChange={(e) => setStakeAmount(e.target.value)}
-                  className="subscript-input"
-                  placeholder="1.00"
-                  required
-                />
-              </Field>
-
-              <div className="rounded-2xl border border-white/5 bg-black/30 p-3 space-y-1.5 text-[9px] text-white/50 font-bold uppercase tracking-wider">
-                <div className="flex justify-between">
-                  <span>Your Stake</span>
-                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Opponent Stake</span>
-                  <span className="text-white">${Number(stakeAmount || 0).toFixed(2)} USDC</span>
-                </div>
-                <div className="flex justify-between border-t border-white/5 pt-1.5 font-black text-white text-[10px]">
-                  <span>Winner Payout (90%)</span>
-                  <span className="text-[#ccff00]">${(Number(stakeAmount || 0) * 2 * 0.9).toFixed(2)} USDC</span>
-                </div>
-              </div>
-
-              {errorMessage && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-[9px] font-bold uppercase text-red-300 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.96 }}
-                  type="button"
-                  onClick={onToggle}
-                  disabled={loading}
-                  className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
-                >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.96 }}
-                  type="submit"
-                  disabled={loading}
-                  className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${loading ? "quick-action-loading" : ""}`}
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Send Invite"}
-                </motion.button>
-              </div>
-            </div>
-          </motion.form>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
