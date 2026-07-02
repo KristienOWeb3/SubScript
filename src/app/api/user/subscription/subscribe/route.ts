@@ -7,7 +7,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
-import { subscribeFromEmbedded, findActiveOnChainSubscriptionId } from "@/lib/subscriptions/onchain";
+import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, verifyExternalSubscriptionTx } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
@@ -24,6 +24,12 @@ export async function POST(request: Request) {
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";
         if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
+
+        /* External/connected wallets sign createSubscription themselves and post the txHash; embedded
+           (email/Google) wallets omit it and are server-signed below. */
+        const externalTxHash = typeof body.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(body.txHash)
+            ? body.txHash
+            : null;
 
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan || !plan.active) {
@@ -80,13 +86,31 @@ export async function POST(request: Request) {
                     }, { status: 409 });
                 }
 
-                await requireGasSponsored(subscriber);
-                const { txHash, subId } = await subscribeFromEmbedded(
-                    subscriber,
-                    merchant,
-                    plan.amountUsdc,
-                    plan.periodSeconds
-                );
+                let txHash: string;
+                let subId: string | null;
+                if (externalTxHash) {
+                    /* External wallet already signed createSubscription on-chain — verify it matches
+                       this plan and extract the subId, rather than server-signing. */
+                    const verified = await verifyExternalSubscriptionTx({
+                        txHash: externalTxHash,
+                        subscriber,
+                        merchant,
+                        amount: plan.amountUsdc,
+                        period: plan.periodSeconds,
+                    });
+                    txHash = verified.txHash;
+                    subId = verified.subId;
+                } else {
+                    await requireGasSponsored(subscriber);
+                    const signed = await subscribeFromEmbedded(
+                        subscriber,
+                        merchant,
+                        plan.amountUsdc,
+                        plan.periodSeconds
+                    );
+                    txHash = signed.txHash;
+                    subId = signed.subId;
+                }
 
                 /* Mirror before releasing the advisory lock, so the next request observes this
                    active subscription and cannot create a duplicate. */
