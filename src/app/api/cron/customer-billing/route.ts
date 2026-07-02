@@ -207,20 +207,51 @@ export async function POST(request: Request) {
                     }
 
                     if (newFailures >= MAX_RENEWAL_FAILURES) {
-                        /* Park it: stop retrying. The customer can re-subscribe from the dashboard. */
+                        /* Zombie kill: repeated failed renewals mean the subscriber has effectively
+                           abandoned the plan. Rather than leaving a live authorization that could
+                           surprise-charge them later (the exact "zombie billing" SubScript exists to
+                           prevent), revoke it on-chain for server-held wallets, mark it stopped so
+                           the keeper stops attempting, and tell the user. External wallets can't be
+                           revoked for the user, but marking it stopped still ends all charge attempts. */
+                        let revokedOnChain = false;
+                        try {
+                            await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                            await cancelFromEmbedded(subscriber, BigInt(subId));
+                            revokedOnChain = true;
+                        } catch (killErr: any) {
+                            console.warn(`[customer-billing] zombie on-chain revoke skipped for sub ${subId}:`, killErr?.message || killErr);
+                        }
+
                         await supabase
                             .from("subscriptions")
-                            .update({ status: "PAST_DUE", downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                            .update({ status: "CANCELED", downgrade_failures: newFailures, updated_at: new Date().toISOString() })
                             .eq("subscription_id", subId);
-                        await dispatchMerchantWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+
+                        await createBillingDm({
+                            supabase,
+                            senderAddress: merchantAddress,
+                            receiverAddress: subscriber,
+                            messageType: "EXPIRY_WARNING",
+                            amountUsdc: amountOnChain,
+                            title: "Subscription stopped",
+                            description: [
+                                "We stopped this subscription after repeated failed renewals so it can never keep trying to charge you.",
+                                revokedOnChain
+                                    ? "Its on-chain authorization has been revoked."
+                                    : "Cancel it from your wallet to fully revoke the authorization.",
+                                "Re-subscribe anytime you're ready.",
+                            ].join("\n"),
+                        }).catch((e: any) => console.error("[customer-billing] zombie-kill DM failed:", e));
+
+                        await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
                             subscriptionId: subId,
-                            status: "past_due",
+                            status: "canceled",
                             amountUsdcMicros: amountOnChain,
                             subscriber,
                             merchantAddress,
-                            reason: "Paused after repeated failed renewals",
+                            reason: "Stopped after repeated failed renewals (zombie kill)",
                         })).catch(() => { /* best-effort */ });
-                        results.push({ subId, subscriber, action: "PARKED_PAST_DUE", success: false, failuresCount: newFailures });
+                        results.push({ subId, subscriber, action: "ZOMBIE_KILLED", success: false, failuresCount: newFailures, revokedOnChain });
                     } else {
                         /* Keep ACTIVE and retry next run (cheap — only view calls until funded). */
                         await supabase

@@ -36,6 +36,11 @@ const comparisons = [
     answer:
       "Custom billing contracts give teams control but require security, checkout UX, webhook delivery, receipt indexing, and wallet onboarding work. SubScript packages those merchant operations into a hosted protocol.",
   },
+  {
+    name: "SubScript vs local & dollar bank cards",
+    answer:
+      "Local naira and dollar cards succeed only about 40–65% of the time and are subject to bank-imposed per-transaction and daily limits that can block a payment outright. SubScript settles in USDC on Arc with no bank-set card limit and no per-transaction cap — funded straight from a local bank transfer, at a flat 1% merchant fee with no hidden charges.",
+  },
 ];
 
 const structuredData = {

@@ -297,17 +297,23 @@ contract SubScriptGameEscrow is Ownable, Pausable, ReentrancyGuard, EIP712 {
     }
 
     /**
-     * @notice After 24 hours, awards the pot to the player who was not on turn.
+     * @notice Permissionless liveness fallback after the 24-hour deadline. It refunds both stakes
+     *         (no fee) rather than paying a winner: the contract does not reliably track whose turn
+     *         it is on-chain — the referee validates play off-chain, and `currentTurn` is not
+     *         advanced per move — so awarding a "winner" here would be based on stale state and
+     *         could pay the wrong player. The decisive result is instead paid to the real winner
+     *         via the referee-signed `settleGame`, which the SubScript keeper relays as soon as a
+     *         game ends. This path only matters if that never happens, and a fair refund is the
+     *         safe outcome when no trustworthy result is available on-chain.
      */
     function claimTimeout(uint256 gameId) external nonReentrant {
         Game storage game = games[gameId];
         if (game.status != Status.Active) revert InvalidStatus(gameId, game.status);
         if (block.timestamp < game.deadline) revert GameNotExpired(game.deadline);
 
-        address winner = game.currentTurn == game.playerWhite
-            ? game.playerBlack
-            : game.playerWhite;
-        _payWinner(gameId, game, winner, Status.TimedOut, game.stateHash);
+        uint256 refundPerPlayer = game.stake;
+        _refundDraw(gameId, game, Status.TimedOut);
+        emit GameDrawn(gameId, refundPerPlayer, game.stateHash);
     }
 
     /**
