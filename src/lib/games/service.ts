@@ -928,6 +928,57 @@ export async function settleExpiredDmGames(now = new Date(), limit = 25) {
     return results;
 }
 
+/** Contract-backed games that have a decided result but no on-chain settlement yet. Used by the
+    keeper to relay settleGame so the winner is never exposed to a permissionless claimTimeout. */
+export async function listGamesAwaitingOnchainSettlement(limit = 50): Promise<DmGameRecord[]> {
+    return withPgClient(async (client) => {
+        const result = await client.query(
+            `select * from dm_games
+             where settlement_status = 'AWAITING_SETTLEMENT'
+               and contract_address is not null
+               and status in ('WHITE_WON', 'BLACK_WON', 'DRAW')
+             order by completed_at asc nulls last
+             limit $1`,
+            [limit],
+        );
+        return (result.rows as DbGameRow[]).map(mapDmGameRow);
+    });
+}
+
+/** Invitations that expired before an opponent joined. Cancels them in the DB (idempotently) and
+    returns the ones that were funded on-chain (creatorStakeTxHash present) so the caller can
+    reclaim the creator's escrow. */
+export async function expireStaleInvites(now = new Date(), limit = 50): Promise<DmGameRecord[]> {
+    return withPgClient(async (client) => {
+        const result = await client.query(
+            `update dm_games
+             set status = 'CANCELLED', result_reason = 'INVITE_EXPIRED', completed_at = $1, updated_at = $1
+             where id in (
+                 select id from dm_games
+                 where status = 'INVITED' and invite_expires_at <= $1
+                 order by invite_expires_at asc
+                 limit $2
+                 for update skip locked
+             )
+             returning *`,
+            [now, limit],
+        );
+        return (result.rows as DbGameRow[]).map(mapDmGameRow);
+    });
+}
+
+/** Record that an expired, funded invitation's escrow was reclaimed on-chain. */
+export async function markInviteRefunded(input: { gameId: string; txHash: string }) {
+    return withPgClient(async (client) => {
+        await client.query(
+            `update dm_games
+             set settlement_status = 'SETTLED', settlement_tx_hash = $2, updated_at = now()
+             where id = $1`,
+            [input.gameId, input.txHash],
+        );
+    });
+}
+
 export async function updateCreatorStake(input: {
     gameId: string;
     contractGameId: string;

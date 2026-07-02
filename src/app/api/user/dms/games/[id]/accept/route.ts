@@ -3,6 +3,7 @@ import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
 import { getDmGame, acceptDmGame } from "@/lib/games/service";
 import { getDmGamesConfig } from "@/lib/games/config";
 import { walletHasEmbeddedKey, joinGameFromEmbedded } from "@/lib/games/onchain";
+import { enforceDmGameRateLimit } from "@/lib/games/rate-limit";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { ethers } from "ethers";
 import { sanitizeInput } from "@/utils/security";
@@ -19,6 +20,8 @@ export async function POST(request: Request, { params }: Props) {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
 
+        await enforceDmGameRateLimit(wallet!, "accept");
+
         const body = await request.json().catch(() => ({}));
         const sanitized = sanitizeInput(body || {});
         let txHash: string | null = typeof sanitized.txHash === "string" ? sanitized.txHash : null;
@@ -33,7 +36,9 @@ export async function POST(request: Request, { params }: Props) {
         let onChainAssignment: { white: string; black: string; expiresAt: Date } | null = null;
 
         if (config.mode === "testnet") {
-            if (!game.contractGameId) {
+            /* The real funding proof is the creator's verified stake tx, not contractGameId (which is
+               always set at creation). Without it, joinGame would revert on-chain — reject early. */
+            if (!game.creatorStakeTxHash) {
                 return NextResponse.json({ error: "Creator has not funded their stake on-chain yet" }, { status: 400 });
             }
 

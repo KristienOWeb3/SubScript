@@ -16,6 +16,7 @@ export const VAULT_ABI = [
     "function requiredCommit(address merchant) view returns (uint256)",
     "function commit(address merchant, uint256 amount)",
     "function withdrawSurplus(address merchant, uint256 amount)",
+    "function reclaimAbandonedEscrow(address merchant)",
     "function drawUsageFor(address merchant, address user, uint256 amount)",
     "function merchantClaim()",
     "function merchantClaimable(address merchant) view returns (uint256)",
@@ -137,6 +138,15 @@ export async function withdrawFromEmbedded(walletAddress: string, merchant: stri
     const signer = await getEmbeddedSigner(walletAddress);
     const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
     const tx = await vault.withdrawSurplus(merchant.toLowerCase(), amount);
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+/** Reclaim the full escrow from an abandoned (matured-but-unsettled past grace) vault. */
+export async function reclaimAbandonedFromEmbedded(walletAddress: string, merchant: string) {
+    const signer = await getEmbeddedSigner(walletAddress);
+    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
+    const tx = await vault.reclaimAbandonedEscrow(merchant.toLowerCase());
     const receipt = await tx.wait();
     return receipt?.hash || tx.hash;
 }

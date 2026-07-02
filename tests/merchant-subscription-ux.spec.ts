@@ -15,8 +15,6 @@ const plan = {
 test.describe("merchant subscription UX", () => {
   test.beforeEach(async ({ page, context }) => {
     await context.addCookies([
-      { name: "subscript_page_lock", value: "SexyKristien", domain: "localhost", path: "/" },
-      { name: "subscript_page_lock_client", value: "SexyKristien", domain: "localhost", path: "/" },
       { name: "subscript_e2e_test", value: "true", domain: "localhost", path: "/" },
     ]);
 

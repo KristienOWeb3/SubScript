@@ -27,7 +27,6 @@ const publicRoutes = [
   "/answers",
   "/compare",
   "/docs",
-  "/lock",
   "/login",
   "/privacy",
   "/protocol",
@@ -77,8 +76,6 @@ async function newAuditContext(
   });
 
   await context.addCookies([
-    { name: "subscript_page_lock", value: "SexyKristien", url: baseURL },
-    { name: "subscript_page_lock_client", value: "SexyKristien", url: baseURL },
     { name: "subscript_e2e_test", value: "true", url: baseURL },
   ]);
 

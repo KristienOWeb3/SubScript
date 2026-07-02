@@ -39,7 +39,10 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
         if (!rl.ok) return { sponsored: true, reason: "recently_sponsored" };
 
         const sponsor = new ethers.Wallet(key, provider);
-        const tx = await sponsor.sendTransaction({ to: beneficiary, value: ethers.parseEther(TOPUP_USDC) });
+        /* Arc's native gas currency is USDC with 6 decimals (see ARC_TESTNET/ARC_MAINNET
+           nativeCurrency). The tx `value` is denominated in those 6-decimal base units, so the
+           top-up must be scaled by 1e6 — parseEther (1e18) would over-send by ~1e12x. */
+        const tx = await sponsor.sendTransaction({ to: beneficiary, value: ethers.parseUnits(TOPUP_USDC, 6) });
         await tx.wait();
         return { sponsored: true, txHash: tx.hash };
     } catch (error: any) {

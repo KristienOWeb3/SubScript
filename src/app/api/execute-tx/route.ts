@@ -216,7 +216,7 @@ export async function POST(request: Request) {
                     normalizedSpender !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase() &&
                     normalizedSpender !== STANDARD_CONTRACT_ADDRESS.toLowerCase()
                 ) {
-                    return NextResponse.json({ error: "Unauthorized spender address. Approve only standard, router, or premium subscript contracts." }, { status: 400 });
+                    return NextResponse.json({ error: "Unauthorized spender address. Approve only the SubScript standard or router contract." }, { status: 400 });
                 }
                 
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
+import { requireDmGameUser, dmGameErrorResponse, scheduleKeeperSettlement } from "@/lib/games/route";
 import { getDmGamesConfig } from "@/lib/games/config";
 import { submitDmGameMove } from "@/lib/games/service";
 import { signGameResult } from "@/lib/games/signing";
+import { enforceDmGameRateLimit } from "@/lib/games/rate-limit";
 import { sanitizeInput } from "@/utils/security";
 
 type Props = {
@@ -14,6 +15,8 @@ export async function POST(request: Request, { params }: Props) {
         const { id } = await params;
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
+
+        await enforceDmGameRateLimit(wallet!, "move");
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
@@ -70,6 +73,8 @@ export async function POST(request: Request, { params }: Props) {
                 console.error("Failed to generate referee signature on move completion:", sigErr);
             }
         }
+
+        if (isFinished) scheduleKeeperSettlement(updatedGame);
 
         const formatted = {
             ...updatedGame,

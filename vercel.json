@@ -14,6 +14,18 @@
     {
       "path": "/api/keeper/vault-draw",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/billing",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/games-timeout",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

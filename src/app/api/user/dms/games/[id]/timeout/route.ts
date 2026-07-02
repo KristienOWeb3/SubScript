@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
+import { requireDmGameUser, dmGameErrorResponse, scheduleKeeperSettlement } from "@/lib/games/route";
 import { getDmGamesConfig } from "@/lib/games/config";
 import { timeoutDmGame } from "@/lib/games/service";
 import { signGameResult } from "@/lib/games/signing";
+import { enforceDmGameRateLimit } from "@/lib/games/rate-limit";
 
 type Props = {
     params: Promise<{ id: string }>;
@@ -14,6 +15,8 @@ export async function POST(request: Request, { params }: Props) {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
 
+        await enforceDmGameRateLimit(wallet!, "terminal");
+
         const config = getDmGamesConfig();
         if (!config.enabled) {
             return NextResponse.json({ error: "Games are disabled" }, { status: 503 });
@@ -23,6 +26,7 @@ export async function POST(request: Request, { params }: Props) {
             gameId: id,
             requestedBy: wallet!,
         });
+        scheduleKeeperSettlement(updatedGame);
 
         let refereeSignature = null;
         if (config.mode === "testnet" && updatedGame.contractGameId) {

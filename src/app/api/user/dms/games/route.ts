@@ -3,12 +3,15 @@ import { requireDmGameUser, dmGameErrorResponse } from "@/lib/games/route";
 import { getDmGamesConfig } from "@/lib/games/config";
 import { parseGameStakeToMicros } from "@/lib/games/money";
 import { createDmGame } from "@/lib/games/service";
+import { enforceDmGameRateLimit } from "@/lib/games/rate-limit";
 import { sanitizeInput } from "@/utils/security";
 
 export async function POST(request: Request) {
     try {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
+
+        await enforceDmGameRateLimit(wallet!, "create");
 
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {

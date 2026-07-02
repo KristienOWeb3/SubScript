@@ -4,13 +4,17 @@ import { reconcile } from "@/lib/payments/reconciliationWorker";
 
 export async function POST(request: Request) {
     try {
+        /* Accept the external keeper secret or Vercel's CRON_SECRET (Vercel cron invokes this
+           path with `Authorization: Bearer ${CRON_SECRET}`); either may be configured. */
         const authHeader = request.headers.get("Authorization");
-        const expectedSecret = process.env.KEEPER_SECRET;
-        if (!expectedSecret) {
-            return NextResponse.json({ error: "Internal Server Error: Keeper secret key configuration missing" }, { status: 500 });
+        const keeperSecret = process.env.KEEPER_SECRET;
+        const cronSecret = process.env.CRON_SECRET;
+        if (!keeperSecret && !cronSecret) {
+            return NextResponse.json({ error: "Internal Server Error: KEEPER_SECRET or CRON_SECRET must be configured" }, { status: 500 });
         }
-
-        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
+        if (!authorized) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

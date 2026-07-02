@@ -7,6 +7,8 @@ import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { buildPermitSingle } from "@/lib/payroll/permit2";
 import crypto from "crypto";
 
+export const maxDuration = 300;
+
 /* USDC address and Permit2 address constants */
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
@@ -78,10 +80,9 @@ export async function POST(request: Request) {
                     where: { walletAddress: orgAddress }
                 });
 
-                const isPremium = merchant && (
-                    merchant.tier === "1" || 
-                    merchant.tier === "PREMIUM"
-                );
+                /* merchants.tier is the canonical text column ("FREE" | "PREMIUM") since migration
+                   20260611; the legacy numeric "1" value was migrated to "PREMIUM" in 20260619. */
+                const isPremium = merchant?.tier === "PREMIUM";
 
                 if (!isPremium) {
                     /* Organization is not premium, skip execution and pause the campaign */
@@ -117,6 +118,27 @@ export async function POST(request: Request) {
                         campaignId: campaign.id,
                         status: "SKIPPED",
                         reason: "No recipients registered in this campaign."
+                    });
+                    continue;
+                }
+
+                /* Atomically CLAIM this payday before moving any money. This conditional update
+                   only matches while the campaign is still ACTIVE at the exact nextPayday we read,
+                   and advances nextPayday to the next cycle in the same statement. Under a race
+                   (concurrent cron ticks, a retry after a timeout, or cron vs. a manual trigger)
+                   Postgres row-locks the row so exactly one runner's update matches — every other
+                   runner matches zero rows and skips, making the on-chain payout at-most-once per
+                   payday. Without this the same due campaign could be paid to every employee twice. */
+                const nextPaydayDate = new Date(Date.now() + campaign.frequencyDays * 24 * 60 * 60 * 1000);
+                const claim = await prisma.payrollCampaign.updateMany({
+                    where: { id: campaign.id, status: "ACTIVE", nextPayday: campaign.nextPayday },
+                    data: { nextPayday: nextPaydayDate },
+                });
+                if (claim.count === 0) {
+                    executionResults.push({
+                        campaignId: campaign.id,
+                        status: "SKIPPED",
+                        reason: "Payday already claimed by another payroll run."
                     });
                     continue;
                 }
@@ -219,18 +241,10 @@ export async function POST(request: Request) {
 
                 const txHash = batchTx.hash as string;
 
-                /* Step E: Calculate next payday based on frequencyDays */
-                const nextPaydayDate = new Date(Date.now() + campaign.frequencyDays * 24 * 60 * 60 * 1000);
-
-                /* Update campaign in database */
-                await prisma.payrollCampaign.update({
-                    where: { id: campaign.id },
-                    data: {
-                        /* Do NOT bump the nonce per cycle: a max-allowance authorization means the keeper
-                           submits permit() at most once, so the persisted nonce stays the on-chain nonce. */
-                        nextPayday: nextPaydayDate,
-                    }
-                });
+                /* nextPayday was already advanced to nextPaydayDate when this payday was atomically
+                   claimed above, so there is nothing to bump here. The Permit2 nonce is deliberately
+                   NOT bumped per cycle either: a max-allowance authorization means the keeper submits
+                   permit() at most once, so the persisted nonce stays the on-chain nonce. */
 
                 /* Write successful audit event */
                 await prisma.auditEvent.create({

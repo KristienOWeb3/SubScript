@@ -209,6 +209,9 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
      *         Withdraws caller's claimable settlement, deducting 1% protocol fee to Treasury.
      */
     function withdrawTo(address _recipient) external nonReentrant whenNotPaused {
+        /* Rerouting settlement to a different address is a Premium-tier feature, consistent with
+           configurePayoutDestination. Standard-tier merchants withdraw to themselves via withdraw(). */
+        require(merchantTiers[msg.sender] >= 1, "Only Premium tier can withdraw to a custom address");
         uint256 balance = merchantBalances[msg.sender];
         require(balance > 0, "No balance to withdraw");
         require(balance >= 1000000, "Minimum withdrawal is 1 USDC");

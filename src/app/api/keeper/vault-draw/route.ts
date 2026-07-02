@@ -11,7 +11,12 @@ import { withPgClient } from "@/lib/serverPg";
 export const maxDuration = 300;
 
 /* Minimum vault age before the keeper draws. 30 days in production; override with
-   VAULT_DRAW_MIN_AGE_SECONDS (e.g. 60) on testnet to exercise the draw quickly. */
+   VAULT_DRAW_MIN_AGE_SECONDS (e.g. 60) on testnet to exercise the draw quickly.
+   NOTE: the contract independently gates drawUsageFor on `lockedUntil` (= commit time +
+   cycleLength). Lowering this env var alone does NOT shorten that lock — to exercise draws
+   quickly on testnet you must also lower the contract's cycleLength via setCycleLength BEFORE
+   the commit. The query below additionally filters on the mirrored lockedUntil so the keeper
+   never submits a draw the contract would revert as "cycle not mature". */
 const CYCLE_SECONDS = Number(process.env.VAULT_DRAW_MIN_AGE_SECONDS) || 30 * 24 * 60 * 60;
 
 async function runVaultDraw(request: Request) {
@@ -35,10 +40,14 @@ async function runVaultDraw(request: Request) {
             }
 
             try {
+                const now = new Date();
                 const cutoff = new Date(Date.now() - CYCLE_SECONDS * 1000);
                 const due = await prisma.meteredVault.findMany({
                     where: {
                         cycleStart: { not: null, lte: cutoff },
+                        /* The contract reverts drawUsageFor until block.timestamp >= lockedUntil,
+                           so only attempt vaults whose lock has already elapsed. */
+                        lockedUntil: { not: null, lte: now },
                         active: true,
                     },
                     take: 200,

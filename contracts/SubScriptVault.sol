@@ -72,12 +72,21 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     uint256 public constant PROTOCOL_FEE_BPS = 100; // 1%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
+    /*
+     * Liveness grace after a cycle matures. If the merchant/keeper never settles a matured
+     * cycle within lockedUntil + RECLAIM_GRACE, the user may reclaim their full escrow. The
+     * merchant still had the entire cycle plus this grace to draw usage, so pay-after-service
+     * is preserved; this only removes the permanent-lock risk if a drawer goes dark.
+     */
+    uint64 public constant RECLAIM_GRACE = 7 days;
+
     /* ──────────────────────────── Events ─────────────────────────── */
 
     event RequiredCommitSet(address indexed merchant, uint256 amount);
     event Committed(address indexed user, address indexed merchant, uint256 amount, uint256 balance, uint256 owedCleared, bool active);
     event UsageDrawn(address indexed user, address indexed merchant, uint256 requested, uint256 drawn, uint256 owed, bool active);
     event SurplusWithdrawn(address indexed user, address indexed merchant, uint256 amount, bool active);
+    event EscrowReclaimed(address indexed user, address indexed merchant, uint256 amount);
     event MerchantClaimed(address indexed merchant, uint256 amount);
     event ProtocolFeePaid(address indexed merchant, address indexed treasury, uint256 amount);
     event AuthorizedDrawerSet(address indexed drawer, bool allowed);
@@ -185,6 +194,30 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
         paymentToken.safeTransfer(msg.sender, amount);
         emit SurplusWithdrawn(msg.sender, merchant, amount, v.active);
+    }
+
+    /**
+     * @notice Reclaim the full escrow when a matured cycle was never settled by the merchant
+     *         or an authorized drawer within the liveness grace. Unlike withdrawSurplus (which
+     *         requires the vault to already be inactive), this is the user's escape hatch for an
+     *         *active* vault whose drawer has gone dark, so escrow can never be permanently locked.
+     */
+    function reclaimAbandonedEscrow(address merchant) external nonReentrant {
+        Vault storage v = vaults[msg.sender][merchant];
+        require(v.active, "inactive");
+        require(v.lockedUntil != 0 && block.timestamp >= uint256(v.lockedUntil) + RECLAIM_GRACE, "not abandoned");
+
+        uint256 amount = v.balance;
+        require(amount > 0, "nothing to reclaim");
+
+        // Close the cycle before transferring. A fresh commit is required to use the service again.
+        v.balance = 0;
+        v.active = false;
+        v.cycleStart = 0;
+        v.lockedUntil = 0;
+
+        paymentToken.safeTransfer(msg.sender, amount);
+        emit EscrowReclaimed(msg.sender, merchant, amount);
     }
 
     /* ──────────────────────────── Draw (cycle settlement) ────────── */

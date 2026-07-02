@@ -4,6 +4,7 @@ import { getDmGame, updateGameSettlement } from "@/lib/games/service";
 import { getDmGamesConfig } from "@/lib/games/config";
 import { walletHasEmbeddedKey, settleGameFromEmbedded } from "@/lib/games/onchain";
 import { signGameResult } from "@/lib/games/signing";
+import { enforceDmGameRateLimit } from "@/lib/games/rate-limit";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { ethers } from "ethers";
 import { sanitizeInput } from "@/utils/security";
@@ -21,18 +22,31 @@ export async function POST(request: Request, { params }: Props) {
         const { wallet, response } = await requireDmGameUser(request.headers);
         if (response) return response;
 
+        await enforceDmGameRateLimit(wallet!, "terminal");
+
         const body = await request.json().catch(() => ({}));
         const sanitized = sanitizeInput(body || {});
         let txHash: string | null = typeof sanitized.txHash === "string" ? sanitized.txHash : null;
 
         const game = await getDmGame(id);
+
+        /* Only a participant may drive settlement — otherwise anyone could burn sponsor gas
+           relaying settleGame for arbitrary finished games (consistent with the GET/resign routes). */
+        const caller = wallet!.toLowerCase();
+        if (caller !== game.creatorAddress.toLowerCase() && caller !== game.opponentAddress?.toLowerCase()) {
+            return NextResponse.json({ error: "Access denied to game" }, { status: 403 });
+        }
+
         const config = getDmGamesConfig();
         if (!config.enabled || config.mode !== "testnet" || !config.contractAddress) {
             return NextResponse.json({ error: "Contract-backed games are not active" }, { status: 503 });
         }
 
         if (game.settlementStatus === "SETTLED") {
-            return NextResponse.json({ success: true, game }, { status: 200 });
+            return NextResponse.json({
+                success: true,
+                game: { ...game, stakePerPlayerUsdc: game.stakePerPlayerUsdc.toString() },
+            }, { status: 200 });
         }
 
         /* Embedded (email) wallet: SubScript signs the referee result and submits settleGame from

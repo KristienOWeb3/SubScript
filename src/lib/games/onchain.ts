@@ -9,6 +9,8 @@ import { ethers } from "ethers";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { getEmbeddedSigner } from "@/lib/vault/onchain";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { getDmGamesConfig } from "./config";
+import { signGameResult } from "./signing";
 
 const USDC_ABI = [
     "function approve(address spender, uint256 amount) returns (bool)",
@@ -20,7 +22,15 @@ const ESCROW_ABI = [
     "function joinGame(uint256 gameId)",
     "function settleGame(uint256 gameId, address winner, bool draw, bytes32 finalStateHash, uint256 validUntil, bytes signature)",
     "function claimTimeout(uint256 gameId)",
+    "function cancelUnjoinedGame(uint256 gameId)",
 ];
+
+function keeperSigner(): ethers.Wallet {
+    const key = process.env.KEEPER_PRIVATE_KEY;
+    if (!key) throw new Error("KEEPER_PRIVATE_KEY is not configured on the backend");
+    const rpcUrl = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
+    return new ethers.Wallet(key, new ethers.JsonRpcProvider(rpcUrl));
+}
 
 /** True when this wallet has a server-held (embedded) key — i.e. no browser wallet to sign with. */
 export async function walletHasEmbeddedKey(walletAddress: string): Promise<boolean> {
@@ -110,6 +120,68 @@ export async function claimTimeoutFromEmbedded(input: {
     const signer = await getEmbeddedSigner(input.walletAddress);
     const escrow = new ethers.Contract(input.escrowAddress, ESCROW_ABI, signer);
     const tx = await escrow.claimTimeout(BigInt(input.contractGameId));
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+/**
+ * Keeper (= on-chain referee) relays the signed result itself, rather than waiting for the
+ * winner to submit settleGame. This closes the window where a decided-but-unsettled game can be
+ * seized on-chain via the permissionless claimTimeout after the 24h deadline (the contract never
+ * advances currentTurn, so claimTimeout always pays Black). Idempotent by construction: the
+ * contract reverts settleGame once the game is no longer Active, so a concurrent user-submitted
+ * settlement simply makes this a no-op. Returns the settlement tx hash, or null if unsettleable.
+ */
+export async function relaySettlementFromKeeper(input: {
+    contractGameId: string;
+    status: string;
+    whiteAddress: string | null;
+    blackAddress: string | null;
+    fen: string;
+}): Promise<string | null> {
+    const config = getDmGamesConfig();
+    if (!config.enabled || config.mode !== "testnet" || !config.contractAddress) return null;
+
+    const draw = input.status === "DRAW";
+    const winnerAddress = input.status === "WHITE_WON"
+        ? input.whiteAddress
+        : input.status === "BLACK_WON"
+            ? input.blackAddress
+            : null;
+    if (!draw && !winnerAddress) return null;
+
+    const validUntil = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+    const sig = await signGameResult({
+        gameId: input.contractGameId,
+        winnerAddress,
+        draw,
+        finalFen: input.fen,
+        validUntil,
+    });
+
+    const escrow = new ethers.Contract(config.contractAddress, ESCROW_ABI, keeperSigner());
+    const tx = await escrow.settleGame(
+        BigInt(input.contractGameId),
+        winnerAddress || ethers.ZeroAddress,
+        draw,
+        sig.finalStateHash,
+        BigInt(sig.validUntil),
+        sig.signature,
+    );
+    const receipt = await tx.wait();
+    return receipt?.hash || tx.hash;
+}
+
+/** Creator reclaims their stake from an invitation that expired before anyone joined. Signed
+ *  from the creator's server-held (embedded) key. Returns tx hash. */
+export async function cancelUnjoinedGameFromEmbedded(input: {
+    walletAddress: string;
+    escrowAddress: string;
+    contractGameId: string;
+}): Promise<string> {
+    const signer = await getEmbeddedSigner(input.walletAddress);
+    const escrow = new ethers.Contract(input.escrowAddress, ESCROW_ABI, signer);
+    const tx = await escrow.cancelUnjoinedGame(BigInt(input.contractGameId));
     const receipt = await tx.wait();
     return receipt?.hash || tx.hash;
 }

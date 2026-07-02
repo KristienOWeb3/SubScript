@@ -1,44 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("SubScript B2B SaaS E2E Flows", () => {
-  // Test unlocking the page lock
-  test("should unlock and access dashboard", async ({ page }) => {
-    await page.goto("/lock");
-    
-    // Check lock screen elements
-    await expect(page.locator("h1")).toContainText("Restricted access");
-    
-    // Fill in incorrect password first
-    await page.fill('input[type="password"]', "WrongPassword");
-    await page.click('button[aria-label="Unlock"]');
-    await expect(page.getByText("Invalid access code")).toBeVisible({ timeout: 15000 });
-    
-    // Fill in correct password
-    await page.fill('input[type="password"]', "SexyKristien");
-    await page.click('button[aria-label="Unlock"]');
-    
-    // Should redirect to dashboard
-    await page.waitForURL("**/dashboard");
-    await expect(page.locator("h1")).toContainText("Merchant Control");
-  });
-
   test.describe("Authenticated Dashboard Tests", () => {
     test.beforeEach(async ({ page, context }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
-      // Direct cookie set to bypass lock page
       await context.addCookies([
-        {
-          name: "subscript_page_lock",
-          value: "SexyKristien",
-          domain: "localhost",
-          path: "/",
-        },
-        {
-          name: "subscript_page_lock_client",
-          value: "SexyKristien",
-          domain: "localhost",
-          path: "/",
-        },
         {
           name: "subscript_e2e_test",
           value: "true",
@@ -116,18 +82,6 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     test.beforeEach(async ({ page, context }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
       await context.addCookies([
-        {
-          name: "subscript_page_lock",
-          value: "SexyKristien",
-          domain: "localhost",
-          path: "/",
-        },
-        {
-          name: "subscript_page_lock_client",
-          value: "SexyKristien",
-          domain: "localhost",
-          path: "/",
-        },
         {
           name: "subscript_e2e_test",
           value: "true",

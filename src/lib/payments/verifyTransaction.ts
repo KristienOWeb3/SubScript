@@ -103,9 +103,15 @@ export async function verifyTransaction(
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
-    if (Math.abs(nowSec - block.timestamp) > 86400) {
+    /* Reject blocks older than 24h; also reject blocks dated meaningfully in the future
+       (allow a small clock-skew tolerance) rather than accepting them via abs(). */
+    if (nowSec - block.timestamp > 86400) {
         console.error(`[tx_failed_verification] Transaction block is older than 24 hours`);
         return { valid: false, error: "Transaction block is older than 24 hours" };
+    }
+    if (block.timestamp - nowSec > 300) {
+        console.error(`[tx_failed_verification] Transaction block timestamp is in the future`);
+        return { valid: false, error: "Transaction block timestamp is in the future" };
     }
 
     return { valid: true };
