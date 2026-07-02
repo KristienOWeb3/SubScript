@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { getSessionWallet } from "@/lib/auth";
 
 export async function GET(request: Request) {
     try {
-        const { searchParams } = new URL(request.url);
-        const address = searchParams.get("address");
-
-        if (!address) {
-            return NextResponse.json({ error: "Address is required" }, { status: 400 });
+        /* Scope to the authenticated caller. Previously this read any address from the query
+           string with no auth, leaking another wallet's subscription status, next billing date,
+           and failure count. All callers request their own address, so use the session wallet. */
+        const sessionWallet = await getSessionWallet(request.headers);
+        if (!sessionWallet) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const address = sessionWallet;
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";

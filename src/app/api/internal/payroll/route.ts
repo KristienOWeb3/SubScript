@@ -31,17 +31,20 @@ export async function POST(request: Request) {
     const requestId = crypto.randomUUID();
     
     try {
-        /* 1. Authenticate with keeper secret key */
+        /* 1. Authenticate with the external keeper secret or Vercel's CRON_SECRET (the vercel.json
+           cron invokes this with `Authorization: Bearer ${CRON_SECRET}`); either may be set. */
         const authHeader = request.headers.get("Authorization");
-        const expectedSecret = process.env.KEEPER_SECRET;
-        if (!expectedSecret) {
+        const keeperSecret = process.env.KEEPER_SECRET;
+        const cronSecret = process.env.CRON_SECRET;
+        if (!keeperSecret && !cronSecret) {
             return NextResponse.json(
-                { error: "Configuration Error: Keeper secret key configuration missing" },
+                { error: "Configuration Error: KEEPER_SECRET or CRON_SECRET must be configured" },
                 { status: 500 }
             );
         }
-
-        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
+        if (!authorized) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

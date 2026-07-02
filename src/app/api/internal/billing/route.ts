@@ -10,14 +10,17 @@ import { verifyWebhookSignature } from "@/lib/webhooks";
  */
 export async function GET(request: Request) {
     try {
-        /* Authenticate with the keeper secret, matching the cron/billing and cron/reconcile routes.
-           Without this, anyone could trigger the premium downgrade sweep. */
+        /* Authenticate with the external keeper secret or Vercel's CRON_SECRET, matching the other
+           cron routes. Without this, anyone could trigger the premium downgrade sweep. */
         const authHeader = request.headers.get("Authorization");
-        const expectedSecret = process.env.KEEPER_SECRET;
-        if (!expectedSecret) {
-            return NextResponse.json({ error: "Internal Server Error: Keeper secret key configuration missing" }, { status: 500 });
+        const keeperSecret = process.env.KEEPER_SECRET;
+        const cronSecret = process.env.CRON_SECRET;
+        if (!keeperSecret && !cronSecret) {
+            return NextResponse.json({ error: "Internal Server Error: KEEPER_SECRET or CRON_SECRET must be configured" }, { status: 500 });
         }
-        if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+        const presented = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+        const authorized = !!presented && ((!!keeperSecret && presented === keeperSecret) || (!!cronSecret && presented === cronSecret));
+        if (!authorized) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

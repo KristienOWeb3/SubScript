@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
@@ -6,8 +7,12 @@ import { sanitizeInput } from "@/utils/security";
 export async function POST(request: Request) {
     try {
         const expectedKey = process.env.ADMIN_API_KEY;
-        const providedKey = request.headers.get("x-admin-api-key") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-        if (!expectedKey || providedKey !== expectedKey) {
+        const providedKey = request.headers.get("x-admin-api-key") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+        /* Constant-time comparison to avoid leaking the key via response timing. */
+        const keysMatch = !!expectedKey
+            && providedKey.length === expectedKey.length
+            && crypto.timingSafeEqual(Buffer.from(providedKey), Buffer.from(expectedKey));
+        if (!keysMatch) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

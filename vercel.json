@@ -26,6 +26,14 @@
     {
       "path": "/api/cron/games-timeout",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/internal/payroll",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/internal/billing",
+      "schedule": "0 6 * * *"
     }
   ]
 }

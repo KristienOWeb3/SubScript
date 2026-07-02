@@ -3,6 +3,8 @@ import { getSessionWallet } from "@/lib/auth";
 import { ethers } from "ethers";
 import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 
+export const maxDuration = 300;
+
 export async function POST(request: Request) {
     try {
         /* 1. Authenticate the merchant session */
@@ -31,7 +33,8 @@ export async function POST(request: Request) {
             "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
             "function executePayment(uint256 _subId, uint256 _sequenceId) external",
             "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
-            "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)"
+            "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+            "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)"
         ];
 
         const routerContract = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, routerABI, adminWallet);
@@ -42,19 +45,28 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Forbidden: Manual keeper execution is a Premium feature." }, { status: 403 });
         }
 
-        /* 4. Find and execute due subscriptions for this merchant */
-        const nextIdBig = await standardContract.nextSubscriptionId();
-        const nextId = Number(nextIdBig);
+        /* 4. Find and execute due subscriptions for THIS merchant only.
+              Resolve candidate ids from the `merchant`-indexed SubscriptionCreated topic rather
+              than scanning every id from 1..nextSubscriptionId — the work is now bounded by the
+              merchant's own subscription count, not the whole contract's, so it won't time out as
+              the protocol grows. */
+        const merchantLower = walletAddress.toLowerCase();
+        const createdFilter = standardContract.filters.SubscriptionCreated(null, null, walletAddress);
+        const createdLogs = await standardContract.queryFilter(createdFilter);
+        const subIds = Array.from(new Set(
+            createdLogs
+                .map((log) => (log as ethers.EventLog).args?.subId)
+                .filter((subId) => subId !== undefined && subId !== null)
+                .map((subId) => Number(subId))
+        ));
+
         const executedSubs = [];
         const errors = [];
 
-        for (let i = 1; i < nextId; i++) {
+        for (const i of subIds) {
             try {
                 const sub = await standardContract.subscriptions(i);
-                const merchant = sub.merchant;
-                const isActive = sub.isActive;
-
-                if (merchant.toLowerCase() === walletAddress.toLowerCase() && isActive) {
+                if (sub.merchant.toLowerCase() === merchantLower && sub.isActive) {
                     let sequenceId = 1;
                     while (await standardContract.isSequenceExecuted(i, sequenceId)) {
                         sequenceId++;
