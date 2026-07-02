@@ -251,7 +251,10 @@ export async function POST(request: Request) {
         }, { status: 201 });
 
     } catch (error: any) {
+        /* Log the full error server-side, but never echo raw ORM/DB internals to the client. A
+           leaked Prisma message (e.g. "column payment_links.beneficiary_address does not exist")
+           is how a schema/migration gap becomes public — return a generic 500 instead. */
         console.error("POST intent error:", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }
