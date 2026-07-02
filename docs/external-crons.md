@@ -27,9 +27,26 @@ header, not a query param.
 | `/api/cron/customer-billing` | GET | daily | Renew customer→merchant subscriptions; deferred period-end cancels |
 | `/api/keeper/vault-draw` | GET | daily | Draw matured metered-vault cycles on-chain |
 
+## Ready-made scheduler: GitHub Actions
+
+A workflow that runs all five on the cadences below already lives at
+**[`.github/workflows/keepers.yml`](../.github/workflows/keepers.yml)**. It's free for
+this public repo. One-time setup in **Settings → Secrets and variables → Actions**:
+
+- Secret **`KEEPER_SECRET`** = the same value as the Vercel env `KEEPER_SECRET`.
+- Secret **`KEEPER_BASE_URL`** = `https://www.subscriptonarc.com` (optional; that's the
+  default if unset). No trailing slash.
+
+Then use **Run workflow** on the Actions tab (`workflow_dispatch`) to smoke-test all
+endpoints once. A failed run (401/5xx) turns red and notifies you. Caveat: GitHub
+schedules are best-effort (occasionally delayed a few minutes) and auto-disable after
+60 days of repo inactivity — fine for these idempotent jobs, but switch to cron-job.org
+or a VPS crontab if you ever need precise timing.
+
 ## Schedule these externally
 
-All via **`GET`** with the `Authorization` header above:
+If you use a scheduler other than the workflow above, hit each **via `GET`** with the
+`Authorization` header above:
 
 | Endpoint | Suggested cadence | Purpose |
 |---|---|---|

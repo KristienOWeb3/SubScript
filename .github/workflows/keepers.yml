@@ -1,0 +1,126 @@
+name: Keepers
+
+# External scheduler for the SubScript keepers that are NOT in vercel.json.
+# Vercel Hobby only allows 2 daily crons (customer-billing + vault-draw live in
+# vercel.json); the jobs below are driven from here instead. See docs/external-crons.md.
+#
+# Setup (one-time):
+#   - Repo secret  KEEPER_SECRET     = the same value as the Vercel env KEEPER_SECRET
+#                                       (CRON_SECRET is also accepted by the routes).
+#   - Repo secret  KEEPER_BASE_URL   = https://www.subscriptonarc.com   (optional; this is
+#                                       the default if unset). No trailing slash.
+#
+# Notes:
+#   - Each endpoint is hit with GET + `Authorization: Bearer <KEEPER_SECRET>`.
+#   - GitHub schedules are best-effort (can be delayed a few minutes under load) and are
+#     auto-disabled after 60 days of no repo activity — fine for these idempotent jobs, but
+#     if precise timing ever matters, move to a dedicated scheduler (cron-job.org / a VPS).
+#   - A failed step (401/5xx) turns the run red so you get a GitHub notification.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # reconcile        — recover stuck premium-upgrade sessions
+    - cron: "0 * * * *"      # games-timeout     — settle expired games / relay / reclaim invites
+    - cron: "0 2 * * *"      # cron/billing      — premium recurring billing + downgrades
+    - cron: "0 5 * * *"      # internal/payroll  — run due payroll campaigns
+    - cron: "0 6 * * *"      # internal/billing  — premium downgrade sweep
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: "Hit every keeper endpoint once (manual smoke test)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: keepers
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/reconcile
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 60 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/reconcile" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  games-timeout:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/games-timeout
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 120 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/games-timeout" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  premium-billing:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: cron/billing
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/cron/billing" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  payroll:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 5 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: internal/payroll
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 300 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/internal/payroll" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  premium-downgrade-sweep:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 6 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      # GET is the cron sweep; POST on this route is the signed webhook receiver — do NOT use POST here.
+      - name: internal/billing
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 120 -X GET \
+            "${BASE:-https://www.subscriptonarc.com}/api/internal/billing" \
+            -H "Authorization: Bearer ${SECRET}"
+
+  manual-all:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit every keeper endpoint once
+        env:
+          BASE: ${{ secrets.KEEPER_BASE_URL }}
+          SECRET: ${{ secrets.KEEPER_SECRET }}
+        run: |
+          set -e
+          BASE="${BASE:-https://www.subscriptonarc.com}"
+          for path in \
+            /api/cron/reconcile \
+            /api/cron/games-timeout \
+            /api/cron/billing \
+            /api/internal/payroll \
+            /api/internal/billing; do
+            echo "→ GET ${path}"
+            curl -fsS --retry 2 --retry-delay 5 --max-time 300 -X GET \
+              "${BASE}${path}" -H "Authorization: Bearer ${SECRET}"
+            echo
+          done
