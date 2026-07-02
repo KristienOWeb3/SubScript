@@ -50,8 +50,11 @@ function verifySubScriptWebhook(rawBody: string, signatureHeader: string | null 
 }
 
 function handleVerifiedPayment(body: any) {
-  const { event, data } = body;
-  if (event === "payment.success") {
+  // Canonical event name lives in \`type\` ("payment.succeeded"); \`event\` ("payment.success")
+  // is a deprecated back-compat alias still sent by older payloads.
+  const eventType = body.type ?? body.event;
+  const { data } = body;
+  if (eventType === "payment.succeeded" || eventType === "payment.success") {
     const fulfillmentKey = data?.intent_id || data?.checkout_session_id;
     // TODO: Look up fulfillmentKey in your database, enforce idempotency with body.id,
     // then unlock the matching user/order/subscription exactly once.

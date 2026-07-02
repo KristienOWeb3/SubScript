@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { detectFramework } from "../utils/framework.js";
 import { getProjectPaths, CLI_VERSION, TEMPLATE_VERSION } from "../utils/config.js";
 import { fetchConfigAndVerify, sendTelemetry } from "../utils/api.js";
+import { isJsonMode } from "../utils/output.js";
 
 function parseVersion(v: string): number[] {
   return v.split(".").map(x => parseInt(x, 10) || 0);
@@ -142,6 +143,12 @@ export async function runVerify(options: { noTelemetry?: boolean }) {
       { cliVersion: CLI_VERSION, templateVersion: TEMPLATE_VERSION, requestId },
       noTelemetry
     );
+
+    if (isJsonMode()) {
+      console.log(JSON.stringify({ ok: status !== "FAIL", command: "verify", status, logs }, null, 2));
+    }
+    /* FAIL is a broken integration — CI and agents must see a non-zero exit, not parse colors. */
+    if (status === "FAIL") process.exit(1);
   } catch (err: any) {
     console.error(`\n[ERROR] Verification aborted: ${err.message}`);
     await sendTelemetry(

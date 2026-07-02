@@ -432,7 +432,7 @@ test.describe("mobile overflow audit", () => {
     const glassStyle = await bottomNav.evaluate((element) => {
       const style = window.getComputedStyle(element);
       return {
-        backdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+        backdropFilter: style.backdropFilter || (style as CSSStyleDeclaration & { webkitBackdropFilter?: string }).webkitBackdropFilter,
         backgroundImage: style.backgroundImage,
       };
     });

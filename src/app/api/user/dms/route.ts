@@ -113,7 +113,6 @@ export async function GET(request: Request) {
             description: dm.description,
             txHash: dm.txHash,
             paymentLinkId: dm.paymentLinkId,
-            dmGameId: dm.dmGameId,
             createdAt: dm.createdAt
         }));
 

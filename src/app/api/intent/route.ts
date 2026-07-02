@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
+import { apiError, getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMissingResponse } from "@/lib/apiErrors";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
@@ -36,6 +36,8 @@ async function parseBody(request: Request) {
 }
 
 export async function POST(request: Request) {
+    /* One request ID for every error this request can produce — clients quote it, logs carry it. */
+    const requestId = crypto.randomUUID();
     try {
         let merchantAddress: string | null = null;
         let apiKeyMode: ReturnType<typeof getSecretKeyMode> | null = null;
@@ -64,13 +66,13 @@ export async function POST(request: Request) {
         }
 
         if (!merchantAddress) {
-            return NextResponse.json({ error: "Unauthorized: Invalid or missing authentication credentials" }, { status: 401 });
+            return apiError({ status: 401, code: "unauthorized", requestId, message: "Unauthorized: Invalid or missing authentication credentials. Pass 'Authorization: Bearer sk_test_...' from Dashboard → Developers → API keys." });
         }
 
         // 2. Parse and validate body
         const body = await parseBody(request);
         if (!body) {
-            return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
+            return apiError({ status: 400, code: "invalid_json", requestId, message: "Bad Request: Invalid JSON body" });
         }
 
         const {
@@ -90,11 +92,11 @@ export async function POST(request: Request) {
         const isSandboxRequest = sandbox === true || apiKeyMode === "test";
 
         if (!title || typeof title !== "string" || title.trim() === "") {
-            return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
+            return apiError({ status: 400, code: "missing_title", requestId, message: "Bad Request: title is required (a short product/plan name shown on the hosted checkout page)" });
         }
         if (externalReference !== undefined && externalReference !== null &&
             (typeof externalReference !== "string" || externalReference.trim().length === 0 || externalReference.length > 256)) {
-            return NextResponse.json({ error: "Bad Request: externalReference must be a non-empty string up to 256 characters" }, { status: 400 });
+            return apiError({ status: 400, code: "invalid_external_reference", requestId, message: "Bad Request: externalReference must be a non-empty string up to 256 characters" });
         }
 
         /* `amountUsdcMicros` is the canonical field name (integer micro-USDC); `amountUsdc` here has
@@ -110,14 +112,14 @@ export async function POST(request: Request) {
                 ? amountSource.trim()
                 : "";
         if (!/^[1-9]\d*$/.test(amountText)) {
-            return NextResponse.json({ error: "Bad Request: Invalid amountUsdcMicros" }, { status: 400 });
+            return apiError({ status: 400, code: "invalid_amount", requestId, message: "Bad Request: amountUsdcMicros is required and must be a positive integer in micro-USDC (e.g. \"15000000\" = 15 USDC). amountUsdc is accepted as an alias with the same unit." });
         }
         const amountBigInt = BigInt(amountText);
 
         const successUrlCheck = validateReturnUrl("successUrl", successUrl);
-        if (!successUrlCheck.ok) return NextResponse.json({ error: successUrlCheck.error }, { status: 400 });
+        if (!successUrlCheck.ok) return apiError({ status: 400, code: "invalid_return_url", requestId, message: successUrlCheck.error });
         const cancelUrlCheck = validateReturnUrl("cancelUrl", cancelUrl);
-        if (!cancelUrlCheck.ok) return NextResponse.json({ error: cancelUrlCheck.error }, { status: 400 });
+        if (!cancelUrlCheck.ok) return apiError({ status: 400, code: "invalid_return_url", requestId, message: cancelUrlCheck.error });
         const returnUrls: Record<string, string> = {};
         if (successUrlCheck.value) returnUrls.successUrl = successUrlCheck.value;
         if (cancelUrlCheck.value) returnUrls.cancelUrl = cancelUrlCheck.value;
@@ -127,7 +129,7 @@ export async function POST(request: Request) {
         if (maxUses !== undefined && maxUses !== null && maxUses !== "") {
             const num = Number(maxUses);
             if (!Number.isInteger(num) || num <= 0 || num > 10000) {
-                return NextResponse.json({ error: "Bad Request: maxUses must be a positive integer" }, { status: 400 });
+                return apiError({ status: 400, code: "invalid_max_uses", requestId, message: "Bad Request: maxUses must be a positive integer up to 10000" });
             }
             parsedMaxUses = num;
         }
@@ -140,7 +142,7 @@ export async function POST(request: Request) {
             if (existing) {
                 /* A subscription checkout is also a PaymentLink — never return one as a payment intent. */
                 if ((existing.stateSnapshot as { subscription?: unknown } | null)?.subscription) {
-                    return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
+                    return apiError({ status: 409, code: "idempotency_key_conflict", requestId, message: "Conflict: idempotencyKey was used for a different resource" });
                 }
                 const receiptToken = existing.receiptToken || generateReceiptId(existing.title);
                 if (!existing.receiptToken) {
@@ -194,9 +196,7 @@ export async function POST(request: Request) {
 
         const limit = tier === "PREMIUM" ? ProtocolConfig.MAX_PAYMENT_LINKS_TIER1 : ProtocolConfig.MAX_PAYMENT_LINKS_TIER0;
         if (activeCount >= limit) {
-            return NextResponse.json({
-                error: `Quota Exceeded: Active link limit of ${limit} reached for your tier.`
-            }, { status: 403 });
+            return apiError({ status: 403, code: "quota_exceeded", requestId, message: `Quota Exceeded: Active link limit of ${limit} reached for your tier. Deactivate old links or upgrade in the dashboard.` });
         }
 
         let parsedExpiresAt: Date | null = null;
@@ -254,7 +254,7 @@ export async function POST(request: Request) {
         /* Log the full error server-side, but never echo raw ORM/DB internals to the client. A
            leaked Prisma message (e.g. "column payment_links.beneficiary_address does not exist")
            is how a schema/migration gap becomes public — return a generic 500 instead. */
-        console.error("POST intent error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        console.error(`POST intent error [${requestId}]:`, error);
+        return apiError({ status: 500, code: "internal_error", requestId, message: "Internal Server Error. Quote the request_id when reporting this." });
     }
 }

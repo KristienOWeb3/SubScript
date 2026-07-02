@@ -1,6 +1,6 @@
 {
     "name": "@subscriptonarc/cli",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "SubScript Protocol integration CLI — scaffold Arc USDC checkout, webhooks, and payment flows in seconds.",
     "license": "MIT",
     "type": "module",

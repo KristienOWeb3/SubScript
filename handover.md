@@ -10,7 +10,7 @@ before pushing. On‑chain contracts are guarded: `npm run check:contracts` runs
 ## Ops — scheduled keepers (Vercel Hobby)
 
 Hobby caps crons at **2 daily jobs**, so `vercel.json` holds only `customer-billing`
-and `vault-draw`. Every other keeper (`cron/reconcile`, `cron/games-timeout`,
+and `vault-draw`. Every other keeper (`cron/reconcile`,
 `cron/billing`, `internal/payroll`, `internal/billing`) is driven by an **external
 scheduler** hitting the route with `Authorization: Bearer <KEEPER_SECRET>`. Full table,
 cadences, and gotchas: **[docs/external-crons.md](docs/external-crons.md)**. Do not add
