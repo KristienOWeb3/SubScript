@@ -590,6 +590,18 @@ export async function POST(request: Request) {
                                 })
                                 .eq("id", paymentLink.id);
 
+                            /* Resolve the open request DM(s) for this link so the payer no longer sees the
+                               merchant "asking" for something they just paid — the DEBIT_SUCCESS receipt DM
+                               below is the record of success. Without this the PENDING PAYMENT_REQUEST lingers
+                               and reads like a duplicate/looping request. Best-effort, idempotent. */
+                            await supabase
+                                .from("subscript_dms")
+                                .update({ status: "APPROVED", updated_at: new Date().toISOString() })
+                                .eq("payment_link_id", paymentLink.id)
+                                .eq("receiver_address", normalizedPayer)
+                                .in("message_type", ["PAYMENT_REQUEST", "PEER_REQUEST"])
+                                .eq("status", "PENDING");
+
                             /* Create payment_link_payments record */
                             const { data: newPayment } = await supabase
                                 .from("payment_link_payments")
