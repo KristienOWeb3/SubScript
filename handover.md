@@ -7,6 +7,15 @@
 `subscriptonarc.com`). Verify with `npx tsc --noEmit` (and `npm run build` for build‑level changes)
 before pushing. On‑chain contracts are guarded: `npm run check:contracts` runs on every push/PR.
 
+## Ops — scheduled keepers (Vercel Hobby)
+
+Hobby caps crons at **2 daily jobs**, so `vercel.json` holds only `customer-billing`
+and `vault-draw`. Every other keeper (`cron/reconcile`, `cron/games-timeout`,
+`cron/billing`, `internal/payroll`, `internal/billing`) is driven by an **external
+scheduler** hitting the route with `Authorization: Bearer <KEEPER_SECRET>`. Full table,
+cadences, and gotchas: **[docs/external-crons.md](docs/external-crons.md)**. Do not add
+these to `vercel.json` unless the project moves to Vercel Pro.
+
 ## Latest sessions — Integration DX + onboarding/DM fixes (2026‑06)
 
 ### npm packages (published, public)
