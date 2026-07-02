@@ -22,13 +22,10 @@ import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
 
-// Add global type declaration for reCAPTCHA
+// Global type declaration for Cloudflare Turnstile
 declare global {
   interface Window {
-    grecaptcha: any;
-    onRecaptchaLoad: () => void;
-    onRecaptchaSuccess: (token: string) => void;
-    onRecaptchaExpired: () => void;
+    turnstile: any;
   }
 }
 
@@ -67,56 +64,50 @@ export default function SignupPage() {
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
 
-  /* CAPTCHA states */
+  /* CAPTCHA (Cloudflare Turnstile) states */
   const [captchaToken, setCaptchaToken] = useState("");
-  const [recaptchaLoaded, setRecaptchaLoaded] = useState(false);
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.onRecaptchaSuccess = (token: string) => {
-        setCaptchaToken(token);
-      };
-      window.onRecaptchaExpired = () => {
-        setCaptchaToken("");
-      };
-      
-      if (window.grecaptcha) {
-        setRecaptchaLoaded(true);
-      }
+    if (typeof window !== "undefined" && window.turnstile) {
+      setTurnstileLoaded(true);
     }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.onRecaptchaSuccess = () => {};
-        window.onRecaptchaExpired = () => {};
-      }
-    };
   }, []);
 
   useEffect(() => {
-    if (recaptchaLoaded && typeof window !== "undefined" && window.grecaptcha) {
-      const renderRecaptcha = (elementId: string) => {
-        const container = document.getElementById(elementId);
-        if (container && container.innerHTML === "") {
-          try {
-            window.grecaptcha.render(elementId, {
-              sitekey: process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
-              theme: "dark",
-              callback: "onRecaptchaSuccess",
-              "expired-callback": "onRecaptchaExpired",
-            });
-          } catch (e) {
-            console.warn("reCAPTCHA render error for " + elementId + ":", e);
-          }
-        }
-      };
+    if (!turnstileLoaded || typeof window === "undefined" || !window.turnstile) return;
 
-      // Attempt to render in both possible containers depending on active screen
-      setTimeout(() => {
-        renderRecaptcha("recaptcha-email-signup");
-        renderRecaptcha("recaptcha-wallet-signup");
-      }, 100);
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!siteKey) {
+      // Fail closed: without a configured site key we do not render a widget, so no token is
+      // produced and captcha-gated actions cannot proceed.
+      console.error("NEXT_PUBLIC_TURNSTILE_SITE_KEY is not configured — captcha will not render.");
+      return;
     }
-  }, [recaptchaLoaded, authMethod, walletSignupPrompt]);
+
+    const renderTurnstile = (elementId: string) => {
+      const container = document.getElementById(elementId);
+      if (container && container.innerHTML === "") {
+        try {
+          window.turnstile.render(container, {
+            sitekey: siteKey,
+            theme: "dark",
+            callback: (token: string) => setCaptchaToken(token),
+            "expired-callback": () => setCaptchaToken(""),
+            "error-callback": () => setCaptchaToken(""),
+          });
+        } catch (e) {
+          console.warn("Turnstile render error for " + elementId + ":", e);
+        }
+      }
+    };
+
+    // Attempt to render in both possible containers depending on active screen
+    setTimeout(() => {
+      renderTurnstile("turnstile-email-signup");
+      renderTurnstile("turnstile-wallet-signup");
+    }, 100);
+  }, [turnstileLoaded, authMethod, walletSignupPrompt]);
 
   const [showEmailInput, setShowEmailInput] = useState(false);
 
@@ -644,12 +635,12 @@ export default function SignupPage() {
                     </div>
                   </div>
 
-                  {/* Google reCAPTCHA for Wallet Signup */}
+                  {/* Cloudflare Turnstile for Wallet Signup */}
                   <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
                     <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
                       Security Verification
                     </label>
-                    <div id="recaptcha-wallet-signup" className="my-2"></div>
+                    <div id="turnstile-wallet-signup" className="my-2"></div>
                   </div>
 
                   <div className="grid gap-2">
@@ -704,12 +695,12 @@ export default function SignupPage() {
                       <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                     </div>
 
-                    {/* Google reCAPTCHA */}
+                    {/* Cloudflare Turnstile */}
                     <div className="space-y-2 pt-2 flex flex-col items-center">
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
                         Security Verification
                       </label>
-                      <div id="recaptcha-email-signup" className="my-2"></div>
+                      <div id="turnstile-email-signup" className="my-2"></div>
                     </div>
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
@@ -809,10 +800,10 @@ export default function SignupPage() {
         </div>
       </div>
 
-      <Script 
-        src="https://www.google.com/recaptcha/api.js?render=explicit" 
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
-        onLoad={() => setRecaptchaLoaded(true)}
+        onLoad={() => setTurnstileLoaded(true)}
       />
     </div>
   );
