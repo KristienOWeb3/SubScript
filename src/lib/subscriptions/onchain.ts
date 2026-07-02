@@ -121,6 +121,57 @@ export async function subscribeFromEmbedded(walletAddress: string, merchant: str
     return { txHash: receipt?.hash || tx.hash, subId };
 }
 
+/**
+ * Verify an externally-signed createSubscription tx (external/connected wallet path). Confirms the
+ * tx succeeded, was sent by `subscriber`, targeted the standard contract, and emitted a
+ * SubscriptionCreated event whose subscriber/merchant/amount/period match the plan. Returns the
+ * on-chain subId so the caller can mirror it. Throws a user-facing error otherwise.
+ */
+export async function verifyExternalSubscriptionTx(input: {
+    txHash: string;
+    subscriber: string;
+    merchant: string;
+    amount: bigint;
+    period: bigint;
+}): Promise<{ txHash: string; subId: string }> {
+    const provider = readProvider();
+    const [tx, receipt] = await Promise.all([
+        provider.getTransaction(input.txHash),
+        provider.getTransactionReceipt(input.txHash),
+    ]);
+    if (!tx || !receipt) {
+        throw new Error("Subscription transaction not found on-chain yet. Try again in a few seconds.");
+    }
+    if (receipt.status !== 1) {
+        throw new Error("Subscription transaction reverted on-chain.");
+    }
+    if ((tx.from || "").toLowerCase() !== input.subscriber.toLowerCase()) {
+        throw new Error("Transaction sender does not match your wallet.");
+    }
+    if (!tx.to || tx.to.toLowerCase() !== STANDARD_CONTRACT_ADDRESS.toLowerCase()) {
+        throw new Error("Transaction is not a SubScript subscription.");
+    }
+
+    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, provider);
+    for (const log of receipt.logs) {
+        try {
+            const parsed = contract.interface.parseLog(log);
+            if (
+                parsed?.name === "SubscriptionCreated"
+                && String(parsed.args.subscriber).toLowerCase() === input.subscriber.toLowerCase()
+                && String(parsed.args.merchant).toLowerCase() === input.merchant.toLowerCase()
+                && BigInt(parsed.args.amount) === input.amount
+                && BigInt(parsed.args.period) === input.period
+            ) {
+                return { txHash: input.txHash, subId: parsed.args.subId.toString() };
+            }
+        } catch {
+            /* not our event */
+        }
+    }
+    throw new Error("This transaction does not match the selected plan (merchant, amount, or period differ).");
+}
+
 export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
     const signer = await getEmbeddedSigner(walletAddress);
     const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
