@@ -175,7 +175,7 @@ function LandingSections() {
         { icon: Zap, title: "Programmable subscriptions", text: "Bounded USDC authorizations via Permit2, with an on-chain kill switch users control. No locked liquidity, no zombie charges." },
         { icon: Wallet, title: "Continue with Google", text: "Mainstream onboarding with embedded wallets — no seed phrases, no extensions. Users can pay in one tap when signed in." },
         { icon: Code, title: "Checkout Intents", text: "Create an intent server-side, redirect to hosted checkout, and reconcile by intent ID. No SDK required — plain REST." },
-        { icon: Webhook, title: "Signed webhooks", text: "HMAC-signed payment.success events tell your backend exactly which order or user to unlock. Idempotent by design." },
+        { icon: Webhook, title: "Signed webhooks", text: "HMAC-signed payment.succeeded events tell your backend exactly which order or user to unlock. Idempotent by design." },
         { icon: ReceiptText, title: "Human-readable receipts", text: "Every payment binds to an Arc memo receipt — shareable, auditable, and readable without a block explorer." },
         { icon: Link2, title: "No-code payment links & QR", text: "Spin up branded payment links and QR codes from the dashboard. Paste them anywhere and get paid in USDC." },
         { icon: BarChart3, title: "Usage-based billing", text: "Prepaid metered vaults for API calls, AI tokens, storage, or pay-per-view — bill exactly what's consumed." },

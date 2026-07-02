@@ -5,7 +5,7 @@ import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { hashSecretKey } from "@/lib/apiKeys";
-import { getSecretKeyMode } from "@/lib/apiErrors";
+import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
@@ -190,7 +190,7 @@ export async function GET(request: Request) {
                 return NextResponse.json({ object: "list", data: subscriptions }, { status: 200 });
             } catch (err: any) {
                 console.error("Error listing subscriptions for subscriber:", err);
-                return NextResponse.json({ error: "Failed to list subscriptions" }, { status: 500 });
+                return apiError({ status: 500, code: "internal_error", message: "Failed to list subscriptions. Quote the request_id when reporting this." });
             }
         }
 
@@ -225,7 +225,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ object: "list", data }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions GET error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });
     }
 }
 
@@ -399,8 +399,9 @@ export async function POST(request: Request) {
             sandbox: isSandbox,
         }, { status: 201 });
     } catch (error: any) {
+        /* Never echo error.message — a raw ORM error in a 500 is how a schema gap goes public. */
         console.error("Subscriptions POST error:", error);
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+        return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });
     }
 }
 
@@ -450,6 +451,6 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ id: `sub_${idParam}`, object: "subscription", status: "canceled" }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions DELETE error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });
     }
 }

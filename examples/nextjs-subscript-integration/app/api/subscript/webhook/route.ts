@@ -38,7 +38,8 @@ export async function POST(request: Request) {
   }
 
   const event = JSON.parse(rawBody);
-  if (event.event === "payment.success") {
+  // Canonical event name is `type`; `event` ("payment.success") is a deprecated alias.
+  if (event.type === "payment.succeeded") {
     const intentId = event.data.intent_id;
     const userId = event.data.merchant_reference;
 

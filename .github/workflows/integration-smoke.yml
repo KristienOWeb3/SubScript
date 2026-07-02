@@ -23,6 +23,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Vercel's Git integration reports deployments back to GitHub; this fires the smoke test
+  # against the URL that actually went live, so a bad deploy (e.g. an unapplied migration
+  # taking /api/intent down) is flagged within minutes instead of by the first integrator.
+  deployment_status:
 
 permissions:
   contents: read
@@ -33,6 +37,7 @@ concurrency:
 
 jobs:
   smoke:
+    if: github.event_name != 'deployment_status'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +49,25 @@ jobs:
         run: node scripts/subscript-integration-smoke.mjs
         env:
           SUBSCRIPT_BASE_URL: ${{ secrets.SUBSCRIPT_BASE_URL }}
+          SUBSCRIPT_SECRET_KEY: ${{ secrets.SUBSCRIPT_SECRET_KEY }}
+          SUBSCRIPT_WEBHOOK_SECRET: ${{ secrets.SUBSCRIPT_WEBHOOK_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+  # Post-deploy verification: hits the deployment that just went live and (with an sk_test_ key
+  # configured) creates a sandbox intent + checks its status. Failing here means the deploy is
+  # broken for integrators even though the build succeeded.
+  post-deploy-smoke:
+    if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Smoke-test the live deployment
+        run: node scripts/subscript-integration-smoke.mjs
+        env:
+          SUBSCRIPT_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
           SUBSCRIPT_SECRET_KEY: ${{ secrets.SUBSCRIPT_SECRET_KEY }}
           SUBSCRIPT_WEBHOOK_SECRET: ${{ secrets.SUBSCRIPT_WEBHOOK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

@@ -15,7 +15,8 @@
     ],
     "scripts": {
         "dev": "next dev",
-        "build": "prisma generate && next build",
+        "build": "prisma generate && node scripts/apply-migrations.mjs && next build",
+        "db:migrate": "node scripts/apply-migrations.mjs",
         "build:cli": "npm run build --workspace @subscriptonarc/cli",
         "build:sdk": "npm run build --workspace @subscriptonarc/sdk",
         "start": "next start",

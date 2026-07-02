@@ -23,7 +23,7 @@ Use test keys and `sandbox: true` while integrating.
 - Merchant stores `intent.id` beside its own user/order record.
 - User is redirected to `intent.checkoutUrl`.
 - The hosted checkout uses direct Arc USDC settlement and binds price + merchant + `receiptToken` in the on-chain `DepositWithMemo` event.
-- SubScript sends `payment.success` to the merchant webhook.
+- SubScript sends `payment.succeeded` (field `type`; the `event` field carries the deprecated `payment.success` alias) to the merchant webhook.
 - Merchant verifies HMAC and unlocks the user by `data.intent_id`.
 
 Hosted payment-link CCTP checkout is intentionally disabled until SubScript can verify Arc-side mint and memo settlement as one bound proof.

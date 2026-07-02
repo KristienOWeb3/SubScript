@@ -219,7 +219,8 @@ function verifyWebhook(req, secret) {
 }
 ```
 
-### Event Payload: `payment.success`
+### Event Payload: `payment.succeeded`
+The canonical event name is `type: "payment.succeeded"`. The `event` field (`"payment.success"`) is a deprecated back-compat alias — write new handlers against `type`.
 ```json
 {
   "event": "payment.success",

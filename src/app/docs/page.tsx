@@ -45,6 +45,7 @@ const sections: Section[] = [
   { id: "developer", title: "Developer API", icon: Server },
   { id: "usage", title: "Usage billing", icon: Terminal },
   { id: "webhooks", title: "Webhooks", icon: Webhook },
+  { id: "errors", title: "Errors", icon: ShieldCheck },
   { id: "receipts", title: "Receipts", icon: ReceiptText },
   { id: "contracts", title: "On-chain", icon: Code },
   { id: "faq", title: "FAQ", icon: HelpCircle },
@@ -145,7 +146,8 @@ export async function POST(req) {
   }
 
   const event = JSON.parse(rawBody);
-  if (event.event === "payment.success") {
+  // Canonical event name is \`type\`; \`event\` ("payment.success") is a deprecated alias.
+  if (event.type === "payment.succeeded") {
     // Use event.id for idempotency, then fulfill by intent_id.
     await unlockPlanForUser(event.data.intent_id);
   }
@@ -162,7 +164,7 @@ Goal:
 - Store intent_id and receiptToken in my database beside the user's account or order.
 - Redirect the user to the SubScript checkoutUrl.
 - Add a webhook route that verifies x-subscript-signature.
-- When payment.success arrives, look up data.intent_id and unlock the plan.
+- When payment.succeeded arrives (check event.type), look up data.intent_id and unlock the plan.
 
 Use:
 - Amount: 15 USDC
@@ -480,7 +482,7 @@ export default function DocsPage() {
                   <li>2. Your backend creates `intent_abc123` and associates it with your user ID.</li>
                   <li>3. Your backend asks SubScript for a hosted pay URL tagged with that intent.</li>
                   <li>4. SubScript checkout handles wallet connection, Google wallet onboarding, USDC approval, Arc payment execution, and receipt creation.</li>
-                  <li>5. Your webhook receives `payment.success` with the same `intent_id` and unlocks the user.</li>
+                  <li>5. Your webhook receives `payment.succeeded` with the same `intent_id` and unlocks the user.</li>
                 </ol>
               </div>
               <CodeBlock code={checkoutIntentCode} language="javascript" />
@@ -524,12 +526,41 @@ export default function DocsPage() {
                 Webhooks close the Web2/Web3 gap. The merchant does not need the payer wallet address. The merchant only needs to trust the signed event and use the `intent_id` to unlock the right Web2 account.
               </p>
               <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
-                Canonical successful checkout event: `payment.success`. Payloads also include `type: "payment.succeeded"` for teams that prefer Stripe-style naming. Use `data.intent_id` or `data.checkout_session_id` as the fulfillment key.
+                Canonical successful checkout event: `type: "payment.succeeded"`. Payloads also carry `event: "payment.success"`, a deprecated back-compat alias — write new handlers against `type`. Use `data.intent_id` or `data.checkout_session_id` as the fulfillment key.
               </div>
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-xs leading-relaxed text-white/75">
                 Keep `SUBSCRIPT_SECRET_KEY` and `SUBSCRIPT_WEBHOOK_SECRET` server-side only. Never expose them in React, mobile clients, public repositories, or browser bundles.
               </div>
               <CodeBlock code={webhookCode} language="javascript" />
+            </section>
+
+            <section id="errors" className="scroll-mt-24 space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Error responses</h2>
+              <p className="text-sm leading-relaxed text-white/70">
+                Every non-2xx response from the API carries a machine-readable envelope. Branch on `code` (stable identifier), show `message` to humans, and quote `request_id` when contacting support — server logs are indexed by it.
+              </p>
+              <CodeBlock
+                code={`{
+  "error": "Bad Request: amountUsdcMicros is required and must be a positive integer in micro-USDC",
+  "code": "invalid_amount",
+  "message": "Bad Request: amountUsdcMicros is required and must be a positive integer in micro-USDC (e.g. \\"15000000\\" = 15 USDC). amountUsdc is accepted as an alias with the same unit.",
+  "request_id": "3f6a1f6e-9d2b-4c1a-8f7e-2b9d4c1a8f7e",
+  "doc_url": "https://www.subscriptonarc.com/docs#errors"
+}`}
+                language="json"
+              />
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85 mb-2">Common codes</p>
+                <ul className="space-y-1">
+                  <li><span className="font-mono text-[#ccff00]">unauthorized</span> — missing/invalid `Authorization: Bearer sk_…` header. Keys live in Dashboard → Developers → API keys.</li>
+                  <li><span className="font-mono text-[#ccff00]">invalid_json</span> — request body is not valid JSON.</li>
+                  <li><span className="font-mono text-[#ccff00]">missing_title</span> / <span className="font-mono text-[#ccff00]">invalid_amount</span> — validation failures return `400` with the field named in `message`.</li>
+                  <li><span className="font-mono text-[#ccff00]">merchant_payout_wallet_missing</span> — live key with no payout wallet configured; `resolution_url` points at the settings page.</li>
+                  <li><span className="font-mono text-[#ccff00]">quota_exceeded</span> — active-link tier limit reached (`403`).</li>
+                  <li><span className="font-mono text-[#ccff00]">idempotency_key_conflict</span> — the key was already used for a different resource (`409`).</li>
+                  <li><span className="font-mono text-[#ccff00]">internal_error</span> — a `500` with no internals leaked; report the `request_id`.</li>
+                </ul>
+              </div>
             </section>
 
             <section id="receipts" className="scroll-mt-24 space-y-6">

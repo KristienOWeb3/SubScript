@@ -1,7 +1,8 @@
 import { ethers } from "ethers";
 
-const DEFAULT_API_URL = "https://jkrlsjpsytzffwjpixue.supabase.co"; // REST URL fallback
-const LOCAL_API_URL = "http://localhost:3000";
+/* The published CLI must talk to production by default — a localhost fallback silently breaks
+   every dashboard-bridge and version check for real users. Local dev overrides via env. */
+const DEFAULT_API_URL = "https://www.subscriptonarc.com";
 
 function normalizeBaseUrl(url: string): string {
   try {
@@ -16,11 +17,11 @@ function normalizeBaseUrl(url: string): string {
 }
 
 function getBaseUrl(): string {
-  // If we are developing locally or running in local dev server environment
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+  const override = process.env.SUBSCRIPT_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (override) {
+    return normalizeBaseUrl(override);
   }
-  return LOCAL_API_URL;
+  return DEFAULT_API_URL;
 }
 
 export function isTelemetryEnabled(noTelemetryFlag: boolean): boolean {
