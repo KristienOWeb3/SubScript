@@ -74,7 +74,7 @@ const sections = [
 
 export default function PrivacyPolicy() {
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white">
+    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
       <AnimatedGradientBg />
       <div className="relative z-10">
         <Navbar />
@@ -90,7 +90,7 @@ export default function PrivacyPolicy() {
               Protocol Privacy
             </span>
             <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
-              Privacy <span className="font-serif font-normal italic lowercase tracking-normal text-[#ccff00]">policy</span>
+              Privacy <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">policy</span>
             </h1>
             <p className="mt-4 font-mono text-xs text-white/40">Last Updated: June 20th, 2026</p>
           </div>
@@ -99,7 +99,7 @@ export default function PrivacyPolicy() {
             {sections.map((section, index) => (
               <section key={section.title} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  {index === 0 && <Shield className="h-4 w-4 text-[#ccff00]" />}
+                  {index === 0 && <Shield className="h-4 w-4 text-[#00d2b4]" />}
                   <h2 className="text-base font-bold uppercase tracking-wider text-white">{section.title}</h2>
                 </div>
                 {section.body.map((paragraph) => (

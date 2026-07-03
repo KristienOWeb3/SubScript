@@ -49,7 +49,7 @@ export default function DashboardRouterPage() {
     return (
         <main className="flex min-h-screen items-center justify-center bg-[#050608] px-6 text-white">
             <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white/70">
-                <Loader2 className="h-4 w-4 animate-spin text-[#ccff00]" />
+                <Loader2 className="h-4 w-4 animate-spin text-[#00d2b4]" />
                 <span>{message}</span>
             </div>
         </main>

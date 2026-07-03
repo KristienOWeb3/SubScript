@@ -70,7 +70,7 @@ const liveCapabilities = [
 ];
 
 const problemsSolved = [
-  ["Zombie subscriptions", "Users authorize bounded payment flows and can stop relying on opaque merchant-side pull billing."],
+  ["Unwanted recurring charges", "Users authorize bounded payment flows and can stop relying on opaque merchant-side pull billing."],
   ["Double billing", "On-chain settlement and idempotent verification reduce duplicate fulfillment from retry races."],
   ["Hidden card costs", "USDC-native pricing removes virtual card setup fees, maintenance fees, FX markups, failed-card penalties, and billing-address failures from the user journey."],
   ["Receipt disputes", "Arc memo receipts give merchants and payers a shared, auditable payment record."],
@@ -308,7 +308,7 @@ export default function ProtocolPage() {
             [Zap, "1% merchant fee target", "Pricing is designed around transparent merchant-paid processing."],
             [RefreshCcw, "Retry-aware billing", "Cron, reconciliation, and failure-state routes support recovery flows."],
             [FileText, "Invoice-like links", "Payment links and external references cover collection while first-class invoices mature."],
-            [ShieldCheck, "Consumer control", "The model is designed to reduce zombie subscriptions, card penalties, and opaque charge disputes."],
+            [ShieldCheck, "Consumer control", "The model is designed to reduce unwanted recurring charges, card penalties, and opaque charge disputes."],
           ].map(([Icon, title, body]) => (
             <article key={String(title)} className="rounded-lg border border-white/10 bg-white/[0.035] p-5">
               <Icon className="h-5 w-5 text-cyan-300" />

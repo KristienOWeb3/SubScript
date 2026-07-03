@@ -32,9 +32,9 @@ function TelegramIcon({ className }: { className?: string }) {
 }
 
 const socialLinks = [
-    { name: "X (Twitter)", href: "https://x.com/subscript", icon: TwitterXIcon },
-    { name: "Discord", href: "https://discord.gg/subscript", icon: DiscordIcon },
-    { name: "Telegram", href: "https://t.me/subscript", icon: TelegramIcon },
+    { name: "X (Twitter)", href: "https://x.com/SubScript_onarc", icon: TwitterXIcon, live: true },
+    { name: "Discord", href: "https://discord.gg/subscript", icon: DiscordIcon, live: false },
+    { name: "Telegram", href: "https://t.me/subscript", icon: TelegramIcon, live: false },
 ];
 
 export default function Navbar() {
@@ -46,7 +46,7 @@ export default function Navbar() {
     const pathname = usePathname();
 
     const showSocialToast = (name: string) => {
-        setSocialToast(`${name} is not available because there's currently no socials for now`);
+        setSocialToast(`Our ${name} community is launching soon.`);
         setTimeout(() => setSocialToast(null), 2500);
     };
 
@@ -75,7 +75,8 @@ export default function Navbar() {
         if (typeof window === "undefined") return;
         const ethereum = (window as any).ethereum;
         if (!ethereum) {
-            alert("No Web3 wallet detected. Please install Metamask or Rabby.");
+            setSocialToast("No compatible wallet detected. Please install a Web3 wallet such as MetaMask to switch networks.");
+            setTimeout(() => setSocialToast(null), 4000);
             return;
         }
 
@@ -195,17 +196,17 @@ export default function Navbar() {
                                 Switch to Arc Testnet
                             </button>
                         )}
-                        <Link 
+                        <Link
                             href="/login"
-                            className="text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors"
+                            className="text-sm font-semibold text-white/60 hover:text-white transition-colors"
                         >
-                            Sign In
+                            Sign in
                         </Link>
-                        <Link 
+                        <Link
                             href="/signup"
-                            className="liquid-glass rounded-full px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-white/5 transition-all duration-200"
+                            className="liquid-glass rounded-full px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/5 transition-all duration-200"
                         >
-                            Sign Up
+                            Create account
                         </Link>
                     </div>
 
@@ -219,11 +220,11 @@ export default function Navbar() {
                                 Switch Chain
                             </button>
                         )}
-                        <Link 
+                        <Link
                             href="/signup"
-                            className="bg-[#00d2b4] text-[#111111] text-[10px] font-bold uppercase tracking-widest px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
+                            className="bg-[#00d2b4] text-[#111111] text-xs font-semibold px-3.5 py-1.5 rounded-full hover:brightness-110 shadow-[0_0_8px_rgba(0,210,180,0.25)] transition-all duration-200"
                         >
-                            Sign Up
+                            Sign up
                         </Link>
                         <button
                             onClick={() => setMobileMenuOpen(true)}
@@ -296,9 +297,9 @@ export default function Navbar() {
                                 <Link
                                     href="/signup"
                                     onClick={() => setMobileMenuOpen(false)}
-                                    className="block text-2xl font-black text-[#00d2b4] py-2 uppercase tracking-wide"
+                                    className="block text-2xl font-semibold text-[#00d2b4] py-2"
                                 >
-                                    Sign Up
+                                    Create account
                                 </Link>
                             </motion.div>
                         </div>
@@ -308,14 +309,28 @@ export default function Navbar() {
                             <p className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider mb-4">Community</p>
                             <div className="flex items-center gap-4">
                                 {socialLinks.map((social) => (
-                                    <button
-                                        key={social.name}
-                                        onClick={() => { showSocialToast(social.name); setMobileMenuOpen(false); }}
-                                        className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
-                                        aria-label={social.name}
-                                    >
-                                        <social.icon className="w-6 h-6" />
-                                    </button>
+                                    social.live ? (
+                                        <a
+                                            key={social.name}
+                                            href={social.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={() => setMobileMenuOpen(false)}
+                                            className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
+                                            aria-label={social.name}
+                                        >
+                                            <social.icon className="w-6 h-6" />
+                                        </a>
+                                    ) : (
+                                        <button
+                                            key={social.name}
+                                            onClick={() => { showSocialToast(social.name); setMobileMenuOpen(false); }}
+                                            className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
+                                            aria-label={social.name}
+                                        >
+                                            <social.icon className="w-6 h-6" />
+                                        </button>
+                                    )
                                 ))}
                             </div>
                         </div>
@@ -326,16 +341,31 @@ export default function Navbar() {
             {/* Desktop Social Icons - Vertically Centered on Right Edge */}
             <div className="hidden md:flex fixed right-6 top-1/2 -translate-y-1/2 z-40 flex-col gap-4">
                 {socialLinks.map((social) => (
-                    <motion.button
-                        key={social.name}
-                        onClick={() => showSocialToast(social.name)}
-                        className="w-11 h-11 rounded-full liquid-glass flex items-center justify-center text-white/50 hover:text-[#00d2b4] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
-                        aria-label={social.name}
-                        whileHover={{ scale: 1.1, rotate: -6 }}
-                        whileTap={{ scale: 0.95 }}
-                    >
-                        <social.icon className="w-4 h-4" />
-                    </motion.button>
+                    social.live ? (
+                        <motion.a
+                            key={social.name}
+                            href={social.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-11 h-11 rounded-full liquid-glass flex items-center justify-center text-white/50 hover:text-[#00d2b4] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
+                            aria-label={social.name}
+                            whileHover={{ scale: 1.1, rotate: -6 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <social.icon className="w-4 h-4" />
+                        </motion.a>
+                    ) : (
+                        <motion.button
+                            key={social.name}
+                            onClick={() => showSocialToast(social.name)}
+                            className="w-11 h-11 rounded-full liquid-glass flex items-center justify-center text-white/50 hover:text-[#00d2b4] transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
+                            aria-label={social.name}
+                            whileHover={{ scale: 1.1, rotate: -6 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <social.icon className="w-4 h-4" />
+                        </motion.button>
+                    )
                 ))}
             </div>
 
@@ -343,7 +373,7 @@ export default function Navbar() {
             <AnimatePresence>
                 {socialToast && (
                     <motion.div
-                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass rounded-full px-5 py-2.5 text-xs font-semibold text-white/80 tracking-wide uppercase border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
+                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 liquid-glass rounded-full px-5 py-2.5 text-xs font-medium text-white/80 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}

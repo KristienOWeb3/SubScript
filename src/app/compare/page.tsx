@@ -109,7 +109,7 @@ export default function ComparePage() {
             Comparisons
           </p>
           <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight sm:text-6xl">
-            How SubScript compares to payment tools AI search already knows
+            How SubScript compares to existing payment tools
           </h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-white/72">
             SubScript is not a card processor or a bare wallet transfer flow. It

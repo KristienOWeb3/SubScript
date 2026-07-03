@@ -62,14 +62,14 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 
   return (
     <div className="my-4 overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-xs shadow-xl">
-      <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
+      <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
         <span>{language}</span>
         <button
           type="button"
           onClick={handleCopy}
           className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2 py-1 text-white/55 transition hover:bg-white/10 hover:text-white"
         >
-          {copied ? <Check className="h-3 w-3 text-[#ccff00]" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3 w-3 text-[#00d2b4]" /> : <Copy className="h-3 w-3" />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -261,7 +261,7 @@ export default function DocsPage() {
   };
 
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white">
+    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
       <AnimatedGradientBg />
 
       <div className="relative z-10">
@@ -270,12 +270,12 @@ export default function DocsPage() {
             <div className="flex items-center gap-5">
               <Link href="/" className="flex items-center gap-2.5">
                 <img src="/logo.png" alt="SubScript" className="h-7 w-7 object-contain" />
-                <span className="text-sm font-black uppercase tracking-wider">
-                  SubScript <span className="font-serif font-normal italic lowercase text-[#ccff00]">docs</span>
+                <span className="text-sm font-semibold uppercase tracking-wider">
+                  SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
                 </span>
               </Link>
               <span className="hidden h-4 w-px bg-white/10 md:block" />
-              <span className="hidden text-[10px] font-black uppercase tracking-[0.18em] text-white/35 md:block">
+              <span className="hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35 md:block">
                 Integration guide
               </span>
             </div>
@@ -317,7 +317,7 @@ export default function DocsPage() {
                       type="button"
                       onClick={() => scrollToSection(section.id)}
                       className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left text-xs font-bold uppercase tracking-wider transition ${
-                        activeSection === section.id ? "bg-[#ccff00]/15 text-[#ccff00]" : "text-white/60 hover:bg-white/5 hover:text-white"
+                        activeSection === section.id ? "bg-[#00d2b4]/15 text-[#00d2b4]" : "text-white/60 hover:bg-white/5 hover:text-white"
                       }`}
                     >
                       <Icon className="h-4 w-4" />
@@ -333,7 +333,7 @@ export default function DocsPage() {
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-20 pt-24 md:grid-cols-4">
           <aside className="sticky top-24 col-span-1 hidden self-start md:block">
             <div className="liquid-glass rounded-2xl border border-white/5 bg-black/40 p-5 backdrop-blur-md">
-              <p className="mb-3 border-b border-white/5 pb-3 text-[9px] font-black uppercase tracking-widest text-white/30">
+              <p className="mb-3 border-b border-white/5 pb-3 text-[9px] font-semibold uppercase tracking-widest text-white/30">
                 Documentation map
               </p>
               <nav className="flex flex-col gap-1">
@@ -346,7 +346,7 @@ export default function DocsPage() {
                       type="button"
                       onClick={() => scrollToSection(section.id)}
                       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition ${
-                        active ? "border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
+                        active ? "border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
                       }`}
                     >
                       <Icon className="h-4 w-4" />
@@ -360,11 +360,11 @@ export default function DocsPage() {
 
           <main className="col-span-1 space-y-16 md:col-span-3">
             <section id="overview" className="scroll-mt-24 space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#ccff00]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#00d2b4]">
                 <BookOpen className="h-3 w-3" />
                 Start here
               </div>
-              <h1 className="max-w-3xl text-4xl font-black uppercase tracking-tight text-white sm:text-5xl">
+              <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
                 The easiest way to add programmable USDC subscriptions.
               </h1>
               <p className="max-w-3xl text-sm leading-relaxed text-white/70">
@@ -377,7 +377,7 @@ export default function DocsPage() {
                   ["Advanced", "Direct Arc memo and router integration"],
                 ].map(([label, text]) => (
                   <div key={label} className="liquid-glass rounded-2xl border border-white/5 bg-black/25 p-5">
-                    <p className="text-2xl font-black text-[#ccff00]">{label}</p>
+                    <p className="text-2xl font-bold text-[#00d2b4]">{label}</p>
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
                   </div>
                 ))}
@@ -388,10 +388,10 @@ export default function DocsPage() {
               <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.06] p-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
                       Protocol brief
                     </p>
-                    <h2 className="mt-3 text-2xl font-black uppercase tracking-tight text-white">
+                    <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
                       UPA, live primitives, and deployment-scoped targets
                     </h2>
                     <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/70">
@@ -402,7 +402,7 @@ export default function DocsPage() {
                   </div>
                   <Link
                     href="/protocol"
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-5 py-3 text-xs font-black uppercase tracking-wider text-cyan-100 transition hover:bg-cyan-300/15 hover:text-white"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-cyan-100 transition hover:bg-cyan-300/15 hover:text-white"
                   >
                     Open brief
                     <ArrowRight className="h-4 w-4" />
@@ -412,7 +412,7 @@ export default function DocsPage() {
             </section>
 
             <section id="paths" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Choose your integration path</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Choose your integration path</h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {[
                   ["No-code merchant", "Create a payment link in the merchant dashboard, copy the URL or QR code, and paste it into your product, Notion page, Linktree, or checkout screen.", Link2],
@@ -421,8 +421,8 @@ export default function DocsPage() {
                   ["Protocol team", "Use Viem/Ethers to route USDC transfers through SubScript contracts and Arc memo payloads directly.", Code],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-3xl border border-white/5 bg-black/30 p-6">
-                    <Icon className="mb-4 h-6 w-6 text-[#ccff00]" />
-                    <h3 className="text-sm font-black uppercase tracking-wider text-white">{title as string}</h3>
+                    <Icon className="mb-4 h-6 w-6 text-[#00d2b4]" />
+                    <h3 className="text-sm font-semibold text-white">{title as string}</h3>
                     <p className="mt-3 text-xs leading-relaxed text-white/55">{text as string}</p>
                   </div>
                 ))}
@@ -430,19 +430,19 @@ export default function DocsPage() {
             </section>
 
             <section id="upa" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Unified Payment Authorization model</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Unified Payment Authorization model</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 SubScript's Unified Payment Authorization model gives one-time payments, subscriptions, usage events, invoices, and AI-native transactions the same operational shape: a merchant creates a structured authorization, the payer approves a bounded USDC action, SubScript records the receipt, and signed webhooks tell the merchant what to unlock.
               </p>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 {[
-                  ["Consumer control", "Users authorize bounded payment flows and can avoid zombie subscriptions, hidden card fees, overdraft-style penalties, and opaque dispute trails.", ShieldCheck],
+                  ["Consumer control", "Users authorize bounded payment flows and can avoid unwanted recurring charges, hidden card fees, overdraft-style penalties, and opaque dispute trails.", ShieldCheck],
                   ["Merchant certainty", "Merchants receive intent IDs, webhook events, retry-aware billing state, payment links, and audit-friendly Arc receipt records instead of raw wallet guesswork.", KeyRound],
                   ["Protocol coverage", "Current platform surfaces include Checkout Intents, payment links, metered vaults, signed webhooks, receipts, DNS-style aliases, premium privacy flows, retries, reconciliation, and keeper-triggered renewals.", Globe],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                    <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-white">{title as string}</h3>
+                    <Icon className="mb-3 h-5 w-5 text-[#00d2b4]" />
+                    <h3 className="text-xs font-semibold text-white">{title as string}</h3>
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text as string}</p>
                   </div>
                 ))}
@@ -453,7 +453,7 @@ export default function DocsPage() {
             </section>
 
             <section id="nocode" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">No-code setup: payment links and QR checkout</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">No-code setup: payment links and QR checkout</h2>
               <ol className="space-y-3 text-sm leading-relaxed text-white/70">
                 <li>1. Sign up as a merchant and open the SubScript merchant dashboard.</li>
                 <li>2. Create a payment link with amount, title, description, and optional customer reference.</li>
@@ -461,13 +461,13 @@ export default function DocsPage() {
                 <li>4. Put the URL behind your pricing button, invoice, Discord message, or email campaign.</li>
                 <li>5. When the payer completes checkout, SubScript records the payment, creates a receipt, and can notify your backend through webhooks.</li>
               </ol>
-              <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
                 Best for creators, small SaaS teams, vibe-built products, and early pilots that need payments live before a full backend integration exists.
               </div>
             </section>
 
             <section id="vibecoder" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Vibecoder prompt</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Vibecoder prompt</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 If you are building with an AI coding agent, paste this directly into it. The important thing is that your app stores the SubScript `intent_id` beside your own user record and waits for the signed webhook before unlocking access.
               </p>
@@ -475,7 +475,7 @@ export default function DocsPage() {
             </section>
 
             <section id="developer" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Developer flow: Checkout Intent lifecycle</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Developer flow: Checkout Intent lifecycle</h2>
               <div className="rounded-3xl border border-white/5 bg-black/30 p-6">
                 <ol className="space-y-3 text-sm leading-relaxed text-white/70">
                   <li>1. Your user clicks upgrade inside your app.</li>
@@ -490,7 +490,7 @@ export default function DocsPage() {
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Pay-per-use billing with commit vaults</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Pay-per-use billing with commit vaults</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. You set a commit amount; the customer escrows it once; their service stays active for the cycle while you report usage. Funds are guaranteed up to the committed balance — you are not chasing per-call card charges.
               </p>
@@ -501,13 +501,13 @@ export default function DocsPage() {
                   ["Pay-per-view items", "Settle small purchases for articles, clips, data exports, or premium actions without an all-access plan.", FileText],
                 ].map(([title, text, Icon]) => (
                   <div key={String(title)} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                    <Icon className="mb-3 h-5 w-5 text-[#ccff00]" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-white">{title as string}</h3>
+                    <Icon className="mb-3 h-5 w-5 text-[#00d2b4]" />
+                    <h3 className="text-xs font-semibold text-white">{title as string}</h3>
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text as string}</p>
                   </div>
                 ))}
               </div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-white pt-2">How a developer integrates pay-per-session</h3>
+              <h3 className="text-sm font-semibold text-white pt-2">How a developer integrates pay-per-session</h3>
               <ol className="space-y-2 text-xs leading-relaxed text-white/65 list-decimal pl-5">
                 <li><span className="font-bold text-white/85">Set your commit.</span> In Merchant dashboard → Vault (or <span className="font-mono">POST /api/merchant/vault/commit-config</span>) set the USDC a customer must escrow to use your service.</li>
                 <li><span className="font-bold text-white/85">Customer commits once.</span> They escrow ≥ the commit from their SubScript wallet; the vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
@@ -521,11 +521,11 @@ export default function DocsPage() {
             </section>
 
             <section id="webhooks" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Webhook fulfillment</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Webhook fulfillment</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 Webhooks close the Web2/Web3 gap. The merchant does not need the payer wallet address. The merchant only needs to trust the signed event and use the `intent_id` to unlock the right Web2 account.
               </p>
-              <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
                 Canonical successful checkout event: `type: "payment.succeeded"`. Payloads also carry `event: "payment.success"`, a deprecated back-compat alias — write new handlers against `type`. Use `data.intent_id` or `data.checkout_session_id` as the fulfillment key.
               </div>
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-xs leading-relaxed text-white/75">
@@ -535,7 +535,7 @@ export default function DocsPage() {
             </section>
 
             <section id="errors" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Error responses</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Error responses</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 Every non-2xx response from the API carries a machine-readable envelope. Branch on `code` (stable identifier), show `message` to humans, and quote `request_id` when contacting support — server logs are indexed by it.
               </p>
@@ -552,38 +552,38 @@ export default function DocsPage() {
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85 mb-2">Common codes</p>
                 <ul className="space-y-1">
-                  <li><span className="font-mono text-[#ccff00]">unauthorized</span> — missing/invalid `Authorization: Bearer sk_…` header. Keys live in Dashboard → Developers → API keys.</li>
-                  <li><span className="font-mono text-[#ccff00]">invalid_json</span> — request body is not valid JSON.</li>
-                  <li><span className="font-mono text-[#ccff00]">missing_title</span> / <span className="font-mono text-[#ccff00]">invalid_amount</span> — validation failures return `400` with the field named in `message`.</li>
-                  <li><span className="font-mono text-[#ccff00]">merchant_payout_wallet_missing</span> — live key with no payout wallet configured; `resolution_url` points at the settings page.</li>
-                  <li><span className="font-mono text-[#ccff00]">quota_exceeded</span> — active-link tier limit reached (`403`).</li>
-                  <li><span className="font-mono text-[#ccff00]">idempotency_key_conflict</span> — the key was already used for a different resource (`409`).</li>
-                  <li><span className="font-mono text-[#ccff00]">internal_error</span> — a `500` with no internals leaked; report the `request_id`.</li>
+                  <li><span className="font-mono text-[#00d2b4]">unauthorized</span> — missing/invalid `Authorization: Bearer sk_…` header. Keys live in Dashboard → Developers → API keys.</li>
+                  <li><span className="font-mono text-[#00d2b4]">invalid_json</span> — request body is not valid JSON.</li>
+                  <li><span className="font-mono text-[#00d2b4]">missing_title</span> / <span className="font-mono text-[#00d2b4]">invalid_amount</span> — validation failures return `400` with the field named in `message`.</li>
+                  <li><span className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</span> — live key with no payout wallet configured; `resolution_url` points at the settings page.</li>
+                  <li><span className="font-mono text-[#00d2b4]">quota_exceeded</span> — active-link tier limit reached (`403`).</li>
+                  <li><span className="font-mono text-[#00d2b4]">idempotency_key_conflict</span> — the key was already used for a different resource (`409`).</li>
+                  <li><span className="font-mono text-[#00d2b4]">internal_error</span> — a `500` with no internals leaked; report the `request_id`.</li>
                 </ul>
               </div>
             </section>
 
             <section id="receipts" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Human-readable receipts with Arc memos</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Human-readable receipts with Arc memos</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 SubScript receipts are designed for humans, not explorers. A payer can share a URL like `www.subscriptonarc.com/receipt/rcpt-7e10c918a3aa672eb783f1b965914b12`, while SubScript indexes the Arc memo and displays amount, sender, merchant, date, note, and transaction status.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                  <ReceiptText className="mb-3 h-5 w-5 text-[#ccff00]" />
-                  <h3 className="text-xs font-black uppercase tracking-wider text-white">Default visibility</h3>
+                  <ReceiptText className="mb-3 h-5 w-5 text-[#00d2b4]" />
+                  <h3 className="text-xs font-semibold text-white">Default visibility</h3>
                   <p className="mt-2 text-xs leading-relaxed text-white/55">Receipt data is intended for the payer, merchant, and SubScript by default. Future invite flows can selectively disclose a receipt to another viewer.</p>
                 </div>
                 <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                  <ShieldCheck className="mb-3 h-5 w-5 text-[#ccff00]" />
-                  <h3 className="text-xs font-black uppercase tracking-wider text-white">Proof without confusion</h3>
+                  <ShieldCheck className="mb-3 h-5 w-5 text-[#00d2b4]" />
+                  <h3 className="text-xs font-semibold text-white">Proof without confusion</h3>
                   <p className="mt-2 text-xs leading-relaxed text-white/55">The receipt page hides raw transaction complexity while preserving auditability through Arc memo indexing.</p>
                 </div>
               </div>
             </section>
 
             <section id="contracts" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">Advanced: Arc memo transaction payload</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Advanced: Arc memo transaction payload</h2>
               <p className="text-sm leading-relaxed text-white/70">
                 Merchant hosted links settle through the SubScript Router: the receipt token is passed as the router memo, and the backend verifies the matching `DepositWithMemo` event before marking the payment paid. User-created receive links settle as direct Arc USDC transfers to the requester, with the backend verifying the ERC-20 `Transfer` call and event. Cross-chain CCTP checkout is disabled for hosted payment links until Arc-side mint and memo settlement can be verified in one bound flow.
               </p>
@@ -591,7 +591,7 @@ export default function DocsPage() {
             </section>
 
             <section id="faq" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-black uppercase tracking-tight text-white">FAQ</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-white">FAQ</h2>
               {[
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
                 ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
@@ -604,12 +604,12 @@ export default function DocsPage() {
                 ["Does the merchant need to track wallets?", "No. The merchant should track Checkout Intent IDs. SubScript maps wallet payment activity to the off-chain intent and sends the signed result."],
                 ["What does the user pay?", "The user pays the advertised USDC price. SubScript is designed around predictable Arc USDC gas and sponsored-fee flows so users avoid hidden card-style fees."],
                 ["Why is this better than dollar cards?", "Users avoid virtual card setup fees, maintenance fees, failed transaction penalties, KYC delays for basic wallet setup, billing-address failures, and FX markup surprises."],
-                ["What problem does SubScript solve?", "It stops zombie subscriptions, double-billing, hidden cancellation traps, overdraft-style penalties, and opaque receipt disputes by moving billing state into transparent programmable payment logic."],
+                ["What problem does SubScript solve?", "It prevents unwanted recurring charges, double-billing, hidden cancellation traps, overdraft-style penalties, and opaque receipt disputes by moving billing state into transparent programmable payment logic."],
                 ["Does SubScript provide invoices?", "The current product supports payment links, Checkout Intents, receipt records, and external references that cover invoice-like collection. A dedicated invoice engine with custom due terms is documented as a protocol target."],
                 ["Does SubScript use decentralized keepers?", "The codebase has keeper-compatible contract and API surfaces today. Full Chainlink Automation as the default execution network should be treated as a roadmap or deployment configuration item until the production keeper network is wired."],
               ].map(([question, answer]) => (
                 <div key={question} className="rounded-2xl border border-white/5 bg-black/30 p-5">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-white">{question}</h3>
+                  <h3 className="text-xs font-semibold text-white">{question}</h3>
                   <p className="mt-2 text-xs leading-relaxed text-white/55">{answer}</p>
                 </div>
               ))}

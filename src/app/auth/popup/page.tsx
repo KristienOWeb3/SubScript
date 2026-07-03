@@ -223,7 +223,7 @@ function PopupContent() {
                 {step === "error" ? (
                     <a
                         href="/signin"
-                        className="mt-6 inline-flex rounded-xl bg-[#ccff00] px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-[#ccff00]/90"
+                        className="mt-6 inline-flex rounded-xl bg-[#00d2b4] px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/90"
                     >
                         Back to sign in
                     </a>

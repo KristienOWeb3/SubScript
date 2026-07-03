@@ -15,7 +15,7 @@ export default function NotFound() {
             <div
                 aria-hidden
                 className="pointer-events-none absolute left-1/2 top-1/3 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-[120px]"
-                style={{ background: "radial-gradient(circle, #ccff00 0%, transparent 70%)" }}
+                style={{ background: "radial-gradient(circle, #00d2b4 0%, transparent 70%)" }}
             />
 
             <div className="relative z-10 w-full max-w-md text-center">
@@ -26,7 +26,7 @@ export default function NotFound() {
                     404
                 </p>
 
-                <h1 className="mt-2 text-xl font-black tracking-tight">This page took a different route</h1>
+                <h1 className="mt-2 text-xl font-bold tracking-tight">This page took a different route</h1>
                 <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-white/50">
                     The link may be broken, expired, or the resource was moved. Your account and balances
                     are unaffected.
@@ -35,7 +35,7 @@ export default function NotFound() {
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                     <Link
                         href="/"
-                        className="w-full rounded-xl bg-[#ccff00] px-5 py-3 text-xs font-black uppercase tracking-wider text-black transition hover:brightness-110 sm:w-auto"
+                        className="w-full rounded-xl bg-[#00d2b4] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-black transition hover:brightness-110 sm:w-auto"
                     >
                         Back to home
                     </Link>
@@ -48,7 +48,7 @@ export default function NotFound() {
                 </div>
 
                 <div className="mt-10 flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/30">
-                    <span className="h-1 w-1 rounded-full bg-[#ccff00]" />
+                    <span className="h-1 w-1 rounded-full bg-[#00d2b4]" />
                     SubScript
                 </div>
             </div>

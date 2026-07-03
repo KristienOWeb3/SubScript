@@ -317,7 +317,7 @@ export default function UpgradePage() {
     if (!isMounted) {
         return (
             <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-                <AnimatedGradientBg />
+                <AnimatedGradientBg variant="dashboard" />
                 <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 pt-28 pb-12">
                     <div className="mb-8 h-9 w-36 rounded-full liquid-glass-skeleton" />
                     <div className="mx-auto mb-12 w-full max-w-xl space-y-4 text-center">
@@ -336,7 +336,7 @@ export default function UpgradePage() {
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#d4a853]">
-            <AnimatedGradientBg />
+            <AnimatedGradientBg variant="dashboard" />
             
             <div className="relative z-10">
                 <DashboardHeader 

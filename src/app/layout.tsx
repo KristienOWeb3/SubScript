@@ -49,7 +49,7 @@ const appUrl = configuredAppUrl
         ? `https://${process.env.VERCEL_URL}`
         : "https://www.subscriptonarc.com";
 
-const siteDescription = "SubScript is an Arc-native programmable USDC commerce layer for one-time payments, recurring billing, usage-based charging, invoice-like collection, signed webhooks, human-readable receipts, and Google-powered wallet onboarding.";
+const siteDescription = "SubScript is stablecoin payment infrastructure on Arc: hosted USDC checkout, recurring billing, usage-based charging, invoicing, signed webhooks, human-readable receipts, and Google-powered wallet onboarding for businesses and their customers.";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
 const bingSiteVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 
@@ -63,7 +63,7 @@ const structuredData = {
             url: appUrl,
             logo: `${appUrl}/icon-512.png`,
             description: siteDescription,
-            sameAs: ["https://x.com/subscript"],
+            sameAs: ["https://x.com/SubScript_onarc"],
             knowsAbout: [
                 "Arc Network",
                 "programmable stablecoin commerce",
@@ -140,7 +140,7 @@ export const metadata: Metadata = {
         statusBarStyle: "black-translucent",
     },
     title: {
-        default: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        default: "SubScript | Stablecoin Payment Infrastructure on Arc",
         template: "%s | SubScript",
     },
     description: siteDescription,
@@ -170,7 +170,7 @@ export const metadata: Metadata = {
     creator: "SubScript Protocol",
     publisher: "SubScript Protocol",
     category: "financial technology",
-    classification: "Stablecoin subscriptions, Web3 checkout, and payment routing",
+    classification: "Stablecoin payment infrastructure, USDC checkout, and recurring billing",
     alternates: {
         canonical: "/",
     },
@@ -186,7 +186,7 @@ export const metadata: Metadata = {
         },
     },
     openGraph: {
-        title: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        title: "SubScript | Stablecoin Payment Infrastructure on Arc",
         description: siteDescription,
         url: appUrl,
         siteName: "SubScript Protocol",
@@ -195,7 +195,7 @@ export const metadata: Metadata = {
                 url: `${appUrl}/og.png`,
                 width: 1200,
                 height: 630,
-                alt: "SubScript - programmable USDC subscriptions and checkout on Arc Network",
+                alt: "SubScript — stablecoin payment infrastructure for USDC checkout and recurring billing on Arc",
             },
         ],
         locale: "en_US",
@@ -203,7 +203,7 @@ export const metadata: Metadata = {
     },
     twitter: {
         card: "summary_large_image",
-        title: "SubScript | Arc Network USDC Subscriptions and Web3 Checkout",
+        title: "SubScript | Stablecoin Payment Infrastructure on Arc",
         description: siteDescription,
         images: [`${appUrl}/og.png`],
     },

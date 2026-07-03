@@ -197,7 +197,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
         return (
             <main className="min-h-screen bg-[#060608] text-white px-6 py-10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
+                    <Loader2 className="h-10 w-10 animate-spin text-[#00d2b4]" />
                     <p className="text-white/60 text-sm tracking-wide">Loading secure receipt...</p>
                 </div>
             </main>
@@ -242,7 +242,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             ) : (
                                 <button
                                     onClick={handleAuthenticate}
-                                    className="w-full rounded-xl bg-[#ccff00] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#ccff00]/90 transition"
+                                    className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
                                 >
                                     Verify Wallet Ownership
                                     <Key className="h-4 w-4" />
@@ -284,11 +284,11 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         <div>
                             <div className="flex items-center gap-2">
                                 <p className="text-[10px] uppercase tracking-[0.24em] text-white/40">SubScript Receipt</p>
-                                <span className="inline-flex items-center gap-1 rounded bg-[#ccff00]/10 px-1.5 py-0.5 text-[9px] font-medium text-[#ccff00] border border-[#ccff00]/20">
+                                <span className="inline-flex items-center gap-1 rounded bg-[#00d2b4]/10 px-1.5 py-0.5 text-[9px] font-medium text-[#00d2b4] border border-[#00d2b4]/20">
                                     <Lock className="h-2.5 w-2.5" /> Opt-In Privacy
                                 </span>
                             </div>
-                            <h1 className="mt-2 text-2xl font-black tracking-tight break-words">{receipt.receipt_id}</h1>
+                            <h1 className="mt-2 text-2xl font-bold tracking-tight break-words">{receipt.receipt_id}</h1>
                         </div>
                         <div className="rounded-2xl bg-emerald-400/10 border border-emerald-400/20 p-3 text-emerald-300">
                             <CheckCircle2 className="h-6 w-6" />
@@ -298,7 +298,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                     <div className="grid gap-4">
                         <div className="border border-white/10 rounded-2xl p-5 bg-black/20">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Amount</p>
-                            <p className="mt-1 text-4xl font-black text-[#ccff00]">${formatUsdc(receipt.amount_usdc)} USDC</p>
+                            <p className="mt-1 text-4xl font-bold text-[#00d2b4]">${formatUsdc(receipt.amount_usdc)} USDC</p>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -323,13 +323,13 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 p-5 space-y-4">
+                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/10 p-5 space-y-4">
                         <p className="text-sm leading-relaxed text-white/85">
                             Claim your permanent SubScript account to manage this subscription and lock in spending limits.
                         </p>
                         <Link
                             href={claimHref}
-                            className="w-full rounded-xl bg-[#ccff00] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#ccff00]/90 transition"
+                            className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
                         >
                             Continue with Google
                             <ExternalLink className="h-4 w-4" />
@@ -339,10 +339,10 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
                 {/* 3. Owner Access: Invite Address Form */}
                 {isOwner && (
-                    <section id="invite-section" className="border border-[#ccff00]/15 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 shadow-2xl space-y-6 scroll-mt-24">
+                    <section id="invite-section" className="border border-[#00d2b4]/15 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 shadow-2xl space-y-6 scroll-mt-24">
                         <div>
                             <h2 className="text-sm font-bold flex items-center gap-2">
-                                <UserPlus className="h-4 w-4 text-[#ccff00]" /> Invite Address to View Receipt
+                                <UserPlus className="h-4 w-4 text-[#00d2b4]" /> Invite Address to View Receipt
                             </h2>
                             <p className="text-xs text-white/40 mt-1">
                                 As receipt owner, you can grant read access to auditors, customers, or third-parties.
@@ -356,7 +356,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                 value={inviteAddress}
                                 onChange={(e) => setInviteAddress(e.target.value)}
                                 placeholder="0x..."
-                                className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-2.5 text-sm font-mono text-white placeholder-white/30 focus:border-[#ccff00] focus:outline-none transition"
+                                className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-2.5 text-sm font-mono text-white placeholder-white/30 focus:border-[#00d2b4] focus:outline-none transition"
                             />
                             <button
                                 type="submit"
@@ -377,7 +377,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                     {invitedList.map((addr, idx) => (
                                         <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/5">
                                             <span className="font-mono text-white/60">{formatAddress(addr)}</span>
-                                            <span className="text-[9px] text-[#ccff00] bg-[#ccff00]/5 border border-[#ccff00]/10 px-1 py-0.5 rounded font-mono">
+                                            <span className="text-[9px] text-[#00d2b4] bg-[#00d2b4]/5 border border-[#00d2b4]/10 px-1 py-0.5 rounded font-mono">
                                                 Authorized
                                             </span>
                                         </div>

@@ -5428,7 +5428,7 @@ Please complete the following implementation tasks:
 
     return (
         <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
-            <AnimatedGradientBg />
+            <AnimatedGradientBg variant="dashboard" />
             <div className="relative z-10">
             <DashboardHeader 
                 embeddedWallet={embeddedWallet}

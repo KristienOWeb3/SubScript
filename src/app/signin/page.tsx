@@ -221,7 +221,7 @@ function SignInContent() {
         
         <div className="text-center mb-8">
           <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signin</span>
+            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signin</span>
           </h1>
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
@@ -229,7 +229,7 @@ function SignInContent() {
         <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
-            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#ccff00]">Authenticate</span>
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#00d2b4]">Authenticate</span>
             <span className="text-[10px] uppercase font-extrabold tracking-widest text-white/40">Secure Sign In</span>
           </div>
 
@@ -246,7 +246,7 @@ function SignInContent() {
                 }}
                 className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
               >
-                <Mail className="w-4 h-4 text-[#ccff00]" />
+                <Mail className="w-4 h-4 text-[#00d2b4]" />
                 Continue with Email
               </button>
 
@@ -269,7 +269,7 @@ function SignInContent() {
                   handleConnectWallet();
                 }}
                 disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(204,255,0,0.15)]"
+                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
               >
                 {isConnecting || siweLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -287,9 +287,9 @@ function SignInContent() {
               )}
 
               {walletMissingAccount && address && (
-                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
                     <div className="space-y-1">
                       <p className="font-bold text-white uppercase tracking-wider">No account found</p>
                       <p className="leading-relaxed">
@@ -303,7 +303,7 @@ function SignInContent() {
                     <button
                       type="button"
                       onClick={() => router.push(safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : "/signup")}
-                      className="py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
+                      className="py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider"
                     >
                       Create Account
                     </button>
@@ -359,7 +359,7 @@ function SignInContent() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -391,7 +391,7 @@ function SignInContent() {
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-[#ccff00] flex items-center gap-3 shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
                       <MailCheck className="w-5 h-5 shrink-0" />
                       <span className="font-mono">Sandbox Test OTP: {sandboxOtp}</span>
                     </div>
@@ -408,7 +408,7 @@ function SignInContent() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Sign In"}
                     </button>
@@ -423,7 +423,7 @@ function SignInContent() {
               Don't have an account?{" "}
               <button 
                 onClick={() => router.push("/signup")} 
-                className="text-[#ccff00] font-bold hover:underline"
+                className="text-[#00d2b4] font-bold hover:underline"
               >
                 Sign Up
               </button>
@@ -440,7 +440,7 @@ export default function SignInPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#ccff00]" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
       </div>
     }>
       <SignInContent />

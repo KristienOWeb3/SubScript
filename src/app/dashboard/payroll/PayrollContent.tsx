@@ -765,7 +765,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
     return (
         <div data-mounted={isMounted} className={embedded ? "text-white" : "min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]"}>
-            {!embedded && <AnimatedGradientBg />}
+            {!embedded && <AnimatedGradientBg variant="dashboard" />}
 
             <div className="relative z-10">
                 {!embedded && (

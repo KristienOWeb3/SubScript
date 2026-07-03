@@ -384,7 +384,7 @@ export default function SignupPage() {
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">onboarding</span>
+              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">onboarding</span>
             </h1>
             <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
           </div>
@@ -403,25 +403,25 @@ export default function SignupPage() {
                 onClick={() => setSelectedRole("USER")}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "USER"
-                    ? "border-[#ccff00] bg-[#ccff00]/5 shadow-[0_0_20px_rgba(204,255,0,0.15)]"
-                    : "border-white/5 bg-white/[0.01] hover:border-[#ccff00]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(204,255,0,0.08)]"
+                    ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
+                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl border transition-colors ${
                     selectedRole === "USER"
-                      ? "bg-[#ccff00]/10 border-[#ccff00]/30 text-[#ccff00]"
-                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#ccff00]"
+                      ? "bg-[#00d2b4]/10 border-[#00d2b4]/30 text-[#00d2b4]"
+                      : "bg-white/5 border-white/5 text-white/40 group-hover:text-[#00d2b4]"
                   }`}>
                     <User className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className={`font-bold text-sm uppercase tracking-wider transition-colors ${
-                      selectedRole === "USER" ? "text-[#ccff00]" : "text-white"
+                      selectedRole === "USER" ? "text-[#00d2b4]" : "text-white"
                     }`}>
                       Individual User
                     </h3>
-                    <span className="text-[9px] text-[#ccff00] uppercase font-bold tracking-wider">Routes to User Hub</span>
+                    <span className="text-[9px] text-[#00d2b4] uppercase font-bold tracking-wider">Routes to User Hub</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
@@ -502,7 +502,7 @@ export default function SignupPage() {
                 !selectedRole 
                   ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5" 
                   : selectedRole === "USER"
-                    ? "bg-[#ccff00] hover:bg-[#ccff00]/85 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+                    ? "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                     : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
               }`}
             >
@@ -523,7 +523,7 @@ export default function SignupPage() {
         
         <div className="text-center mb-8">
           <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-            SubScript <span className="font-serif italic lowercase font-normal text-[#ccff00]">signup</span>
+            SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
           </h1>
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
@@ -540,15 +540,15 @@ export default function SignupPage() {
                 <div key={s.step} className="flex items-center gap-2">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
                     isCompleted 
-                      ? "bg-[#ccff00] text-black" 
+                      ? "bg-[#00d2b4] text-black" 
                       : isActive 
-                        ? "bg-[#ccff00]/25 text-[#ccff00] border border-[#ccff00]/40 shadow-[0_0_10px_rgba(204,255,0,0.2)]" 
+                        ? "bg-[#00d2b4]/25 text-[#00d2b4] border border-[#00d2b4]/40 shadow-[0_0_10px_rgba(0,210,180,0.2)]" 
                         : "bg-white/5 text-white/30 border border-white/10"
                   }`}>
                     {isCompleted ? "✓" : s.step}
                   </div>
                   <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                    isActive ? "text-[#ccff00]" : isCompleted ? "text-white/80" : "text-white/30"
+                    isActive ? "text-[#00d2b4]" : isCompleted ? "text-white/80" : "text-white/30"
                   }`}>
                     {s.label}
                   </span>
@@ -571,7 +571,7 @@ export default function SignupPage() {
                 }}
                 className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
               >
-                <Mail className="w-4 h-4 text-[#ccff00]" />
+                <Mail className="w-4 h-4 text-[#00d2b4]" />
                 Continue with Email Wallet
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
@@ -603,7 +603,7 @@ export default function SignupPage() {
                   handleConnectWallet();
                 }}
                 disabled={isConnecting || siweLoading}
-                className="w-full py-4 bg-[#ccff00] hover:bg-[#ccff00]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(204,255,0,0.15)]"
+                className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/90 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-black shadow-[0_0_20px_rgba(0,210,180,0.15)]"
               >
                 {isConnecting || siweLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -623,9 +623,9 @@ export default function SignupPage() {
               )}
 
               {walletSignupPrompt && address && (
-                <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
+                <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-white/70 space-y-4 mt-2">
                   <div className="flex items-start gap-3">
-                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#ccff00]" />
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-[#00d2b4]" />
                     <div className="space-y-1">
                       <p className="font-bold text-white uppercase tracking-wider">Wallet detected</p>
                       <p className="leading-relaxed">
@@ -648,7 +648,7 @@ export default function SignupPage() {
                       type="button"
                       onClick={() => performSiwe(true)}
                       disabled={siweLoading || !captchaToken}
-                      className="w-full py-3 bg-[#ccff00] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
                     >
                       {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
                     </button>
@@ -721,7 +721,7 @@ export default function SignupPage() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
                     </button>
@@ -753,7 +753,7 @@ export default function SignupPage() {
                   </div>
 
                   {sandboxOtp && (
-                    <div className="bg-[#ccff00]/10 border border-[#ccff00]/20 rounded-2xl p-4 text-xs text-[#ccff00] flex items-center gap-3 shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+                    <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
                       <MailCheck className="w-5 h-5 shrink-0" />
                       <span className="font-mono">Sandbox Test OTP: {sandboxOtp}</span>
                     </div>
@@ -770,7 +770,7 @@ export default function SignupPage() {
                     <button
                       type="submit"
                       disabled={otpLoading}
-                      className="flex-1 py-3.5 bg-[#ccff00] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#ccff00]/95"
+                      className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                     </button>
@@ -789,7 +789,7 @@ export default function SignupPage() {
                 Already have an account?{" "}
                 <button 
                   onClick={() => router.push("/signin")} 
-                  className="text-[#ccff00] font-bold hover:underline"
+                  className="text-[#00d2b4] font-bold hover:underline"
                 >
                   Sign In
                 </button>

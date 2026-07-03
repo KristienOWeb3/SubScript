@@ -1628,7 +1628,7 @@ export default function UserDashboard() {
   if (loading) {
     return (
       <div className="mx-auto flex min-h-[100dvh] max-w-md lg:max-w-none lg:w-full flex-col lg:flex-row overflow-hidden bg-transparent text-white font-sans relative">
-        <AnimatedGradientBg />
+        <AnimatedGradientBg variant="dashboard" />
         
         {/* Desktop Sidebar Skeleton */}
         <aside className="hidden md:flex md:w-20 lg:w-64 border-r border-white/5 bg-black/40 backdrop-blur-xl flex-col p-4 lg:p-5 shrink-0 h-screen sticky top-0 justify-between relative z-10">
@@ -1789,7 +1789,7 @@ export default function UserDashboard() {
   if (redirectMessage) {
     return (
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
-        <AnimatedGradientBg />
+        <AnimatedGradientBg variant="dashboard" />
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
           <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
           <div className="space-y-2">
@@ -1924,7 +1924,7 @@ export default function UserDashboard() {
 
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden">
-      <AnimatedGradientBg />
+      <AnimatedGradientBg variant="dashboard" />
 
       <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
         {!isMobile && (

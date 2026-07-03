@@ -17,7 +17,7 @@ const sections = [
     title: "2. What SubScript Provides",
     body: [
       "SubScript is a Web3 payment and subscription routing protocol built around USDC, Arc Network transaction memos, Checkout Intent IDs, signed merchant webhooks, and human-readable digital dollar receipts.",
-      "The protocol is designed to reduce subscription abuse, including zombie subscriptions, duplicate billing, hidden cancellation traps, opaque receipt disputes, and card-style failed-payment penalties.",
+      "The protocol is designed to reduce subscription abuse, including unwanted recurring charges, duplicate billing, hidden cancellation traps, opaque receipt disputes, and card-style failed-payment penalties.",
     ],
   },
   {
@@ -82,7 +82,7 @@ const sections = [
 
 export default function TermsOfService() {
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#ccff00]/30 selection:text-white">
+    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
       <AnimatedGradientBg />
       <div className="relative z-10">
         <Navbar />
@@ -98,7 +98,7 @@ export default function TermsOfService() {
               Protocol Agreement
             </span>
             <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
-              Terms of <span className="font-serif font-normal italic lowercase tracking-normal text-[#ccff00]">service</span>
+              Terms of <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">service</span>
             </h1>
             <p className="mt-4 font-mono text-xs text-white/40">Last Updated: June 20th, 2026</p>
           </div>
@@ -107,7 +107,7 @@ export default function TermsOfService() {
             {sections.map((section, index) => (
               <section key={section.title} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  {index === 0 && <FileText className="h-4 w-4 text-[#ccff00]" />}
+                  {index === 0 && <FileText className="h-4 w-4 text-[#00d2b4]" />}
                   <h2 className="text-base font-bold uppercase tracking-wider text-white">{section.title}</h2>
                 </div>
                 {section.body.map((paragraph) => (
