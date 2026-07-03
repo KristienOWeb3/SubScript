@@ -321,13 +321,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: merchantRes.error.message }, { status: 500 });
         }
 
-        const isVerified = merchantRes.data?.verified ?? false;
-        if (!isVerified) {
-            return NextResponse.json({
-                error: "Forbidden: Merchant verification required to create payment links (requires Tier 2)."
-            }, { status: 403 });
-        }
-
+        /* Verification is a manual trust badge, not a functional gate — merchants can create links
+           without it. Access is gated only by the tier system (active-link quota below) and, for
+           live keys, a configured payout destination. */
         if (auth.apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
             return merchantPayoutWalletMissingResponse();
         }
