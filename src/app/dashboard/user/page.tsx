@@ -3,7 +3,7 @@
 
 import { ethers } from "ethers";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { enablePush, disablePush, isPushEnabled, pushSupported } from "@/lib/clientPush";
+import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
@@ -337,6 +337,7 @@ export default function UserDashboard() {
   /* Browser Web Push registration state for this device. */
   const [browserPushOn, setBrowserPushOn] = useState(false);
   const [browserPushBusy, setBrowserPushBusy] = useState(false);
+  const [browserPushTestBusy, setBrowserPushTestBusy] = useState(false);
   const [browserPushSupported, setBrowserPushSupported] = useState(true);
 
   useEffect(() => {
@@ -456,6 +457,15 @@ export default function UserDashboard() {
       }
     } finally {
       setBrowserPushBusy(false);
+    }
+  };
+  const handleTestBrowserPush = async () => {
+    setBrowserPushTestBusy(true);
+    try {
+      const result = await sendTestPush();
+      triggerToast(result.ok ? (result.message || "Test notification sent.") : (result.error || "Could not send a test notification."));
+    } finally {
+      setBrowserPushTestBusy(false);
     }
   };
   const [copiedAddress, setCopiedAddress] = useState(false);
@@ -3776,6 +3786,10 @@ export default function UserDashboard() {
                               </p>
                             </div>
                             <button
+                              type="button"
+                              role="switch"
+                              aria-checked={browserPushOn}
+                              aria-label="Browser Push on this device"
                               onClick={handleToggleBrowserPush}
                               disabled={browserPushBusy || !browserPushSupported}
                               className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
@@ -3783,6 +3797,23 @@ export default function UserDashboard() {
                               <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
                             </button>
                           </div>
+
+                          {browserPushOn && (
+                            <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.025] px-4 py-3">
+                              <div className="space-y-0.5">
+                                <p className="text-white font-bold">Verify this device</p>
+                                <p className="text-[9px] text-white/40">Send a private test alert to your registered browsers</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleTestBrowserPush}
+                                disabled={browserPushTestBusy}
+                                className="rounded-xl border border-[#ccff00]/30 bg-[#ccff00]/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#ccff00] transition hover:bg-[#ccff00]/15 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {browserPushTestBusy ? "Sending…" : "Send test"}
+                              </button>
+                            </div>
+                          )}
 
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">

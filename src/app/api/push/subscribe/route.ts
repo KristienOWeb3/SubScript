@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
+import { parsePushEndpoint, parseWebPushSubscription } from "@/lib/pushSubscription";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+export const runtime = "nodejs";
 
 /* Register a browser Web Push subscription for the authenticated wallet. */
 export async function POST(request: Request) {
@@ -14,8 +17,8 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => null);
-        const sub = body?.subscription;
-        if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
+        const sub = parseWebPushSubscription(body?.subscription);
+        if (!sub) {
             return NextResponse.json({ error: "Invalid push subscription payload" }, { status: 400 });
         }
 
@@ -29,8 +32,8 @@ export async function POST(request: Request) {
             wallet_address: walletLower,
             platform: "web",
             endpoint: sub.endpoint,
-            p256dh: sub.keys.p256dh,
-            auth: sub.keys.auth,
+            p256dh: sub.p256dh,
+            auth: sub.auth,
             user_agent: request.headers.get("user-agent") || null,
         });
 
@@ -58,9 +61,9 @@ export async function DELETE(request: Request) {
         }
 
         const body = await request.json().catch(() => null);
-        const endpoint = body?.endpoint;
-        if (!endpoint || typeof endpoint !== "string") {
-            return NextResponse.json({ error: "Missing endpoint" }, { status: 400 });
+        const endpoint = parsePushEndpoint(body?.endpoint);
+        if (!endpoint) {
+            return NextResponse.json({ error: "Invalid endpoint" }, { status: 400 });
         }
 
         await supabaseAdmin
