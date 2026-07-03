@@ -25,17 +25,17 @@ function addr(name, envVar) {
 }
 
 const EXPECTED = [
-    { name: "SubScriptRouter", address: addr("SUBSCRIPT_ROUTER_ADDRESS"), functions: [
+    { name: "SubScriptRouter", address: addr("SUBSCRIPT_ROUTER_ADDRESS", "NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS"), functions: [
         "depositForMerchant(address,uint256,string)", "withdraw()", "withdrawTo(address)",
         "executeBatchPayout(address[],uint256[])", "configurePayoutDestination(address)",
         "setMerchantTier(address,uint8)", "merchantBalances(address)",
     ]},
-    { name: "SubScriptPSA (standard)", address: addr("STANDARD_CONTRACT_ADDRESS"), functions: [
+    { name: "SubScriptPSA (standard)", address: addr("STANDARD_CONTRACT_ADDRESS", "NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS"), functions: [
         "createSubscription(address,uint256,uint256)", "cancelSubscription(uint256)",
         "executePayment(uint256,uint256)", "isSequenceExecuted(uint256,uint256)",
         "nextSubscriptionId()", "subscriptions(uint256)",
     ]},
-    { name: "SubScriptConfidential", address: addr("CONFIDENTIAL_CONTRACT_ADDRESS"), functions: [
+    { name: "SubScriptConfidential", address: addr("CONFIDENTIAL_CONTRACT_ADDRESS", "NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS"), functions: [
         "registerViewKey(bytes32)",
     ]},
     { name: "SubScriptVault", address: addr("SUBSCRIPT_VAULT_ADDRESS", "NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS"), functions: [
@@ -43,7 +43,7 @@ const EXPECTED = [
         "drawUsageFor(address,address,uint256)", "merchantClaim()", "setRequiredCommit(uint256)",
         "getVault(address,address)", "requiredCommit(address)", "merchantClaimable(address)",
     ]},
-    { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
+    { name: "USDC (native)", address: addr("USDC_NATIVE_GAS_ADDRESS", "NEXT_PUBLIC_USDC_ADDRESS"), native: true, functions: ["balanceOf(address)"] },
 ];
 
 const EIP1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";

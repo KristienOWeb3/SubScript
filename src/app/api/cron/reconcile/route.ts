@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
         const result = await reconcile(supabase, 300);
 
-        return NextResponse.json(result, { status: 200 });
+        return NextResponse.json(result, { status: result.success ? 200 : 500 });
 
     } catch (error: any) {
         console.error("Premium reconciliation error:", error);

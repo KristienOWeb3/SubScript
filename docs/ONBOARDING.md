@@ -18,14 +18,14 @@ SubScript supports three discrete authentication and wallet provisioning channel
   5. If no wallet exists, the backend securely derives a new, random Ethereum EOA wallet via `ethers.Wallet.createRandom()`, encrypts the private key, and stores it in the database.
   6. The session cookie is established, and the user is redirected to the role selector.
 
-### B. Google Social Wallet (Circle EOA)
-* **Target Audience**: Users seeking seamless web2-to-web3 social login.
-* **Process**:
-  1. User clicks the "Google Social Sign In" button, which opens the Circle OAuth login popup.
-  2. Upon successful authentication, the Google OAuth subject and email are retrieved.
-  3. A deterministic, non-custodial Circle EOA wallet is retrieved/initialized for that specific social UUID.
-  4. The system validates that this email is not associated with any other wallet address in `user_embedded_wallets`.
-  5. If the mapping is valid, a session cookie is issued, and the user proceeds to the role selector.
+### B. Google Social Wallet (Temporarily Disabled)
+* **Status**: The UI integration remains in the codebase, but `/api/auth/circle/wallet/complete` fails closed.
+* **Reason**: Browser-provided OAuth profile fields are not sufficient proof of identity. Google sign-in must not issue a SubScript session until the Circle user token is validated server-side and bound to a single-use login challenge.
+* **Required before reactivation**:
+  1. Validate the Circle user token on the server.
+  2. Derive the email and social subject only from the validated provider response.
+  3. Bind completion to a server-created, single-use state value.
+  4. Provision a developer-controlled Circle wallet through a durable idempotency record.
 
 ### C. Web3 Wallet (SIWE)
 * **Target Audience**: Web3 native users, merchants, and operations administrators.
@@ -44,14 +44,13 @@ SubScript supports three discrete authentication and wallet provisioning channel
 graph TD
     Start[User Visits /signup] --> Select[Choose Auth Method]
     Select -->|Email OTP| VerifyOTP[Verify OTP Code]
-    Select -->|Google Social| CompleteCircle[Complete Circle Wallet Challenge]
+    Select -->|Google Social| GooglePaused[Unavailable pending server verification]
     Select -->|Web3 Wallet| SignSIWE[Sign SIWE Message]
     
     VerifyOTP --> checkWallet{Wallet Record Exists?}
     checkWallet -->|No| CreateWallet[Generate Random EOA Wallet]
     checkWallet -->|Yes| SetSession[Set Session Cookie]
     CreateWallet --> SetSession
-    CompleteCircle --> SetSession
     SignSIWE --> SetSession
     
     SetSession --> RoleCheck{Role Registered?}

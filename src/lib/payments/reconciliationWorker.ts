@@ -123,9 +123,10 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
 
     const processedCount = sessions ? sessions.length : 0;
     console.log(`[db_updated] Reconciliation worker execution completed. Processed: ${processedCount}`);
+    const success = results.every((result) => result.success);
 
     return {
-        success: true,
+        success,
         processedCount,
         results
     };

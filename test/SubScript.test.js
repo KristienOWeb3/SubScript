@@ -651,6 +651,7 @@ describe("SubScript", function () {
       const amount = ethers.parseUnits("100", 6); // 100 USDC
       const memo = "receipt-12345";
 
+      await router.setMerchantTier(merchant.address, 1);
       await router.connect(subscriber).depositForMerchant(merchant.address, amount, memo);
 
       const recipientBalBefore = await usdc.balanceOf(recipient.address);

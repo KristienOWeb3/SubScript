@@ -21,12 +21,6 @@ function hashOtp(email: string, code: string) {
     return crypto.createHmac("sha256", otpSecret()).update(`${email}:${code}`).digest("hex");
 }
 
-function safeHashMatch(expected: string, actual: string) {
-    const expectedBuffer = Buffer.from(expected, "utf8");
-    const actualBuffer = Buffer.from(actual, "utf8");
-    return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
-}
-
 /**
  * Step-up authentication for the most destructive action on the platform: revealing a wallet's
  * raw private key. A valid session alone is not enough — exposing the key would let a stolen
@@ -47,12 +41,30 @@ async function verifyExportOtp(email: string, code: string): Promise<{ ok: true 
     const emailLower = email.toLowerCase();
     const expectedHash = hashOtp(emailLower, code);
 
-    const record = await withPgClient(async (client) => {
+    const consumed = await withPgClient(async (client) => {
         const result = await client.query(
-            `select code, expires_at from otp_codes where email = $1 limit 1`,
-            [emailLower]
+            `delete from otp_codes
+              where email = $1
+                and code = $2
+                and expires_at > now()
+            returning code, expires_at`,
+            [emailLower, expectedHash]
         );
         return result.rows[0] as { code: string; expires_at: string } | undefined;
+    });
+
+    if (consumed) {
+        return { ok: true };
+    }
+
+    /* Preserve useful failure messages without reintroducing the replay race. An incorrect code
+       remains usable until expiry; an expired code is cleaned up conditionally. */
+    const record = await withPgClient(async (client) => {
+        const result = await client.query(
+            `select expires_at from otp_codes where email = $1 limit 1`,
+            [emailLower]
+        );
+        return result.rows[0] as { expires_at: string } | undefined;
     });
 
     if (!record) {
@@ -63,23 +75,20 @@ async function verifyExportOtp(email: string, code: string): Promise<{ ok: true 
     }
 
     if (new Date(record.expires_at).getTime() < Date.now()) {
-        await withPgClient((client) => client.query(`delete from otp_codes where email = $1`, [emailLower]));
+        await withPgClient((client) => client.query(
+            `delete from otp_codes where email = $1 and expires_at <= now()`,
+            [emailLower]
+        ));
         return {
             ok: false,
             response: NextResponse.json({ error: "Your verification code expired. Request a new one.", code: "OTP_EXPIRED" }, { status: 401 }),
         };
     }
 
-    if (!safeHashMatch(record.code, expectedHash)) {
-        return {
-            ok: false,
-            response: NextResponse.json({ error: "Incorrect verification code.", code: "OTP_INVALID" }, { status: 401 }),
-        };
-    }
-
-    /* Single-use: consume the code so it cannot be replayed. */
-    await withPgClient((client) => client.query(`delete from otp_codes where email = $1`, [emailLower]));
-    return { ok: true };
+    return {
+        ok: false,
+        response: NextResponse.json({ error: "Incorrect verification code.", code: "OTP_INVALID" }, { status: 401 }),
+    };
 }
 
 export async function POST(request: Request) {

@@ -48,7 +48,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 - Fee‑free, set‑and‑forget USDC subscriptions — no card declines or maintenance charges
 - One‑tap checkout and peer‑to‑peer transfers from an in‑app wallet
 - Built‑in messaging with payment requests, receipts, and status — right in the thread
-- Google onboarding; your wallet is created for you
+- Email-verification onboarding with an in-app wallet; Google sign-in is paused pending server-side identity verification
 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing

@@ -160,6 +160,7 @@ export async function sendWebhookRequest(
                 },
                 body: serializedPayload,
                 signal: AbortSignal.timeout(10000),
+                redirect: "manual",
             });
             const responseText = (await response.text().catch(() => "")).slice(0, 1000);
             last = { status: response.status, responseText };

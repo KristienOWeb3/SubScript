@@ -3,9 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 import { ethers } from "ethers";
 import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
+import { getSessionWallet } from "@/lib/auth";
 
 export async function POST(request: Request) {
     try {
+        const wallet = await getSessionWallet(request.headers);
+        if (!wallet) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const body = await request.json().catch(() => null);
         if (!body) {
             return NextResponse.json({ error: "Missing payload body" }, { status: 400 });
@@ -23,6 +29,12 @@ export async function POST(request: Request) {
 
         if (!merchantAddress || !destinationAddress || !commitmentHash || !nullifierHash) {
             return NextResponse.json({ error: "Required fields missing" }, { status: 400 });
+        }
+        if (!ethers.isAddress(merchantAddress) || !ethers.isAddress(destinationAddress)) {
+            return NextResponse.json({ error: "Invalid merchant or destination address" }, { status: 400 });
+        }
+        if (merchantAddress.toLowerCase() !== wallet) {
+            return NextResponse.json({ error: "Forbidden: merchant does not match the authenticated session" }, { status: 403 });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -58,6 +70,12 @@ export async function POST(request: Request) {
                 usedRpcEndpoint = rpcEndpoint;
 
                 if (receipt) {
+                    if (receipt.from?.toLowerCase() !== wallet) {
+                        return NextResponse.json(
+                            { error: "Forbidden: transaction sender does not match the authenticated merchant" },
+                            { status: 403 }
+                        );
+                    }
                     if (receipt.status === 1) {
                         /* Confirm target of the call is the subscript router proxy */
                         const targetContract = receipt.to ? receipt.to.toLowerCase() : "";

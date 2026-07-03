@@ -235,15 +235,22 @@ export default function DocsPage() {
   const [activeSection, setActiveSection] = useState("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const observer = useRef<IntersectionObserver | null>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  const navigationLock = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    const desktopContent = window.matchMedia("(min-width: 768px)").matches
+      ? contentRef.current
+      : null;
     observer.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) setActiveSection(entry.target.id);
+          if (entry.isIntersecting && !navigationLock.current) {
+            setActiveSection(entry.target.id);
+          }
         });
       },
-      { rootMargin: "-18% 0px -64% 0px", threshold: 0.1 },
+      { root: desktopContent, rootMargin: "-8% 0px -72% 0px", threshold: 0.1 },
     );
 
     sections.forEach((section) => {
@@ -251,20 +258,27 @@ export default function DocsPage() {
       if (el) observer.current?.observe(el);
     });
 
-    return () => observer.current?.disconnect();
+    return () => {
+      observer.current?.disconnect();
+      if (navigationLock.current) clearTimeout(navigationLock.current);
+    };
   }, []);
 
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
     setActiveSection(id);
+    if (navigationLock.current) clearTimeout(navigationLock.current);
+    navigationLock.current = setTimeout(() => {
+      navigationLock.current = null;
+    }, 1200);
     setMobileMenuOpen(false);
   };
 
   return (
-    <main className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white">
+    <div className="relative min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white md:h-screen md:overflow-hidden">
       <AnimatedGradientBg />
 
-      <div className="relative z-10">
+      <div className="relative z-10 md:h-full">
         <header className="fixed left-0 right-0 top-0 z-50 border-b border-white/5 bg-[#070709]/85 px-6 py-4 backdrop-blur-md">
           <div className="mx-auto flex max-w-7xl items-center justify-between">
             <div className="flex items-center gap-5">
@@ -330,8 +344,8 @@ export default function DocsPage() {
           )}
         </AnimatePresence>
 
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-20 pt-24 md:grid-cols-4">
-          <aside className="sticky top-24 col-span-1 hidden self-start md:block">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-20 pt-24 md:h-full md:grid-cols-4 md:grid-rows-[minmax(0,1fr)] md:pb-0 md:pt-20">
+          <aside className="col-span-1 hidden min-h-0 self-stretch overflow-y-auto overscroll-contain pb-8 pr-2 md:block">
             <div className="liquid-glass rounded-2xl border border-white/5 bg-black/40 p-5 backdrop-blur-md">
               <p className="mb-3 border-b border-white/5 pb-3 text-[9px] font-semibold uppercase tracking-widest text-white/30">
                 Documentation map
@@ -358,7 +372,10 @@ export default function DocsPage() {
             </div>
           </aside>
 
-          <main className="col-span-1 space-y-16 md:col-span-3">
+          <main
+            ref={contentRef}
+            className="col-span-1 min-h-0 space-y-16 md:col-span-3 md:overflow-y-auto md:overscroll-contain md:pb-20 md:pr-3"
+          >
             <section id="overview" className="scroll-mt-24 space-y-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#00d2b4]">
                 <BookOpen className="h-3 w-3" />
@@ -448,7 +465,7 @@ export default function DocsPage() {
                 ))}
               </div>
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
-                Encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, service lock windows, minimum commitment periods, configurable dunning schedules, and fully decentralized Chainlink Automation are protocol targets documented in the feature brief. The current app already provides the integration primitives those features build on: intents, subscriptions, retries, keeper routes, webhooks, receipts, and merchant dashboards.
+                Circle developer-controlled custody, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, service lock windows, minimum commitment periods, configurable dunning schedules, and fully decentralized Chainlink Automation are protocol targets documented in the feature brief. Google social sign-in is paused until Circle identity is verified server-side. The current app already provides the integration primitives those features build on: intents, subscriptions, retries, keeper routes, webhooks, receipts, and merchant dashboards.
               </div>
             </section>
 
@@ -481,7 +498,7 @@ export default function DocsPage() {
                   <li>1. Your user clicks upgrade inside your app.</li>
                   <li>2. Your backend creates `intent_abc123` and associates it with your user ID.</li>
                   <li>3. Your backend asks SubScript for a hosted pay URL tagged with that intent.</li>
-                  <li>4. SubScript checkout handles wallet connection, Google wallet onboarding, USDC approval, Arc payment execution, and receipt creation.</li>
+                  <li>4. SubScript checkout handles wallet connection or email verification, USDC approval, Arc payment execution, and receipt creation. Google sign-in is temporarily unavailable.</li>
                   <li>5. Your webhook receives `payment.succeeded` with the same `intent_id` and unlocks the user.</li>
                 </ol>
               </div>
@@ -597,7 +614,7 @@ export default function DocsPage() {
                 ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
                 ["Can SubScript handle usage-based products?", "Yes. Commit vaults let a customer escrow a merchant-set amount once; the merchant reports API calls, tokens, sessions, or per-item access via the usage API, which accrues the charges and gates access. SubScript draws the accrued total from escrow at the end of each 30-day cycle."],
                 ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate. Dedicated sponsor records, spending caps, and revocation policies are still deployment-scoped."],
-                ["Does SubScript require users to export their wallet key?", "The product target is to require a secure encrypted private-key export after Google wallet provisioning so users can recover wallet access independently. The app should not claim the onboarding is fully non-custodial permanent until that backup step is enforced."],
+                ["Can users export their wallet key?", "Legacy email wallets can be exported only after fresh OTP step-up verification. Circle developer-controlled MPC wallets do not expose a raw private key. Google sign-in is paused until its identity and custody flow is verified server-side."],
                 ["How does SubScript compare to streaming payment protocols?", "SubScript uses Permit2-style bounded allowances rather than continuous locked streaming liquidity, so funds can remain liquid in the user's wallet until a billing-cycle transaction executes."],
                 ["Can merchants enforce lock windows?", "The UPA model includes service lock windows, minimum commitments, and grace periods, with a ceiling of 72 hours for digital goods and 30 days for SaaS seats. These terms need explicit schema, contract enforcement, and UI disclosure before live use."],
                 ["Does SubScript have smart dunning?", "The platform has retry, reconciliation, billing, and notification primitives. Configurable Day 1, Day 3, and Day 7 schedules plus email/SMS top-up reminders should be formalized before calling it fully live."],
@@ -614,14 +631,14 @@ export default function DocsPage() {
                 </div>
               ))}
             </section>
+
+            <footer className="border-t border-white/5 bg-[#070709]/70 px-6 py-12 text-center text-xs text-white/40">
+              <p className="mb-2">© 2026 SubScript Protocol. All rights reserved.</p>
+              <p>Built for programmable USDC payments on Arc Network.</p>
+            </footer>
           </main>
         </div>
-
-        <footer className="border-t border-white/5 bg-[#070709] px-6 py-12 text-center text-xs text-white/40">
-          <p className="mb-2">© 2026 SubScript Protocol. All rights reserved.</p>
-          <p>Built for programmable USDC payments on Arc Network.</p>
-        </footer>
       </div>
-    </main>
+    </div>
   );
 }

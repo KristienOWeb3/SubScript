@@ -224,7 +224,11 @@ export async function POST(request: Request) {
 
                         await supabase
                             .from("subscriptions")
-                            .update({ status: "CANCELED", downgrade_failures: newFailures, updated_at: new Date().toISOString() })
+                            .update({
+                                status: revokedOnChain ? "CANCELED" : "PAST_DUE",
+                                downgrade_failures: newFailures,
+                                updated_at: new Date().toISOString(),
+                            })
                             .eq("subscription_id", subId);
 
                         await createBillingDm({
@@ -243,14 +247,16 @@ export async function POST(request: Request) {
                             ].join("\n"),
                         }).catch((e: any) => console.error("[customer-billing] zombie-kill DM failed:", e));
 
-                        await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
-                            subscriptionId: subId,
-                            status: "canceled",
-                            amountUsdcMicros: amountOnChain,
-                            subscriber,
-                            merchantAddress,
-                            reason: "Stopped after repeated failed renewals (zombie kill)",
-                        })).catch(() => { /* best-effort */ });
+                        if (revokedOnChain) {
+                            await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                                subscriptionId: subId,
+                                status: "canceled",
+                                amountUsdcMicros: amountOnChain,
+                                subscriber,
+                                merchantAddress,
+                                reason: "Stopped after repeated failed renewals (zombie kill)",
+                            })).catch(() => { /* best-effort */ });
+                        }
                         results.push({ subId, subscriber, action: "ZOMBIE_KILLED", success: false, failuresCount: newFailures, revokedOnChain });
                     } else {
                         /* Keep ACTIVE and retry next run (cheap — only view calls until funded). */
@@ -356,19 +362,20 @@ export async function POST(request: Request) {
 
                     cancelResults.push({ subId, action: "CANCELED_AT_PERIOD_END", success: true });
                 } catch (err: any) {
-                    /* e.g. an external wallet (no server-held key) can't be server-cancelled — still
-                       mark CANCELED so we stop tracking it as active. */
-                    await supabase
-                        .from("subscriptions")
-                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
-                        .eq("subscription_id", subId);
+                    /* Keep the subscription ACTIVE with cancel_at_period_end set so the next run
+                       retries. Reporting CANCELED while authorization remains active on-chain can
+                       hide a chargeable subscription from both the user and operations. */
                     console.error(`[customer-billing] period-end cancel for sub ${subId} failed:`, err?.message || err);
                     cancelResults.push({ subId, action: "CANCEL_AT_PERIOD_END_FAILED", success: false, error: err?.message || "Unknown error" });
                 }
             }
         }
 
-        return NextResponse.json({ success: true, processed: results.length, results, cancellations: cancelResults }, { status: 200 });
+        const success = results.every((result) => result.success) && cancelResults.every((result) => result.success);
+        return NextResponse.json(
+            { success, processed: results.length, results, cancellations: cancelResults },
+            { status: success ? 200 : 500 }
+        );
     } catch (error: any) {
         console.error("Customer billing keeper error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

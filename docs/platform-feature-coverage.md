@@ -10,8 +10,8 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 | --- | --- | --- |
 | Unified Payment Authorization for one-time payments, recurring billing, usage billing, invoicing, and AI-native transactions | Partial | Checkout Intents, payment links, subscriptions, metered vaults, receipts, webhooks, and API surfaces exist. Dedicated invoice objects and AI-native wrappers need first-class product surfaces. |
 | Arc-native USDC payment layer | Implemented for hosted checkout | Direct Arc USDC hosted checkout and receipt-token binding exist. CCTP remains disabled until Arc-side memo settlement is verifiable in one bound flow. |
-| Continue with Google wallet setup | Implemented | Circle Google config and wallet APIs exist under `src/app/api/auth/circle/*`, plus `CircleGoogleWalletButton`. |
-| Mandatory encrypted private-key export after onboarding | Not implemented | Add a required export/backup step after embedded wallet provisioning before describing onboarding as fully non-custodial permanent. |
+| Continue with Google wallet setup | Disabled pending security repair | The completion endpoint fails closed until Circle identity is validated server-side and bound to a single-use login challenge. |
+| Circle developer-controlled wallet custody | Foundation only | Sandbox wallet-set and SCA provisioning helpers exist. Durable provisioning idempotency, execution routing, legacy compatibility, recovery policy, and disclosures are still required before cutover. |
 | Zero-fee customer experience | Partial | UX/docs target user-paid-price-only flows. Production Circle Paymaster/Gas Station configuration must be verified before presenting this as live on mainnet. |
 | Fair merchant pricing at flat 1% | Documented | Public docs and product pages mention merchant-paid 1% pricing. Billing enforcement should be verified against live settlement/accounting. |
 | Pay for Me / sponsored subscriptions | Partial | Product model is documented. Add sponsor relationship schema, spending caps, beneficiary privacy rules, and revocation policy before marking live. |
@@ -33,7 +33,7 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 
 ## Highest-Priority Product Gaps
 
-1. Add mandatory encrypted wallet export/backup after Google wallet provisioning.
+1. Complete server-verified Google identity and the idempotent Circle developer-wallet custody cutover.
 2. Add first-class invoice models: invoice number, due date, payer email/wallet, terms, status, payment link/intent association, and reminder state.
 3. Add sponsor relationships for Pay for Me: sponsor wallet, beneficiary wallet, merchant, spending cap, privacy boundaries, and revocation policy.
 4. Add dunning schedule configuration instead of hard-coded retry assumptions.
@@ -43,4 +43,4 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 
 ## Current Messaging Rule
 
-Marketing, docs, and LLM references should say that SubScript provides the live primitives for UPA commerce today and a testnet-only bank-transfer funding sandbox. Real fiat onramps, private-key export, dedicated invoices, sponsor workflows, commitment windows, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, and quantum resilience remain deployment-scoped until verified.
+Marketing, docs, and LLM references should say that SubScript provides the live primitives for UPA commerce today and a testnet-only bank-transfer funding sandbox. Google social sign-in is paused pending server verification. Circle developer-controlled custody, real fiat onramps, dedicated invoices, sponsor workflows, commitment windows, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, and quantum resilience remain deployment-scoped until verified.
