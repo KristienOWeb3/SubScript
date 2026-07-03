@@ -25,6 +25,7 @@ import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
 export const maxDuration = 300;
 
@@ -68,7 +69,7 @@ async function createBillingDm({
     if (messageType === "DEBIT_SUCCESS" && customerSettings?.debit_success_enabled === false) return;
     if (messageType === "EXPIRY_WARNING" && customerSettings?.expiry_warning_enabled === false) return;
 
-    await supabase.from("subscript_dms").insert({
+    await insertSupabaseDmAndNotify(supabase, {
         sender_address: senderAddress.toLowerCase(),
         receiver_address: receiverAddress.toLowerCase(),
         message_type: messageType,

@@ -6,6 +6,7 @@ import { supabaseAdmin } from "../supabaseAdmin";
 import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "../contracts/constants";
 import { assertProviderRateLimit } from "@/lib/providerRateLimit";
+import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)"
@@ -80,7 +81,7 @@ export async function triggerExitSurvey(
             ? customChurnQuestion
             : `Exit survey for tier ${subscriptionTier}: We would love to know why you cancelled your subscription. Please select one of the options below to help ${merchantName} improve:`;
         try {
-            const { error: dmInsertErr } = await db.from("subscript_dms").insert({
+            await insertSupabaseDmAndNotify(db, {
                 sender_address: merchantAddress.toLowerCase(),
                 receiver_address: customerAddress.toLowerCase(),
                 message_type: "CHURN_SURVEY",
@@ -88,11 +89,7 @@ export async function triggerExitSurvey(
                 title: "We are sorry to see you go",
                 description: surveyPrompt,
             });
-            if (dmInsertErr) {
-                console.error("Database error inserting exit survey DM:", dmInsertErr);
-            } else {
-                console.log("Exit survey DM created successfully.");
-            }
+            console.log("Exit survey DM created successfully.");
         } catch (dmInsertErr) {
             console.error("Failed to insert exit survey DM:", dmInsertErr);
         }

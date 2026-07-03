@@ -1,5 +1,10 @@
 import { withPgClient } from "@/lib/serverPg";
 import { generateReceiptId } from "@/lib/arc/memo";
+import {
+    insertPgDm,
+    pushDmNotification,
+    type DmPushInput,
+} from "@/lib/dms/notifications";
 
 type CreateUserPaymentRequestInput = {
     requester: string;
@@ -20,7 +25,7 @@ export async function createUserPaymentRequest({
     expiresAt = null,
     dmOnly = false,
 }: CreateUserPaymentRequestInput) {
-    return withPgClient(async (client) => {
+    const created = await withPgClient(async (client) => {
         await client.query("begin");
         try {
             await client.query(
@@ -64,43 +69,40 @@ export async function createUserPaymentRequest({
             }
 
             let dmId: string | null = null;
+            let dmNotification: DmPushInput | null = null;
             if (receiver) {
                 const amount = Number(amountMicros) / 1_000_000;
-                const dmResult = await client.query(
-                    `insert into subscript_dms (
-                        sender_address,
-                        receiver_address,
-                        message_type,
-                        status,
-                        amount_usdc,
-                        title,
+                const insertedDm = await insertPgDm(client, {
+                    sender_address: requester,
+                    receiver_address: receiver,
+                    message_type: "PEER_REQUEST",
+                    status: "PENDING",
+                    amount_usdc: amountMicros.toString(),
+                    title: `${amount.toFixed(6).replace(/\.?0+$/, "")} USDC requested`,
+                    description: [
                         description,
-                        payment_link_id
-                    ) values ($1, $2, 'PEER_REQUEST', 'PENDING', $3, $4, $5, $6)
-                    returning id`,
-                    [
-                        requester,
-                        receiver,
-                        amountMicros.toString(),
-                        `${amount.toFixed(6).replace(/\.?0+$/, "")} USDC requested`,
-                        [
-                            description,
-                            `Requester: ${requester}`,
-                            `Amount: ${amount.toFixed(6).replace(/\.?0+$/, "")} USDC`,
-                            expiresAt ? `Valid until: ${expiresAt.toLocaleString("en-US")}` : null,
-                            "This is a structured SubScript payment request, not a free-form chat.",
-                        ].filter(Boolean).join("\n"),
-                        paymentLinkId,
-                    ]
-                );
-                dmId = dmResult.rows[0]?.id || null;
+                        `Requester: ${requester}`,
+                        `Amount: ${amount.toFixed(6).replace(/\.?0+$/, "")} USDC`,
+                        expiresAt ? `Valid until: ${expiresAt.toLocaleString("en-US")}` : null,
+                        "This is a structured SubScript payment request, not a free-form chat.",
+                    ].filter(Boolean).join("\n"),
+                    payment_link_id: paymentLinkId,
+                });
+                dmNotification = insertedDm;
+                dmId = insertedDm.id;
             }
 
             await client.query("commit");
-            return { paymentLinkId, dmId };
+            return { paymentLinkId, dmId, dmNotification };
         } catch (error) {
             await client.query("rollback");
             throw error;
         }
     });
+
+    /* The transaction is committed and its connection released before external push I/O. */
+    if (created.dmNotification) {
+        await pushDmNotification(created.dmNotification);
+    }
+    return { paymentLinkId: created.paymentLinkId, dmId: created.dmId };
 }

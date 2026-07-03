@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -51,18 +52,16 @@ async function createBillingDm({
     if (messageType === "DEBIT_SUCCESS" && customerSettings?.debit_success_enabled === false) return;
     if (messageType === "EXPIRY_WARNING" && customerSettings?.expiry_warning_enabled === false) return;
 
-    await supabase
-        .from("subscript_dms")
-        .insert({
-            sender_address: senderAddress.toLowerCase(),
-            receiver_address: receiverAddress.toLowerCase(),
-            message_type: messageType,
-            status: "PENDING",
-            amount_usdc: amountUsdc.toString(),
-            title,
-            description,
-            tx_hash: txHash || null,
-        });
+    await insertSupabaseDmAndNotify(supabase, {
+        sender_address: senderAddress.toLowerCase(),
+        receiver_address: receiverAddress.toLowerCase(),
+        message_type: messageType,
+        status: "PENDING",
+        amount_usdc: amountUsdc.toString(),
+        title,
+        description,
+        tx_hash: txHash || null,
+    });
 }
 
 export async function POST(request: Request) {

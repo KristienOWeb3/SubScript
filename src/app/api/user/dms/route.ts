@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSubscriptionCancellationReasonEmail } from "@/lib/email/transactional";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
@@ -207,17 +208,15 @@ export async function POST(request: Request) {
                 create: { walletAddress: normalizedReceiver },
             });
 
-            const dm = await prisma.subscriptDm.create({
-                data: {
-                    senderAddress: normalizedWallet,
-                    receiverAddress: normalizedReceiver,
-                    messageType: "PEER_TRANSFER",
-                    status: "APPROVED",
-                    amountUsdc: amountMicros,
-                    txHash,
-                    title: title || `${amountUsdc} USDC Sent`,
-                    description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
-                }
+            const dm = await createDmAndNotify({
+                senderAddress: normalizedWallet,
+                receiverAddress: normalizedReceiver,
+                messageType: "PEER_TRANSFER",
+                status: "APPROVED",
+                amountUsdc: amountMicros,
+                txHash,
+                title: title || `${amountUsdc} USDC Sent`,
+                description: description || `Direct transfer of ${amountUsdc} USDC on-chain.`,
             });
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });
@@ -254,8 +253,8 @@ export async function POST(request: Request) {
             }
 
             /* Anti-spam: a sender can nudge/react to a given peer at most once per hour.
-               Notifications are in-app only (no email/push here), so this protects the
-               recipient's inbox without touching the email API. */
+               Reactions now also notify registered devices, so this protects both the
+               recipient's inbox and their device notification surface. */
             const REACTION_WINDOW_MS = 60 * 60 * 1000;
             const recentReaction = await prisma.subscriptDm.findFirst({
                 where: {
@@ -278,17 +277,15 @@ export async function POST(request: Request) {
                 );
             }
 
-            const dm = await prisma.subscriptDm.create({
-                data: {
-                    senderAddress: normalizedWallet,
-                    receiverAddress: normalizedReceiver,
-                    messageType: "PEER_REACTION",
-                    status: "APPROVED",
-                    amountUsdc: null,
-                    txHash: null,
-                    title: typeof title === "string" && title.trim() ? title.trim().slice(0, 80) : "Reaction",
-                    description: typeof description === "string" ? description.trim().slice(0, 280) : null,
-                }
+            const dm = await createDmAndNotify({
+                senderAddress: normalizedWallet,
+                receiverAddress: normalizedReceiver,
+                messageType: "PEER_REACTION",
+                status: "APPROVED",
+                amountUsdc: null,
+                txHash: null,
+                title: typeof title === "string" && title.trim() ? title.trim().slice(0, 80) : "Reaction",
+                description: typeof description === "string" ? description.trim().slice(0, 280) : null,
             });
 
             return NextResponse.json({ success: true, dmId: dm.id }, { status: 201 });

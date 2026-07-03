@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { extname, join, relative } from "node:path";
 import test from "node:test";
 
 function source(path) {
     return readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+}
+
+const projectRoot = new URL("../../../", import.meta.url);
+
+function sourceFiles(directory) {
+    return readdirSync(new URL(directory, projectRoot), { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile() && [".ts", ".tsx"].includes(extname(entry.name)))
+        .map((entry) => {
+            const absolute = join(entry.parentPath, entry.name);
+            return {
+                path: relative(projectRoot.pathname.slice(1), absolute).replaceAll("\\", "/"),
+                contents: readFileSync(absolute, "utf8"),
+            };
+        });
 }
 
 test("browser push keeps the private VAPID key server-only", () => {
@@ -51,6 +66,57 @@ test("delivery reports outcomes and removes expired browser subscriptions", () =
     assert.match(server, /pruned/);
     assert.match(server, /sent/);
     assert.match(server, /failed/);
+});
+
+test("every DM creation uses a create-and-notify boundary", () => {
+    const helper = source("src/lib/dms/notifications.ts");
+    const files = sourceFiles("src");
+
+    assert.match(helper, /createDmAndNotify/);
+    assert.match(helper, /insertSupabaseDmAndNotify/);
+    assert.match(helper, /insertPgDm/);
+    assert.match(helper, /await pushDmNotification/);
+
+    for (const file of files) {
+        if (file.path === "src/lib/dms/notifications.ts") continue;
+
+        assert.doesNotMatch(
+            file.contents,
+            /prisma\.subscriptDm\.create\s*\(/,
+            `${file.path} bypasses createDmAndNotify()`
+        );
+        assert.doesNotMatch(
+            file.contents,
+            /\.from\(["']subscript_dms["']\)[\s\S]{0,160}?\.insert\s*\(/,
+            `${file.path} bypasses insertSupabaseDmAndNotify()`
+        );
+        assert.doesNotMatch(
+            file.contents,
+            /insert\s+into\s+subscript_dms/i,
+            `${file.path} bypasses insertPgDm()`
+        );
+    }
+});
+
+test("all current DM producers call the shared notification boundary", () => {
+    const producers = [
+        "src/lib/dms/system.ts",
+        "src/app/api/user/dms/route.ts",
+        "src/app/api/cron/billing/route.ts",
+        "src/app/api/cron/customer-billing/route.ts",
+        "src/lib/payments/email.ts",
+        "src/app/api/payment-links/verify/route.ts",
+        "src/app/api/user/vault/report-usage/route.ts",
+        "src/lib/userPaymentRequests.ts",
+    ];
+
+    for (const path of producers) {
+        assert.match(
+            source(path),
+            /(createDmAndNotify|insertSupabaseDmAndNotify|insertPgDm)/,
+            `${path} does not notify the DM recipient`
+        );
+    }
 });
 
 test("the service worker displays and opens push notifications", () => {

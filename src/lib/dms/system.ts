@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountRole } from "@/lib/accounts/roles";
-import { sendPushToWallet } from "@/lib/push";
+import { createDmAndNotify } from "@/lib/dms/notifications";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -90,30 +90,20 @@ export async function createSubscriptionStartedDm({
     const amount = formatUsdcFromMicros(amountUsdc);
     const cadence = formatPeriodLabel(periodSeconds);
 
-    const dm = await prisma.subscriptDm.create({
-        data: {
-            senderAddress: merchant,
-            receiverAddress: subscriber,
-            messageType: "SUBSCRIPTION_STARTED",
-            status: "APPROVED",
-            amountUsdc,
-            title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
-            description: [
-                `Merchant: ${merchantName}`,
-                `Plan: ${planName}`,
-                `Amount: ${amount} USDC / ${cadence}`,
-                "You can manage or cancel this subscription anytime from your dashboard.",
-            ].join("\n"),
-        },
+    const dm = await createDmAndNotify({
+        senderAddress: merchant,
+        receiverAddress: subscriber,
+        messageType: "SUBSCRIPTION_STARTED",
+        status: "APPROVED",
+        amountUsdc,
+        title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
+        description: [
+            `Merchant: ${merchantName}`,
+            `Plan: ${planName}`,
+            `Amount: ${amount} USDC / ${cadence}`,
+            "You can manage or cancel this subscription anytime from your dashboard.",
+        ].join("\n"),
     });
-
-    /* Browser push for the new DM (best-effort; no-op if the user hasn't enabled it). */
-    sendPushToWallet(subscriber, {
-        title: isChange ? "Plan updated" : "Subscription started",
-        body: `${planName}: ${amount} USDC / ${cadence} with ${merchantName}.`,
-        url: "/user?tab=inbox",
-        tag: `subscription-${merchant}`,
-    }).catch(() => { /* best-effort */ });
 
     return dm;
 }
@@ -198,26 +188,24 @@ export async function createPaymentRequestDm({
         timeStyle: "short",
     });
 
-    const dm = await prisma.subscriptDm.create({
-        data: {
-            senderAddress: creatorAddress,
-            receiverAddress: normalizedReceiver,
-            messageType,
-            status: "PENDING",
-            amountUsdc: link.amountUsdc,
-            title: `${creatorName} requested ${amount} USDC`,
-            description: [
-                `Payment for: ${link.title}`,
-                link.description ? `Details: ${link.description}` : null,
-                `Amount: ${amount} USDC`,
-                isMerchantLink
-                    ? `Merchant: ${creatorName}${merchant?.verified ? " (verified)" : " (unverified)"}`
-                    : `From: ${creatorName}`,
-                `Issued: ${issuedAt}`,
-                link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
-            ].filter(Boolean).join("\n"),
-            paymentLinkId: link.id,
-        },
+    const dm = await createDmAndNotify({
+        senderAddress: creatorAddress,
+        receiverAddress: normalizedReceiver,
+        messageType,
+        status: "PENDING",
+        amountUsdc: link.amountUsdc,
+        title: `${creatorName} requested ${amount} USDC`,
+        description: [
+            `Payment for: ${link.title}`,
+            link.description ? `Details: ${link.description}` : null,
+            `Amount: ${amount} USDC`,
+            isMerchantLink
+                ? `Merchant: ${creatorName}${merchant?.verified ? " (verified)" : " (unverified)"}`
+                : `From: ${creatorName}`,
+            `Issued: ${issuedAt}`,
+            link.expiresAt ? `Expires: ${link.expiresAt.toLocaleString("en-US")}` : null,
+        ].filter(Boolean).join("\n"),
+        paymentLinkId: link.id,
     });
 
     return { dm, created: true, link };

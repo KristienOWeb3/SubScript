@@ -11,7 +11,11 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { withPgClient } from "@/lib/serverPg";
-import { sendPushToWallet } from "@/lib/push";
+import {
+    insertPgDm,
+    pushDmNotification,
+    type DmPushInput,
+} from "@/lib/dms/notifications";
 
 type VaultUsageRow = {
     id: string;
@@ -25,8 +29,8 @@ type VaultUsageRow = {
 type UsageResult =
     | { kind: "missing" }
     | { kind: "inactive"; vault: VaultUsageRow }
-    | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notificationCreated: boolean }
-    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notificationCreated: boolean };
+    | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
+    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null };
 
 async function insertExhaustionNotification(
     client: any,
@@ -44,21 +48,17 @@ async function insertExhaustionNotification(
           limit 1`,
         [merchantAddress, userAddress],
     );
-    if (existing.rowCount > 0) return false;
+    if (existing.rowCount > 0) return null;
 
-    await client.query(
-        `insert into subscript_dms
-            (sender_address, receiver_address, message_type, status, amount_usdc, title, description)
-         values ($1, $2, 'COMMIT_EXHAUSTED', 'PENDING', $3, $4, $5)`,
-        [
-            merchantAddress,
-            userAddress,
-            commitUsdc.toString(),
-            "Committed balance exhausted",
-            "Your committed service balance is fully used. Re-commit before requesting more service.",
-        ],
-    );
-    return true;
+    return insertPgDm(client, {
+        sender_address: merchantAddress,
+        receiver_address: userAddress,
+        message_type: "COMMIT_EXHAUSTED",
+        status: "PENDING",
+        amount_usdc: commitUsdc.toString(),
+        title: "Committed balance exhausted",
+        description: "Your committed service balance is fully used. Re-commit before requesting more service.",
+    });
 }
 
 async function accrueUsageAtomically(
@@ -93,7 +93,7 @@ async function accrueUsageAtomically(
 
             const nextAccrued = accrued + amountMicros;
             if (nextAccrued > balance) {
-                const notificationCreated = await insertExhaustionNotification(
+                const notification = await insertExhaustionNotification(
                     client,
                     merchantAddress,
                     userAddress,
@@ -104,7 +104,7 @@ async function accrueUsageAtomically(
                     kind: "exhausted",
                     vault,
                     remaining: balance > accrued ? balance - accrued : BigInt(0),
-                    notificationCreated,
+                    notification,
                 } as const;
             }
 
@@ -117,16 +117,16 @@ async function accrueUsageAtomically(
                 [nextAccrued.toString(), vault.id],
             );
             const exhausted = nextAccrued === balance;
-            const notificationCreated = exhausted
+            const notification = exhausted
                 ? await insertExhaustionNotification(client, merchantAddress, userAddress, commit)
-                : false;
+                : null;
 
             await client.query("commit");
             return {
                 kind: "accrued",
                 vault: updated.rows[0] as VaultUsageRow,
                 exhausted,
-                notificationCreated,
+                notification,
             } as const;
         } catch (error) {
             await client.query("rollback");
@@ -135,16 +135,9 @@ async function accrueUsageAtomically(
     });
 }
 
-function scheduleExhaustionPush(userAddress: string, merchantAddress: string, created: boolean) {
-    if (!created) return;
-    after(() =>
-        sendPushToWallet(userAddress, {
-            title: "Committed balance exhausted",
-            body: "Re-commit before requesting more service.",
-            url: `/user?tab=inbox&chat=${merchantAddress}`,
-            tag: `commit-exhausted-${merchantAddress}`,
-        }),
-    );
+function scheduleDmPush(notification: DmPushInput | null) {
+    if (!notification) return;
+    after(() => pushDmNotification(notification));
 }
 
 export async function POST(request: Request) {
@@ -227,7 +220,7 @@ export async function POST(request: Request) {
         }
 
         if (result.kind === "exhausted") {
-            scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
+            scheduleDmPush(result.notification);
             return NextResponse.json({
                 error: "Committed balance exhausted. The user must re-commit to keep using the service.",
                 code: "COMMIT_EXHAUSTED",
@@ -238,7 +231,7 @@ export async function POST(request: Request) {
             }, { status: 402 });
         }
 
-        scheduleExhaustionPush(normalizedUser, merchantAddress, result.notificationCreated);
+        scheduleDmPush(result.notification);
 
         return NextResponse.json({
             success: true,

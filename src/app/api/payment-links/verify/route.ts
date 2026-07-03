@@ -53,7 +53,7 @@ import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhook
 import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, isProd } from "@/lib/contracts/constants";
 import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
-import { sendPushToWallet } from "@/lib/push";
+import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import {
     resolveFulfillmentAddress,
     validateBeneficiaryAddress,
@@ -726,33 +726,25 @@ export async function POST(request: Request) {
                                     .maybeSingle();
 
                                 if (!existingReceipt) {
-                                    await supabase
-                                        .from("subscript_dms")
-                                        .insert({
-                                            sender_address: paymentLink.merchant_address.toLowerCase(),
-                                            receiver_address: normalizedPayer,
-                                            message_type: "DEBIT_SUCCESS",
-                                            status: "PENDING",
-                                            amount_usdc: paymentLink.amount_usdc.toString(),
-                                            title: `Receipt: ${paymentLink.title}`,
-                                            description: [
-                                                `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
-                                                `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
-                                                `Transaction: ${normalizedTx}`,
-                                                `Receipt: ${shareUrl}`,
-                                            ].filter(Boolean).join("\n"),
-                                            tx_hash: normalizedTx,
-                                            payment_link_id: paymentLink.id,
-                                        });
+                                    await insertSupabaseDmAndNotify(supabase, {
+                                        sender_address: paymentLink.merchant_address.toLowerCase(),
+                                        receiver_address: normalizedPayer,
+                                        message_type: "DEBIT_SUCCESS",
+                                        status: "PENDING",
+                                        amount_usdc: paymentLink.amount_usdc.toString(),
+                                        title: `Receipt: ${paymentLink.title}`,
+                                        description: [
+                                            `SubScript confirmed your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment.`,
+                                            `Paid to: ${paymentLink.merchant_name_snapshot || paymentLink.merchant_address}`,
+                                            `Transaction: ${normalizedTx}`,
+                                            `Receipt: ${shareUrl}`,
+                                        ].filter(Boolean).join("\n"),
+                                        tx_hash: normalizedTx,
+                                        payment_link_id: paymentLink.id,
+                                    }).catch((dmErr) =>
+                                        console.error("[verify] receipt DM notification failed:", dmErr)
+                                    );
                                 }
-
-                                /* Best-effort browser/native push for the same event. */
-                                sendPushToWallet(normalizedPayer, {
-                                    title: "Payment confirmed",
-                                    body: `Your ${Number(paymentLink.amount_usdc) / 1_000_000} USDC payment to ${paymentLink.merchant_name_snapshot || "the merchant"} settled.`,
-                                    url: shareUrl,
-                                    tag: `payment-${normalizedTx}`,
-                                }).catch((pushErr) => console.error("[verify] push send failed:", pushErr));
                             }
 
                             await sendPaymentReceiptEmails({
