@@ -63,10 +63,12 @@ import {
   RefreshCw,
   Gift,
   Lock,
+  Search,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
+import UserSpendAnalysis from "@/components/UserSpendAnalysis";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -3156,72 +3158,21 @@ export default function UserDashboard() {
                   </div>
                 )}
 
-                {/* 3. SPENDING LIMITS VIEW */}
+                {/* 3. SPENDING LIMITS VIEW (Spenda-inspired) */}
                 {accountSubView === "limits" && (
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => setAccountSubView("menu")}
-                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
-                      >
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Spending Limits</h2>
-                    </div>
-
-                    {userSettings && (
-                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <CreditCard className="h-4 w-4 text-[#ccff00]" /> Edit Spending Limits
-                        </h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
-                          Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
-                        </p>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
-                          }}
-                          className="space-y-4 font-sans text-xs"
-                        >
-                          <Field label="Daily Limit (USDC)">
-                            <input
-                              type="number"
-                              value={dailyLimitInput}
-                              onChange={(e) => setDailyLimitInput(e.target.value)}
-                              placeholder="e.g. 50"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <Field label="Weekly Limit (USDC)">
-                            <input
-                              type="number"
-                              value={weeklyLimitInput}
-                              onChange={(e) => setWeeklyLimitInput(e.target.value)}
-                              placeholder="e.g. 200"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <Field label="Monthly Limit (USDC)">
-                            <input
-                              type="number"
-                              value={monthlyLimitInput}
-                              onChange={(e) => setMonthlyLimitInput(e.target.value)}
-                              placeholder="e.g. 500"
-                              className="subscript-input"
-                            />
-                          </Field>
-                          <button
-                            type="submit"
-                            disabled={savingSettingsField === "spendingLimits"}
-                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
-                          >
-                            {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
-                          </button>
-                        </form>
-                      </div>
-                    )}
-                  </div>
+                  <UserSpendAnalysis
+                    userSettings={userSettings}
+                    settingsTransactions={settingsTransactions}
+                    dailyLimitInput={dailyLimitInput}
+                    setDailyLimitInput={setDailyLimitInput}
+                    weeklyLimitInput={weeklyLimitInput}
+                    setWeeklyLimitInput={setWeeklyLimitInput}
+                    monthlyLimitInput={monthlyLimitInput}
+                    setMonthlyLimitInput={setMonthlyLimitInput}
+                    savingSettingsField={savingSettingsField}
+                    handleSaveSpendingLimits={handleSaveSpendingLimits}
+                    setAccountSubView={setAccountSubView}
+                  />
                 )}
 
                 {/* 4. TRANSACTIONS VIEW */}
