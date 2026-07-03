@@ -115,6 +115,7 @@ export async function GET(request: Request) {
                     disputeAlertsEnabled: merchant.disputeAlertsEnabled,
                     securityMultiSigEnabled: merchant.securityMultiSigEnabled,
                     churnSurveyEnabled: merchant.churnSurveyEnabled,
+                    churnSurveyQuestion: merchant.churnSurveyQuestion,
                     payoutDestination: merchant.payoutDestination,
                     availableBalanceUsdc: merchant.availableBalanceUsdc.toString(),
                     walletBackup: embeddedWalletRecord ? {
@@ -234,6 +235,7 @@ export async function POST(request: Request) {
             payoutSettlementEnabled,
             disputeAlertsEnabled,
             churnSurveyEnabled,
+            churnSurveyQuestion,
             payoutDestination,
             spendingLimitDaily,
             spendingLimitWeekly,
@@ -249,6 +251,10 @@ export async function POST(request: Request) {
 
         if (typeof payoutDestination === "string" && payoutDestination.length > 200) {
             return NextResponse.json({ error: "Payout destination is too long (max 200 characters)." }, { status: 400 });
+        }
+
+        if (typeof churnSurveyQuestion === "string" && churnSurveyQuestion.trim().length > 280) {
+            return NextResponse.json({ error: "Exit-survey question is too long (max 280 characters)." }, { status: 400 });
         }
 
         let finalProfilePic = profilePic;
@@ -276,6 +282,11 @@ export async function POST(request: Request) {
             if (disputeAlertsEnabled !== undefined) updateData.disputeAlertsEnabled = false;
             if (securityMultiSigEnabled !== undefined) updateData.securityMultiSigEnabled = false;
             if (churnSurveyEnabled !== undefined) updateData.churnSurveyEnabled = !!churnSurveyEnabled;
+            if (churnSurveyQuestion !== undefined) {
+                // Empty/whitespace clears the custom question and falls back to the default prompt.
+                const trimmed = typeof churnSurveyQuestion === "string" ? churnSurveyQuestion.trim() : "";
+                updateData.churnSurveyQuestion = trimmed.length > 0 ? trimmed : null;
+            }
             if (payoutDestination !== undefined) updateData.payoutDestination = payoutDestination;
 
             await prisma.merchant.upsert({

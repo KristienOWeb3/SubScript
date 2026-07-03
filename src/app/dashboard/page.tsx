@@ -40,7 +40,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare
 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -776,6 +776,7 @@ export default function DashboardPage() {
     const [uploadingPic, setUploadingPic] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+    const [churnQuestionDraft, setChurnQuestionDraft] = useState("");
     const [merchantWalletBackupLoading, setMerchantWalletBackupLoading] = useState(false);
     const [merchantWalletBackupError, setMerchantWalletBackupError] = useState<string | null>(null);
     const [merchantExportOtpStage, setMerchantExportOtpStage] = useState(false);
@@ -792,6 +793,7 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setUserSettings(data.settings);
+                setChurnQuestionDraft(data.settings?.churnSurveyQuestion || "");
                 setSettingsTransactions(data.receipts);
                 if (data.settings.alias) {
                     const aliasParts = data.settings.alias.split(".");
@@ -902,6 +904,33 @@ export default function DashboardPage() {
             }
         } catch (err) {
             console.error(`Error saving setting ${field}:`, err);
+        } finally {
+            setSavingSettingsField(null);
+        }
+    };
+
+    const handleUpdateChurnSurveyQuestion = async (question: string) => {
+        setSavingSettingsField("churnSurveyQuestion");
+        try {
+            const res = await fetch("/api/user/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ churnSurveyQuestion: question })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const trimmed = question.trim();
+                setUserSettings((prev: any) => ({ ...prev, churnSurveyQuestion: trimmed.length > 0 ? trimmed : null }));
+                setToastMessage("Exit-survey question saved");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 3000);
+            } else {
+                setToastMessage(data.error || "Could not save the exit-survey question");
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 3000);
+            }
+        } catch (err) {
+            console.error("Error updating churn survey question:", err);
         } finally {
             setSavingSettingsField(null);
         }
@@ -3543,6 +3572,41 @@ Please complete the following implementation tasks:
                                     className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
                                 >
                                     <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Exit Survey — merchant-defined cancellation question (SUB-501) */}
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
+                        <div>
+                            <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <MessageSquare className="w-4 h-4 text-[#00d2b4]" />
+                                Exit Survey
+                            </h2>
+                            <p className="text-[11px] text-white/40 font-sans">
+                                Ask cancelling customers your own question. Leave blank to use the default prompt.
+                            </p>
+                        </div>
+
+                        <div className="space-y-3 font-sans">
+                            <textarea
+                                value={churnQuestionDraft}
+                                onChange={(e) => setChurnQuestionDraft(e.target.value)}
+                                maxLength={280}
+                                rows={3}
+                                placeholder="e.g. What could we have done to keep you subscribed?"
+                                className="w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
+                            />
+                            <div className="flex items-center justify-between">
+                                <span className="text-[9px] text-white/30 uppercase tracking-wider">{churnQuestionDraft.length}/280</span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleUpdateChurnSurveyQuestion(churnQuestionDraft)}
+                                    disabled={savingSettingsField === "churnSurveyQuestion" || (churnQuestionDraft.trim() === (userSettings?.churnSurveyQuestion || ""))}
+                                    className="px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#00d2b4]/10 border border-[#00d2b4]/30 text-white hover:bg-[#00d2b4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {savingSettingsField === "churnSurveyQuestion" ? "Saving..." : "Save question"}
                                 </button>
                             </div>
                         </div>

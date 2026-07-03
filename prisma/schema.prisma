@@ -144,6 +144,7 @@ model Merchant {
   payoutSettlementEnabled Boolean         @default(true) @map("payout_settlement_enabled")
   disputeAlertsEnabled   Boolean          @default(true) @map("dispute_alerts_enabled")
   churnSurveyEnabled     Boolean          @default(true) @map("churn_survey_enabled")
+  churnSurveyQuestion    String?          @map("churn_survey_question")
   securityMultiSigEnabled Boolean         @default(false) @map("security_multi_sig_enabled")
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at")
