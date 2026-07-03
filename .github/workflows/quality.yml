@@ -36,5 +36,8 @@ jobs:
       - name: Financial safety regressions
         run: npm run test:security
 
+      - name: Documentation contract
+        run: npm run test:docs
+
       - name: Smart contract tests
         run: npm run test:contracts

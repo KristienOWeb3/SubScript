@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,22 +34,26 @@ type Section = {
   id: string;
   title: string;
   icon: typeof BookOpen;
+  group: "Essentials" | "Platform" | "Build" | "Reference";
 };
 
 const sections: Section[] = [
-  { id: "overview", title: "Overview", icon: BookOpen },
-  { id: "protocol", title: "Protocol brief", icon: ShieldCheck },
-  { id: "paths", title: "Choose a path", icon: Zap },
-  { id: "upa", title: "UPA model", icon: ShieldCheck },
-  { id: "nocode", title: "No-code links", icon: Link2 },
-  { id: "vibecoder", title: "Vibecoder prompt", icon: MessageSquare },
-  { id: "developer", title: "Developer API", icon: Server },
-  { id: "usage", title: "Usage billing", icon: Terminal },
-  { id: "webhooks", title: "Webhooks", icon: Webhook },
-  { id: "errors", title: "Errors", icon: ShieldCheck },
-  { id: "receipts", title: "Receipts", icon: ReceiptText },
-  { id: "contracts", title: "On-chain", icon: Code },
-  { id: "faq", title: "FAQ", icon: HelpCircle },
+  { id: "overview", title: "Start here", icon: BookOpen, group: "Essentials" },
+  { id: "quickstart", title: "5-minute quickstart", icon: Zap, group: "Essentials" },
+  { id: "concepts", title: "Core concepts", icon: KeyRound, group: "Essentials" },
+  { id: "protocol", title: "Protocol brief", icon: FileText, group: "Platform" },
+  { id: "paths", title: "Choose a path", icon: Globe, group: "Platform" },
+  { id: "upa", title: "UPA model", icon: ShieldCheck, group: "Platform" },
+  { id: "nocode", title: "No-code links", icon: Link2, group: "Platform" },
+  { id: "vibecoder", title: "AI integration prompt", icon: MessageSquare, group: "Platform" },
+  { id: "developer", title: "API reference", icon: Server, group: "Build" },
+  { id: "usage", title: "Usage billing", icon: Terminal, group: "Build" },
+  { id: "webhooks", title: "Webhooks", icon: Webhook, group: "Build" },
+  { id: "testing", title: "Test & debug", icon: Terminal, group: "Build" },
+  { id: "errors", title: "Errors", icon: ShieldCheck, group: "Reference" },
+  { id: "receipts", title: "Receipts", icon: ReceiptText, group: "Reference" },
+  { id: "contracts", title: "On-chain", icon: Code, group: "Reference" },
+  { id: "faq", title: "FAQ", icon: HelpCircle, group: "Reference" },
 ];
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
@@ -80,32 +85,67 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   );
 }
 
-const checkoutIntentCode = `// Merchant backend: create a Checkout Intent with SubScript
+const quickstartCurl = `curl --request POST \\
+  --url https://www.subscriptonarc.com/api/intent \\
+  --header "Authorization: Bearer sk_test_your_secret_key" \\
+  --header "Content-Type: application/json" \\
+  --data '{
+    "title": "Premium Plan",
+    "description": "Monthly access",
+    "amountUsdcMicros": "15000000",
+    "externalReference": "user_123",
+    "idempotencyKey": "checkout_user_123_premium_v1",
+    "sandbox": true,
+    "successUrl": "https://yourapp.com/billing/success",
+    "cancelUrl": "https://yourapp.com/pricing"
+  }'`;
+
+const intentResponseCode = `{
+  "success": true,
+  "sandbox": true,
+  "intent": {
+    "id": "clx_intent_123",
+    "checkoutSessionId": "clx_intent_123",
+    "title": "Premium Plan",
+    "amountUsdcMicros": "15000000",
+    "status": "PENDING",
+    "receiptToken": "rcpt-7e10c918a3aa672eb783f1b965914b12",
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/clx_intent_123",
+    "chainId": 5042002,
+    "usdcAddress": "0x3600000000000000000000000000000000000000"
+  }
+}`;
+
+const checkoutIntentCode = `// Run this on your server — never in a browser component.
 const response = await fetch("https://www.subscriptonarc.com/api/intent", {
   method: "POST",
   headers: {
-    "Authorization": "Bearer sk_test_your_subscript_secret_key",
-    "Content-Type": "application/json"
+    Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
     title: "Premium Plan",
-    amountUsdc: "15000000",
+    amountUsdcMicros: "15000000", // 15 USDC; always an integer string
     description: "Monthly access for user_123",
     externalReference: "user_123",
-    idempotencyKey: "intent_abc123",
-    sandbox: true
-  })
+    idempotencyKey: "checkout_user_123_premium_v1",
+    sandbox: true,
+    successUrl: "https://yourapp.com/billing/success",
+    cancelUrl: "https://yourapp.com/pricing",
+  }),
 });
 
 const payload = await response.json();
 
 if (!response.ok) {
-  if (payload.error === "merchant_payout_wallet_missing") {
-    throw new Error(payload.message);
-  }
-  throw new Error(payload.error || "SubScript checkout creation failed");
+  console.error("SubScript request failed", {
+    code: payload.code,
+    requestId: payload.request_id,
+  });
+  throw new Error(payload.message || "SubScript checkout creation failed");
 }
 
+// Persist all three beside your own order/user before redirecting.
 const checkoutUrl = payload.intent.checkoutUrl;
 const intentId = payload.intent.id;
 const receiptToken = payload.intent.receiptToken;`;
@@ -123,16 +163,25 @@ const webhookCode = `import crypto from "crypto";
 
 export async function POST(req) {
   const rawBody = await req.text();
-  const signature = req.headers.get("x-subscript-signature");
+  const signatureHeader = req.headers.get("x-subscript-signature");
   const secret = process.env.SUBSCRIPT_WEBHOOK_SECRET;
 
-  if (!secret || !signature) {
+  if (!secret || !signatureHeader) {
     return Response.json({ error: "Missing webhook configuration or signature" }, { status: 400 });
   }
 
-  const [timestampPart, digestPart] = signature.split(",");
-  const timestamp = timestampPart.replace("t=", "");
-  const digest = digestPart.replace("v1=", "");
+  const match = signatureHeader.match(/^t=(\\d+),v1=([a-f0-9]{64})$/);
+  if (!match) {
+    return Response.json({ error: "Malformed signature" }, { status: 401 });
+  }
+
+  const timestamp = Number(match[1]);
+  const digest = match[2];
+  const now = Math.floor(Date.now() / 1000);
+
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > 300) {
+    return Response.json({ error: "Expired signature" }, { status: 401 });
+  }
 
   const expected = crypto
     .createHmac("sha256", secret)
@@ -146,13 +195,34 @@ export async function POST(req) {
   }
 
   const event = JSON.parse(rawBody);
-  // Canonical event name is \`type\`; \`event\` ("payment.success") is a deprecated alias.
+
+  // Insert event.id into a UNIQUE column before fulfilling.
+  // If it already exists, return 200 without running fulfillment again.
+  const inserted = await claimWebhookEvent(event.id);
+  if (!inserted) return Response.json({ received: true, duplicate: true });
+
   if (event.type === "payment.succeeded") {
-    // Use event.id for idempotency, then fulfill by intent_id.
     await unlockPlanForUser(event.data.intent_id);
   }
 
   return Response.json({ received: true });
+}`;
+
+const webhookPayloadCode = `{
+  "id": "evt_payment_abc123",
+  "type": "payment.succeeded",
+  "created": 1783080000,
+  "data": {
+    "intent_id": "clx_intent_123",
+    "merchant_reference": "user_123",
+    "amount": "15",
+    "amount_usdc_micros": "15000000",
+    "currency": "USDC",
+    "receipt_id": "rcpt-7e10c918a3aa672eb783f1b965914b12",
+    "transaction_hash": "0x...",
+    "chain_id": 5042002,
+    "usdc_address": "0x3600000000000000000000000000000000000000"
+  }
 }`;
 
 const vibePrompt = `You are integrating SubScript into my app.
@@ -161,9 +231,9 @@ Goal:
 - Add a "Pay with SubScript" button to my pricing page.
 - My backend should create a Checkout Intent for the logged-in user.
 - Store intent_id in my database beside the user's account.
-- Store intent_id and receiptToken in my database beside the user's account or order.
+- Store intent_id, externalReference, and receiptToken beside the user's account or order before redirecting.
 - Redirect the user to the SubScript checkoutUrl.
-- Add a webhook route that verifies x-subscript-signature.
+- Add a webhook route that reads the raw body, verifies the timestamped x-subscript-signature, and atomically claims event.id.
 - When payment.succeeded arrives (check event.type), look up data.intent_id and unlock the plan.
 
 Use:
@@ -175,6 +245,9 @@ Use:
 Important:
 - Do not ask the merchant to know the payer wallet.
 - Use intent_id as the source of truth.
+- Send amountUsdcMicros as an integer string ("15000000" = 15 USDC).
+- Use one stable idempotencyKey per logical checkout and reuse it only for retries.
+- Never fulfill from the success redirect; fulfill only from the verified webhook.
 - Hosted checkout is Arc-native USDC only right now; do not add Base, Solana, or CCTP checkout unless the local docs say it is live.
 - Treat fiat onramps, dedicated invoices, sponsor workflows, merchant commitment windows, and Chainlink Automation as deployment-scoped unless the local app explicitly implements them.
 - Keep all secret keys server-side only.`;
@@ -265,7 +338,17 @@ export default function DocsPage() {
   }, []);
 
   const scrollToSection = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    const target = document.getElementById(id);
+    const content = contentRef.current;
+    if (target && content && window.matchMedia("(min-width: 768px)").matches) {
+      const top = target.getBoundingClientRect().top
+        - content.getBoundingClientRect().top
+        + content.scrollTop
+        - 24;
+      content.scrollTop = Math.max(0, top);
+    } else {
+      target?.scrollIntoView({ behavior: "smooth" });
+    }
     setActiveSection(id);
     if (navigationLock.current) clearTimeout(navigationLock.current);
     navigationLock.current = setTimeout(() => {
@@ -283,7 +366,7 @@ export default function DocsPage() {
           <div className="mx-auto flex max-w-7xl items-center justify-between">
             <div className="flex items-center gap-5">
               <Link href="/" className="flex items-center gap-2.5">
-                <img src="/logo.png" alt="SubScript" className="h-7 w-7 object-contain" />
+                <Image src="/logo.png" alt="SubScript" width={28} height={28} className="h-7 w-7 object-contain" priority />
                 <span className="text-sm font-semibold uppercase tracking-wider">
                   SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
                 </span>
@@ -320,23 +403,29 @@ export default function DocsPage() {
               initial={{ opacity: 0, y: -14 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -14 }}
-              className="fixed left-0 right-0 top-16 z-40 border-b border-white/10 bg-[#070709] p-5 shadow-2xl md:hidden"
+              className="fixed left-0 right-0 top-16 z-40 max-h-[calc(100vh-4rem)] overflow-y-auto overscroll-contain border-b border-white/10 bg-[#070709] p-5 shadow-2xl md:hidden"
             >
               <nav className="flex flex-col gap-1">
-                {sections.map((section) => {
+                {sections.map((section, index) => {
                   const Icon = section.icon;
                   return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => scrollToSection(section.id)}
-                      className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left text-xs font-bold uppercase tracking-wider transition ${
-                        activeSection === section.id ? "bg-[#00d2b4]/15 text-[#00d2b4]" : "text-white/60 hover:bg-white/5 hover:text-white"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {section.title}
-                    </button>
+                    <div key={section.id}>
+                      {(index === 0 || sections[index - 1].group !== section.group) && (
+                        <p className={`mb-1 px-4 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/30 ${index === 0 ? "mt-0" : "mt-4"}`}>
+                          {section.group}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection(section.id)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-xs font-bold uppercase tracking-wider transition ${
+                          activeSection === section.id ? "bg-[#00d2b4]/15 text-[#00d2b4]" : "text-white/60 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {section.title}
+                      </button>
+                    </div>
                   );
                 })}
               </nav>
@@ -351,21 +440,27 @@ export default function DocsPage() {
                 Documentation map
               </p>
               <nav className="flex flex-col gap-1">
-                {sections.map((section) => {
+                {sections.map((section, index) => {
                   const Icon = section.icon;
                   const active = activeSection === section.id;
                   return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => scrollToSection(section.id)}
-                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition ${
-                        active ? "border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {section.title}
-                    </button>
+                    <div key={section.id}>
+                      {(index === 0 || sections[index - 1].group !== section.group) && (
+                        <p className={`mb-1 px-3 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/25 ${index === 0 ? "mt-0" : "mt-4"}`}>
+                          {section.group}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection(section.id)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition ${
+                          active ? "border border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]" : "text-white/50 hover:bg-white/[0.03] hover:text-white"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {section.title}
+                      </button>
+                    </div>
                   );
                 })}
               </nav>
@@ -382,22 +477,147 @@ export default function DocsPage() {
                 Start here
               </div>
               <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl">
-                The easiest way to add programmable USDC subscriptions.
+                From API key to verified USDC payment.
               </h1>
               <p className="max-w-3xl text-sm leading-relaxed text-white/70">
-                SubScript lets a platform accept programmable USDC payments without forcing users to understand wallets, gas, bridges, dollar cards, or raw transaction hashes. Merchants create Checkout Intents, users pay through SubScript, Arc memo receipts make the payment human-readable, and webhooks tell the merchant exactly which Web2 user or order to unlock.
+                Create a Checkout Intent from your backend, redirect the payer to SubScript, and fulfill your order from a signed webhook. This guide starts with a working sandbox request, then explains every identifier, security boundary, and production decision.
               </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("quickstart")}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#00d2b4] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#04110f] transition hover:bg-[#42e7cd]"
+                >
+                  Start quickstart
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection("developer")}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white/10"
+                >
+                  API reference
+                  <Code className="h-4 w-4" />
+                </button>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {[
-                  ["10 minutes", "Hosted payment links for no-code teams"],
-                  ["30 minutes", "Backend Checkout Intent plus webhook"],
-                  ["Advanced", "Direct Arc memo and router integration"],
+                  ["5 minutes", "First sandbox Checkout Intent"],
+                  ["One webhook", "Verified, idempotent fulfillment"],
+                  ["Arc-native", "USDC settlement with receipt binding"],
                 ].map(([label, text]) => (
                   <div key={label} className="liquid-glass rounded-2xl border border-white/5 bg-black/25 p-5">
                     <p className="text-2xl font-bold text-[#00d2b4]">{label}</p>
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section id="quickstart" className="scroll-mt-24 space-y-6">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                  First successful integration
+                </p>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Create a hosted checkout in five minutes</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
+                  Your backend creates an intent, your frontend redirects to its hosted checkout URL, and your webhook fulfills the order after SubScript verifies the Arc settlement. You never need to map a payer wallet to your user.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {[
+                  ["1", "Get a test key", "Open Dashboard → Developers → API keys and create an sk_test_ key."],
+                  ["2", "Keep it server-side", "Save it as SUBSCRIPT_SECRET_KEY. Never prefix it with NEXT_PUBLIC_."],
+                  ["3", "Choose your order ID", "Use your user, order, or invoice ID as externalReference so fulfillment maps cleanly."],
+                ].map(([number, title, text]) => (
+                  <div key={number} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-full bg-[#00d2b4]/15 text-xs font-bold text-[#00d2b4]">
+                      {number}
+                    </div>
+                    <h3 className="text-sm font-semibold text-white">{title}</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <CodeBlock
+                code={`# .env.local — server only
+SUBSCRIPT_SECRET_KEY=sk_test_your_secret_key
+SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
+                language="dotenv"
+              />
+
+              <div>
+                <h3 className="text-sm font-semibold text-white">1. Create the Checkout Intent</h3>
+                <p className="mt-2 text-xs leading-relaxed text-white/60">
+                  This request is safely retryable because the idempotency key is stable for this logical checkout.
+                </p>
+              </div>
+              <CodeBlock code={quickstartCurl} language="bash" />
+
+              <div>
+                <h3 className="text-sm font-semibold text-white">2. Store the response, then redirect</h3>
+                <p className="mt-2 text-xs leading-relaxed text-white/60">
+                  Persist <span className="font-mono text-white/85">intent.id</span>, your <span className="font-mono text-white/85">externalReference</span>, and <span className="font-mono text-white/85">receiptToken</span> before sending the browser to <span className="font-mono text-white/85">checkoutUrl</span>.
+                </p>
+              </div>
+              <CodeBlock code={intentResponseCode} language="json" />
+
+              <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-5 text-xs leading-relaxed text-amber-50/85">
+                <span className="font-bold text-amber-100">Fulfillment rule:</span> never unlock from the success redirect alone. Redirects are user-controlled navigation. Unlock only after a valid, idempotently processed <span className="font-mono">payment.succeeded</span> webhook.
+              </div>
+            </section>
+
+            <section id="concepts" className="scroll-mt-24 space-y-6">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                  Mental model
+                </p>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Four identifiers, one predictable lifecycle</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
+                  Most integration mistakes come from treating identifiers as interchangeable. Give each one a single job and persist the relationship in your database.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {[
+                  ["intent.id", "SubScript's checkout identifier", "Use this to correlate checkout, webhook, receipt, and support requests."],
+                  ["externalReference", "Your identifier", "Set this to your user ID, order ID, or invoice ID. It returns as merchant_reference."],
+                  ["receiptToken", "Human-readable proof handle", "Links the hosted checkout to its Arc memo receipt without exposing raw chain complexity."],
+                  ["event.id", "Webhook delivery identifier", "Store it under a UNIQUE constraint before fulfillment so retries cannot duplicate work."],
+                ].map(([name, title, text]) => (
+                  <div key={name} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <p className="font-mono text-xs font-bold text-[#00d2b4]">{name}</p>
+                    <h3 className="mt-3 text-sm font-semibold text-white">{title}</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30 p-5">
+                <div className="flex min-w-[680px] items-center justify-between gap-3 text-center">
+                  {[
+                    ["1", "Create intent", "PENDING"],
+                    ["2", "Redirect payer", "Hosted checkout"],
+                    ["3", "Verify settlement", "Arc USDC"],
+                    ["4", "Receive webhook", "payment.succeeded"],
+                    ["5", "Fulfill once", "Your database"],
+                  ].map(([number, title, detail], index) => (
+                    <div key={title} className="flex flex-1 items-center gap-3">
+                      <div className="min-w-0 flex-1 rounded-xl border border-white/5 bg-white/[0.03] p-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-[#00d2b4]">Step {number}</p>
+                        <p className="mt-1 text-xs font-semibold text-white">{title}</p>
+                        <p className="mt-1 text-[10px] text-white/40">{detail}</p>
+                      </div>
+                      {index < 4 && <ArrowRight className="h-4 w-4 shrink-0 text-white/25" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.06] p-5 text-xs leading-relaxed text-white/70">
+                <span className="font-bold text-cyan-100">Money units:</span> <span className="font-mono">amountUsdcMicros</span> is always a positive integer string in six-decimal micro-USDC. <span className="font-mono">&quot;15000000&quot;</span> means 15 USDC; <span className="font-mono">&quot;1&quot;</span> means 0.000001 USDC. Never send floats.
               </div>
             </section>
 
@@ -492,18 +712,83 @@ export default function DocsPage() {
             </section>
 
             <section id="developer" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-bold tracking-tight text-white">Developer flow: Checkout Intent lifecycle</h2>
-              <div className="rounded-3xl border border-white/5 bg-black/30 p-6">
-                <ol className="space-y-3 text-sm leading-relaxed text-white/70">
-                  <li>1. Your user clicks upgrade inside your app.</li>
-                  <li>2. Your backend creates `intent_abc123` and associates it with your user ID.</li>
-                  <li>3. Your backend asks SubScript for a hosted pay URL tagged with that intent.</li>
-                  <li>4. SubScript checkout handles wallet connection or email verification, USDC approval, Arc payment execution, and receipt creation. Google sign-in is temporarily unavailable.</li>
-                  <li>5. Your webhook receives `payment.succeeded` with the same `intent_id` and unlocks the user.</li>
-                </ol>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                    REST API reference
+                  </p>
+                  <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Create a Checkout Intent</h2>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="rounded-md bg-[#00d2b4]/15 px-2 py-1 font-bold text-[#00d2b4]">POST</span>
+                  <span className="text-white/70">/api/intent</span>
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {[
+                  ["Base URL", "https://www.subscriptonarc.com"],
+                  ["Authentication", "Authorization: Bearer sk_test_…"],
+                  ["Content type", "application/json"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-white/5 bg-black/30 p-4">
+                    <p className="text-[9px] font-semibold uppercase tracking-widest text-white/35">{label}</p>
+                    <p className="mt-2 break-all font-mono text-[11px] text-white/80">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+                <table className="w-full min-w-[720px] text-left text-xs">
+                  <thead className="border-b border-white/5 bg-white/[0.03] text-[9px] uppercase tracking-widest text-white/40">
+                    <tr>
+                      <th className="px-4 py-3">Field</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Required</th>
+                      <th className="px-4 py-3">Meaning</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-white/65">
+                    {[
+                      ["title", "string", "Yes", "Short product or plan name shown at checkout."],
+                      ["amountUsdcMicros", "integer string", "Yes", "Canonical six-decimal amount. \"15000000\" = 15 USDC."],
+                      ["externalReference", "string ≤ 256", "Recommended", "Your user, order, or invoice ID. Returned in the webhook."],
+                      ["idempotencyKey", "string", "Recommended", "Stable key for one logical checkout. Reuse it only when retrying that checkout."],
+                      ["description", "string", "No", "Customer-facing context for the payment."],
+                      ["sandbox", "boolean", "No", "Set true while testing. sk_test_ keys imply sandbox behavior."],
+                      ["successUrl", "HTTPS URL", "No", "Where checkout sends the payer after success. Not proof of payment."],
+                      ["cancelUrl", "HTTPS URL", "No", "Where checkout sends the payer after cancellation."],
+                      ["expiresAt", "ISO date or Unix time", "No", "When the hosted checkout should stop accepting payment."],
+                      ["maxUses", "integer 1–10000", "No", "Maximum successful uses for a reusable link."],
+                    ].map(([field, type, required, meaning]) => (
+                      <tr key={field}>
+                        <td className="px-4 py-3 font-mono font-semibold text-[#00d2b4]">{field}</td>
+                        <td className="px-4 py-3 font-mono text-white/55">{type}</td>
+                        <td className="px-4 py-3">{required}</td>
+                        <td className="px-4 py-3 leading-relaxed">{meaning}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
               <CodeBlock code={checkoutIntentCode} language="javascript" />
               <CodeBlock code={frontendEmbedCode} language="tsx" />
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["201", "Created", "A new intent was created."],
+                  ["200", "Replay", "The same idempotency key returned its existing intent."],
+                  ["4xx", "Fix request", "Use code for branching and message for display."],
+                  ["5xx", "Retry safely", "Reuse the same idempotency key and log request_id."],
+                ].map(([status, title, text]) => (
+                  <div key={status} className="rounded-xl border border-white/5 bg-black/30 p-4">
+                    <p className="font-mono text-sm font-bold text-[#00d2b4]">{status}</p>
+                    <p className="mt-2 text-xs font-semibold text-white">{title}</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-white/45">{text}</p>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">
@@ -538,17 +823,144 @@ export default function DocsPage() {
             </section>
 
             <section id="webhooks" className="scroll-mt-24 space-y-6">
-              <h2 className="text-2xl font-bold tracking-tight text-white">Webhook fulfillment</h2>
-              <p className="text-sm leading-relaxed text-white/70">
-                Webhooks close the Web2/Web3 gap. The merchant does not need the payer wallet address. The merchant only needs to trust the signed event and use the `intent_id` to unlock the right Web2 account.
-              </p>
-              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
-                Canonical successful checkout event: `type: "payment.succeeded"`. Payloads also carry `event: "payment.success"`, a deprecated back-compat alias — write new handlers against `type`. Use `data.intent_id` or `data.checkout_session_id` as the fulfillment key.
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                  Trusted fulfillment
+                </p>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Verify the webhook, then fulfill exactly once</h2>
               </div>
+              <p className="text-sm leading-relaxed text-white/70">
+                A redirect says where the browser went. A signed webhook says what settled. Read the raw request bytes, verify the timestamped HMAC, claim the event ID atomically, and only then update your order or entitlement.
+              </p>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                {[
+                  ["1", "Read raw body", "Parsing and re-serializing JSON changes the signed bytes."],
+                  ["2", "Check ±5 minutes", "Reject stale timestamps before computing trust."],
+                  ["3", "Verify HMAC", "Sign timestamp + period + exact raw body with SHA-256."],
+                  ["4", "Claim event.id", "A UNIQUE insert makes retries safe under concurrency."],
+                ].map(([number, title, text]) => (
+                  <div key={number} className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-[#00d2b4]">Step {number}</p>
+                    <p className="mt-2 text-xs font-semibold text-white">{title}</p>
+                    <p className="mt-2 text-[10px] leading-relaxed text-white/45">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
+                Canonical event: <span className="font-mono">type: &quot;payment.succeeded&quot;</span>. Use <span className="font-mono">data.intent_id</span> to find the SubScript checkout and <span className="font-mono">data.merchant_reference</span> to find your own user or order. The legacy <span className="font-mono">event: &quot;payment.success&quot;</span> alias is present only for compatibility.
+              </div>
+
+              <CodeBlock code={webhookPayloadCode} language="json" />
+
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-xs leading-relaxed text-white/75">
-                Keep `SUBSCRIPT_SECRET_KEY` and `SUBSCRIPT_WEBHOOK_SECRET` server-side only. Never expose them in React, mobile clients, public repositories, or browser bundles.
+                Keep <span className="font-mono">SUBSCRIPT_SECRET_KEY</span> and <span className="font-mono">SUBSCRIPT_WEBHOOK_SECRET</span> server-side only. Never expose either value in React props, mobile clients, public repositories, browser bundles, logs, or screenshots.
               </div>
               <CodeBlock code={webhookCode} language="javascript" />
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Delivery behavior</p>
+                <ul className="mt-3 list-disc space-y-2 pl-5">
+                  <li>Return any <span className="font-mono">2xx</span> only after the event is durably claimed.</li>
+                  <li>SubScript retries timeouts, <span className="font-mono">408</span>, <span className="font-mono">429</span>, and <span className="font-mono">5xx</span> responses.</li>
+                  <li>Your handler must return <span className="font-mono">200</span> for an already-processed <span className="font-mono">event.id</span>.</li>
+                  <li>Do slow email, analytics, or provisioning work after the durable claim, preferably through your own queue.</li>
+                </ul>
+              </div>
+            </section>
+
+            <section id="testing" className="scroll-mt-24 space-y-6">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                  Ship with confidence
+                </p>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Test, observe, and go live deliberately</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
+                  Build the complete test flow before swapping credentials. Sandbox and live use the same API shape, so your code should change configuration—not logic.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+                <table className="w-full min-w-[680px] text-left text-xs">
+                  <thead className="border-b border-white/5 bg-white/[0.03] text-[9px] uppercase tracking-widest text-white/40">
+                    <tr>
+                      <th className="px-4 py-3">Mode</th>
+                      <th className="px-4 py-3">Credential</th>
+                      <th className="px-4 py-3">Behavior</th>
+                      <th className="px-4 py-3">Use it for</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-white/65">
+                    <tr>
+                      <td className="px-4 py-3 font-semibold text-[#00d2b4]">Sandbox</td>
+                      <td className="px-4 py-3 font-mono">sk_test_…</td>
+                      <td className="px-4 py-3">Implies <span className="font-mono">sandbox: true</span>; no live payout destination required.</td>
+                      <td className="px-4 py-3">Local development, CI, end-to-end tests.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-semibold text-white">Live</td>
+                      <td className="px-4 py-3 font-mono">sk_live_…</td>
+                      <td className="px-4 py-3">Requires a configured merchant payout wallet.</td>
+                      <td className="px-4 py-3">Real customer settlement after launch review.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                  <h3 className="text-sm font-semibold text-white">Sandbox acceptance checklist</h3>
+                  <ul className="mt-4 space-y-3 text-xs leading-relaxed text-white/60">
+                    {[
+                      "Create an intent and persist all identifiers before redirect.",
+                      "Complete checkout and receive payment.succeeded.",
+                      "Replay the same webhook and prove fulfillment happens once.",
+                      "Retry intent creation with the same idempotencyKey and receive the same intent.",
+                      "Send an invalid amount and confirm your logs capture request_id, never the secret key.",
+                    ].map((item) => (
+                      <li key={item} className="flex gap-3">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#00d2b4]" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                  <h3 className="text-sm font-semibold text-white">Go-live checklist</h3>
+                  <ul className="mt-4 space-y-3 text-xs leading-relaxed text-white/60">
+                    {[
+                      "Create a separate sk_live_ key and store it only in server secrets.",
+                      "Configure and verify the merchant payout destination.",
+                      "Use a distinct live webhook endpoint secret.",
+                      "Alert on webhook 5xx responses and aged PENDING intents.",
+                      "Keep the sandbox path available for release regression tests.",
+                    ].map((item) => (
+                      <li key={item} className="flex gap-3">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#00d2b4]" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Fast diagnosis</p>
+                <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[180px_1fr]">
+                  <dt className="font-mono text-[#00d2b4]">401 unauthorized</dt>
+                  <dd>Confirm the Bearer header exists and the key is active. Do not print the key while debugging.</dd>
+                  <dt className="font-mono text-[#00d2b4]">400 invalid_amount</dt>
+                  <dd>Send a positive integer string in micro-USDC; never send <span className="font-mono">15.00</span>.</dd>
+                  <dt className="font-mono text-[#00d2b4]">409 idempotency conflict</dt>
+                  <dd>The key belongs to another logical resource. Generate a new key for the new checkout.</dd>
+                  <dt className="font-mono text-[#00d2b4]">merchant_payout_wallet_missing</dt>
+                  <dd>Your live key is valid, but live checkout is blocked until payout setup is complete.</dd>
+                  <dt className="font-mono text-[#00d2b4]">Webhook signature mismatch</dt>
+                  <dd>Verify against the raw body before JSON parsing and use the endpoint&apos;s exact secret.</dd>
+                </dl>
+              </div>
             </section>
 
             <section id="errors" className="scroll-mt-24 space-y-6">
