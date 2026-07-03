@@ -45,6 +45,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
+import MobileMerchantDashboard from "@/components/MobileMerchantDashboard";
 
 import { 
     ARC_TESTNET_CHAIN_ID, 
@@ -597,6 +598,7 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+    const [mobileViewTab, setMobileViewTab] = useState<"home" | "report" | "performance">("home");
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
     /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
     const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
@@ -4131,251 +4133,20 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
 
-                        {/* Mobile Overview Layout (Strictly blueprint aligned) */}
-                        <div className="md:hidden space-y-6 pb-24 font-sans">
-                            {/* Wallet Balance Card */}
-                            <div className="liquid-glass border border-white/10 rounded-3xl p-6 shadow-xl flex justify-between items-center relative overflow-hidden bg-black/35 backdrop-blur-xl">
-                                <div className="space-y-1 relative z-10">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Wallet Balance</span>
-                                        <button onClick={() => setBalanceVisible(!balanceVisible)} className="text-white/30 hover:text-white/60 transition-colors p-0.5">
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                        </button>
-                                        <button 
-                                            onClick={handleManualRefreshBalances}
-                                            disabled={isRefreshingBalances}
-                                            className="text-white/30 hover:text-white/65 disabled:opacity-50 transition-all p-0.5 flex items-center justify-center"
-                                            title="Refresh Balance"
-                                        >
-                                            <RefreshCw className={`w-3 h-3 ${isRefreshingBalances ? "animate-spin" : ""}`} />
-                                        </button>
-                                    </div>
-                                    <p className="text-3xl font-extrabold text-white mt-1.5 tracking-tight leading-none">
-                                        {balanceVisible ? `$${walletBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                    </p>
-                                    <span className="text-xs font-semibold text-white/40 font-mono">
-                                        {balanceVisible ? `${detectedCurrency.symbol}${(walletBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                    </span>
-                                </div>
-                                <div className="relative z-10">
-                                    <button
-                                        onClick={() => setIsDepositOpen(true)}
-                                        className="w-12 h-12 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                        title="Deposit funds"
-                                    >
-                                        <ArrowDown className="w-5 h-5 rotate-180" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Claimable Settlement Card */}
-                            <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 shadow-xl relative overflow-hidden bg-black/35 backdrop-blur-xl">
-                                <div className="relative z-10 space-y-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-white/45 uppercase font-bold tracking-wider">Claimable Settlement</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setBalanceVisible(!balanceVisible)}
-                                                className="text-white/30 hover:text-white/60 transition-colors p-0.5"
-                                                aria-label={balanceVisible ? "Hide balances" : "Show balances"}
-                                            >
-                                            {balanceVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                            </button>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setTimeframeOpen((open) => !open)}
-                                            className="flex items-center gap-1 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/15 px-2.5 py-1 text-[8px] font-bold text-[#00d2b4] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:bg-[#00d2b4]/25 active:scale-95"
-                                            aria-expanded={timeframeOpen}
-                                            aria-label="Select settlement timeframe"
-                                        >
-                                            <span>{settlementTimeframe}</span>
-                                            <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${timeframeOpen ? "rotate-180" : "rotate-0"}`} />
-                                        </button>
-                                    </div>
-                                    <AnimatePresence initial={false}>
-                                        {timeframeOpen && (
-                                            <motion.div
-                                                initial={{ opacity: 0, height: 0, y: -4 }}
-                                                animate={{ opacity: 1, height: "auto", y: 0 }}
-                                                exit={{ opacity: 0, height: 0, y: -4 }}
-                                                transition={{ type: "spring", stiffness: 340, damping: 22, bounce: 0.22 }}
-                                                className="overflow-hidden"
-                                            >
-                                                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
-                                                    {settlementTimeframes.map((tf) => (
-                                                        <button
-                                                            key={tf}
-                                                            type="button"
-                                                            onClick={() => { setSettlementTimeframe(tf); setTimeframeOpen(false); }}
-                                                            className={`rounded-full px-2 py-1.5 text-center text-[8px] font-bold transition-all duration-200 active:scale-95 ${
-                                                                settlementTimeframe === tf
-                                                                    ? "bg-[#00d2b4]/15 text-[#00d2b4] ring-1 ring-[#00d2b4]/30"
-                                                                    : "text-white/50 hover:bg-white/5 hover:text-white"
-                                                            }`}
-                                                        >
-                                                            {tf}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                    <div className="flex items-end justify-between gap-4">
-                                        <div className="space-y-1">
-                                            <p className="text-3xl font-extrabold text-[#00d2b4] tracking-tight leading-none">
-                                                {balanceVisible ? `$${vaultBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                            </p>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                                    {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
-                                                </span>
-                                                <span className="text-xs font-semibold text-white/40 font-mono">
-                                                    {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setIsWithdrawOpen(true)}
-                                            className="w-12 h-12 shrink-0 rounded-full border border-[#00d2b4]/30 bg-[#00d2b4]/10 hover:bg-[#00d2b4]/20 text-[#00d2b4] flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-lg shadow-[#00d2b4]/5 hover:scale-105 active:scale-95"
-                                            title="Withdraw routed funds"
-                                        >
-                                            <ArrowDown className="w-5 h-5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Quick Actions Grid (Circles) */}
-                            <div className="grid grid-cols-4 gap-3 py-2 text-center">
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("payment-links")}
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <ArrowUpRight className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
-                                </div>
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("webhooks")}
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <ArrowUp className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
-                                </div>
-                                <div>
-                                    <Link
-                                        href="/merchant/payroll"
-                                        className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
-                                    >
-                                        <Building2 className="w-5 h-5" />
-                                    </Link>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payroll</span>
-                                </div>
-                                <div>
-                                    <button
-                                        onClick={() => setActiveTab("premium")}
-                                        className={`mx-auto w-12 h-12 rounded-full border flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95 ${
-                                            isPremium 
-                                                ? "border-[#d4a853]/30 bg-[#d4a853]/10 text-[#d4a853]" 
-                                                : "border-white/10 bg-white/[0.02] text-white/40"
-                                        }`}
-                                    >
-                                        <Crown className="w-5 h-5" />
-                                    </button>
-                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Premium Tier</span>
-                                </div>
-                            </div>
-
-                            {/* Customer / Agent Ledger (Mobile list card) */}
-                            <div className="liquid-glass border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
-                                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                                    Customer / Agent Ledger
-                                </h3>
-                                <div className="space-y-3">
-                                    {isLoadingContract ? (
-                                        <div className="py-8 text-center text-white/30 flex items-center justify-center gap-2">
-                                            <Loader2 className="w-4 h-4 animate-spin text-[#00d2b4]" />
-                                            <span className="text-xs">Fetching ledger...</span>
-                                        </div>
-                                    ) : ledgers.length === 0 ? (
-                                        <div className="py-8 text-center text-white/20 text-xs">
-                                            No active allowances detected.
-                                        </div>
-                                    ) : (
-                                        (() => {
-                                            const ledgerPageSize = 5;
-                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                            return paginatedLedgers.map((item) => (
-                                                <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
-                                                    <div className="flex justify-between items-start pr-8">
-                                                        <div>
-                                                            <p className="text-[10px] font-bold text-white uppercase tracking-wide">{item.id}</p>
-                                                            <p className="text-[9px] font-mono text-white/40 mt-0.5">{item.displayAddress || item.shortSubAddress}</p>
-                                                        </div>
-                                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider ${
-                                                            item.active 
-                                                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                                                : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                        }`}>
-                                                            {item.active ? "Active" : "Revoked"}
-                                                        </span>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 text-[9px] text-white/50 font-mono">
-                                                        <div>
-                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Allowance</span>
-                                                            <span className="text-white font-semibold block mt-0.5">{item.limit}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-bold block">Next Billing</span>
-                                                            <span className="text-white/70 block mt-0.5">{item.nextBilling}</span>
-                                                        </div>
-                                                    </div>
-                                                    {item.active && (
-                                                        <span className="block text-[8px] font-bold uppercase tracking-widest text-white/20">
-                                                            Only the customer can cancel
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ));
-                                        })()
-                                    )}
-                                </div>
-                                {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
-                                    if (totalPages <= 1) return null;
-                                    return (
-                                        <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">
-                                            <span className="text-[9px] text-white/30 uppercase font-bold">
-                                                {ledgerPage + 1} / {totalPages}
-                                            </span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage === 0}
-                                                    onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
-                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
-                                                >
-                                                    Prev
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={ledgerPage >= totalPages - 1}
-                                                    onClick={() => setLedgerPage((p) => Math.min(totalPages - 1, p + 1))}
-                                                    className="px-2.5 py-1 bg-white/5 border border-white/10 disabled:opacity-30 text-white rounded-lg text-[9px] font-bold uppercase"
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
+                        {/* Mobile Overview Layout (Strictly blueprint aligned & Spenda inspired) */}
+                        <div className="md:hidden space-y-6 pb-28 font-sans text-white">
+                            <MobileMerchantDashboard
+                                userSettings={userSettings}
+                                walletBalance={walletBalance}
+                                vaultBalance={vaultBalance}
+                                balanceVisible={balanceVisible}
+                                setBalanceVisible={setBalanceVisible}
+                                settingsTransactions={settingsTransactions}
+                                address={address}
+                                setActiveTab={setActiveTab}
+                                mobileViewTab={mobileViewTab}
+                                setMobileViewTab={setMobileViewTab}
+                            />
                         </div>
                     </>
                 );
