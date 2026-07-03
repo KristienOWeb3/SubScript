@@ -109,6 +109,12 @@ const formatPlanAmount = (micros: string) => {
     }
 };
 
+const limitDecimals = (value: string, maxDecimals: number = 6): string => {
+    if (!value || !value.includes(".")) return value;
+    const [integer, fraction] = value.split(".");
+    return `${integer}.${fraction.slice(0, maxDecimals)}`;
+};
+
 const formatPlanPeriod = (seconds: string) => {
     const value = Number(seconds);
     if (!Number.isFinite(value) || value <= 0) return "cycle";
@@ -1173,7 +1179,7 @@ export default function DashboardPage() {
                 throw new Error("Amount must be a positive number");
             }
 
-            const rawAmount = parseUnits(linkAmountUsdc, 6).toString();
+            const rawAmount = parseUnits(limitDecimals(linkAmountUsdc, 6), 6).toString();
             const totalSelectedSeconds = linkDurationMinutes * 60;
             const expiresTimestamp = Math.floor(Date.now() / 1000) + totalSelectedSeconds;
 

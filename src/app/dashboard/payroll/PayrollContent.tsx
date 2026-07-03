@@ -599,6 +599,17 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             showToastMessage("Add at least one recipient with a wallet and salary", "error");
             return;
         }
+
+        const isAddress = (address: string) => /^0x[a-fA-F0-9]{40}$/.test(address);
+        const isDns = (address: string) => /\.sub$/.test(address);
+
+        const invalidAddress = validRecipients.find(
+            (r) => !isAddress(r.employeeWallet.trim()) && !isDns(r.employeeWallet.trim())
+        );
+        if (invalidAddress) {
+            showToastMessage(`Recipient "${invalidAddress.employeeWallet}" must be a valid 0x address or .sub DNS name`, "error");
+            return;
+        }
         if (!permit2Sig) {
             showToastMessage("Please sign the Permit2 approval first", "error");
             return;

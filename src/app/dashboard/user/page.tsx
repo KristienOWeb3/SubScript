@@ -173,6 +173,12 @@ const formatAddress = (addr: string | null) => {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 };
 
+const limitDecimals = (value: string, maxDecimals: number = 6): string => {
+  if (!value || !value.includes(".")) return value;
+  const [integer, fraction] = value.split(".");
+  return `${integer}.${fraction.slice(0, maxDecimals)}`;
+};
+
 const walletAddressPattern = /0x[a-fA-F0-9]{40}/g;
 
 const looksLikeWalletAddress = (value: string | null | undefined) => {
@@ -1367,7 +1373,7 @@ export default function UserDashboard() {
         if (chainId !== ARC_TESTNET_CHAIN_ID) {
           await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
         }
-        const amountMicros = parseUnits(vaultActionAmount, 6);
+        const amountMicros = parseUnits(limitDecimals(vaultActionAmount, 6), 6);
 
         if (vaultActionMode === "commit") {
           const allowance = (await publicClient.readContract({
@@ -1413,7 +1419,11 @@ export default function UserDashboard() {
       setVaultActionOpen(false);
       await loadVaults().catch(() => {});
     } catch (err: any) {
-      setVaultActionError(err.message || "Vault action failed.");
+      if (err.message?.includes("User rejected the request")) {
+        setVaultActionError("Transaction signature was rejected by user.");
+      } else {
+        setVaultActionError(err.message || "Vault action failed.");
+      }
     } finally {
       setVaultActionBusy(false);
     }
@@ -1684,7 +1694,7 @@ export default function UserDashboard() {
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [singleResolved.address as `0x${string}`, parseUnits(singleAmount, 6)],
+        args: [singleResolved.address as `0x${string}`, parseUnits(limitDecimals(singleAmount, 6), 6)],
       });
 
       setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
@@ -1707,7 +1717,11 @@ export default function UserDashboard() {
       }
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      setSingleSendStatus(err.message || "Failed to execute transfer.");
+      if (err.message?.includes("User rejected the request")) {
+        setSingleSendStatus("Transaction signature was rejected by user.");
+      } else {
+        setSingleSendStatus(err.message || "Failed to execute transfer.");
+      }
     } finally {
       setSingleSendLoading(false);
     }
@@ -1797,7 +1811,7 @@ export default function UserDashboard() {
           address: USDC_NATIVE_GAS_ADDRESS,
           abi: usdcAbi,
           functionName: "transfer",
-          args: [row.address as `0x${string}`, parseUnits(row.amount, 6)],
+          args: [row.address as `0x${string}`, parseUnits(limitDecimals(row.amount, 6), 6)],
         });
 
         if (txHash) {
@@ -1822,7 +1836,11 @@ export default function UserDashboard() {
       await loadDms().catch(() => {});
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      setBatchSendStatus(err.message || "Failed to execute batch send.");
+      if (err.message?.includes("User rejected the request")) {
+        setBatchSendStatus("Transaction signature was rejected by user.");
+      } else {
+        setBatchSendStatus(err.message || "Failed to execute batch send.");
+      }
       setBatchProgress(null);
     } finally {
       setBatchSendLoading(false);
@@ -5661,7 +5679,7 @@ function DepositModal({
     }
 
     try {
-      const requiredAmount = parseUnits(bridgeAmountStr, 6);
+      const requiredAmount = parseUnits(limitDecimals(bridgeAmountStr, 6), 6);
       const sepoliaConfig = CCTP_CONFIG[11155111] || {
         tokenMessenger: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as `0x${string}`,
         usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`,
@@ -5813,7 +5831,11 @@ function DepositModal({
     } catch (err: any) {
       console.error(err);
       setCctpStatus("error");
-      setCctpError(err.message || "Failed to bridge USDC.");
+      if (err.message?.includes("User rejected the request")) {
+        setCctpError("Transaction signature was rejected by user.");
+      } else {
+        setCctpError(err.message || "Failed to bridge USDC.");
+      }
     }
   };
 
@@ -6515,14 +6537,18 @@ function SendFundsModal({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [resolvedAddress as `0x${string}`, parseUnits(amount, 6)],
+        args: [resolvedAddress as `0x${string}`, parseUnits(limitDecimals(amount, 6), 6)],
       });
 
       setStatus("success");
       refetchUsdc();
       setTimeout(() => onClose(), 2000);
     } catch (err: any) {
-      setStatus(err.message || "Transfer execution failed.");
+      if (err.message?.includes("User rejected the request")) {
+        setStatus("Transaction signature was rejected by user.");
+      } else {
+        setStatus(err.message || "Transfer execution failed.");
+      }
     } finally {
       setLoading(false);
     }
