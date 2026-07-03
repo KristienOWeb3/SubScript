@@ -27,6 +27,7 @@
         "lint": "next lint"
     },
     "dependencies": {
+        "@circle-fin/developer-controlled-wallets": "^10.8.0",
         "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
         "@openzeppelin/contracts-upgradeable": "^5.6.1",
         "@phosphor-icons/react": "^2.1.10",
