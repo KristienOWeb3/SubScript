@@ -13,8 +13,8 @@ import {
 } from "@/lib/contracts/constants";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { getWalletCustody } from "@/lib/custody";
 
-const isProdEnv = process.env.NODE_ENV === "production";
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
 const MERCHANT_SPONSORED_ACTIONS = new Set([
     "approveUsdc",
@@ -25,88 +25,6 @@ const MERCHANT_SPONSORED_ACTIONS = new Set([
     "configurePayoutDestination",
     "registerViewKey"
 ]);
-
-const ERC20_ABI = [
-    {
-        type: "function",
-        name: "approve",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "spender", type: "address" },
-            { name: "amount", type: "uint256" }
-        ],
-        outputs: [{ name: "", type: "bool" }]
-    },
-    {
-        type: "function",
-        name: "transfer",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "to", type: "address" },
-            { name: "amount", type: "uint256" }
-        ],
-        outputs: [{ name: "", type: "bool" }]
-    },
-    {
-        type: "function",
-        name: "balanceOf",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }]
-    }
-];
-
-const SUBSCRIPT_ABI = [
-    {
-        type: "function",
-        name: "createSubscription",
-        stateMutability: "nonpayable",
-        inputs: [
-            { name: "merchant", type: "address" },
-            { name: "amount", type: "uint256" },
-            { name: "period", type: "uint256" }
-        ],
-        outputs: []
-    },
-    {
-        type: "function",
-        name: "withdraw",
-        stateMutability: "nonpayable",
-        inputs: [],
-        outputs: []
-    },
-    {
-        type: "function",
-        name: "cancelSubscription",
-        stateMutability: "nonpayable",
-        inputs: [{ name: "_subId", type: "uint256" }],
-        outputs: []
-    },
-    {
-        type: "function",
-        name: "configurePayoutDestination",
-        stateMutability: "nonpayable",
-        inputs: [{ name: "_newDestination", type: "address" }],
-        outputs: []
-    },
-    {
-        type: "function",
-        name: "merchantBalances",
-        stateMutability: "view",
-        inputs: [{ name: "", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }]
-    }
-];
-
-const CONFIDENTIAL_ABI = [
-    {
-        type: "function",
-        name: "registerViewKey",
-        stateMutability: "nonpayable",
-        inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
-        outputs: []
-    }
-];
 
 export async function POST(request: Request) {
     try {
@@ -187,23 +105,25 @@ export async function POST(request: Request) {
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
-            .select("encrypted_private_key, provider")
+            .select("encrypted_private_key, circle_wallet_id, provider")
             .eq("wallet_address", wallet.toLowerCase())
             .maybeSingle();
 
         if (walletError || !walletRecord) {
             return NextResponse.json({ error: "Embedded wallet not found for authenticated user" }, { status: 404 });
         }
-        if (walletRecord.provider === "external_wallet" || !walletRecord.encrypted_private_key) {
+        /* External (browser) wallets sign client-side; server-sponsored execution needs a
+           server-held custody (a legacy encrypted key or a Circle MPC wallet). */
+        if (walletRecord.provider === "external_wallet" || (!walletRecord.encrypted_private_key && !walletRecord.circle_wallet_id)) {
             return NextResponse.json({ error: "Server-sponsored execution is only available for embedded wallet sessions." }, { status: 403 });
         }
 
-        const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
-
+        /* Resolve the call into a backend-agnostic (functionSignature, params). uint256 args are
+           passed as decimal strings — validated via BigInt() and accepted by both ethers (legacy)
+           and Circle's abiParameters (MPC). */
         let contractAddress = "";
-        let contractAbi: any = null;
-        let functionName = "";
-        let finalArgs: any[] = [];
+        let functionSignature = "";
+        let params: unknown[] = [];
 
         switch (action) {
             case "approveUsdc": {
@@ -218,11 +138,10 @@ export async function POST(request: Request) {
                 ) {
                     return NextResponse.json({ error: "Unauthorized spender address. Approve only the SubScript standard or router contract." }, { status: 400 });
                 }
-                
+
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;
-                contractAbi = ERC20_ABI;
-                functionName = "approve";
-                finalArgs = [spender, BigInt(amount)];
+                functionSignature = "approve(address,uint256)";
+                params = [spender, BigInt(amount).toString()];
                 break;
             }
             case "transferUsdc": {
@@ -230,15 +149,14 @@ export async function POST(request: Request) {
                 if (!to || typeof to !== "string") {
                     return NextResponse.json({ error: "Invalid recipient address" }, { status: 400 });
                 }
-                
+
                 if (to.toLowerCase() !== PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()) {
                     return NextResponse.json({ error: "Unauthorized transfer recipient. Transfer only to SubScript premium payout account." }, { status: 400 });
                 }
 
                 contractAddress = USDC_NATIVE_GAS_ADDRESS;
-                contractAbi = ERC20_ABI;
-                functionName = "transfer";
-                finalArgs = [to, BigInt(amount)];
+                functionSignature = "transfer(address,uint256)";
+                params = [to, BigInt(amount).toString()];
                 break;
             }
             case "createPremiumSubscription": {
@@ -254,16 +172,14 @@ export async function POST(request: Request) {
                 }
 
                 contractAddress = STANDARD_CONTRACT_ADDRESS;
-                contractAbi = SUBSCRIPT_ABI;
-                functionName = "createSubscription";
-                finalArgs = [merchant, BigInt(amount), BigInt(period)];
+                functionSignature = "createSubscription(address,uint256,uint256)";
+                params = [merchant, BigInt(amount).toString(), BigInt(period).toString()];
                 break;
             }
             case "withdraw": {
                 contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
-                contractAbi = SUBSCRIPT_ABI;
-                functionName = "withdraw";
-                finalArgs = [];
+                functionSignature = "withdraw()";
+                params = [];
                 break;
             }
             case "cancelSubscription": {
@@ -273,9 +189,8 @@ export async function POST(request: Request) {
                 }
 
                 contractAddress = STANDARD_CONTRACT_ADDRESS;
-                contractAbi = SUBSCRIPT_ABI;
-                functionName = "cancelSubscription";
-                finalArgs = [BigInt(subscriptionId)];
+                functionSignature = "cancelSubscription(uint256)";
+                params = [BigInt(subscriptionId).toString()];
                 break;
             }
             case "configurePayoutDestination": {
@@ -285,9 +200,8 @@ export async function POST(request: Request) {
                 }
 
                 contractAddress = SUBSCRIPT_ROUTER_ADDRESS;
-                contractAbi = SUBSCRIPT_ABI;
-                functionName = "configurePayoutDestination";
-                finalArgs = [payoutAddress];
+                functionSignature = "configurePayoutDestination(address)";
+                params = [payoutAddress];
                 break;
             }
             case "registerViewKey": {
@@ -310,9 +224,8 @@ export async function POST(request: Request) {
                 }
 
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
-                contractAbi = CONFIDENTIAL_ABI;
-                functionName = "registerViewKey";
-                finalArgs = [viewKeyHash];
+                functionSignature = "registerViewKey(bytes32)";
+                params = [viewKeyHash];
                 break;
             }
             default:
@@ -324,31 +237,39 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* SubScript-funded gas for user merchant-directed actions. Fail closed so a
-               checkout never consumes the user's advertised payment principal as gas. */
-            if (accountRole === "USER") {
-                await requireGasSponsored(wallet.toLowerCase());
-            }
+            let txHash: string | null;
 
-            const { provider, rpcEndpoint } = await getRpcProviderForWrite();
-            const walletSigner = new ethers.Wallet(privateKey, provider);
-            const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
-            const method = contract[functionName] as any;
-            if (typeof method !== "function") {
-                throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
+            if (walletRecord.circle_wallet_id) {
+                /* Circle MPC (SCA) wallet: sign + execute via the custody provider. Gas is sponsored
+                   by Circle Gas Station on Arc, so no SPONSOR_PRIVATE_KEY top-up is needed. */
+                const custody = await getWalletCustody(wallet);
+                const result = await custody.executeContract({ contractAddress, functionSignature, params });
+                txHash = result.txHash;
+            } else {
+                /* Legacy encrypted-key wallet: preserved fire-and-return path. USER actions get a
+                   just-in-time USDC gas top-up so a checkout never spends the user's principal on gas. */
+                if (accountRole === "USER") {
+                    await requireGasSponsored(wallet.toLowerCase());
+                }
+                const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key!);
+                const { provider, rpcEndpoint } = await getRpcProviderForWrite();
+                const walletSigner = new ethers.Wallet(privateKey, provider);
+                const contract = new ethers.Contract(contractAddress, [`function ${functionSignature}`], walletSigner);
+                const fnName = functionSignature.slice(0, functionSignature.indexOf("("));
+                const tx = await contract[fnName](...params);
+                console.log(`[execute-tx] submitted ${fnName} through ${rpcEndpoint}: ${tx.hash}`);
+                txHash = tx.hash;
             }
-            const tx = await method(...finalArgs);
-            console.log(`[execute-tx] submitted ${functionName} through ${rpcEndpoint}: ${tx.hash}`);
 
             if (action === "withdraw") {
-                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${tx.hash}, requestId: ${requestId}`);
+                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${txHash}, requestId: ${requestId}`);
             }
 
-            return NextResponse.json({ success: true, txHash: tx.hash }, { status: 200 });
+            return NextResponse.json({ success: true, txHash }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);
-            
+
             const revertReason = err?.reason || err?.info?.error?.message || err?.message || "Transaction execution failed";
 
             if (action === "withdraw") {
