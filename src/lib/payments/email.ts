@@ -51,15 +51,19 @@ export async function triggerExitSurvey(
         }
 
         // Respect the merchant's churn-survey preference — skip entirely when disabled.
+        // Also pull any custom exit-survey question the merchant defined (SUB-501).
         const merchantPrefResult = await db
             .from("merchants")
-            .select("churn_survey_enabled")
+            .select("churn_survey_enabled, churn_survey_question")
             .eq("wallet_address", merchantAddress.toLowerCase())
             .maybeSingle();
         if (merchantPrefResult?.data && merchantPrefResult.data.churn_survey_enabled === false) {
             console.log("Exit survey skipped: merchant has churn survey disabled.");
             return;
         }
+        const customChurnQuestion = typeof merchantPrefResult?.data?.churn_survey_question === "string"
+            ? merchantPrefResult.data.churn_survey_question.trim()
+            : "";
 
         // Fetch the merchant name / alias for the DM description
         const merchantAliasResult = await db
@@ -69,7 +73,12 @@ export async function triggerExitSurvey(
             .maybeSingle();
         const merchantName = merchantAliasResult?.data?.alias || merchantAddress;
 
-        // Insert CHURN_SURVEY system-DM in subscript_dms
+        // Insert CHURN_SURVEY system-DM in subscript_dms. Use the merchant's custom question when
+        // set (SUB-501), otherwise the default prompt. Stored as plain text; the DM description is
+        // rendered as escaped text content in the client, so no HTML sanitization is needed here.
+        const surveyPrompt = customChurnQuestion
+            ? customChurnQuestion
+            : `Exit survey for tier ${subscriptionTier}: We would love to know why you cancelled your subscription. Please select one of the options below to help ${merchantName} improve:`;
         try {
             const { error: dmInsertErr } = await db.from("subscript_dms").insert({
                 sender_address: merchantAddress.toLowerCase(),
@@ -77,7 +86,7 @@ export async function triggerExitSurvey(
                 message_type: "CHURN_SURVEY",
                 status: "PENDING",
                 title: "We are sorry to see you go",
-                description: `Exit survey for tier ${subscriptionTier}: We would love to know why you cancelled your subscription. Please select one of the options below to help ${merchantName} improve:`,
+                description: surveyPrompt,
             });
             if (dmInsertErr) {
                 console.error("Database error inserting exit survey DM:", dmInsertErr);
