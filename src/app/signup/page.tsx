@@ -510,7 +510,7 @@ export default function SignupPage() {
                   <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                 </div>
                 <p className="text-[9px] text-white/40 leading-relaxed">
-                  Enter your email address so you don't miss critical payment and billing push notifications.
+                  Enter your email address so you don&apos;t miss critical payment and billing push notifications.
                 </p>
               </div>
             )}

@@ -1,4 +1,11 @@
 import { withSentryConfig } from "@sentry/nextjs";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+/* Pin the output-file-tracing root to this project. Without it, Next infers the root from the
+   nearest parent lockfile and can pick a directory above the repo (there are multiple
+   package-lock.json files in play), which bundles the wrong files and emits a build-time warning. */
+const projectRoot = dirname(fileURLToPath(import.meta.url));
 
 const securityHeaders = [
   {
@@ -27,6 +34,7 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  outputFileTracingRoot: projectRoot,
   async headers() {
     return [
       {

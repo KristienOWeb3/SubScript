@@ -593,7 +593,7 @@ export default function AnalyticsDashboard({
                                     </div>
 
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Each bar is a top subscriber's monthly recurring revenue
+                                        Each bar is a top subscriber&apos;s monthly recurring revenue
                                     </p>
                                 </div>
 

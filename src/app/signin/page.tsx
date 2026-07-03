@@ -420,7 +420,7 @@ function SignInContent() {
 
           <div className="text-center pt-4 border-t border-white/5">
             <p className="text-xs text-white/40">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <button 
                 onClick={() => router.push("/signup")} 
                 className="text-[#00d2b4] font-bold hover:underline"

@@ -268,6 +268,24 @@ export async function POST(request: Request) {
             return NextResponse.json(responsePayload, { status: 200 });
         }
 
+        /* Enforce the link's usage cap and active/expiry state at settlement, not only on the
+           checkout page-load gate. That GET gate blocks over-cap loads, but this endpoint is
+           directly callable, so without this a deactivated, expired, or already-exhausted link
+           could still mint a fresh settlement, receipt DM, and merchant webhook. A retry of an
+           already-counted tx is handled by the priorPayment idempotent return above, so any tx
+           reaching here is a NEW settlement and must respect the cap. */
+        const linkExpired = paymentLink.expires_at && new Date(paymentLink.expires_at) < new Date();
+        if (paymentLink.active === false || linkExpired) {
+            return NextResponse.json({ error: "Payment link is expired or inactive" }, { status: 410 });
+        }
+        if (
+            paymentLink.max_uses !== null &&
+            paymentLink.max_uses !== undefined &&
+            (paymentLink.use_count || 0) >= paymentLink.max_uses
+        ) {
+            return NextResponse.json({ error: "Payment link has reached its maximum usage limit" }, { status: 409 });
+        }
+
         /* Create idempotency key in PROCESSING state */
         const expiresAt = new Date(Date.now() + ProtocolConfig.IDEMPOTENCY_TTL * 1000).toISOString();
         await supabase
