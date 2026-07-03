@@ -243,7 +243,7 @@ export default function SubscribeClient({
                         </div>
 
                         <p className="text-[10px] text-white/45 leading-relaxed">
-                            You'll be charged <span className="text-white/70 font-bold">${formatAmount(plan.amountUsdc)} USDC</span> now and then
+                            You&apos;ll be charged <span className="text-white/70 font-bold">${formatAmount(plan.amountUsdc)} USDC</span> now and then
                             automatically every <span className="text-white/70 font-bold">{formatPeriod(plan.periodSeconds)}</span>. You can cancel
                             anytime from your SubScript dashboard.
                         </p>
@@ -252,7 +252,7 @@ export default function SubscribeClient({
                             <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                 <CheckCircle className="w-8 h-8 text-emerald-400" />
                                 <p className="text-xs font-semibold text-white/80 leading-relaxed">
-                                    You're subscribed to {result.planName || plan.name}! Your first payment has been taken.
+                                    You&apos;re subscribed to {result.planName || plan.name}! Your first payment has been taken.
                                 </p>
                                 {result.txHash && (
                                     <a
@@ -280,7 +280,7 @@ export default function SubscribeClient({
                             <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-4 flex items-start gap-3">
                                 <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
                                 <p className="text-[10px] text-white/60 leading-relaxed">
-                                    You're signed in as a <span className="font-bold text-red-300">merchant</span> account. Only standard user
+                                    You&apos;re signed in as a <span className="font-bold text-red-300">merchant</span> account. Only standard user
                                     accounts can subscribe to a plan. Sign in with a user account to continue.
                                 </p>
                             </div>
