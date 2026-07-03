@@ -1048,7 +1048,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                 </div>
 
                                                                 {/* Headers */}
-                                                                <div className="grid grid-cols-[1fr_160px_40px] gap-2 mb-1.5 px-1">
+                                                                <div className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-1.5 px-1">
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Wallet Address</span>
                                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">Salary (USDC)</span>
                                                                     <span />
@@ -1062,7 +1062,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                                                             initial={{ opacity: 0, x: -10 }}
                                                                             animate={{ opacity: 1, x: 0 }}
                                                                             exit={{ opacity: 0, x: 10 }}
-                                                                            className="grid grid-cols-[1fr_160px_40px] gap-2 mb-2 items-center"
+                                                                            className="grid grid-cols-[minmax(0,1fr)_110px_36px] sm:grid-cols-[minmax(0,1fr)_160px_40px] gap-2 mb-2 items-center"
                                                                         >
                                                                             <input
                                                                                 type="text"
@@ -1414,7 +1414,7 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                     >
                         <div className="mt-3 bg-white/[0.01] rounded-2xl border border-white/5 p-4 font-sans">
                             {/* Table header */}
-                            <div className="grid grid-cols-[1fr_120px] gap-2 pb-2 border-b border-white/5 mb-2">
+                            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 pb-2 border-b border-white/5 mb-2">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-sans">
                                     Wallet
                                 </span>
@@ -1427,10 +1427,10 @@ function RecipientList({ recipients }: { recipients: PayrollCampaign["recipients
                             {recipients.map((r) => (
                                 <div
                                     key={r.id}
-                                    className="grid grid-cols-[1fr_120px] gap-2 py-1.5 text-xs"
+                                    className="grid grid-cols-[minmax(0,1fr)_120px] gap-2 py-1.5 text-xs"
                                 >
-                                    <span className="text-white/60 font-mono truncate">
-                                        {r.employeeAlias || r.employeeWallet}
+                                    <span className="text-white/60 font-mono truncate" title={r.employeeWallet}>
+                                        {r.employeeAlias || (r.employeeWallet.startsWith("0x") && r.employeeWallet.length === 42 ? `${r.employeeWallet.slice(0, 6)}...${r.employeeWallet.slice(-4)}` : r.employeeWallet)}
                                     </span>
                                     <span className="text-white font-medium text-right">
                                         {formatUsdc(r.salaryAmountUsdc)} USDC

@@ -600,6 +600,14 @@ export default function DashboardPage() {
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
     /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
     const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
+    const [prevSubTab, setPrevSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
+    if (subTab !== prevSubTab) {
+        setPrevSubTab(subTab);
+    }
+    const subTabsList = ["subscriptions", "one-time", "commit"] as const;
+    const subTabIndex = subTabsList.indexOf(subTab);
+    const prevSubTabIndex = subTabsList.indexOf(prevSubTab);
+    const subTabDirection = subTabIndex >= prevSubTabIndex ? 1 : -1;
     const [vaults, setVaults] = useState<any[]>([]);
     const [isVaultsLoading, setIsVaultsLoading] = useState(false);
     const [requiredCommit, setRequiredCommit] = useState("0");
@@ -2597,7 +2605,7 @@ Please complete the following implementation tasks:
                                 </p>
                                 {createdLinkInfo && (
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3">
-                                        <span className="text-[11px] font-mono text-white/70 truncate flex-1">
+                                        <span className="text-[11px] font-mono text-white/70 truncate max-w-[190px] xs:max-w-[240px] sm:max-w-none flex-1">
                                             {createdLinkInfo.checkoutUrl}
                                         </span>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -3721,11 +3729,12 @@ Please complete the following implementation tasks:
                                     </div>
                                 </div>
                                 {/* Underline Indicator */}
-                                <div 
-                                    className={`absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4] transition-all duration-300 origin-center ${
-                                        isActive ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
-                                    }`} 
-                                />
+                                {isActive && (
+                                    <motion.div 
+                                        layoutId="merchantActiveSubTabUnderline"
+                                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00d2b4]" 
+                                    />
+                                )}
                             </button>
                         );
                     })}
@@ -3897,11 +3906,42 @@ Please complete the following implementation tasks:
  
              case "payment-links":
                 return (
-                    <div className="space-y-6" {...paymentSwipe}>
+                    <div className="space-y-6 overflow-hidden" {...paymentSwipe}>
                         {renderSubTabs()}
-                        {subTab === "subscriptions" && renderPlansTab()}
-                        {subTab === "one-time" && renderPaymentLinksTab()}
-                        {subTab === "commit" && renderCommitTab()}
+                        <div className="overflow-hidden w-full relative">
+                            <AnimatePresence mode="wait" initial={false} custom={subTabDirection}>
+                                <motion.div
+                                    key={subTab}
+                                    custom={subTabDirection}
+                                    variants={{
+                                        enter: (dir: number) => ({
+                                            x: dir > 0 ? "100%" : "-100%",
+                                            opacity: 0,
+                                        }),
+                                        center: {
+                                            x: 0,
+                                            opacity: 1,
+                                        },
+                                        exit: (dir: number) => ({
+                                            x: dir < 0 ? "100%" : "-100%",
+                                            opacity: 0,
+                                        }),
+                                    }}
+                                    initial="enter"
+                                    animate="center"
+                                    exit="exit"
+                                    transition={{
+                                        x: { type: "spring", stiffness: 300, damping: 30 },
+                                        opacity: { duration: 0.2 },
+                                    }}
+                                    className="w-full"
+                                >
+                                    {subTab === "subscriptions" && renderPlansTab()}
+                                    {subTab === "one-time" && renderPaymentLinksTab()}
+                                    {subTab === "commit" && renderCommitTab()}
+                                </motion.div>
+                            </AnimatePresence>
+                        </div>
                     </div>
                 );
 

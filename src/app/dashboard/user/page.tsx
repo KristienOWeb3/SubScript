@@ -308,6 +308,8 @@ export default function UserDashboard() {
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
+  const [detectedCurrency, setDetectedCurrency] = useState({ code: "NGN", symbol: "₦" });
+  const [exchangeRate, setExchangeRate] = useState(1600);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
@@ -337,6 +339,97 @@ export default function UserDashboard() {
     if (supported) {
       isPushEnabled().then(setBrowserPushOn).catch(() => {});
     }
+  }, []);
+
+  /* Detect browser local currency and fetch real-time exchange rate */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const detectLocalCurrency = () => {
+      try {
+        const locale = navigator.language || "en-US";
+        const parts = locale.split("-");
+        const country = parts[1] ? parts[1].toUpperCase() : "";
+
+        const countryToCurrency: Record<string, { code: string; symbol: string }> = {
+          NG: { code: "NGN", symbol: "₦" },
+          GB: { code: "GBP", symbol: "£" },
+          DE: { code: "EUR", symbol: "€" },
+          FR: { code: "EUR", symbol: "€" },
+          IT: { code: "EUR", symbol: "€" },
+          ES: { code: "EUR", symbol: "€" },
+          NL: { code: "EUR", symbol: "€" },
+          JP: { code: "JPY", symbol: "¥" },
+          IN: { code: "INR", symbol: "₹" },
+          AU: { code: "AUD", symbol: "A$" },
+          CA: { code: "CAD", symbol: "C$" },
+          US: { code: "USD", symbol: "$" },
+          ZA: { code: "ZAR", symbol: "R" },
+          KE: { code: "KES", symbol: "KSh" },
+          GH: { code: "GHS", symbol: "GH₵" },
+        };
+
+        if (country && countryToCurrency[country]) {
+          return countryToCurrency[country];
+        }
+
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        if (tz.includes("Lagos")) return { code: "NGN", symbol: "₦" };
+        if (tz.includes("London")) return { code: "GBP", symbol: "£" };
+        if (tz.includes("Europe")) return { code: "EUR", symbol: "€" };
+        if (tz.includes("Calcutta") || tz.includes("Kolkata")) return { code: "INR", symbol: "₹" };
+        if (tz.includes("Tokyo")) return { code: "JPY", symbol: "¥" };
+        if (tz.includes("Sydney") || tz.includes("Melbourne")) return { code: "AUD", symbol: "A$" };
+        if (tz.includes("Toronto") || tz.includes("Vancouver")) return { code: "CAD", symbol: "C$" };
+        if (tz.includes("Nairobi")) return { code: "KES", symbol: "KSh" };
+        if (tz.includes("Accra")) return { code: "GHS", symbol: "GH₵" };
+        if (tz.includes("Johannesburg")) return { code: "ZAR", symbol: "R" };
+
+      } catch (e) {
+        console.error("Failed to detect currency from locale/timezone fallback:", e);
+      }
+      return { code: "NGN", symbol: "₦" };
+    };
+
+    const initialCurrency = detectLocalCurrency();
+    setDetectedCurrency(initialCurrency);
+
+    const fetchGeoCurrencyAndRate = async () => {
+      let activeCurrency = initialCurrency;
+      try {
+        const geoRes = await fetch("https://ipapi.co/json/");
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          if (geoData.currency) {
+            const currencySymbols: Record<string, string> = {
+              NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥",
+              INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
+            };
+            activeCurrency = {
+              code: geoData.currency,
+              symbol: currencySymbols[geoData.currency] || geoData.currency
+            };
+            setDetectedCurrency(activeCurrency);
+          }
+        }
+      } catch (e) {
+        console.log("Geo IP lookup failed, using browser locale fallback:", e);
+      }
+
+      try {
+        const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
+        if (rateRes.ok) {
+          const rateData = await rateRes.json();
+          if (rateData.rates && rateData.rates[activeCurrency.code]) {
+            setExchangeRate(Number(rateData.rates[activeCurrency.code]));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch real-time exchange rates:", e);
+      }
+    };
+
+    fetchGeoCurrencyAndRate();
   }, []);
 
   const handleToggleBrowserPush = async () => {
@@ -618,6 +711,11 @@ export default function UserDashboard() {
   /* Thumb-swipe between the Single / Batch send sub-tabs (tap still works). Pointer-based, so a
      55px drag is needed — harmless on desktop, natural on mobile. */
   const sendSwipe = useSwipeTabs(["single", "batch"] as const, sendMode, setSendMode);
+  const [prevSendMode, setPrevSendMode] = useState<"single" | "batch">("single");
+  if (sendMode !== prevSendMode) {
+    setPrevSendMode(sendMode);
+  }
+  const sendDirection = sendMode === "batch" ? 1 : -1;
   const [singleRecipient, setSingleRecipient] = useState("");
   const [singleAmount, setSingleAmount] = useState("");
   const [singleResolved, setSingleResolved] = useState<{ address: string | null; alias: string | null; profilePic: string | null } | null>(null);
@@ -1537,9 +1635,25 @@ export default function UserDashboard() {
           receiverAddress: singleResolved.address,
           amountUsdc: singleAmount,
         });
-        setSingleSendStatus(`Success! Transfer transaction submitted: ${transfers[0]?.txHash || "confirmed"}`);
+        const txHash = transfers[0]?.txHash;
+        setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
         setSingleRecipient("");
         setSingleAmount("");
+        if (txHash) {
+          await fetch("/api/user/dms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "log-transfer",
+              receiverAddress: singleResolved.address,
+              amountUsdc: singleAmount,
+              txHash,
+              title: `${singleAmount} USDC Sent`,
+              description: `Sent ${singleAmount} USDC directly from embedded wallet.`,
+            }),
+          }).catch((err) => console.error("Failed to log single send transfer:", err));
+          await loadDms().catch(() => {});
+        }
         await refetchUsdc().catch(console.error);
         return;
       }
@@ -1576,6 +1690,21 @@ export default function UserDashboard() {
       setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash}`);
       setSingleRecipient("");
       setSingleAmount("");
+      if (txHash) {
+        await fetch("/api/user/dms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "log-transfer",
+            receiverAddress: singleResolved.address,
+            amountUsdc: singleAmount,
+            txHash,
+            title: `${singleAmount} USDC Sent`,
+            description: `Sent ${singleAmount} USDC directly to recipient.`,
+          }),
+        }).catch((err) => console.error("Failed to log single send transfer:", err));
+        await loadDms().catch(() => {});
+      }
       refetchUsdc().catch(console.error);
     } catch (err: any) {
       setSingleSendStatus(err.message || "Failed to execute transfer.");
@@ -1622,6 +1751,23 @@ export default function UserDashboard() {
         setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
         setBatchRows([{ address: "", amount: "" }]);
         setBatchProgress(null);
+        for (const t of transfers) {
+          if (t.txHash) {
+            await fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: t.receiverAddress,
+                amountUsdc: t.amountUsdc,
+                txHash: t.txHash,
+                title: `${t.amountUsdc} USDC Sent`,
+                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+              }),
+            }).catch(console.error);
+          }
+        }
+        await loadDms().catch(() => {});
         await refetchUsdc().catch(console.error);
         return;
       }
@@ -1647,17 +1793,33 @@ export default function UserDashboard() {
         const row = resolvedRows[i];
         setBatchProgress(`Sending transfer ${i + 1} of ${resolvedRows.length}...`);
         
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
           abi: usdcAbi,
           functionName: "transfer",
           args: [row.address as `0x${string}`, parseUnits(row.amount, 6)],
         });
+
+        if (txHash) {
+          await fetch("/api/user/dms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "log-transfer",
+              receiverAddress: row.address,
+              amountUsdc: row.amount,
+              txHash,
+              title: `${row.amount} USDC Sent`,
+              description: `Sent ${row.amount} USDC in a batch payout.`,
+            }),
+          }).catch((err) => console.error("Failed to log batch send transfer:", err));
+        }
       }
 
       setBatchSendStatus(`Successfully sent ${resolvedRows.length} transfers!`);
       setBatchRows([{ address: "", amount: "" }]);
       setBatchProgress(null);
+      await loadDms().catch(() => {});
       refetchUsdc().catch(console.error);
     } catch (err: any) {
       setBatchSendStatus(err.message || "Failed to execute batch send.");
@@ -1863,8 +2025,7 @@ export default function UserDashboard() {
 
   /* ---- Home overview (derived from existing data; no dedicated analytics backend) ---- */
   // Display-only fiat estimate. Not a live oracle — clearly a rough naira reference for the balance.
-  const NGN_PER_USDC = 1600;
-  const nairaBalance = walletBalance * NGN_PER_USDC;
+  const localBalance = walletBalance * exchangeRate;
   // "30-day spend" proxy: sum of active subscriptions normalised to a 30-day cost.
   const monthlySpendUsdc = subscriptions
     .filter((s) => s.status === "ACTIVE")
@@ -1886,20 +2047,26 @@ export default function UserDashboard() {
       name: s.merchantName || formatAddress(s.merchantAddress),
       pic: s.merchantProfilePic,
       detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
-      amountLabel: `$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+      amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
       time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
+      incoming: false,
     })),
     ...dms
-      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
-      .map((d) => ({
-        id: `dm-${d.id}`,
-        kind: "one-time" as const,
-        name: (d.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? d.receiverName : d.senderName) || "Payment",
-        pic: d.senderAddress.toLowerCase() === userWallet?.toLowerCase() ? d.receiverProfilePic : d.senderProfilePic,
-        detail: d.title || d.description || "One-time payment",
-        amountLabel: `$${formatUsdc(d.amountUsdc)}`,
-        time: new Date(d.createdAt).getTime(),
-      })),
+      .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
+      .map((d) => {
+        const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
+        const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
+        return {
+          id: `dm-${d.id}`,
+          kind: "one-time" as const,
+          name: (incoming ? d.senderName : d.receiverName) || "Payment",
+          pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
+          detail: d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
+          amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
+          time: new Date(d.createdAt).getTime(),
+          incoming,
+        };
+      }),
   ].sort((a, b) => b.time - a.time);
   const filteredTransactions = recentTransactions.filter(
     (t) => txFilter === "all" || t.kind === txFilter,
@@ -2080,7 +2247,7 @@ export default function UserDashboard() {
                         {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                        {balanceVisible ? `₦${nairaBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                        {balanceVisible ? `${detectedCurrency.symbol}${localBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                       </p>
                     </section>
 
@@ -2223,7 +2390,7 @@ export default function UserDashboard() {
                               <p className="truncate text-sm font-black text-white">{tx.name}</p>
                               <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                             </div>
-                            <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                            <span className={`shrink-0 text-base font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
                           </div>
                         ))
                       )}
@@ -2645,32 +2812,70 @@ export default function UserDashboard() {
                   <SectionTitle title="Send Funds" subtitle="Transfer USDC to another user or execute a batch payout." />
                   
                   {/* Mode Selector */}
-                  <div className="flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
+                  <div className="relative flex gap-1 rounded-xl bg-black/40 p-1 border border-white/5 shrink-0 self-stretch sm:self-auto justify-center">
                     <button
                       type="button"
                       onClick={() => setSendMode("single")}
-                      className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                        sendMode === "single"
-                          ? "bg-[#ccff00] text-black shadow-md"
-                          : "text-white/50 hover:text-white/80"
+                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                        sendMode === "single" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
-                      Single
+                      {sendMode === "single" && (
+                        <motion.div
+                          layoutId="sendActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">Single</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setSendMode("batch")}
-                      className={`px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                        sendMode === "batch"
-                          ? "bg-[#ccff00] text-black shadow-md"
-                          : "text-white/50 hover:text-white/80"
+                      className={`relative px-3.5 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg z-10 transition-colors duration-200 ${
+                        sendMode === "batch" ? "text-black" : "text-white/50 hover:text-white/80"
                       }`}
                     >
-                      Batch
+                      {sendMode === "batch" && (
+                        <motion.div
+                          layoutId="sendActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-lg -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">Batch</span>
                     </button>
                   </div>
                 </div>
-                {sendMode === "single" ? (
+                <div className="overflow-hidden w-full relative">
+                  <AnimatePresence mode="wait" initial={false} custom={sendDirection}>
+                    <motion.div
+                      key={sendMode}
+                      custom={sendDirection}
+                      variants={{
+                        enter: (dir: number) => ({
+                          x: dir > 0 ? "100%" : "-100%",
+                          opacity: 0,
+                        }),
+                        center: {
+                          x: 0,
+                          opacity: 1,
+                        },
+                        exit: (dir: number) => ({
+                          x: dir < 0 ? "100%" : "-100%",
+                          opacity: 0,
+                        }),
+                      }}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{
+                        x: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 },
+                      }}
+                      className="w-full"
+                    >
+                      {sendMode === "single" ? (
                   <form onSubmit={handleSingleSend} className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                     <Field label="Recipient Wallet Address or .sub Name">
                       <div className="relative">
@@ -2871,6 +3076,9 @@ export default function UserDashboard() {
                     </button>
                   </div>
                 )}
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
               </section>
             )}
 
@@ -3070,7 +3278,7 @@ export default function UserDashboard() {
                       <div className="pb-3 border-b border-white/5 flex items-center justify-between">
                         <div>
                           <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Wallet Address</label>
-                          <span className="block font-mono text-[11px] text-white/70 mt-1 truncate max-w-xs">{userWallet}</span>
+                          <span className="block font-mono text-[11px] text-white/70 mt-1 truncate max-w-[170px] xs:max-w-[210px] sm:max-w-xs">{userWallet}</span>
                         </div>
                         <button
                           onClick={() => {
@@ -3347,7 +3555,7 @@ export default function UserDashboard() {
                                   </p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className="text-sm font-extrabold text-white">{tx.amountLabel}</span>
+                                  <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
                                   <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
                                     {tx.kind === "recurring" ? "Recurring" : "One-time"}
                                   </span>
@@ -4046,7 +4254,7 @@ export default function UserDashboard() {
                         <p className="truncate text-sm font-black text-white">{tx.name}</p>
                         <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                       </div>
-                      <span className="shrink-0 text-base font-extrabold text-white">{tx.amountLabel}</span>
+                      <span className={`shrink-0 text-base font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
                     </div>
                   ));
                 })()}
@@ -5746,6 +5954,14 @@ function DepositModal({
     },
     { enabled: activeSubMode !== "menu" },
   );
+  const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "fiat" | "cctp">("menu");
+  if (activeSubMode !== prevActiveSubMode) {
+    setPrevActiveSubMode(activeSubMode);
+  }
+  const subModes = ["menu", "direct", "fiat", "cctp"] as const;
+  const subIndex = subModes.indexOf(activeSubMode);
+  const prevSubIndex = subModes.indexOf(prevActiveSubMode);
+  const subDirection = subIndex >= prevSubIndex ? 1 : -1;
 
   return (
     <AnimatePresence>
@@ -5761,29 +5977,67 @@ function DepositModal({
             
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
-              <div className="mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
-                {(["direct", "fiat", "cctp"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => {
-                      setActiveSubMode(tab);
-                      setCctpStatus("idle");
-                      setFiatStatus("idle");
-                    }}
-                    className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all ${
-                      activeSubMode === tab
-                        ? "bg-[#ccff00] text-black shadow-md"
-                        : "text-white/50 hover:text-white/85"
-                    }`}
-                  >
-                    {tab === "direct" ? "Direct" : tab === "fiat" ? "Bank" : "Bridge"}
-                  </button>
-                ))}
+              <div className="relative mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
+                {(["direct", "fiat", "cctp"] as const).map((tab) => {
+                  const isActive = activeSubMode === tab;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => {
+                        setActiveSubMode(tab);
+                        setCctpStatus("idle");
+                        setFiatStatus("idle");
+                      }}
+                      className={`relative flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
+                        isActive ? "text-black" : "text-white/50 hover:text-white/85"
+                      }`}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="depositActivePill"
+                          className="absolute inset-0 bg-[#ccff00] rounded-xl -z-10 shadow-md"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-20">
+                        {tab === "direct" ? "Direct" : tab === "fiat" ? "Bank" : "Bridge"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-            {activeSubMode === "menu" && (
+            <div className="overflow-hidden w-full relative">
+              <AnimatePresence mode="wait" initial={false} custom={subDirection}>
+                <motion.div
+                  key={activeSubMode}
+                  custom={subDirection}
+                  variants={{
+                    enter: (dir: number) => ({
+                      x: dir > 0 ? "100%" : "-100%",
+                      opacity: 0,
+                    }),
+                    center: {
+                      x: 0,
+                      opacity: 1,
+                    },
+                    exit: (dir: number) => ({
+                      x: dir < 0 ? "100%" : "-100%",
+                      opacity: 0,
+                    }),
+                  }}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{
+                    x: { type: "spring", stiffness: 300, damping: 30 },
+                    opacity: { duration: 0.2 },
+                  }}
+                  className="w-full"
+                >
+                  {activeSubMode === "menu" && (
               <div className="space-y-5">
                 <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
@@ -6140,6 +6394,9 @@ function DepositModal({
                 )}
               </div>
             )}
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </motion.div>
         </motion.div>
       )}
