@@ -164,6 +164,14 @@ export async function POST(request: Request) {
 
         const merchantAddress = apiKeyRecord.walletAddress.toLowerCase();
 
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: merchantAddress },
+            select: { tier: true }
+        });
+        if (!merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: API keys and usage reporting require a Premium (Tier 3) merchant plan." }, { status: 403 });
+        }
+
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== "object") {
             return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });

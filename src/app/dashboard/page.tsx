@@ -3129,6 +3129,67 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
+                    {/* Merchant Verification Tier Matrix */}
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Merchant Verification & Tiers</h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
+                            SubScript uses progressive merchant verification tiers to prevent fraud and unlock advanced protocol capabilities.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {/* Tier 1 Card */}
+                            <div className={`p-4 rounded-2xl border ${!userSettings.verified ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 1: Free Unverified</h4>
+                                    {!userSettings.verified && (
+                                        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-bold text-amber-300">Active</span>
+                                    )}
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-red-400">✗ Cannot create payment links</li>
+                                    <li className="flex items-center gap-1 text-red-400">✗ No API/Webhooks access</li>
+                                    <li className="flex items-center gap-1 text-red-400">✗ No vault commits</li>
+                                </ul>
+                            </div>
+
+                            {/* Tier 2 Card */}
+                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'FREE') ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 2: Verified Merchant</h4>
+                                    {userSettings.verified && userSettings.tier === 'FREE' && (
+                                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[8px] font-bold text-emerald-300">Active</span>
+                                    )}
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
+                                    <li className="flex items-center gap-1 text-red-400">✗ No API/Webhooks access</li>
+                                    <li className="flex items-center gap-1 text-red-400">✗ No vault commits</li>
+                                </ul>
+                                {!userSettings.verified && (
+                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Submit business registry KYC to upgrade.</p>
+                                )}
+                            </div>
+
+                            {/* Tier 3 Card */}
+                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'PREMIUM') ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 3: Premium Plan</h4>
+                                    {userSettings.verified && userSettings.tier === 'PREMIUM' && (
+                                        <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">Active</span>
+                                    )}
+                                </div>
+                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ API Keys & Webhook endpoints</li>
+                                    <li className="flex items-center gap-1 text-emerald-400">✓ Customer commitment vaults</li>
+                                </ul>
+                                {userSettings.tier !== 'PREMIUM' && (
+                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
                     {/* DNS / Alias Section */}
                     <div className="space-y-4">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
@@ -5463,8 +5524,23 @@ Please complete the following implementation tasks:
                             </button>
                         )}
                         <div>
-                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2">
+                            <h1 className="text-3xl font-extrabold text-white uppercase tracking-tight mb-2 flex flex-wrap items-center gap-3">
                                 Merchant Control <span className="font-serif italic lowercase font-normal text-[#00d2b4]">center</span>
+                                {isConnected && userSettings && (
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                        !userSettings.verified
+                                            ? "bg-amber-500/10 text-amber-300 border border-amber-500/25"
+                                            : userSettings.tier === "PREMIUM"
+                                            ? "bg-purple-500/10 text-purple-300 border border-purple-500/25"
+                                            : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
+                                    }`}>
+                                        {!userSettings.verified
+                                            ? "Tier 1: Unverified"
+                                            : userSettings.tier === "PREMIUM"
+                                            ? "Tier 3: Premium"
+                                            : "Tier 2: Verified"}
+                                    </span>
+                                )}
                             </h1>
                             <p className="text-xs text-white/50 font-sans">
                                 Manage your premium subscriptions, payments, allowances, and billing analytics.

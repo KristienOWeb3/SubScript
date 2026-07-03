@@ -305,7 +305,7 @@ export async function POST(request: Request) {
         const [merchantRes, countRes] = await Promise.all([
             supabase
                 .from("merchants")
-                .select("tier, payout_destination")
+                .select("tier, payout_destination, verified")
                 .eq("wallet_address", merchantAddress.toLowerCase())
                 .maybeSingle(),
             supabase
@@ -319,6 +319,13 @@ export async function POST(request: Request) {
         if (merchantRes.error) {
             console.error("Error fetching merchant tier:", merchantRes.error.message);
             return NextResponse.json({ error: merchantRes.error.message }, { status: 500 });
+        }
+
+        const isVerified = merchantRes.data?.verified ?? false;
+        if (!isVerified) {
+            return NextResponse.json({
+                error: "Forbidden: Merchant verification required to create payment links (requires Tier 2)."
+            }, { status: 403 });
         }
 
         if (auth.apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {

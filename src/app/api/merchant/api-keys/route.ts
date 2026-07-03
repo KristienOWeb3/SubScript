@@ -18,6 +18,15 @@ function redactSecretKey(secretKey: string | null | undefined): string {
     return `${secretKey.slice(0, 8)}...${secretKey.slice(-4)}`;
 }
 
+async function checkMerchantPremium(supabase: any, walletAddress: string): Promise<boolean> {
+    const { data: merchant, error } = await supabase
+        .from("merchants")
+        .select("tier")
+        .eq("wallet_address", walletAddress.toLowerCase())
+        .maybeSingle();
+    if (error || !merchant) return false;
+    return merchant.tier === "PREMIUM";
+}
 
 export async function GET(request: Request) {
     try {
@@ -27,6 +36,11 @@ export async function GET(request: Request) {
         }
 
         const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const { data: keys, error } = await supabase
             .from("api_keys")
             .select("*")
@@ -64,10 +78,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
         const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
-
-        const supabase = getSupabase();
         const { data: newKey, error } = await supabase
             .from("api_keys")
             .insert({
@@ -112,14 +130,18 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const supabase = getSupabase();
+        const isPremium = await checkMerchantPremium(supabase, wallet);
+        if (!isPremium) {
+            return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
+        }
+
         const { searchParams } = new URL(request.url);
         const id = searchParams.get("id");
 
         if (!id) {
             return NextResponse.json({ error: "Missing key ID" }, { status: 400 });
         }
-
-        const supabase = getSupabase();
         
         const { data: keyCheck, error: checkError } = await supabase
             .from("api_keys")

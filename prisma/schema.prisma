@@ -606,3 +606,16 @@ model FiatFundingEvent {
   @@index([fundingIntentId, createdAt], map: "fiat_funding_events_intent_created_idx")
   @@map("fiat_funding_events")
 }
+
+model Referral {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  referrerAddress String   @map("referrer_address")
+  referredAddress String   @unique @map("referred_address")
+  status          String   @default("REGISTERED") // REGISTERED, ACTIVE, COMPLETED
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([referrerAddress])
+  @@map("referrals")
+}
+

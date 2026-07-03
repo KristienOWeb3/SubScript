@@ -145,11 +145,34 @@ export default function SignupPage() {
     setMerchantSignupIntent(merchantIntent);
     setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
 
+    const refParam = params.get("ref") || params.get("referral");
+    if (refParam) {
+      localStorage.setItem("subscript_referrer", refParam.trim());
+    }
+
     if (initialEmail) {
       setEmail(initialEmail);
       setAuthMethod("email");
     } else {
       setShowEmailInput(true);
+    }
+  }, []);
+
+  const triggerReferralLogging = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const referrer = localStorage.getItem("subscript_referrer");
+    if (!referrer) return;
+    try {
+      const res = await fetch("/api/user/referrals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referrer }),
+      });
+      if (res.ok) {
+        localStorage.removeItem("subscript_referrer");
+      }
+    } catch (err) {
+      console.error("Failed to log referral:", err);
     }
   }, []);
 
@@ -160,17 +183,19 @@ export default function SignupPage() {
       setRequiresEmailLinking(false);
     }
     if (data.role) {
-      const next = getSafeNext();
-      window.location.href = (next && data.role === "USER")
-        ? next
-        : getDashboardUrl(data.role as any, "/dashboard");
+      triggerReferralLogging().finally(() => {
+        const next = getSafeNext();
+        window.location.href = (next && data.role === "USER")
+          ? next
+          : getDashboardUrl(data.role as any, "/dashboard");
+      });
     } else {
       if (!data.email && !email) {
         setRequiresEmailLinking(true);
       }
       setShowRoleSelector(true);
     }
-  }, [email]);
+  }, [email, triggerReferralLogging]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -356,10 +381,12 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (data.success) {
-        const next = getSafeNext();
-        window.location.href = (next && selectedRole === "USER")
-          ? next
-          : getDashboardUrl(selectedRole as any, "/dashboard");
+        triggerReferralLogging().finally(() => {
+          const next = getSafeNext();
+          window.location.href = (next && selectedRole === "USER")
+            ? next
+            : getDashboardUrl(selectedRole as any, "/dashboard");
+        });
       } else {
         setRoleError(data.error || "Failed to register account type.");
       }
@@ -564,15 +591,22 @@ export default function SignupPage() {
                 Configure your payout wallet and secure your connection to the subscription system.
               </p>
 
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Recommended:</strong> Register with Email or Google to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                </span>
+              </div>
+
               <button
                 onClick={() => {
                   posthog.capture("signup_method_selected", { method: "email" });
                   setAuthMethod("email");
                 }}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white"
+                className="w-full py-4 bg-white/5 hover:bg-white/10 border border-emerald-400/30 rounded-2xl flex items-center justify-center gap-3 transition font-bold text-xs uppercase tracking-wider text-white shadow-[0_0_15px_rgba(52,211,153,0.05)]"
               >
-                <Mail className="w-4 h-4 text-[#00d2b4]" />
-                Continue with Email Wallet
+                <Mail className="w-4 h-4 text-[#ccff00]" />
+                Continue with Email Wallet (Recommended)
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
                 {merchantSignupIntent

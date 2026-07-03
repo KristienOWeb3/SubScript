@@ -50,6 +50,13 @@ export async function GET(request: Request) {
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
         }
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: wallet },
+            select: { tier: true }
+        });
+        if (!merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium (Tier 3) merchants." }, { status: 403 });
+        }
         const commit: bigint = await vaultReadContract().requiredCommit(wallet);
         return NextResponse.json({ success: true, commitUsdc: commit.toString() }, { status: 200 });
     } catch (error: any) {
@@ -67,6 +74,13 @@ export async function POST(request: Request) {
         const roleCheck = await requireAccountRole(wallet, "ENTERPRISE");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        }
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: wallet },
+            select: { tier: true }
+        });
+        if (!merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium (Tier 3) merchants." }, { status: 403 });
         }
 
         const body = sanitizeInput(await request.json().catch(() => null));

@@ -104,3 +104,4 @@ export const X = wrap(P.X);
 export const XCircle = wrap(P.XCircle);
 export const Zap = wrap(P.Lightning);
 export const Trophy = wrap(P.Trophy);
+export const Gift = wrap(P.Gift);

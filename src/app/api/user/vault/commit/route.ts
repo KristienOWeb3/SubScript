@@ -33,6 +33,13 @@ export async function POST(request: Request) {
         if (merchantRole !== "ENTERPRISE") {
             return NextResponse.json({ error: "Vaults can only be funded for merchant services." }, { status: 400 });
         }
+        const merchant = await prisma.merchant.findUnique({
+            where: { walletAddress: merchantAddress.toLowerCase() },
+            select: { tier: true }
+        });
+        if (!merchant || merchant.tier !== "PREMIUM") {
+            return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium (Tier 3) merchants." }, { status: 403 });
+        }
         const amount = parseUsdcToMicros(amountUsdc);
         if (amount <= BigInt(0)) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });

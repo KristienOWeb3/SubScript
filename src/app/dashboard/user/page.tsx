@@ -35,6 +35,8 @@ import {
   ArrowUpRight,
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Copy,
   CreditCard,
@@ -56,10 +58,11 @@ import {
   X,
   Activity,
   Sliders,
-  Lock,
   Eye,
   EyeOff,
   RefreshCw,
+  Gift,
+  Lock,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
@@ -140,7 +143,7 @@ interface MerchantPlan {
   active: boolean;
 }
 
-type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns";
+type UserTab = "home" | "commit" | "links" | "batch" | "inbox" | "dns" | "referrals";
 
 const userBottomTabs = [
   { id: "home", label: "Home", icon: Home },
@@ -156,6 +159,7 @@ const userDesktopTabs = [
   { id: "batch", label: "Send Out", icon: Send },
   { id: "inbox", label: "Direct Messages", icon: MessageSquare },
   { id: "dns", label: "Profile & DNS", icon: Globe },
+  { id: "referrals", label: "Refer & Earn", icon: Gift },
 ] as const;
 
 const formatAddress = (addr: string | null) => {
@@ -385,6 +389,19 @@ export default function UserDashboard() {
   const [topupVaultOpen, setTopupVaultOpen] = useState(false);
   const [editingVault, setEditingVault] = useState<any | null>(null);
 
+  // Referrals States
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referralLink, setReferralLink] = useState<string>("");
+  const [referralsCount, setReferralsCount] = useState<number>(0);
+  const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
+  const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
+
+  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "limits" | "transactions" | "notifications" | "security" | "support">("menu");
+
+  useEffect(() => {
+    setAccountSubView("menu");
+  }, [activeTab]);
+
   useEffect(() => {
     if (userSettings) {
       setDailyLimitInput(userSettings.spendingLimitDaily ? (Number(userSettings.spendingLimitDaily) / 1_000_000).toString() : "");
@@ -392,6 +409,29 @@ export default function UserDashboard() {
       setMonthlyLimitInput(userSettings.spendingLimitMonthly ? (Number(userSettings.spendingLimitMonthly) / 1_000_000).toString() : "");
     }
   }, [userSettings]);
+
+  const fetchReferrals = useCallback(async () => {
+    setReferralsLoading(true);
+    try {
+      const res = await fetch("/api/user/referrals");
+      const data = await res.json();
+      if (data.success) {
+        setReferrals(data.referrals || []);
+        setReferralLink(data.referralLink || "");
+        setReferralsCount(data.count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch referrals:", err);
+    } finally {
+      setReferralsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "referrals") {
+      fetchReferrals();
+    }
+  }, [activeTab, fetchReferrals]);
 
   const loadUserSettings = async () => {
     setIsSettingsLoading(true);
@@ -2827,437 +2867,833 @@ export default function UserDashboard() {
               </section>
             )}
 
-            {activeTab === "dns" && (
-              <section
-                className="space-y-6 pb-20 max-w-2xl"
-              >
-                <SectionTitle title="Account Settings" subtitle="Manage your .sub identity, spending limits, and alert preferences." />
-                
-                {/* Profile & DNS Registration */}
-                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <User className="h-4 w-4 text-[#ccff00]" /> Profile & Identity
-                  </h3>
-                  <div className="flex items-center gap-4 pb-4 border-b border-white/5">
-                    <Avatar profilePic={profilePic} size="lg" />
-                    <div className="space-y-2">
-                      <label className="inline-block rounded-2xl border border-white/5 bg-black/20 hover:bg-[#ccff00]/10 hover:border-[#ccff00]/30 text-[#ccff00] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] cursor-pointer transition-all">
-                        Choose Image
-                        <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
-                      </label>
-                      <p className="text-[10px] text-white/40">JPG/PNG, max 2MB.</p>
+              {activeTab === "dns" && (
+                <section className="pb-20 max-w-2xl font-sans text-white">
+                {/* 1. MAIN MENU VIEW */}
+                {accountSubView === "menu" && (
+                  <div className="space-y-6">
+                    <SectionTitle title="Account Settings" subtitle="Manage your identity, spending limits, and security." />
+
+                    {/* Refer & Earn Banner (Inspiration from Screenshot 2) */}
+                    <div 
+                      onClick={() => setActiveTab("referrals")}
+                      className="cursor-pointer relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 p-5 flex items-center justify-between transition-all duration-300 shadow-lg group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400">
+                          <Gift className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black uppercase tracking-wider text-white group-hover:text-emerald-300 transition-colors">Refer and Earn</h4>
+                          <p className="text-[10px] text-white/50 leading-relaxed mt-0.5">Invite your friends and earn on SubScript</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all" />
+                    </div>
+
+                    {/* Settings Menu Options Card */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-3 space-y-1 shadow-2xl">
+                      <button
+                        onClick={() => setAccountSubView("profile")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <User className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">My Profile</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Edit your identity and registered alias</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <div className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group opacity-40 cursor-not-allowed">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">KYC Verification</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Verify your account and identity</span>
+                          </div>
+                        </div>
+                        <span className="rounded bg-white/10 px-1.5 py-0.5 text-[8px] font-bold text-white/45 uppercase tracking-wide">Soon</span>
+                      </div>
+
+                      <button
+                        onClick={() => setAccountSubView("limits")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <CreditCard className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spending Limits</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See spending limits and caps</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("transactions")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Activity className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Transactions</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">See all transaction logs and history</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("notifications")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Sliders className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Notifications</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Set your notification preferences</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("security")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <Lock className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Security</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case font-normal normal-case">Change privacy settings and export private key</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
+                        onClick={() => setAccountSubView("support")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <MessageSquare className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Support</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Talk to Us</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
                     </div>
                   </div>
-                  {uploadError && <p className="text-[11px] text-red-300">{uploadError}</p>}
+                )}
 
-                  <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-3 py-2">
-                    Heads up: you can only change your <span className="font-mono">.sub</span> name <strong>once every 365 days</strong>. Pick carefully — after a change you won't be able to switch again for a year.
+                {/* 2. PROFILE VIEW (Inspiration from Screenshot 1) */}
+                {accountSubView === "profile" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 font-sans text-xs">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">My Profile</h2>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center space-y-3 py-6">
+                      <div className="relative group">
+                        <Avatar profilePic={profilePic} size="lg" />
+                        <label className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#ccff00] text-black border-2 border-[#0a0a0c] cursor-pointer hover:scale-105 transition-all">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                          <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
+                        </label>
+                      </div>
+                      <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
+                        Verified Account
+                      </span>
+                      {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl">
+                      {/* SubScript DNS alias (Spenda ID / Username) */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">SubScript DNS</label>
+                          <span className="block font-mono text-xs font-bold text-[#ccff00] mt-1">
+                            {registeredDomain ? `@${registeredDomain}` : "No DNS Alias"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Linked Wallet Address */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Wallet Address</label>
+                          <span className="block font-mono text-[11px] text-white/70 mt-1 truncate max-w-xs">{userWallet}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(userWallet || "");
+                          }}
+                          className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white transition"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Linked Email */}
+                      <div className="pb-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Email Address</label>
+                          <span className="block font-sans text-xs text-white/60 mt-1">
+                            {userSettings?.walletBackup?.email || userEmail || "Not linked"}
+                          </span>
+                        </div>
+                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
+                      </div>
+
+                      {/* Linked Role */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account Role</label>
+                          <span className="block font-sans text-xs text-white/60 mt-1">Individual Customer</span>
+                        </div>
+                        <Lock className="h-4 w-4 text-white/20 shrink-0" />
+                      </div>
+                    </div>
+
+                    {/* DNS Management Panel */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-4 shadow-2xl">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <Globe className="h-3.5 w-3.5 text-[#ccff00]" /> DNS Identity Management
+                      </h4>
+                      <p className="text-[9px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
+                        Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.
+                      </p>
+
+                      {registeredDomain ? (
+                        <button
+                          onClick={async () => {
+                            setDnsLoading(true);
+                            setDnsError(null);
+                            try {
+                              const res = await fetch("/api/merchant/alias", { method: "DELETE" });
+                              if (res.ok) {
+                                setRegisteredDomain(null);
+                                setProfilePic(null);
+                                setDnsDomain("");
+                                setDnsSuccess("Alias removed successfully");
+                                setTimeout(() => setDnsSuccess(null), 3000);
+                              } else {
+                                const data = await res.json().catch(() => ({}));
+                                setDnsError(data.error || "Could not unregister this name.");
+                              }
+                            } catch (err) {
+                              setDnsError("Network error removing DNS name.");
+                            } finally {
+                              setDnsLoading(false);
+                            }
+                          }}
+                          className="w-full py-3 border border-red-500/20 hover:bg-red-500/5 text-red-400 text-xs font-black uppercase tracking-wider rounded-2xl transition"
+                        >
+                          {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Unregister .sub Alias"}
+                        </button>
+                      ) : (
+                        <form onSubmit={handleRegisterDns} className="space-y-3 font-sans text-xs">
+                          <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Domain Alias</label>
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  value={dnsDomain}
+                                  onChange={(e) => setDnsDomain(e.target.value)}
+                                  placeholder="my-alias"
+                                  className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#ccff00]/40 font-mono"
+                                  required
+                                />
+                                <span className="absolute right-4 top-2.5 text-xs font-black text-white/35">.sub</span>
+                              </div>
+                              <button
+                                type="submit"
+                                disabled={dnsLoading}
+                                className="px-6 bg-[#ccff00]/10 border border-[#ccff00]/30 hover:bg-[#ccff00]/20 text-[#ccff00] font-bold uppercase tracking-wider rounded-xl transition"
+                              >
+                                {dnsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register"}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      )}
+                      {dnsError && <p className="text-[10px] text-red-300 font-sans">{dnsError}</p>}
+                      {dnsSuccess && <p className="text-[10px] text-emerald-300 font-sans">{dnsSuccess}</p>}
+                    </div>
+
+                    <button
+                      onClick={() => disconnect()}
+                      className="w-full py-4 border border-red-500/25 hover:bg-red-500/5 text-red-400 rounded-3xl text-xs font-black uppercase tracking-widest transition shadow-[0_0_15px_rgba(239,68,68,0.05)]"
+                    >
+                      Disconnect Account
+                    </button>
+                  </div>
+                )}
+
+                {/* 3. SPENDING LIMITS VIEW */}
+                {accountSubView === "limits" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Spending Limits</h2>
+                    </div>
+
+                    {userSettings && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-[#ccff00]" /> Edit Spending Limits
+                        </h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                          Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
+                        </p>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
+                          }}
+                          className="space-y-4 font-sans text-xs"
+                        >
+                          <Field label="Daily Limit (USDC)">
+                            <input
+                              type="number"
+                              value={dailyLimitInput}
+                              onChange={(e) => setDailyLimitInput(e.target.value)}
+                              placeholder="e.g. 50"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Weekly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={weeklyLimitInput}
+                              onChange={(e) => setWeeklyLimitInput(e.target.value)}
+                              placeholder="e.g. 200"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Monthly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={monthlyLimitInput}
+                              onChange={(e) => setMonthlyLimitInput(e.target.value)}
+                              placeholder="e.g. 500"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <button
+                            type="submit"
+                            disabled={savingSettingsField === "spendingLimits"}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                          >
+                            {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 4. TRANSACTIONS VIEW */}
+                {accountSubView === "transactions" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Transactions</h2>
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-xs">
+                          <thead>
+                            <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
+                              <th className="pb-3">Receipt ID</th>
+                              <th className="pb-3">Date</th>
+                              <th className="pb-3">Amount</th>
+                              <th className="pb-3">Status</th>
+                              <th className="pb-3 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {settingsTransactions.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="text-center py-6 text-white/30">
+                                  No recent transaction logs.
+                                </td>
+                              </tr>
+                            ) : (
+                              settingsTransactions.map((tx) => (
+                                <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                                  <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                                  <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                  <td className="py-4 font-mono font-bold text-white">
+                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                  </td>
+                                  <td className="py-4">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                                      {tx.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 text-right">
+                                    <div className="inline-flex items-center gap-3">
+                                      <a
+                                        href={`/receipt/${tx.receiptId}?invite=1`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                        title="Grant another address permission to view this private receipt"
+                                      >
+                                        Grant
+                                      </a>
+                                      <a
+                                        href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                      >
+                                        Tx <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. NOTIFICATIONS VIEW */}
+                {accountSubView === "notifications" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Notifications</h2>
+                    </div>
+
+                    {userSettings && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <Sliders className="h-4 w-4 text-[#ccff00]" /> Notification Preferences
+                        </h3>
+                        <div className="space-y-4 font-sans text-xs">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Push Notifications</p>
+                              <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
+                              disabled={savingSettingsField === "pushEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Browser Push (This Device)</p>
+                              <p className="text-[9px] text-white/40">
+                                {browserPushSupported
+                                  ? "Receive alerts even when SubScript is closed"
+                                  : "Not supported in this browser"}
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleToggleBrowserPush}
+                              disabled={browserPushBusy || !browserPushSupported}
+                              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Debit Success</p>
+                              <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
+                              disabled={savingSettingsField === "debitSuccessEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <p className="text-white font-bold">Expiry Warnings</p>
+                              <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
+                              disabled={savingSettingsField === "expiryWarningEnabled"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 6. SECURITY & KEY EXPORT VIEW */}
+                {accountSubView === "security" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Security & Keys</h2>
+                    </div>
+
+                    {/* Wallet Security Card */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-4 shadow-2xl">
+                      <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                        <Wallet className="h-4 w-4 text-[#ccff00]" /> Wallet Security & Compatibility
+                      </h3>
+                      
+                      {userSettings?.walletBackup ? (
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 flex items-start gap-3">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="text-xs font-bold text-emerald-300">Server-Signed Wallet (Embedded)</h4>
+                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                                Your account is secured with a server-signed embedded wallet generated via email/social login.
+                              </p>
+                              <span className="inline-block mt-2 rounded-md bg-emerald-500/20 text-emerald-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                Mobile App Compatible
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-white/40 leading-relaxed">
+                            This wallet will be automatically portable to our upcoming mobile app. All transaction signatures are co-signed by the SubScript server.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
+                            <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <h4 className="text-xs font-bold text-amber-300">Client-Connected Wallet (Web3)</h4>
+                              <p className="text-[10px] text-white/50 leading-relaxed mt-1">
+                                Your account uses an external browser/Web3 wallet (e.g. MetaMask, WalletConnect).
+                              </p>
+                              <span className="inline-block mt-2 rounded-md bg-amber-500/20 text-amber-300 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                Web Only (No Mobile App Support)
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-white/40 leading-relaxed">
+                            Note: External Web3 wallets are compatible with our web dashboard only. Our upcoming mobile app will strictly support email/Apple/Google login (Server-Signed wallets). To use the mobile app, we recommend creating a new account using your email.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {userSettings?.walletBackup && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                              <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
+                            </h3>
+                            <p className="text-[10px] text-white/40 leading-relaxed">
+                              Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
+                            userSettings.walletBackup.available
+                              ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
+                              : "border border-white/10 bg-white/5 text-white/45"
+                          }`}>
+                            {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                          </span>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
+                            <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
+                            <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
+                          </div>
+                        </div>
+
+                        {exportedPrivateKey && (
+                          <div className="space-y-3">
+                            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                              <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                                {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                                {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
+                              </button>
+                              <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                                <Copy className="h-4 w-4" /> Copy
+                              </button>
+                              <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                                <Download className="h-4 w-4" /> Download
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+
+                        {exportOtpStage ? (
+                          <div className="space-y-3">
+                            <p className="text-[10px] text-white/50 leading-relaxed">
+                              For your security, enter the 6-digit verification code we emailed you to reveal your private key.
+                            </p>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              value={exportOtpCode}
+                              onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                              placeholder="000000"
+                              className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
+                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={handleExportWallet}
+                                disabled={walletBackupLoading || exportOtpCode.length !== 6}
+                                className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                              >
+                                {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                Confirm & Reveal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
+                                disabled={walletBackupLoading}
+                                className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={requestExportOtp}
+                              disabled={exportOtpSending}
+                              className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
+                            >
+                              {exportOtpSending ? "Resending…" : "Resend code"}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={requestExportOtp}
+                            disabled={exportOtpSending || !userSettings.walletBackup.available}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                          >
+                            {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 7. SUPPORT VIEW (Inspiration from Screenshot 3) */}
+                {accountSubView === "support" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Support</h2>
+                    </div>
+
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl flex flex-col items-center justify-center text-center">
+                      <div className="p-4 rounded-full bg-[#ccff00]/10 text-[#ccff00] border border-[#ccff00]/25">
+                        <MessageSquare className="h-10 w-10 animate-bounce" />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <h3 className="text-base font-black uppercase tracking-wider text-white">Here for you 24/7!</h3>
+                        <p className="text-xs text-white/50 max-w-sm leading-relaxed font-sans">
+                          Talk to a SubScript rep or explore self-serve options below.
+                        </p>
+                      </div>
+
+                      <div className="w-full space-y-3 pt-4">
+                        <a
+                          href="https://docs.subscript.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
+                        >
+                          <span>Explore FAQs & Docs</span>
+                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                        </a>
+
+                        <button
+                          onClick={() => {
+                            setActiveTab("inbox");
+                          }}
+                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                        >
+                          <span>Start On-Chain Live Chat</span>
+                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === "referrals" && (
+              <section className="space-y-6 pb-20 max-w-2xl">
+                <SectionTitle title="Referrals Program" subtitle="Invite friends to join SubScript and view your referred signup registry." />
+
+                {/* Referral Link Card */}
+                <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                  <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                    <Gift className="h-4 w-4 text-[#ccff00]" /> Your Referral Link
+                  </h3>
+                  <p className="text-[10px] text-white/40 leading-relaxed">
+                    Share your invite link with others. When they create an account and register a role, their signup is logged in your referral registry.
                   </p>
 
-                  {registeredDomain ? (
-                    <div className="space-y-2">
-                    <div className="rounded-3xl border border-[#ccff00]/15 bg-[#ccff00]/5 p-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Registered Domain</p>
-                        <h3 className="mt-1 font-mono text-lg font-black text-[#ccff00]">{registeredDomain}</h3>
-                      </div>
-                      <button
-                        onClick={async () => {
-                          setDnsLoading(true);
-                          setDnsError(null);
-                          try {
-                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                            const data = await res.json().catch(() => ({}));
-                            if (res.ok) {
-                              setRegisteredDomain(null);
-                              setProfilePic(null);
-                              setDnsDomain("");
-                              setDnsSuccess("Alias removed successfully");
-                              setTimeout(() => setDnsSuccess(null), 3000);
-                            } else {
-                              setDnsError(data.error || "Could not unregister this name.");
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            setDnsError("Network error removing DNS name.");
-                          } finally {
-                            setDnsLoading(false);
-                          }
-                        }}
-                        className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all"
-                      >
-                        {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
-                      </button>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 font-mono text-xs text-white/70 overflow-x-auto whitespace-nowrap select-all flex items-center">
+                      {referralLink || "Loading your link..."}
                     </div>
-                      {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
-                      {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
-                    </div>
-                  ) : (
-                    <form onSubmit={handleRegisterDns} className="space-y-3">
-                      <Field label="SubScript DNS">
-                        <div className="relative">
-                          <input value={dnsDomain} onChange={(event) => setDnsDomain(event.target.value)} placeholder="alice" className="subscript-input pr-16" required />
-                          <span className="absolute right-4 top-3 text-sm font-black text-white/35">.sub</span>
-                        </div>
-                      </Field>
-                      {dnsError && <p className="text-[11px] text-red-300">{dnsError}</p>}
-                      {dnsSuccess && <p className="text-[11px] text-emerald-300">{dnsSuccess}</p>}
-                      <button 
-                        type="submit" 
-                        disabled={dnsLoading} 
-                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)]"
-                      >
-                        {dnsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register"}
-                      </button>
-                    </form>
-                  )}
+                    <button
+                      type="button"
+                      disabled={!referralLink}
+                      onClick={() => {
+                        if (!referralLink) return;
+                        navigator.clipboard.writeText(referralLink);
+                        setReferralCopySuccess(true);
+                        setTimeout(() => setReferralCopySuccess(false), 3000);
+                      }}
+                      className="rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(204,255,0,0.15)]"
+                    >
+                      {referralCopySuccess ? "Copied!" : "Copy Link"}
+                    </button>
+                  </div>
                 </div>
 
-                {userSettings?.walletBackup && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                          <Lock className="h-4 w-4 text-[#ccff00]" /> Wallet Backup
-                        </h3>
-                        <p className="text-[10px] text-white/40 leading-relaxed">
-                          Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
-                        </p>
-                      </div>
-                      <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                        userSettings.walletBackup.available
-                          ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
-                          : "border border-white/10 bg-white/5 text-white/45"
-                      }`}>
-                        {userSettings.walletBackup.available ? "Exportable" : "Managed"}
-                      </span>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
-                        <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings.walletBackup.email || userEmail || "Not linked"}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Provider</span>
-                        <span className="text-[11px] font-mono text-white/70">{userSettings.walletBackup.provider || "embedded"}</span>
-                      </div>
-                    </div>
-
-                    {exportedPrivateKey && (
-                      <div className="space-y-3">
-                        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
-                          <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
-                            {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
-                            {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
-                          </button>
-                          <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                            <Copy className="h-4 w-4" /> Copy
-                          </button>
-                          <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
-                            <Download className="h-4 w-4" /> Download
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
-
-                    {exportOtpStage ? (
-                      <div className="space-y-3">
-                        <p className="text-[10px] text-white/50 leading-relaxed">
-                          For your security, enter the 6-digit verification code we emailed you to reveal your private key.
-                        </p>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          value={exportOtpCode}
-                          onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          placeholder="000000"
-                          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white placeholder:text-white/20 focus:border-[#ccff00]/50 focus:outline-none"
-                        />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={handleExportWallet}
-                            disabled={walletBackupLoading || exportOtpCode.length !== 6}
-                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            Confirm & Reveal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
-                            disabled={walletBackupLoading}
-                            className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={requestExportOtp}
-                          disabled={exportOtpSending}
-                          className="w-full text-center text-[10px] uppercase tracking-[0.14em] text-[#ccff00]/70 hover:text-[#ccff00] transition disabled:opacity-50"
-                        >
-                          {exportOtpSending ? "Resending…" : "Resend code"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={requestExportOtp}
-                        disabled={exportOtpSending || !userSettings.walletBackup.available}
-                        className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
-                      </button>
-                    )}
+                {/* Referral Statistics Card */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Total Signups</span>
+                    <span className="mt-2 font-mono text-3xl font-black text-[#ccff00]">{referralsCount}</span>
                   </div>
-                )}
-
-                {/* Spending Limits Form */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-[#ccff00]" /> Spending Limits
-                    </h3>
-                    <p className="text-[10px] text-white/40 leading-relaxed">
-                      Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
-                    </p>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
-                      }}
-                      className="space-y-4"
-                    >
-                      <Field label="Daily Limit (USDC)">
-                        <input
-                          type="number"
-                          value={dailyLimitInput}
-                          onChange={(e) => setDailyLimitInput(e.target.value)}
-                          placeholder="e.g. 50"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <Field label="Weekly Limit (USDC)">
-                        <input
-                          type="number"
-                          value={weeklyLimitInput}
-                          onChange={(e) => setWeeklyLimitInput(e.target.value)}
-                          placeholder="e.g. 200"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <Field label="Monthly Limit (USDC)">
-                        <input
-                          type="number"
-                          value={monthlyLimitInput}
-                          onChange={(e) => setMonthlyLimitInput(e.target.value)}
-                          placeholder="e.g. 500"
-                          className="subscript-input"
-                        />
-                      </Field>
-                      <button
-                        type="submit"
-                        disabled={savingSettingsField === "spendingLimits"}
-                        className={`w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition shadow-[0_0_15px_rgba(204,255,0,0.15)] ${
-                          savingSettingsField === "spendingLimits" ? "opacity-60 cursor-not-allowed" : ""
-                        }`}
-                      >
-                        {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
-                      </button>
-                    </form>
+                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Program Status</span>
+                    <span className="mt-2 font-mono text-base font-black text-emerald-400">ACTIVE</span>
                   </div>
-                )}
+                </div>
 
-                {/* Notification Toggles */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Sliders className="h-4 w-4 text-[#ccff00]" /> Notifications
-                    </h3>
-                    <div className="space-y-4 font-sans text-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Push Notifications</p>
-                          <p className="text-[9px] text-white/40">Enable alerts inside the browser portal</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("pushEnabled", userSettings.pushEnabled)}
-                          disabled={savingSettingsField === "pushEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.pushEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.pushEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Browser Push (This Device)</p>
-                          <p className="text-[9px] text-white/40">
-                            {browserPushSupported
-                              ? "Receive alerts even when SubScript is closed"
-                              : "Not supported in this browser"}
-                          </p>
-                        </div>
-                        <button
-                          onClick={handleToggleBrowserPush}
-                          disabled={browserPushBusy || !browserPushSupported}
-                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${browserPushOn ? "bg-[#ccff00]" : "bg-white/10"} ${browserPushBusy || !browserPushSupported ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${browserPushOn ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Email Alerts <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Receive transaction details via email</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
-                        >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Debit Success</p>
-                          <p className="text-[9px] text-white/40">Notify immediately when a subscription billing succeeds</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("debitSuccessEnabled", userSettings.debitSuccessEnabled)}
-                          disabled={savingSettingsField === "debitSuccessEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.debitSuccessEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.debitSuccessEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold">Expiry Warnings</p>
-                          <p className="text-[9px] text-white/40">Alert 3 days before any subscription renewal or cap expiry</p>
-                        </div>
-                        <button
-                          onClick={() => handleToggleSetting("expiryWarningEnabled", userSettings.expiryWarningEnabled)}
-                          disabled={savingSettingsField === "expiryWarningEnabled"}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${userSettings.expiryWarningEnabled ? "bg-[#ccff00]" : "bg-white/10"}`}
-                        >
-                          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${userSettings.expiryWarningEnabled ? "translate-x-5" : "translate-x-0"}`} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Security Preferences */}
-                {userSettings && (
-                  <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
-                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-[#ccff00]" /> Security Settings
-                    </h3>
-                    <div className="space-y-4 font-sans text-xs">
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Security Shield <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Enable confidential routing on the Arc network</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
-                        >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between opacity-40 select-none cursor-not-allowed">
-                        <div className="space-y-0.5">
-                          <p className="text-white font-bold flex items-center gap-1.5">Multi-Sig Verification <span className="text-[8px] bg-white/10 text-white/55 px-1 py-0.5 rounded font-black uppercase">Soon</span></p>
-                          <p className="text-[9px] text-white/40">Prompt for secondary wallet confirmations during debit limits updates</p>
-                        </div>
-                        <button
-                          onClick={() => {}}
-                          disabled={true}
-                          className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out bg-white/5 opacity-50"
-                        >
-                          <span className="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white/20 shadow translate-x-0" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Transactions History */}
+                {/* Referrals Registry List */}
                 <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-[#ccff00]" /> Recent Transactions History
+                    <Users className="h-4 w-4 text-[#ccff00]" /> Referred Signup Registry
                   </h3>
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-left font-sans text-xs">
                       <thead>
                         <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                          <th className="pb-3">Receipt ID</th>
-                          <th className="pb-3">Date</th>
-                          <th className="pb-3">Amount</th>
-                          <th className="pb-3">Status</th>
-                          <th className="pb-3 text-right">Action</th>
+                          <th className="pb-3">Referred Address</th>
+                          <th className="pb-3">Alias</th>
+                          <th className="pb-3">Registered At</th>
+                          <th className="pb-3 text-right">Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {settingsTransactions.length === 0 ? (
+                        {referralsLoading ? (
                           <tr>
-                            <td colSpan={5} className="text-center py-6 text-white/30">
-                              No recent transaction logs.
+                            <td colSpan={4} className="text-center py-6 text-white/30">
+                              <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                            </td>
+                          </tr>
+                        ) : referrals.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center py-6 text-white/30">
+                              No signups registered under your link yet.
                             </td>
                           </tr>
                         ) : (
-                          settingsTransactions.map((tx) => (
-                            <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                              <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                              <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
-                              <td className="py-4 font-mono font-bold text-white">
-                                ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
-                              </td>
-                              <td className="py-4">
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                  {tx.status}
-                                </span>
-                              </td>
+                          referrals.map((ref) => (
+                            <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
+                              <td className="py-4 font-mono font-semibold text-white/80">{formatAddress(ref.referredAddress)}</td>
+                              <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "—"}</td>
+                              <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
-                                <div className="inline-flex items-center gap-3">
-                                  <a
-                                    href={`/receipt/${tx.receiptId}?invite=1`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                    title="Grant another address permission to view this private receipt"
-                                  >
-                                    Grant access
-                                  </a>
-                                  <a
-                                    href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                  >
-                                    Tx <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                </div>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
+                                  {ref.status}
+                                </span>
                               </td>
                             </tr>
                           ))

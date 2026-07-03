@@ -107,6 +107,8 @@ export async function GET(request: Request) {
                     profilePic: safeProfilePicOrNull(merchant.profilePic),
                     alias: aliasRecord?.alias || null,
                     isAnonymous: aliasRecord?.isAnonymous || false,
+                    verified: merchant.verified,
+                    tier: merchant.tier,
                     pushEnabled: merchant.pushEnabled,
                     emailEnabled: merchant.emailEnabled,
                     payoutSettlementEnabled: merchant.payoutSettlementEnabled,
