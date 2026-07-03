@@ -18,12 +18,20 @@
  *   CIRCLE_ARC_WALLET_SET_ID     optional — reuse an existing set instead of creating one
  */
 
+import { randomUUID } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
 
 const apiKey = process.env.CIRCLE_API_KEY;
 const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
-const accountType = (process.env.CIRCLE_WALLET_ACCOUNT_TYPE || "SCA").toUpperCase() === "EOA" ? "EOA" : "SCA";
-const blockchain = process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET";
+const accountType = (process.env.CIRCLE_WALLET_ACCOUNT_TYPE || "SCA").trim().toUpperCase();
+const blockchain = (process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET").trim().toUpperCase();
+const statePath = new URL("../.circle-provision.json", import.meta.url);
+
+if (Number(process.versions.node.split(".")[0]) < 22) {
+    console.error(`Node 22+ is required by the Circle SDK (current: ${process.versions.node}).`);
+    process.exit(1);
+}
 
 if (!apiKey || !entitySecret) {
     console.error("Missing CIRCLE_API_KEY or CIRCLE_ENTITY_SECRET. Put them in .env.local and run:");
@@ -32,23 +40,68 @@ if (!apiKey || !entitySecret) {
 }
 if (!/^(TEST_API_KEY|SAND_API_KEY):/.test(apiKey)) {
     console.error("Refusing to run: CIRCLE_API_KEY does not look like a sandbox key (TEST_API_KEY:/SAND_API_KEY:).");
-    console.error("Provision against sandbox first. Override intentionally only when you mean production.");
+    console.error("This script is sandbox-only.");
+    process.exit(1);
+}
+if (!/^[a-f0-9]{64}$/i.test(entitySecret)) {
+    console.error("Refusing to run: CIRCLE_ENTITY_SECRET must be a 64-character hexadecimal value.");
+    process.exit(1);
+}
+if (accountType !== "SCA" && accountType !== "EOA") {
+    console.error('Refusing to run: CIRCLE_WALLET_ACCOUNT_TYPE must be "SCA" or "EOA".');
+    process.exit(1);
+}
+if (blockchain !== "ARC-TESTNET") {
+    console.error('Refusing to run: this provisioning check only supports CIRCLE_ARC_BLOCKCHAIN="ARC-TESTNET".');
     process.exit(1);
 }
 
 const client = initiateDeveloperControlledWalletsClient({ apiKey, entitySecret });
 
+async function loadState() {
+    try {
+        return JSON.parse(await readFile(statePath, "utf8"));
+    } catch (error) {
+        if (error?.code === "ENOENT") return {};
+        throw new Error(`Could not read .circle-provision.json: ${error?.message || error}`);
+    }
+}
+
+async function saveState(state) {
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
 async function main() {
-    let walletSetId = process.env.CIRCLE_ARC_WALLET_SET_ID?.trim();
+    const state = await loadState();
+    state.walletSetIdempotencyKey ||= randomUUID();
+    state.walletIdempotencyKey ||= randomUUID();
+
+    const configuredWalletSetId = process.env.CIRCLE_ARC_WALLET_SET_ID?.trim();
+    if (configuredWalletSetId && state.walletSetId && configuredWalletSetId !== state.walletSetId) {
+        throw new Error(
+            "CIRCLE_ARC_WALLET_SET_ID differs from .circle-provision.json. " +
+            "Move the state file aside only if you intentionally want to provision another wallet set."
+        );
+    }
+
+    let walletSetId = configuredWalletSetId || state.walletSetId;
+    await saveState(state);
 
     if (!walletSetId) {
         console.log("Creating wallet set...");
-        const res = await client.createWalletSet({ name: "SubScript Arc Wallets" });
+        const res = await client.createWalletSet({
+            name: "SubScript Arc Wallets",
+            idempotencyKey: state.walletSetIdempotencyKey,
+        });
         walletSetId = res.data?.walletSet?.id;
         if (!walletSetId) throw new Error("No wallet-set id returned.");
+        state.walletSetId = walletSetId;
+        await saveState(state);
         console.log(`  wallet set created: ${walletSetId}`);
     } else {
         console.log(`Reusing wallet set: ${walletSetId}`);
+        state.walletSetId = walletSetId;
+        await saveState(state);
     }
 
     console.log(`Creating one ${accountType} test wallet on ${blockchain}...`);
@@ -57,9 +110,14 @@ async function main() {
         blockchains: [blockchain],
         count: 1,
         accountType,
+        idempotencyKey: state.walletIdempotencyKey,
+        metadata: [{ name: "SubScript Arc provisioning check", refId: "subscript-arc-provisioning-check" }],
     });
     const wallet = walletRes.data?.wallets?.[0];
     if (!wallet?.id || !wallet.address) throw new Error("No wallet id/address returned.");
+    state.walletId = wallet.id;
+    state.walletAddress = wallet.address;
+    await saveState(state);
 
     console.log("\n=== Provisioning result ===");
     console.log(`CIRCLE_ARC_WALLET_SET_ID = ${walletSetId}`);

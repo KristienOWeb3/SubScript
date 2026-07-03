@@ -24,13 +24,20 @@ export type CircleAccountType = "EOA" | "SCA";
  *  the Gas-Station-on-Arc sandbox check fails. */
 export function configuredAccountType(): CircleAccountType {
     const raw = (process.env.CIRCLE_WALLET_ACCOUNT_TYPE || "SCA").trim().toUpperCase();
-    return raw === "EOA" ? "EOA" : "SCA";
+    if (raw !== "EOA" && raw !== "SCA") {
+        throw new Error('CIRCLE_WALLET_ACCOUNT_TYPE must be "EOA" or "SCA".');
+    }
+    return raw;
 }
 
-/* Circle's blockchain identifier for Arc (e.g. "ARC-TESTNET" / "ARC"). Env-driven so the mainnet
-   cutover is a config flip. Cast because it originates from env; Circle rejects unknown values. */
+/* Circle's blockchain identifier for Arc. Strict validation prevents a typo from becoming a
+   credentialed request; mainnet remains an explicit config flip. */
 export function configuredArcBlockchain(): Blockchain {
-    return (process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET") as Blockchain;
+    const raw = (process.env.CIRCLE_ARC_BLOCKCHAIN || "ARC-TESTNET").trim().toUpperCase();
+    if (raw !== "ARC-TESTNET" && raw !== "ARC") {
+        throw new Error('CIRCLE_ARC_BLOCKCHAIN must be "ARC-TESTNET" or "ARC".');
+    }
+    return raw as Blockchain;
 }
 
 function entitySecret(): string {
@@ -73,9 +80,15 @@ export function isCircleCustodyConfigured(): boolean {
  * the wallet-set id, which should be persisted to CIRCLE_ARC_WALLET_SET_ID (all future wallets are
  * created inside it). Not called on the hot path — run once during setup.
  */
-export async function createArcWalletSet(name = "SubScript Arc Wallets"): Promise<string> {
+export async function createArcWalletSet(input: {
+    idempotencyKey: string;
+    name?: string;
+}): Promise<string> {
     const client = getDevWalletsClient();
-    const res = await client.createWalletSet({ name });
+    const res = await client.createWalletSet({
+        name: input.name || "SubScript Arc Wallets",
+        idempotencyKey: input.idempotencyKey,
+    });
     const id = res.data?.walletSet?.id;
     if (!id) {
         throw new Error("Circle wallet set creation returned no id.");
@@ -98,12 +111,27 @@ export interface ProvisionedCircleWallet {
     blockchain: string;
 }
 
+export interface ProvisionCircleWalletInput {
+    /** Stable application user id attached to the Circle wallet for reconciliation. */
+    refId: string;
+    /** Persisted UUIDv4 reused when a timed-out provisioning attempt is retried. */
+    idempotencyKey: string;
+    name?: string;
+}
+
 /**
  * Create one developer-controlled MPC wallet for a user, on Arc, inside the configured wallet set.
  * Returns the Circle wallet id + on-chain address; the caller persists both on the user record
  * (circle_wallet_id + wallet_address) with a null encrypted_private_key.
  */
-export async function createEmbeddedCircleWallet(): Promise<ProvisionedCircleWallet> {
+export async function createEmbeddedCircleWallet(input: ProvisionCircleWalletInput): Promise<ProvisionedCircleWallet> {
+    if (!input.refId.trim()) {
+        throw new Error("A stable user refId is required to create a Circle wallet.");
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.idempotencyKey)) {
+        throw new Error("Circle wallet idempotencyKey must be a UUIDv4.");
+    }
+
     const client = getDevWalletsClient();
     const accountType = configuredAccountType();
     const blockchain = configuredArcBlockchain();
@@ -113,6 +141,8 @@ export async function createEmbeddedCircleWallet(): Promise<ProvisionedCircleWal
         blockchains: [blockchain],
         count: 1,
         accountType: accountType as AccountType,
+        idempotencyKey: input.idempotencyKey,
+        metadata: [{ name: input.name, refId: input.refId }],
     });
 
     const wallet = res.data?.wallets?.[0];
