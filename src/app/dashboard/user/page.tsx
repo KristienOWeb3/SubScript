@@ -63,12 +63,16 @@ import {
   RefreshCw,
   Gift,
   Lock,
+  BarChart3,
+  TrendingUp,
   Search,
+  Tag,
+  PieChart,
+  DollarSign,
 } from "@/components/icons";
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import UserSpendAnalysis from "@/components/UserSpendAnalysis";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -398,7 +402,8 @@ export default function UserDashboard() {
   const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
-  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "limits" | "transactions" | "notifications" | "security" | "support">("menu");
+  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "limits" | "transactions" | "notifications" | "security" | "support" | "spend-analysis">("menu");
+  const [spendSearchQuery, setSpendSearchQuery] = useState("");
 
   useEffect(() => {
     setAccountSubView("menu");
@@ -2119,7 +2124,7 @@ export default function UserDashboard() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setActiveTab("dns")}
+                        onClick={() => { setActiveTab("dns"); setTimeout(() => setAccountSubView("spend-analysis"), 50); }}
                         className="mt-3 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-[#ccff00] hover:opacity-70 transition-opacity"
                       >
                         Manage Spending <ArrowUpRight className="h-3.5 w-3.5" />
@@ -2925,6 +2930,22 @@ export default function UserDashboard() {
                       </div>
 
                       <button
+                        onClick={() => setAccountSubView("spend-analysis")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
+                            <PieChart className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-white uppercase tracking-wide">Spend Analysis</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">View spending breakdown and categories</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
+
+                      <button
                         onClick={() => setAccountSubView("limits")}
                         className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
                       >
@@ -3158,21 +3179,253 @@ export default function UserDashboard() {
                   </div>
                 )}
 
-                {/* 3. SPENDING LIMITS VIEW (Spenda-inspired) */}
+                {/* 3. SPENDING LIMITS VIEW */}
+                {/* ========== SPEND ANALYSIS VIEW ========== */}
+                {accountSubView === "spend-analysis" && (() => {
+                  /* ---- Category classification engine ---- */
+                  const spendCategories = (() => {
+                    const cats: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: string; total: number; items: typeof recentTransactions }> = {
+                      subscriptions: { label: "Subscriptions", color: "#ccff00", bgColor: "rgba(204,255,0,0.08)", borderColor: "rgba(204,255,0,0.25)", icon: "🔄", total: 0, items: [] },
+                      payments: { label: "Payments", color: "#38bdf8", bgColor: "rgba(56,189,248,0.08)", borderColor: "rgba(56,189,248,0.25)", icon: "💳", total: 0, items: [] },
+                      transfers: { label: "Transfers", color: "#a78bfa", bgColor: "rgba(167,139,250,0.08)", borderColor: "rgba(167,139,250,0.25)", icon: "↗️", total: 0, items: [] },
+                      other: { label: "Other", color: "#f97316", bgColor: "rgba(249,115,22,0.08)", borderColor: "rgba(249,115,22,0.25)", icon: "📦", total: 0, items: [] },
+                    };
+                    recentTransactions.forEach((tx) => {
+                      const amountNum = parseFloat(tx.amountLabel.replace(/[^0-9.]/g, "")) || 0;
+                      if (tx.kind === "recurring") {
+                        cats.subscriptions.total += amountNum;
+                        cats.subscriptions.items.push(tx);
+                      } else if (tx.detail?.toLowerCase().includes("payment") || tx.detail?.toLowerCase().includes("invoice")) {
+                        cats.payments.total += amountNum;
+                        cats.payments.items.push(tx);
+                      } else if (tx.detail?.toLowerCase().includes("transfer") || tx.detail?.toLowerCase().includes("send")) {
+                        cats.transfers.total += amountNum;
+                        cats.transfers.items.push(tx);
+                      } else {
+                        cats.payments.total += amountNum;
+                        cats.payments.items.push(tx);
+                      }
+                    });
+                    return cats;
+                  })();
+                  const totalSpending = Object.values(spendCategories).reduce((s, c) => s + c.total, 0);
+                  const categoryEntries = Object.entries(spendCategories).filter(([, c]) => c.total > 0);
+                  const allCategoryEntries = Object.entries(spendCategories);
+
+                  /* ---- Filtered transaction list ---- */
+                  const spendTxList = recentTransactions.filter((tx) => {
+                    if (!spendSearchQuery.trim()) return true;
+                    const q = spendSearchQuery.toLowerCase();
+                    return tx.name.toLowerCase().includes(q) || tx.detail.toLowerCase().includes(q) || tx.amountLabel.toLowerCase().includes(q);
+                  });
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Header */}
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => setAccountSubView("menu")}
+                          className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <h2 className="text-sm font-black uppercase tracking-wider text-white">Spend Analysis</h2>
+                      </div>
+
+                      {/* ---- Hero: Total Spending ---- */}
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Total spending</p>
+                          <div className="p-2 rounded-xl bg-white/5">
+                            <BarChart3 className="h-4 w-4 text-[#ccff00]" />
+                          </div>
+                        </div>
+                        <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
+                          ${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          {monthlySpendUsdc > 0 ? (
+                            <>
+                              <TrendingUp className="h-3.5 w-3.5 text-[#ccff00]" />
+                              <span className="text-[10px] font-bold text-[#ccff00]">${monthlySpendUsdc.toFixed(2)}/mo recurring</span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-bold text-white/30">No active recurring spend</span>
+                          )}
+                        </div>
+
+                        {/* ---- Segmented color bar ---- */}
+                        {totalSpending > 0 && (
+                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full gap-0.5">
+                            {categoryEntries.map(([key, cat]) => (
+                              <div
+                                key={key}
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{
+                                  width: `${Math.max(4, (cat.total / totalSpending) * 100)}%`,
+                                  backgroundColor: cat.color,
+                                }}
+                                title={`${cat.label}: $${cat.total.toFixed(2)}`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {totalSpending === 0 && (
+                          <div className="mt-5 flex h-3 w-full overflow-hidden rounded-full bg-white/[0.06]" />
+                        )}
+                      </div>
+
+                      {/* ---- Category cards ---- */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {allCategoryEntries.map(([key, cat]) => (
+                          <div
+                            key={key}
+                            className="rounded-2xl p-4 border transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            style={{ backgroundColor: cat.bgColor, borderColor: cat.borderColor }}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-base">{cat.icon}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat.color }}>{cat.label}</span>
+                            </div>
+                            <p className="text-xl font-extrabold tracking-tight text-white">
+                              ${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                            {totalSpending > 0 && (
+                              <p className="text-[9px] font-bold text-white/30 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* ---- Smart category banner ---- */}
+                      <div className="rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.04] p-4 flex items-start gap-3">
+                        <div className="p-2 rounded-xl bg-[#ccff00]/10 shrink-0">
+                          <Tag className="h-5 w-5 text-[#ccff00]" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-white">Smart category</h4>
+                          <p className="text-[10px] text-white/45 leading-relaxed mt-1">
+                            We&apos;ve categorized your transactions automatically based on subscription type and payment context. Categories update as new transactions come in.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* ---- Search bar ---- */}
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={spendSearchQuery}
+                          onChange={(e) => setSpendSearchQuery(e.target.value)}
+                          placeholder="Search for any transaction"
+                          className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3.5 text-xs text-white placeholder:text-white/25 focus:border-[#ccff00]/30 focus:outline-none focus:ring-1 focus:ring-[#ccff00]/20 transition-all"
+                        />
+                      </div>
+
+                      {/* ---- Transaction list ---- */}
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden">
+                        {spendTxList.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <DollarSign className="h-8 w-8 text-white/15 mb-3" />
+                            <p className="text-xs text-white/35">{spendSearchQuery ? "No matching transactions." : "No transactions yet."}</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-white/[0.05]">
+                            {spendTxList.map((tx) => (
+                              <div key={tx.id} className="flex items-center gap-3 px-5 py-4 hover:bg-white/[0.02] transition-colors">
+                                <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center overflow-hidden">
+                                  {tx.pic ? (
+                                    <img src={tx.pic} alt={tx.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <span className="text-sm font-black text-[#ccff00]">{(tx.name || "?").charAt(0).toUpperCase()}</span>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-bold text-white">{tx.name}</p>
+                                  <p className="truncate text-[10px] text-white/40">
+                                    {tx.detail} • {new Date(tx.time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="text-sm font-extrabold text-white">{tx.amountLabel}</span>
+                                  <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
+                                    {tx.kind === "recurring" ? "Recurring" : "One-time"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {accountSubView === "limits" && (
-                  <UserSpendAnalysis
-                    userSettings={userSettings}
-                    settingsTransactions={settingsTransactions}
-                    dailyLimitInput={dailyLimitInput}
-                    setDailyLimitInput={setDailyLimitInput}
-                    weeklyLimitInput={weeklyLimitInput}
-                    setWeeklyLimitInput={setWeeklyLimitInput}
-                    monthlyLimitInput={monthlyLimitInput}
-                    setMonthlyLimitInput={setMonthlyLimitInput}
-                    savingSettingsField={savingSettingsField}
-                    handleSaveSpendingLimits={handleSaveSpendingLimits}
-                    setAccountSubView={setAccountSubView}
-                  />
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">Spending Limits</h2>
+                    </div>
+
+                    {userSettings && (
+                      <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-6 shadow-2xl">
+                        <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-[#ccff00]" /> Edit Spending Limits
+                        </h3>
+                        <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                          Limit the maximum USDC that can be debited from your wallet within a period. Leave empty for no limit.
+                        </p>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSaveSpendingLimits(dailyLimitInput, weeklyLimitInput, monthlyLimitInput);
+                          }}
+                          className="space-y-4 font-sans text-xs"
+                        >
+                          <Field label="Daily Limit (USDC)">
+                            <input
+                              type="number"
+                              value={dailyLimitInput}
+                              onChange={(e) => setDailyLimitInput(e.target.value)}
+                              placeholder="e.g. 50"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Weekly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={weeklyLimitInput}
+                              onChange={(e) => setWeeklyLimitInput(e.target.value)}
+                              placeholder="e.g. 200"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <Field label="Monthly Limit (USDC)">
+                            <input
+                              type="number"
+                              value={monthlyLimitInput}
+                              onChange={(e) => setMonthlyLimitInput(e.target.value)}
+                              placeholder="e.g. 500"
+                              className="subscript-input"
+                            />
+                          </Field>
+                          <button
+                            type="submit"
+                            disabled={savingSettingsField === "spendingLimits"}
+                            className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
+                          >
+                            {savingSettingsField === "spendingLimits" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Limits"}
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* 4. TRANSACTIONS VIEW */}
