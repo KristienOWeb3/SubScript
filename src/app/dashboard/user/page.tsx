@@ -4310,16 +4310,17 @@ export default function UserDashboard() {
             window.location.href = raw;
             return;
           }
-          /* EIP-681 (ethereum:0x...) or a bare address -> autofill the send recipient. */
+          /* EIP-681 (ethereum:0x...) or a bare address -> open the Send Funds screen prefilled with
+             the scanned recipient, so scanning a QR lands the user directly on the payment flow. */
           const addrMatch = raw.match(/0x[a-fA-F0-9]{40}/);
           if (addrMatch) {
-            setSingleRecipient(addrMatch[0]);
-            triggerToast("Recipient address scanned.");
+            setSendFundsRecipient(addrMatch[0]);
+            setSendFundsOpen(true);
             return;
           }
-          /* Otherwise treat it as a DNS alias / handle and let the send box resolve it. */
-          setSingleRecipient(raw);
-          triggerToast("Scanned. Review the recipient before sending.");
+          /* Otherwise treat it as a DNS alias / handle — the Send Funds box resolves it. */
+          setSendFundsRecipient(raw);
+          setSendFundsOpen(true);
         }}
       />
       
