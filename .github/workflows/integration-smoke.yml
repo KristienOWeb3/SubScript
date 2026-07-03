@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       # The smoke script uses only Node built-ins — no dependency install needed.
       - name: Run integration smoke
         run: node scripts/subscript-integration-smoke.mjs
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Smoke-test the live deployment
         run: node scripts/subscript-integration-smoke.mjs
         env:

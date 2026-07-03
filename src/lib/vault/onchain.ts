@@ -2,8 +2,7 @@
    off-chain mirror sync, and signers (user embedded wallet + keeper). */
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
-import { pgMaybeOne } from "@/lib/serverPg";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody } from "@/lib/custody";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import {
     SUBSCRIPT_VAULT_ADDRESS,
@@ -93,21 +92,11 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     return v;
 }
 
-/** Build an ethers signer from a wallet's stored embedded key. Throws if unavailable. */
+/** Build an ethers signer for a user embedded wallet via the custody provider. Throws if unavailable. */
 export async function getEmbeddedSigner(walletAddress: string): Promise<ethers.Wallet> {
-    const record = await pgMaybeOne<{ encrypted_private_key: string | null }>(
-        "select encrypted_private_key from user_embedded_wallets where wallet_address = $1 limit 1",
-        [walletAddress.toLowerCase()]
-    );
-    if (!record?.encrypted_private_key) {
-        throw new Error("This wallet has no server-held key. Connect a browser wallet to sign vault transactions.");
-    }
+    const custody = await getWalletCustody(walletAddress);
     const { provider } = await getRpcProviderForWrite();
-    const signer = new ethers.Wallet(decryptPrivateKey(record.encrypted_private_key), provider);
-    if (signer.address.toLowerCase() !== walletAddress.toLowerCase()) {
-        throw new Error("Stored key does not match the active session wallet.");
-    }
-    return signer;
+    return custody.getEthersSigner(provider);
 }
 
 export function getKeeperSigner(): ethers.Wallet {
