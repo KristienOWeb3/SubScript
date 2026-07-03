@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody } from "@/lib/custody";
 import { sanitizeInput } from "@/utils/security";
 
 type EmbeddedWalletExportRecord = {
@@ -126,7 +126,15 @@ export async function POST(request: Request) {
             return otpCheck.response;
         }
 
-        const privateKey = decryptPrivateKey(record.encrypted_private_key);
+        /* MPC-secured (Circle) wallets have no extractable key — refuse export cleanly. Legacy
+           AES-backed wallets can still be exported after the OTP step-up above. */
+        const custody = await getWalletCustody(normalizedWallet);
+        if (!custody.canExportRawKey) {
+            return NextResponse.json({
+                error: "This wallet is secured with multi-party computation and its private key cannot be exported.",
+            }, { status: 400 });
+        }
+        const privateKey = await custody.getRawPrivateKey();
 
         /* Best-effort audit trail for this sensitive disclosure. */
         await withPgClient((client) =>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -125,12 +125,10 @@ export async function POST(request: Request) {
             }, { status: 409 });
         }
 
-        const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
         const provider = await getProvider();
-        const signer = new ethers.Wallet(privateKey, provider);
-        if (signer.address.toLowerCase() !== normalizedSender) {
-            return NextResponse.json({ error: "Stored wallet key does not match your active session wallet" }, { status: 409 });
-        }
+        // Signing goes through the custody provider (legacy AES key today; Circle MPC after Stage 2).
+        const custody = await getWalletCustody(normalizedSender);
+        const signer = await custody.getEthersSigner(provider);
 
         const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, signer);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
