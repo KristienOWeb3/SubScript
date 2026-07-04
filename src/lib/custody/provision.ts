@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ethers } from "ethers";
 import { encryptPrivateKey } from "@/lib/crypto";
+import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 import { isCircleCustodyConfigured, createEmbeddedCircleWallet } from "@/lib/circle/devWallets";
 
 /*
@@ -29,23 +30,48 @@ export function shouldProvisionCircleWallet(): boolean {
         && !!process.env.CIRCLE_ARC_WALLET_SET_ID?.trim();
 }
 
+/*
+ * Durable idempotency: mint one UUID per ref_id and reuse it on every retry. Circle dedupes
+ * wallet creation on the idempotency key, so a signup that died between Circle's create and our
+ * user_embedded_wallets insert re-requests the SAME wallet instead of minting an orphan.
+ * The ON CONFLICT no-op update makes the RETURNING clause yield the previously stored key.
+ */
+async function durableIdempotencyKey(refId: string): Promise<string> {
+    const row = await pgMaybeOne<{ idempotency_key: string }>(
+        `insert into circle_wallet_provisioning (ref_id, idempotency_key)
+         values ($1, $2)
+         on conflict (ref_id) do update set updated_at = now()
+         returning idempotency_key`,
+        [refId, randomUUID()]
+    );
+    if (!row?.idempotency_key) {
+        throw new Error("Failed to persist the Circle provisioning idempotency key.");
+    }
+    return row.idempotency_key;
+}
+
 /**
  * Provision a new embedded wallet.
  * @param refId  stable, non-PII application id for the user (e.g. a hash of their email), attached
  *               to the Circle wallet for reconciliation.
  * @param allowCircle  pass false to force the legacy path (e.g. offline mode, where Circle's network
  *               API is unavailable and only an encrypted key can be persisted).
- *
- * NOTE: the Circle idempotencyKey is generated fresh here. Durable idempotency (persisting the key
- * and reusing it on a retried, partially-failed signup to avoid an orphaned second Circle wallet)
- * is a follow-up — the SDK supports it; wiring the persistence needs a store keyed by refId.
  */
 export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle?: boolean }): Promise<ProvisionedWallet> {
     if ((opts.allowCircle ?? true) && shouldProvisionCircleWallet()) {
         const wallet = await createEmbeddedCircleWallet({
             refId: opts.refId,
-            idempotencyKey: randomUUID(),
+            idempotencyKey: await durableIdempotencyKey(opts.refId),
             name: "SubScript embedded wallet",
+        });
+        /* Best-effort bookkeeping for reconciliation; provisioning already succeeded. */
+        await pgQuery(
+            `update circle_wallet_provisioning
+                set circle_wallet_id = $2, wallet_address = $3, updated_at = now()
+              where ref_id = $1`,
+            [opts.refId, wallet.walletId, wallet.address]
+        ).catch((err) => {
+            console.error("[custody] failed to record provisioned Circle wallet:", err?.message || err);
         });
         return { address: wallet.address, encryptedPrivateKey: null, circleWalletId: wallet.walletId };
     }
