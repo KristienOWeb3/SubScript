@@ -18,7 +18,7 @@ Phase 1 (testnet) launch readiness, priority item 1: **migrate embedded-wallet c
   - The `verify` CI job is fixed (it was failing on **every** branch, including `main`, due to a Windows-only path hack in a test helper).
 - **Preview env**: `WALLET_PROVIDER=circle` + `CIRCLE_API_KEY`/`CIRCLE_ENTITY_SECRET`/`CIRCLE_ARC_WALLET_SET_ID` are set (Vercel Preview scope). Supabase config was corrected; a fresh deployment after the merge picks everything up. **Prod flag is OFF** — legacy provisioning still active in production.
 - **Legacy key path is intact on purpose** — do NOT delete it yet. Deletion comes after the sweep migration and E2E sign-off.
-- **NOT yet done**: the signup → approve → transfer E2E on the Preview with Circle wallets (needs a human for the email OTP); Google sign-in re-enable (A1 — `circle/wallet/complete` is still a fail-closed 503 stub); the legacy-wallet sweep; AES-path deletion.
+- **NOT yet done**: a GREEN signup → approve → transfer E2E on the Preview with Circle wallets. A user run on 2026-07-04 failed but only because it hit a **stale Preview** (pre-Stage-2c code + missing env) — see Failed Attempts; re-run on the fresh deploy. Also open: Google sign-in re-enable (A1 — `circle/wallet/complete` is still a fail-closed 503 stub); the legacy-wallet sweep; AES-path deletion.
 - Prod survey (Supabase `jkrlsjpsytzffwjpixue`): **5 legacy-key wallets** (not ~9 as previously believed) — 2 `email_otp`, 1 `google`, 2 `circle_google`. Only `0xcff4c08bb22d770c9bc37e6d67215847f2d0183d` has on-chain state (1 ACTIVE subscription + 1 vault row). None are merchants. 5 other rows are `external_wallet` (no server custody — out of scope).
 
 ## Active files
@@ -49,6 +49,7 @@ The custody seam and its consumers:
   - `waitForTxHash: true` alone is NOT a success signal for Circle transactions (an EOA has a hash at `SENT`, pre-mining). Use `waitForState: "CONFIRMED"` (rejects on FAILED/CANCELLED/DENIED/STUCK) for `tx.wait()`-equivalent semantics; hash fallback only as a defensive second read.
   - Circle `abiParameters` string re-serialization was rejected in favor of locally ethers-encoded `callData` — one canonical encoding for both backends.
   - The signup → approve → transfer E2E could not be run by the agent: signup requires the email OTP from the user's inbox.
+  - **A user-run E2E on 2026-07-04 failed, but against a STALE Preview** (before Stage 2c deployed / env was corrected): signup produced a genuine Circle wallet (`circle_wallet_id` set, no legacy key) ✓, but approve returned `500 "Supabase server client unconfigured"` (Preview was missing `SUPABASE_SERVICE_ROLE_KEY` / `WALLET_PROVIDER` / `CIRCLE_*`) and transfer returned `409` (pre-Stage-2c `wallet/send` still required `encrypted_private_key`). Both symptoms match the pre-#34 code, so this is NOT a design failure — re-run the E2E on the **fresh** Preview (after #34/#35 + the `d1a4192` redeploy) with all Circle + Supabase env set. No on-chain tx was submitted; test rows were cleaned up.
 
 ## Next step
 
