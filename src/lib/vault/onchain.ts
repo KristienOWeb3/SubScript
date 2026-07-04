@@ -1,9 +1,9 @@
 /* Server-side helpers for the SubScriptVault escrow contract: chain reads, the
-   off-chain mirror sync, and signers (user embedded wallet + keeper). */
+   off-chain mirror sync, and embedded-wallet writes routed through the custody
+   provider (legacy AES key or Circle MPC — see src/lib/custody). */
 import { ethers } from "ethers";
 import { prisma } from "@/lib/prisma";
-import { getWalletCustody } from "@/lib/custody";
-import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { getWalletCustody, type WalletCustody } from "@/lib/custody";
 import {
     SUBSCRIPT_VAULT_ADDRESS,
     SUBSCRIPT_VAULT_CHAIN_ID,
@@ -92,11 +92,19 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     return v;
 }
 
-/** Build an ethers signer for a user embedded wallet via the custody provider. Throws if unavailable. */
-export async function getEmbeddedSigner(walletAddress: string): Promise<ethers.Wallet> {
-    const custody = await getWalletCustody(walletAddress);
-    const { provider } = await getRpcProviderForWrite();
-    return custody.getEthersSigner(provider);
+/** Raise the wallet's USDC allowance to `spender` if it's below `amount`. Reads via RPC,
+    writes through the custody provider so both legacy and Circle wallets work. */
+export async function ensureUsdcAllowance(custody: WalletCustody, spender: string, amount: bigint) {
+    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, readProvider());
+    const allowance: bigint = await usdc.allowance(custody.address, spender);
+    if (allowance < amount) {
+        await custody.executeContract({
+            contractAddress: USDC_NATIVE_GAS_ADDRESS,
+            abi: USDC_ABI,
+            functionName: "approve",
+            args: [spender, amount],
+        });
+    }
 }
 
 export function getKeeperSigner(): ethers.Wallet {
@@ -110,48 +118,58 @@ export function getKeeperSigner(): ethers.Wallet {
 
 /** Approve USDC to the vault (if needed) then commit `amount` micros for (user → merchant). */
 export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const allowance: bigint = await usdc.allowance(signer.address, SUBSCRIPT_VAULT_ADDRESS);
-    if (allowance < amount) {
-        const approveTx = await usdc.approve(SUBSCRIPT_VAULT_ADDRESS, amount);
-        await approveTx.wait();
-    }
-    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
-    const tx = await vault.commit(merchant.toLowerCase(), amount);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, SUBSCRIPT_VAULT_ADDRESS, amount);
+    const { txHash } = await custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+        abi: VAULT_ABI,
+        functionName: "commit",
+        args: [merchant.toLowerCase(), amount],
+    });
+    return txHash;
 }
 
 export async function withdrawFromEmbedded(walletAddress: string, merchant: string, amount: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
-    const tx = await vault.withdrawSurplus(merchant.toLowerCase(), amount);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+        abi: VAULT_ABI,
+        functionName: "withdrawSurplus",
+        args: [merchant.toLowerCase(), amount],
+    });
+    return txHash;
 }
 
 /** Reclaim the full escrow from an abandoned (matured-but-unsettled past grace) vault. */
 export async function reclaimAbandonedFromEmbedded(walletAddress: string, merchant: string) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
-    const tx = await vault.reclaimAbandonedEscrow(merchant.toLowerCase());
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+        abi: VAULT_ABI,
+        functionName: "reclaimAbandonedEscrow",
+        args: [merchant.toLowerCase()],
+    });
+    return txHash;
 }
 
 export async function setRequiredCommitFromEmbedded(merchantWallet: string, amount: bigint) {
-    const signer = await getEmbeddedSigner(merchantWallet);
-    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
-    const tx = await vault.setRequiredCommit(amount);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(merchantWallet);
+    const { txHash } = await custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+        abi: VAULT_ABI,
+        functionName: "setRequiredCommit",
+        args: [amount],
+    });
+    return txHash;
 }
 
 export async function claimMerchantFromEmbedded(merchantWallet: string) {
-    const signer = await getEmbeddedSigner(merchantWallet);
-    const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
-    const tx = await vault.merchantClaim();
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(merchantWallet);
+    const { txHash } = await custody.executeContract({
+        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
+        abi: VAULT_ABI,
+        functionName: "merchantClaim",
+        args: [],
+    });
+    return txHash;
 }

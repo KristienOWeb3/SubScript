@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { ethers } from "ethers";
 import crypto from "crypto";
-import { decryptPrivateKey } from "@/lib/crypto";
+import { getWalletCustody } from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
 import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
@@ -11,8 +10,11 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
+
+/* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
+   whose tx hash only exists once confirmed), so give the route enough headroom. */
+export const maxDuration = 120;
 
 const isProdEnv = process.env.NODE_ENV === "production";
 const USER_SPONSORED_ACTIONS = new Set(["approveUsdc", "transferUsdc"]);
@@ -187,18 +189,16 @@ export async function POST(request: Request) {
 
         const { data: walletRecord, error: walletError } = await supabase
             .from("user_embedded_wallets")
-            .select("encrypted_private_key, provider")
+            .select("encrypted_private_key, circle_wallet_id, provider")
             .eq("wallet_address", wallet.toLowerCase())
             .maybeSingle();
 
         if (walletError || !walletRecord) {
             return NextResponse.json({ error: "Embedded wallet not found for authenticated user" }, { status: 404 });
         }
-        if (walletRecord.provider === "external_wallet" || !walletRecord.encrypted_private_key) {
+        if (walletRecord.provider === "external_wallet" || (!walletRecord.encrypted_private_key && !walletRecord.circle_wallet_id)) {
             return NextResponse.json({ error: "Server-sponsored execution is only available for embedded wallet sessions." }, { status: 403 });
         }
-
-        const privateKey = decryptPrivateKey(walletRecord.encrypted_private_key);
 
         let contractAddress = "";
         let contractAbi: any = null;
@@ -324,27 +324,29 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* SubScript-funded gas for user merchant-directed actions. Fail closed so a
-               checkout never consumes the user's advertised payment principal as gas. */
-            if (accountRole === "USER") {
+            /* Custody routing: legacy wallets sign with the decrypted key, Circle wallets
+               execute through Circle's contract-execution API (Gas Station pays their gas). */
+            const custody = await getWalletCustody(wallet.toLowerCase());
+
+            /* SubScript-funded gas for user merchant-directed actions on legacy EOAs. Fail closed
+               so a checkout never consumes the user's advertised payment principal as gas. */
+            if (accountRole === "USER" && custody.kind === "legacy") {
                 await requireGasSponsored(wallet.toLowerCase());
             }
 
-            const { provider, rpcEndpoint } = await getRpcProviderForWrite();
-            const walletSigner = new ethers.Wallet(privateKey, provider);
-            const contract = new ethers.Contract(contractAddress, contractAbi, walletSigner);
-            const method = contract[functionName] as any;
-            if (typeof method !== "function") {
-                throw new Error(`METHOD_NOT_FOUND: ${functionName}`);
-            }
-            const tx = await method(...finalArgs);
-            console.log(`[execute-tx] submitted ${functionName} through ${rpcEndpoint}: ${tx.hash}`);
+            const { txHash } = await custody.executeContract({
+                contractAddress,
+                abi: contractAbi,
+                functionName,
+                args: finalArgs,
+            });
+            console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
 
             if (action === "withdraw") {
-                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${tx.hash}, requestId: ${requestId}`);
+                console.log(`[Withdrawal Executed] session: ${wallet}, txHash: ${txHash}, requestId: ${requestId}`);
             }
 
-            return NextResponse.json({ success: true, txHash: tx.hash }, { status: 200 });
+            return NextResponse.json({ success: true, txHash }, { status: 200 });
 
         } catch (err: any) {
             console.error("EVM execution error:", err);

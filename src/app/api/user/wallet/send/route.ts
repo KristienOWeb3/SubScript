@@ -18,33 +18,9 @@ type SendRecipient = {
 
 type EmbeddedWalletRecord = {
     encrypted_private_key: string | null;
+    circle_wallet_id: string | null;
     provider: string | null;
 };
-
-function rpcEndpoints() {
-    return Array.from(new Set([
-        process.env.ARC_RPC_PRIMARY,
-        process.env.ARC_RPC_SECONDARY,
-        process.env.RPC_URL,
-        process.env.RPC_FALLBACK_URL_1,
-        process.env.RPC_FALLBACK_URL_2,
-        "https://rpc.testnet.arc.network",
-    ].filter(Boolean) as string[]));
-}
-
-async function getProvider() {
-    let lastError: unknown = null;
-    for (const url of rpcEndpoints()) {
-        try {
-            const provider = new ethers.JsonRpcProvider(url);
-            await provider.getNetwork();
-            return provider;
-        } catch (error) {
-            lastError = error;
-        }
-    }
-    throw lastError || new Error("No Arc RPC endpoint is available");
-}
 
 function formatAmount(amountMicros: bigint) {
     const microsPerUsdc = BigInt(1_000_000);
@@ -110,7 +86,7 @@ export async function POST(request: Request) {
 
         const walletRecord = await withPgClient(async (client) => {
             const result = await client.query(
-                `select encrypted_private_key, provider
+                `select encrypted_private_key, circle_wallet_id, provider
                    from user_embedded_wallets
                   where wallet_address = $1
                   limit 1`,
@@ -119,31 +95,29 @@ export async function POST(request: Request) {
             return result.rows[0] as EmbeddedWalletRecord | undefined;
         });
 
-        if (!walletRecord?.encrypted_private_key) {
+        if (!walletRecord?.encrypted_private_key && !walletRecord?.circle_wallet_id) {
             return NextResponse.json({
-                error: "This action needs a browser wallet signature. Generated email wallets can send from here only when their encrypted key backup exists.",
+                error: "This action needs a browser wallet signature. Generated email wallets can send from here only when their server-held key exists.",
             }, { status: 409 });
         }
 
-        const provider = await getProvider();
-        // Signing goes through the custody provider (legacy AES key today; Circle MPC after Stage 2).
+        // Execution goes through the custody provider (legacy AES key or Circle MPC), which
+        // waits for each transfer to confirm and throws on revert.
         const custody = await getWalletCustody(normalizedSender);
-        const signer = await custody.getEthersSigner(provider);
-
-        const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ERC20_ABI, signer);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
         for (const item of parsedRecipients) {
-            const tx = await usdc.transfer(item.receiver, item.amountMicros);
-            const receipt = await tx.wait();
-            if (!receipt || receipt.status !== 1) {
-                throw new Error(`Transfer to ${item.receiver} reverted on-chain`);
-            }
+            const { txHash } = await custody.executeContract({
+                contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                abi: USDC_ERC20_ABI,
+                functionName: "transfer",
+                args: [item.receiver, item.amountMicros],
+            });
 
             txs.push({
                 receiverAddress: item.receiver,
                 amountUsdc: formatAmount(item.amountMicros),
-                txHash: tx.hash,
+                txHash,
             });
         }
 

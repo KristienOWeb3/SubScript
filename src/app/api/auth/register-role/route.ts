@@ -65,10 +65,10 @@ export async function POST(request: Request) {
                        external/self-custody wallet — more professional, and required for server-signed
                        merchant operations (payouts, tier changes, vault draws). */
                     const merchantKeyRow = await client.query(
-                        "select encrypted_private_key from user_embedded_wallets where wallet_address = $1 limit 1",
+                        "select encrypted_private_key, circle_wallet_id from user_embedded_wallets where wallet_address = $1 limit 1",
                         [normalizedWallet]
                     );
-                    if (!merchantKeyRow.rows[0]?.encrypted_private_key) {
+                    if (!merchantKeyRow.rows[0]?.encrypted_private_key && !merchantKeyRow.rows[0]?.circle_wallet_id) {
                         await client.query("rollback");
                         return {
                             role: "ENTERPRISE",
