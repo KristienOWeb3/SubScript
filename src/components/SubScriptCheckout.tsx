@@ -63,9 +63,18 @@ export default function SubScriptCheckout({
   mode = "standard",
   onSuccess,
 }: SubScriptCheckoutProps) {
-  const { address: userWallet, chainId, isConnected } = useAccount();
+  const [mounted, setMounted] = useState(false);
+  const { address: realUserWallet, chainId: realChainId, isConnected: realIsConnected } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const userWallet = mounted ? realUserWallet : undefined;
+  const chainId = mounted ? realChainId : undefined;
+  const isConnected = mounted ? realIsConnected : false;
 
   const [loadingState, setLoadingState] = useState<
     "idle" | "Awaiting USDC Approval" | "Preparing Secure Payment" | "Confirming Subscription" | "success" | "error"

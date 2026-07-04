@@ -50,13 +50,21 @@ export default function PublicPayClient({
         }
     };
     const fiatSymbol = getFiatSymbol(displayCurrency);
-    const { address, isConnected } = useAccount();
+    const [mounted, setMounted] = useState(false);
+    const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const chainId = useChainId();
     const { switchChainAsync } = useSwitchChain();
     const publicClient = usePublicClient();
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const address = mounted ? realAddress : undefined;
+    const isConnected = mounted ? realIsConnected : false;
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
