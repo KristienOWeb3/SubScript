@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { ethers } from "ethers";
+import { provisionEmbeddedWallet } from "@/lib/custody/provision";
 import { SignJWT } from "jose";
-import { encryptPrivateKey } from "@/lib/crypto";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
@@ -148,31 +147,36 @@ export async function POST(request: Request) {
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
         } else {
-            const newWallet = ethers.Wallet.createRandom();
-            walletAddress = newWallet.address;
-            
-            const encryptedKey = encryptPrivateKey(newWallet.privateKey);
+            /* Circle MPC when WALLET_PROVIDER=circle (else legacy). Offline mode forces legacy —
+               Circle needs the network and only an encrypted key can be persisted offline. */
+            const refId = crypto.createHash("sha256").update(emailVal).digest("hex");
+            const provisioned = await provisionEmbeddedWallet({ refId, allowCircle: !isOfflineMode });
+            walletAddress = provisioned.address;
 
             if (isOfflineMode) {
-                saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey!);
             } else {
                 try {
                     await withPgClient(async (client) => {
                         await client.query(
-                            `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, provider, updated_at)
-                             values ($1, $2, $3, 'email_otp', now())
+                            `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, circle_wallet_id, provider, updated_at)
+                             values ($1, $2, $3, $4, 'email_otp', now())
                              on conflict (email) do update set
                                 wallet_address = excluded.wallet_address,
                                 encrypted_private_key = excluded.encrypted_private_key,
+                                circle_wallet_id = excluded.circle_wallet_id,
                                 provider = excluded.provider,
                                 updated_at = now()`,
-                            [emailVal, walletAddress.toLowerCase(), encryptedKey]
+                            [emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey, provisioned.circleWalletId]
                         );
                     });
                 } catch (err: any) {
-                    if (isConnectionError(err)) {
-                        console.warn("⚠️ Database is offline. Storing new social embedded wallet in offlineDb.");
-                        saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), encryptedKey);
+                    if (isConnectionError(err) && provisioned.encryptedPrivateKey) {
+                        console.warn("⚠️ Database is offline. Storing legacy embedded wallet in offlineDb.");
+                        saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey);
+                    } else if (isConnectionError(err)) {
+                        /* A Circle wallet can't be persisted offline (no encrypted key to store). */
+                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                     } else {
                         console.error("Failed to store generated OTP embedded wallet:", err);
                         return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
