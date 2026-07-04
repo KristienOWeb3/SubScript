@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { extname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 function source(path) {
@@ -8,6 +9,10 @@ function source(path) {
 }
 
 const projectRoot = new URL("../../../", import.meta.url);
+/* fileURLToPath, not pathname.slice(1): the slice hack only denormalizes Windows paths
+   ("/C:/…" -> "C:/…"); on Linux it strips the root "/" and made every scanned path resolve
+   relative to cwd, which broke the boundary-file exclusions below on CI. */
+const projectRootPath = fileURLToPath(projectRoot);
 
 function sourceFiles(directory) {
     return readdirSync(new URL(directory, projectRoot), { recursive: true, withFileTypes: true })
@@ -15,7 +20,7 @@ function sourceFiles(directory) {
         .map((entry) => {
             const absolute = join(entry.parentPath, entry.name);
             return {
-                path: relative(projectRoot.pathname.slice(1), absolute).replaceAll("\\", "/"),
+                path: relative(projectRootPath, absolute).replaceAll("\\", "/"),
                 contents: readFileSync(absolute, "utf8"),
             };
         });
