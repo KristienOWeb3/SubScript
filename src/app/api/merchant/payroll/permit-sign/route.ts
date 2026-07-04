@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { getEmbeddedSigner } from "@/lib/vault/onchain";
+import { getWalletCustody } from "@/lib/custody";
+import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import {
@@ -48,26 +49,35 @@ export async function POST(request: Request) {
 
         const merchant = wallet.toLowerCase();
         /* Throws "no server-held key" for external wallets — which can't be merchants anymore. */
-        const signer = await getEmbeddedSigner(merchant);
-        const chainId = Number((await signer.provider!.getNetwork()).chainId);
+        const custody = await getWalletCustody(merchant);
+        const { provider } = await getRpcProviderForWrite();
+        const chainId = Number((await provider.getNetwork()).chainId);
 
         /* 1. Approve USDC -> Permit2 (max) once so Permit2.transferFrom can pull payroll funds. */
-        const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, signer);
+        const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, provider);
         const currentAllowance: bigint = BigInt(await usdc.allowance(merchant, PERMIT2_ADDRESS));
         if (currentAllowance < PERMIT2_MAX_AMOUNT) {
-            await ensureGasSponsored(merchant).catch(() => { /* best-effort gas top-up */ });
-            const approveTx = await usdc.approve(PERMIT2_ADDRESS, PERMIT2_MAX_AMOUNT);
-            await approveTx.wait();
+            if (custody.kind === "legacy") {
+                /* Circle SCA wallets get gas from Circle's Gas Station; only legacy EOAs need a top-up. */
+                await ensureGasSponsored(merchant).catch(() => { /* best-effort gas top-up */ });
+            }
+            await custody.executeContract({
+                contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: "approve",
+                args: [PERMIT2_ADDRESS, PERMIT2_MAX_AMOUNT],
+            });
         }
 
         /* 2. Read the current Permit2 nonce for (merchant, USDC, keeper). */
-        const permit2 = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ALLOWANCE_ABI, signer);
+        const permit2 = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ALLOWANCE_ABI, provider);
         const allowanceRes = await permit2.allowance(merchant, USDC_NATIVE_GAS_ADDRESS, keeperAddress);
         const nonce = Number(allowanceRes.nonce ?? allowanceRes[2]);
 
-        /* 3. Sign the fixed max-allowance PermitSingle (shared with the keeper). */
+        /* 3. Sign the fixed max-allowance PermitSingle (shared with the keeper). Circle SCA
+           signatures verify via ERC-1271, which Permit2 supports for contract accounts. */
         const message = buildPermitSingle(USDC_NATIVE_GAS_ADDRESS, keeperAddress, nonce);
-        const signature = await signer.signTypedData(permit2Domain(chainId), PERMIT2_TYPES as any, message as any);
+        const signature = await custody.signTypedData(permit2Domain(chainId), PERMIT2_TYPES as any, message as any);
 
         return NextResponse.json({ success: true, signature, nonce, keeperAddress }, { status: 200 });
     } catch (error: any) {

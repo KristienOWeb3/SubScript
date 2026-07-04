@@ -1,8 +1,10 @@
-/* Server-side subscription actions on the standard contract, signed from the user's
-   embedded wallet. createSubscription takes the first payment immediately (so the user
-   must approve USDC first), mirroring the vault-commit approve+act pattern. */
+/* Server-side subscription actions on the standard contract, executed from the user's
+   embedded wallet through the custody provider (legacy AES key or Circle MPC).
+   createSubscription takes the first payment immediately (so the user must approve
+   USDC first), mirroring the vault-commit approve+act pattern. */
 import { ethers } from "ethers";
-import { getEmbeddedSigner } from "@/lib/vault/onchain";
+import { getWalletCustody } from "@/lib/custody";
+import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const SUB_ABI = [
@@ -93,23 +95,35 @@ function horizonAllowance(amount: bigint, period: bigint): bigint {
     return amount * BigInt(cyclesPerYear);
 }
 
-export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
-    const desiredAllowance = horizonAllowance(amount, period);
-    if (allowance < desiredAllowance) {
-        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
-        await approveTx.wait();
+/* The custody provider has already waited for the transaction to confirm, so the receipt
+   is normally available on the first read — the retries only cover read-endpoint lag. */
+async function fetchReceipt(txHash: string): Promise<ethers.TransactionReceipt | null> {
+    const provider = readProvider();
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const receipt = await provider.getTransactionReceipt(txHash).catch(() => null);
+        if (receipt) return receipt;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.createSubscription(merchant.toLowerCase(), amount, period);
-    const receipt = await tx.wait();
+    return null;
+}
 
+export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint) {
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(amount, period));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "createSubscription",
+        args: [merchant.toLowerCase(), amount, period],
+    });
+
+    /* Recover the new subId from the SubscriptionCreated event in the receipt. */
+    const receipt = await fetchReceipt(txHash);
+    const iface = new ethers.Interface(SUB_ABI);
     let subId: string | null = null;
     for (const log of receipt?.logs || []) {
         try {
-            const parsed = contract.interface.parseLog(log);
+            const parsed = iface.parseLog(log);
             if (parsed?.name === "SubscriptionCreated") {
                 subId = parsed.args.subId.toString();
                 break;
@@ -118,15 +132,18 @@ export async function subscribeFromEmbedded(walletAddress: string, merchant: str
             /* not our event */
         }
     }
-    return { txHash: receipt?.hash || tx.hash, subId };
+    return { txHash, subId };
 }
 
 export async function cancelFromEmbedded(walletAddress: string, subId: string | bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.cancelSubscription(BigInt(subId));
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "cancelSubscription",
+        args: [BigInt(subId)],
+    });
+    return txHash;
 }
 
 /**
@@ -141,28 +158,28 @@ export async function modifyFromEmbedded(
     newAmount: bigint,
     newPeriod: bigint,
 ) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const allowance: bigint = await usdc.allowance(signer.address, STANDARD_CONTRACT_ADDRESS);
-    const desiredAllowance = horizonAllowance(newAmount, newPeriod);
-    if (allowance < desiredAllowance) {
-        const approveTx = await usdc.approve(STANDARD_CONTRACT_ADDRESS, desiredAllowance);
-        await approveTx.wait();
-    }
-    const contract = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, signer);
-    const tx = await contract.modifySubscription(BigInt(subId), newAmount, newPeriod);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(newAmount, newPeriod));
+    const { txHash } = await custody.executeContract({
+        contractAddress: STANDARD_CONTRACT_ADDRESS,
+        abi: SUB_ABI,
+        functionName: "modifySubscription",
+        args: [BigInt(subId), newAmount, newPeriod],
+    });
+    return txHash;
 }
 
 /** Direct USDC transfer from the embedded wallet to a recipient — used to charge the
     prorated difference when a user upgrades immediately. */
 export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint) {
-    const signer = await getEmbeddedSigner(walletAddress);
-    const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, USDC_ABI, signer);
-    const tx = await usdc.transfer(to.toLowerCase(), amountMicros);
-    const receipt = await tx.wait();
-    return receipt?.hash || tx.hash;
+    const custody = await getWalletCustody(walletAddress);
+    const { txHash } = await custody.executeContract({
+        contractAddress: USDC_NATIVE_GAS_ADDRESS,
+        abi: USDC_ABI,
+        functionName: "transfer",
+        args: [to.toLowerCase(), amountMicros],
+    });
+    return txHash;
 }
 
 /**
