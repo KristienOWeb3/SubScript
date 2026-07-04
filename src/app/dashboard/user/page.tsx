@@ -29,6 +29,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { getDashboardUrl } from "@/utils/navigation";
+import { Identity } from "@/components/Identity";
 import {
   AlertCircle,
   ArrowDown,
@@ -2618,7 +2619,6 @@ export default function UserDashboard() {
                                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                                     )}
                                   </div>
-                                  <p className="text-[9px] text-white/40 uppercase tracking-widest mt-0.5">{formatAddress(selectedDmPeer)}</p>
                                 </div>
                               </div>
                               
@@ -4148,7 +4148,7 @@ export default function UserDashboard() {
                         ) : (
                           referrals.map((ref) => (
                             <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                              <td className="py-4 font-mono font-semibold text-white/80">{formatAddress(ref.referredAddress)}</td>
+                              <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} /></td>
                               <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "—"}</td>
                               <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
@@ -6286,7 +6286,7 @@ function DepositModal({
                       </div>
                       <div className="flex justify-between gap-3">
                         <span>Destination</span>
-                        <span className="font-mono text-white/75">{formatAddress(fiatIntent.destinationWallet)}</span>
+                        <Identity address={fiatIntent.destinationWallet} className="text-white/75" />
                       </div>
                       <div className="flex justify-between gap-3">
                         <span>Expires</span>

@@ -6,6 +6,7 @@ import { useAccount, useSignMessage, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, ShieldAlert, Key } from "@/components/icons";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
+import { Identity } from "@/components/Identity";
 
 interface ReceiptClientProps {
     receiptId: string;
@@ -304,7 +305,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                             <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
                                 <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Sender</p>
-                                <p className="mt-1 font-mono text-white/85 text-xs">{formatAddress(receipt.payer_address)}</p>
+                                <Identity address={receipt.payer_address} className="mt-1 block text-white/85 text-xs" />
                             </div>
                             <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
                                 <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Date</p>
@@ -314,7 +315,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
                         <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Merchant</p>
-                            <p className="mt-1 font-mono text-white/85 text-xs">{formatAddress(receipt.merchant_address)}</p>
+                            <Identity address={receipt.merchant_address} className="mt-1 block text-white/85 text-xs" />
                         </div>
 
                         <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
@@ -376,7 +377,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                                 <div className="grid gap-1.5">
                                     {invitedList.map((addr, idx) => (
                                         <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-white/[0.02] border border-white/5">
-                                            <span className="font-mono text-white/60">{formatAddress(addr)}</span>
+                                            <Identity address={addr} className="text-white/60" />
                                             <span className="text-[9px] text-[#00d2b4] bg-[#00d2b4]/5 border border-[#00d2b4]/10 px-1 py-0.5 rounded font-mono">
                                                 Authorized
                                             </span>
