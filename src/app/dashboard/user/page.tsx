@@ -2047,11 +2047,13 @@ export default function UserDashboard() {
     );
   }
 
-  const sortedSubscriptions = [...subscriptions].sort((a, b) => {
-    const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
-    const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
-    return aNext - bNext;
-  });
+  const sortedSubscriptions = [...subscriptions]
+    .filter((s) => s.status === "ACTIVE")
+    .sort((a, b) => {
+      const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
+      const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
+      return aNext - bNext;
+    });
 
   /* ---- Home overview (derived from existing data; no dedicated analytics backend) ---- */
   // Display-only fiat estimate. Not a live oracle — clearly a rough naira reference for the balance.
@@ -2350,7 +2352,7 @@ export default function UserDashboard() {
                   <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                     <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.length} active</span>
+                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE").length} active</span>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
@@ -5335,7 +5337,7 @@ function MerchantPlanManager({
               loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
             }`}
           >
-            Hard Cancel
+            Cancel current subscription
           </motion.button>
         )}
         <motion.button
