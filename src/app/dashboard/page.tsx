@@ -16,6 +16,7 @@ import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
+import KycVerificationPanel from "@/components/KycVerificationPanel";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useReadContract, useSignMessage } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -3232,6 +3233,9 @@ Please complete the following implementation tasks:
                             </div>
                         </div>
                     </div>
+
+                    {/* Identity Verification (KYC) — visible placeholder, activates at mainnet. */}
+                    <KycVerificationPanel />
 
                     {/* DNS / Alias Section */}
                     <div className="space-y-4">

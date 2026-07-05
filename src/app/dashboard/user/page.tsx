@@ -30,6 +30,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
+import KycVerificationPanel from "@/components/KycVerificationPanel";
 import {
   AlertCircle,
   ArrowDown,
@@ -3897,6 +3898,11 @@ export default function UserDashboard() {
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                       <h2 className="text-sm font-black uppercase tracking-wider text-white">Security & Keys</h2>
+                    </div>
+
+                    {/* Identity Verification (KYC) — visible placeholder, activates at mainnet. */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 shadow-2xl">
+                      <KycVerificationPanel className="" />
                     </div>
 
                     {/* Wallet Security Card */}
