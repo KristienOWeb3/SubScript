@@ -58,7 +58,9 @@ async function durableIdempotencyKey(refId: string): Promise<string> {
  *               API is unavailable and only an encrypted key can be persisted).
  */
 export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle?: boolean }): Promise<ProvisionedWallet> {
-    if ((opts.allowCircle ?? true) && shouldProvisionCircleWallet()) {
+    const allowCircle = opts.allowCircle ?? true;
+
+    if (allowCircle && shouldProvisionCircleWallet()) {
         const wallet = await createEmbeddedCircleWallet({
             refId: opts.refId,
             idempotencyKey: await durableIdempotencyKey(opts.refId),
@@ -75,6 +77,20 @@ export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle
         });
         return { address: wallet.address, encryptedPrivateKey: null, circleWalletId: wallet.walletId };
     }
+
+    /* Fail closed: if the operator selected Circle custody (WALLET_PROVIDER=circle) but Circle is
+       not fully configured, do NOT silently fall back to generating a raw private key — that
+       reintroduces the single-WALLET_ENCRYPTION_KEY crown-jewel risk the cutover exists to remove.
+       Offline mode (allowCircle=false) is the one sanctioned legacy path — Circle needs the network,
+       and only an encrypted key can be persisted offline — so it is exempt. */
+    if (allowCircle && process.env.WALLET_PROVIDER === "circle") {
+        throw new Error(
+            "WALLET_PROVIDER=circle but Circle custody is not fully configured " +
+            "(need CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, and CIRCLE_ARC_WALLET_SET_ID). " +
+            "Refusing to fall back to legacy raw-key generation."
+        );
+    }
+
     const legacy = ethers.Wallet.createRandom();
     return {
         address: legacy.address.toLowerCase(),
