@@ -10,14 +10,16 @@
  *
  * Env checks are intentionally inline/light (no ethers/pg/Circle-SDK imports at boot); they mirror
  * shouldProvisionCircleWallet() and isGasSponsorshipEnabled() — keep them in sync if those change.
+ * The WALLET_PROVIDER reading is shared with provision.ts via walletProvider.ts so the two can't
+ * drift on normalization.
  */
 import { isUsableCircleApiKey } from "@/lib/circle/client";
+import { isCircleProviderSelected } from "@/lib/custody/walletProvider";
 
 export function checkRuntimeConfig(): string[] {
     const warnings: string[] = [];
 
-    const provider = (process.env.WALLET_PROVIDER || "legacy").trim().toLowerCase();
-    const wantsCircle = provider === "circle";
+    const wantsCircle = isCircleProviderSelected();
     const circleConfigured =
         isUsableCircleApiKey(process.env.CIRCLE_API_KEY) &&
         !!process.env.CIRCLE_ENTITY_SECRET?.trim() &&

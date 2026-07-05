@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { encryptPrivateKey } from "@/lib/crypto";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 import { isCircleCustodyConfigured, createEmbeddedCircleWallet } from "@/lib/circle/devWallets";
+import { isCircleProviderSelected } from "@/lib/custody/walletProvider";
 
 /*
  * New-embedded-wallet provisioning (Phase 1 Stage 2b cutover).
@@ -25,7 +26,7 @@ export interface ProvisionedWallet {
 }
 
 export function shouldProvisionCircleWallet(): boolean {
-    return process.env.WALLET_PROVIDER === "circle"
+    return isCircleProviderSelected()
         && isCircleCustodyConfigured()
         && !!process.env.CIRCLE_ARC_WALLET_SET_ID?.trim();
 }
@@ -83,7 +84,7 @@ export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle
        reintroduces the single-WALLET_ENCRYPTION_KEY crown-jewel risk the cutover exists to remove.
        Offline mode (allowCircle=false) is the one sanctioned legacy path — Circle needs the network,
        and only an encrypted key can be persisted offline — so it is exempt. */
-    if (allowCircle && process.env.WALLET_PROVIDER === "circle") {
+    if (allowCircle && isCircleProviderSelected()) {
         throw new Error(
             "WALLET_PROVIDER=circle but Circle custody is not fully configured " +
             "(need CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, and CIRCLE_ARC_WALLET_SET_ID). " +

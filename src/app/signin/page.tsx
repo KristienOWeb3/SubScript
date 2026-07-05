@@ -16,11 +16,7 @@ import {
 import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-
-/* Circle Google social sign-in is disabled server-side (the completion endpoint returns 503
-   until identity is verified against a single-use challenge), so the button is hidden unless
-   the deployment explicitly opts in. Advertising a button that always fails erodes trust. */
-const CIRCLE_GOOGLE_ENABLED = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 
 function SignInContent() {
   const router = useRouter();

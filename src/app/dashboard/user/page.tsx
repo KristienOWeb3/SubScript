@@ -1855,7 +1855,37 @@ export default function UserDashboard() {
       await loadDms().catch(() => {});
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      if (err.message?.includes("User rejected the request")) {
+      const settled = Array.isArray(err.settledTransfers) ? err.settledTransfers : [];
+      if (err.partial && settled.length > 0) {
+        /* Transfers settle in order and the API stops at the first failure, so the first
+           `settled.length` recipients are done. Drop them so a retry only sends the rest and
+           never resends an already-settled transfer. */
+        setBatchRows((rows) => {
+          const remaining = rows.slice(settled.length);
+          return remaining.length > 0 ? remaining : [{ address: "", amount: "" }];
+        });
+        setBatchSendStatus(
+          `${err.message || "Batch partially completed."} ${settled.length} transfer${settled.length === 1 ? "" : "s"} already settled and ${settled.length === 1 ? "was" : "were"} removed — retry sends only the remaining recipients.`
+        );
+        for (const t of settled) {
+          if (t?.txHash) {
+            await fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: t.receiverAddress,
+                amountUsdc: t.amountUsdc,
+                txHash: t.txHash,
+                title: `${t.amountUsdc} USDC Sent`,
+                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+              }),
+            }).catch(console.error);
+          }
+        }
+        await loadDms().catch(() => {});
+        await refetchUsdc().catch(console.error);
+      } else if (err.message?.includes("User rejected the request")) {
         setBatchSendStatus("Transaction signature was rejected by user.");
       } else {
         setBatchSendStatus(err.message || "Failed to execute batch send.");

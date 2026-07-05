@@ -39,7 +39,7 @@ export async function POST(request: Request) {
            customer-billing keeper do the on-chain cancel when the paid period ends. */
         const nowSec = BigInt(Math.floor(Date.now() / 1000));
         if (sub.nextPayment > nowSec) {
-            await mirrorSubscriptionCancelAtPeriodEnd({
+            const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
                 subscriptionId,
                 merchantAddress: sub.merchant,
                 subscriber: wallet.toLowerCase(),
@@ -47,6 +47,11 @@ export async function POST(request: Request) {
                 periodSeconds: sub.period,
                 nextPaymentSeconds: sub.nextPayment,
             });
+            /* This mirror row is the only record that stops future billing; if it didn't persist we
+               must not tell the user the cancellation is booked. */
+            if (!recorded) {
+                return NextResponse.json({ error: "We couldn't record the cancellation. Please try again." }, { status: 500 });
+            }
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
             );
@@ -75,7 +80,7 @@ export async function POST(request: Request) {
                 `[subscription/cancel] gas sponsorship unavailable (${gas.reason || "unknown"}); ` +
                 `deferring on-chain cancel of sub ${subscriptionId} to the billing keeper.`
             );
-            await mirrorSubscriptionCancelAtPeriodEnd({
+            const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
                 subscriptionId,
                 merchantAddress: sub.merchant,
                 subscriber: wallet.toLowerCase(),
@@ -83,6 +88,12 @@ export async function POST(request: Request) {
                 periodSeconds: sub.period,
                 nextPaymentSeconds: sub.nextPayment,
             });
+            /* With sponsorship unavailable this mirror row is the entire cancellation — it's what the
+               keeper finalizes on-chain and what stops billing. If it didn't persist, surface a real
+               failure rather than telling the user billing is stopped when nothing was recorded. */
+            if (!recorded) {
+                return NextResponse.json({ error: "We couldn't record the cancellation. Please try again." }, { status: 500 });
+            }
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
             );

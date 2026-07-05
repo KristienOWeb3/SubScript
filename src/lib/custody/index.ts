@@ -58,6 +58,17 @@ export function deterministicIdempotencyKey(seed: string): string {
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
+/**
+ * Idempotency key for cancelling a specific subscription. A subId is terminal and single-use, so it
+ * is safe to dedupe across every caller path (the execute-tx route and cancelFromEmbedded). Defined
+ * once here so both paths produce the exact same key — if the formula drifted between them, a retry
+ * on the other path would stop deduping and, since cancelling twice reverts on-chain, surface as a
+ * false execution failure even though the subscription is already cancelled.
+ */
+export function cancelSubscriptionIdempotencyKey(contractAddress: string, subId: string | bigint): string {
+    return deterministicIdempotencyKey(`cancel:${contractAddress.toLowerCase()}:${BigInt(subId).toString()}`);
+}
+
 export interface ContractExecution {
     txHash: string;
 }

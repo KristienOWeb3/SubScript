@@ -21,6 +21,7 @@ import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 
 // Global type declaration for Cloudflare Turnstile
 declare global {
@@ -28,11 +29,6 @@ declare global {
     turnstile: any;
   }
 }
-
-/* Circle Google social sign-in is disabled server-side (the completion endpoint returns 503
-   until identity is verified against a single-use challenge), so the button is hidden unless
-   the deployment explicitly opts in. Advertising a button that always fails erodes trust. */
-const CIRCLE_GOOGLE_ENABLED = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true";
 
 export default function SignupPage() {
   const router = useRouter();

@@ -3,7 +3,7 @@
    createSubscription takes the first payment immediately (so the user must approve
    USDC first), mirroring the vault-commit approve+act pattern. */
 import { ethers } from "ethers";
-import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
+import { getWalletCustody, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { ensureUsdcAllowance } from "@/lib/vault/onchain";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
@@ -147,8 +147,9 @@ export async function cancelFromEmbedded(walletAddress: string, subId: string | 
         functionName: "cancelSubscription",
         args: [BigInt(subId)],
         /* Idempotent by subId: cancelling the same sub twice is a no-op, so a retried cancel
-           after a timed-out response must not submit a second transaction. */
-        idempotencyKey: deterministicIdempotencyKey(`cancel:${STANDARD_CONTRACT_ADDRESS.toLowerCase()}:${BigInt(subId).toString()}`),
+           after a timed-out response must not submit a second transaction. Shared with the
+           execute-tx cancel path via the custody helper so both derive the identical key. */
+        idempotencyKey: cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subId),
     });
     return txHash;
 }
