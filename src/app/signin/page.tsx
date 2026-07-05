@@ -16,6 +16,7 @@ import {
 import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 
 function SignInContent() {
   const router = useRouter();
@@ -250,9 +251,11 @@ function SignInContent() {
                 Continue with Email
               </button>
 
-              <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton />
-              </div>
+              {CIRCLE_GOOGLE_ENABLED && (
+                <div onClick={() => posthog.capture("signin_method_selected", { method: "circle_google" })}>
+                  <CircleGoogleWalletButton />
+                </div>
+              )}
 
               <div className="relative py-2 flex items-center justify-center">
                 <div className="absolute inset-0 flex items-center">

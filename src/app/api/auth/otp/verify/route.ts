@@ -107,14 +107,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
         }
 
+        /* Consume the code atomically. The delete is scoped to the exact stored hash so a single
+           winner deletes the row; a concurrent second request that also passed the hash/expiry
+           checks above sees rowCount 0 and is rejected, preventing double-redemption. A failed
+           delete must NOT silently issue a session, so errors here fail the request. */
         if (isOfflineMode) {
             deleteOfflineOtpCode(emailVal);
         } else {
+            let consumed = false;
             try {
-                await withPgClient(async (client) => {
-                    await client.query("delete from otp_codes where email = $1", [emailVal]);
+                consumed = await withPgClient(async (client) => {
+                    const del = await client.query(
+                        "delete from otp_codes where email = $1 and code = $2",
+                        [emailVal, record.code]
+                    );
+                    return ((del as { rowCount?: number }).rowCount ?? 0) > 0;
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.error("OTP consume error:", e);
+                return NextResponse.json({ error: "Failed to verify code. Please try again." }, { status: 500 });
+            }
+            if (!consumed) {
+                return NextResponse.json({ error: "Verification code already used. Please request a new one." }, { status: 400 });
+            }
         }
 
         let walletAddress = "";

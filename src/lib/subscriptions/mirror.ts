@@ -105,6 +105,9 @@ export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint
    billing now but keep it ACTIVE until `nextPaymentSeconds` (the paid-through date). The
    customer-billing keeper performs the actual on-chain cancel once next_billing_date is reached.
    Upserts so a sub created before the mirror still gets a row the keeper can find. */
+/* Returns true only if the cancel-at-period-end marker was persisted. Callers that treat this row
+   as the authoritative record of the cancellation (e.g. the sponsorship-unavailable fallback in the
+   cancel route) must check the result and NOT report success to the user on a false return. */
 export async function mirrorSubscriptionCancelAtPeriodEnd({
     subscriptionId,
     merchantAddress,
@@ -119,7 +122,7 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc: bigint;
     periodSeconds: bigint;
     nextPaymentSeconds: bigint;
-}) {
+}): Promise<boolean> {
     try {
         const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
@@ -162,7 +165,9 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 cancelRequestedAt: now,
             },
         });
+        return true;
     } catch (err) {
         console.error("[mirror] cancel-at-period-end skipped:", err instanceof Error ? err.message : err);
+        return false;
     }
 }

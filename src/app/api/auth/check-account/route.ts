@@ -25,12 +25,14 @@ export async function POST(request: Request) {
                     [binding.walletAddress]
                 );
                 const onboardingComplete = Boolean(roleRecord?.role);
+                /* Deliberately does NOT return the wallet address or role: this endpoint is
+                   unauthenticated, and mapping an email to its on-chain address would deanonymize
+                   the account's blockchain activity to anyone who guesses the email. The sign-in /
+                   sign-up flows only need existence + auth method to route the user. */
                 return NextResponse.json({
                     exists: true,
                     hasWalletBinding: true,
                     onboardingComplete,
-                    wallet: binding.walletAddress,
-                    role: roleRecord?.role || null,
                     authMethod: isWalletOnlyEmailBinding(binding) ? "wallet" : "email",
                 });
             }

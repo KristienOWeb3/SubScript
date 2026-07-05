@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { getWalletCustody } from "@/lib/custody";
+import { getWalletCustody, deterministicIdempotencyKey, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
 import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
@@ -204,6 +204,12 @@ export async function POST(request: Request) {
         let contractAbi: any = null;
         let functionName = "";
         let finalArgs: any[] = [];
+        /* Durable idempotency key for actions that are idempotent by identity (e.g. cancel a
+           specific, terminal sub — a retried submit after a timed-out response must not double-
+           submit). Left null for repeatable actions (approve/withdraw/transfer/subscribe), which
+           instead fall back to a request-scoped key so retries dedupe only when the client reuses
+           its x-request-id, never blocking a legitimately distinct future operation. */
+        let durableIdempotencyKey: string | null = null;
 
         switch (action) {
             case "approveUsdc": {
@@ -276,6 +282,9 @@ export async function POST(request: Request) {
                 contractAbi = SUBSCRIPT_ABI;
                 functionName = "cancelSubscription";
                 finalArgs = [BigInt(subscriptionId)];
+                /* Terminal, single-use subId → safe to dedupe across any retry. Shared with the
+                   cancelFromEmbedded path via the custody helper so both derive the identical key. */
+                durableIdempotencyKey = cancelSubscriptionIdempotencyKey(STANDARD_CONTRACT_ADDRESS, subscriptionId);
                 break;
             }
             case "configurePayoutDestination": {
@@ -339,6 +348,9 @@ export async function POST(request: Request) {
                 abi: contractAbi,
                 functionName,
                 args: finalArgs,
+                /* Domain key where the op is terminal/idempotent; otherwise request-scoped
+                   (client can reuse x-request-id to make a retry dedupe). */
+                idempotencyKey: durableIdempotencyKey ?? deterministicIdempotencyKey(`req:${requestId}:${action}`),
             });
             console.log(`[execute-tx] executed ${functionName} via ${custody.kind} custody: ${txHash}`);
 

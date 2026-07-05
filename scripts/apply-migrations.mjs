@@ -109,6 +109,20 @@ async function main() {
         return;
     }
 
+    /* Only production deployments may mutate the database. Preview and development builds on Vercel
+       point at the SAME active Supabase database (there is no per-branch database), so applying
+       migrations from a preview build would alter production schema/data. Fail safe: skip on any
+       non-production Vercel env unless an operator explicitly opts in for a one-off. Local/CI builds
+       (VERCEL_ENV unset) are unaffected and still gated by the DATABASE_URL check below. */
+    const vercelEnv = process.env.VERCEL_ENV;
+    if (vercelEnv && vercelEnv !== "production" && process.env.ALLOW_PREVIEW_MIGRATIONS !== "1") {
+        console.log(
+            `[migrations] VERCEL_ENV=${vercelEnv} (not production) — skipping migrations to protect ` +
+            "the shared database. Set ALLOW_PREVIEW_MIGRATIONS=1 to override for a one-off."
+        );
+        return;
+    }
+
     const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
     if (!connectionString) {
         console.log("[migrations] No DATABASE_URL/DIRECT_URL — skipping (local or DB-less build).");

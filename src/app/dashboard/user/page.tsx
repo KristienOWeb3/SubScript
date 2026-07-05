@@ -964,7 +964,12 @@ export default function UserDashboard() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to send USDC from your generated wallet.");
+      const err = new Error(data.error || "Failed to send USDC from your generated wallet.");
+      /* On a partial batch failure the API returns the transfers that already settled; surface
+         them so a retry only covers the remaining recipients instead of double-paying. */
+      (err as any).partial = Boolean(data.partial);
+      (err as any).settledTransfers = data.transfers || [];
+      throw err;
     }
     return data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[];
   };
@@ -1103,7 +1108,10 @@ export default function UserDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      if (data.cancelAtPeriodEnd && data.accessUntil) {
+      if (data.message) {
+        setPlanManagerStatus(data.message);
+        triggerToast("Subscription cancelled");
+      } else if (data.cancelAtPeriodEnd && data.accessUntil) {
         const until = new Date(data.accessUntil).toLocaleDateString();
         setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
         triggerToast(`Cancelled — access until ${until}`);
@@ -1848,7 +1856,37 @@ export default function UserDashboard() {
       await loadDms().catch(() => {});
       refetchUsdc().catch(console.error);
     } catch (err: any) {
-      if (err.message?.includes("User rejected the request")) {
+      const settled = Array.isArray(err.settledTransfers) ? err.settledTransfers : [];
+      if (err.partial && settled.length > 0) {
+        /* Transfers settle in order and the API stops at the first failure, so the first
+           `settled.length` recipients are done. Drop them so a retry only sends the rest and
+           never resends an already-settled transfer. */
+        setBatchRows((rows) => {
+          const remaining = rows.slice(settled.length);
+          return remaining.length > 0 ? remaining : [{ address: "", amount: "" }];
+        });
+        setBatchSendStatus(
+          `${err.message || "Batch partially completed."} ${settled.length} transfer${settled.length === 1 ? "" : "s"} already settled and ${settled.length === 1 ? "was" : "were"} removed — retry sends only the remaining recipients.`
+        );
+        for (const t of settled) {
+          if (t?.txHash) {
+            await fetch("/api/user/dms", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "log-transfer",
+                receiverAddress: t.receiverAddress,
+                amountUsdc: t.amountUsdc,
+                txHash: t.txHash,
+                title: `${t.amountUsdc} USDC Sent`,
+                description: `Sent ${t.amountUsdc} USDC in a batch payout.`,
+              }),
+            }).catch(console.error);
+          }
+        }
+        await loadDms().catch(() => {});
+        await refetchUsdc().catch(console.error);
+      } else if (err.message?.includes("User rejected the request")) {
         setBatchSendStatus("Transaction signature was rejected by user.");
       } else {
         setBatchSendStatus(err.message || "Failed to execute batch send.");

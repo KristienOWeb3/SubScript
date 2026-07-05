@@ -3234,6 +3234,7 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
+                    {/* Identity Verification (KYC/KYB) */}
                     <KycVerificationPanel />
 
                     {/* DNS / Alias Section */}

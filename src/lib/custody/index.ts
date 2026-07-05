@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { ethers } from "ethers";
 import { pgMaybeOne } from "@/lib/serverPg";
 import { decryptPrivateKey } from "@/lib/crypto";
@@ -35,6 +35,38 @@ export interface ContractCall {
     abi: ethers.InterfaceAbi;
     functionName: string;
     args?: ReadonlyArray<unknown>;
+    /**
+     * Optional durable idempotency key. When set, a retried logical operation submits the SAME
+     * key so the Circle backend dedupes it (its API keys on this) instead of double-submitting a
+     * financial transaction after a timed-out response. Must be a stable seed for the operation —
+     * only pass one for operations that are idempotent by identity (e.g. cancel a specific sub);
+     * never for raw transfers, where two identical payments are legitimately distinct. Prefer
+     * `deterministicIdempotencyKey(seed)` to build a well-formed UUID from an application seed.
+     * The legacy backend has no server-side dedup and ignores this.
+     */
+    idempotencyKey?: string;
+}
+
+/**
+ * Derive a stable RFC-4122 UUID from an application seed. Circle's idempotencyKey must be UUID-
+ * shaped, so hashing the seed and formatting it as a v5-style UUID lets a retried operation reuse
+ * the exact same key deterministically.
+ */
+export function deterministicIdempotencyKey(seed: string): string {
+    const h = createHash("sha256").update(seed).digest("hex");
+    const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16);
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+/**
+ * Idempotency key for cancelling a specific subscription. A subId is terminal and single-use, so it
+ * is safe to dedupe across every caller path (the execute-tx route and cancelFromEmbedded). Defined
+ * once here so both paths produce the exact same key — if the formula drifted between them, a retry
+ * on the other path would stop deduping and, since cancelling twice reverts on-chain, surface as a
+ * false execution failure even though the subscription is already cancelled.
+ */
+export function cancelSubscriptionIdempotencyKey(contractAddress: string, subId: string | bigint): string {
+    return deterministicIdempotencyKey(`cancel:${contractAddress.toLowerCase()}:${BigInt(subId).toString()}`);
 }
 
 export interface ContractExecution {
@@ -137,7 +169,9 @@ class CircleCustody implements WalletCustody {
             contractAddress: call.contractAddress,
             callData,
             fee: { type: "level", config: { feeLevel: "MEDIUM" } },
-            idempotencyKey: randomUUID(),
+            /* Durable when the caller supplies a stable key (retries dedupe at Circle); random
+               otherwise, preserving prior behavior for operations without a natural key. */
+            idempotencyKey: call.idempotencyKey || randomUUID(),
         });
         const txId = created.data?.id;
         if (!txId) {

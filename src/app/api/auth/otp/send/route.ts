@@ -42,17 +42,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
         }
 
-        if (isSignup) {
-            const isValid = await verifyCaptchaToken(captchaToken);
-            if (!isValid) {
-                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
-            }
-        }
-
         const emailLower = email.toLowerCase();
+
+        /* Determine signup server-side. A brand-new email (no existing account binding) is a
+           signup and must clear CAPTCHA. The client-sent `isSignup` flag is NOT trusted: a caller
+           could send `isSignup: false` to skip CAPTCHA while OTP verify still creates the account.
+           Only when the DB is unreachable (offline dev — production already returned 503 below) do
+           we fall back to the client hint. */
+        let bindingKnown = false;
+        let hasExistingAccount = false;
 
         try {
             const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailLower));
+            bindingKnown = true;
+            hasExistingAccount = Boolean(emailBinding);
             if (isWalletOnlyEmailBinding(emailBinding)) {
                 return NextResponse.json({
                     error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
@@ -62,6 +65,14 @@ export async function POST(request: Request) {
             console.error("OTP send email binding query error:", err);
             if (!isConnectionError(err) || !allowOfflineAuth()) {
                 return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
+            }
+        }
+
+        const isNewAccount = bindingKnown ? !hasExistingAccount : Boolean(isSignup);
+        if (isNewAccount) {
+            const isValid = await verifyCaptchaToken(captchaToken);
+            if (!isValid) {
+                return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
         }
 

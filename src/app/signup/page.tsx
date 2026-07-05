@@ -21,6 +21,7 @@ import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
+import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 
 // Global type declaration for Cloudflare Turnstile
 declare global {
@@ -594,7 +595,7 @@ export default function SignupPage() {
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Recommended:</strong> Register with Email or Google to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                  <strong>Recommended:</strong> Register with Email{CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
                 </span>
               </div>
 
@@ -610,13 +611,15 @@ export default function SignupPage() {
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
                 {merchantSignupIntent
-                  ? "Merchant accounts use email or Google sign-in for security, recovery, and professional invoicing."
+                  ? `Merchant accounts use email${CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
                   : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
               </p>
 
-              <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
-              </div>
+              {CIRCLE_GOOGLE_ENABLED && (
+                <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+                  <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
+                </div>
+              )}
 
               {/* External/self-custody wallets are for USERS only — merchant accounts must be
                   email/embedded (server-recoverable) for a more professional, recoverable account. */}
