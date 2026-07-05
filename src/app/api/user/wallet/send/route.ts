@@ -106,19 +106,47 @@ export async function POST(request: Request) {
         const custody = await getWalletCustody(normalizedSender);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
-        for (const item of parsedRecipients) {
-            const { txHash } = await custody.executeContract({
-                contractAddress: USDC_NATIVE_GAS_ADDRESS,
-                abi: USDC_ERC20_ABI,
-                functionName: "transfer",
-                args: [item.receiver, item.amountMicros],
-            });
+        /* Transfers settle one-by-one and are irreversible once mined. If a later one fails we must
+           NOT report a blanket failure — that hides the transfers already sent and invites a retry
+           that double-pays them. Stop at the first failure and return exactly what settled. */
+        let failure: { index: number; receiverAddress: string; amountUsdc: string; error: string } | null = null;
+        for (let i = 0; i < parsedRecipients.length; i++) {
+            const item = parsedRecipients[i];
+            try {
+                const { txHash } = await custody.executeContract({
+                    contractAddress: USDC_NATIVE_GAS_ADDRESS,
+                    abi: USDC_ERC20_ABI,
+                    functionName: "transfer",
+                    args: [item.receiver, item.amountMicros],
+                });
+                txs.push({
+                    receiverAddress: item.receiver,
+                    amountUsdc: formatAmount(item.amountMicros),
+                    txHash,
+                });
+            } catch (err: any) {
+                failure = {
+                    index: i,
+                    receiverAddress: item.receiver,
+                    amountUsdc: formatAmount(item.amountMicros),
+                    error: err?.message || "Transfer failed",
+                };
+                break;
+            }
+        }
 
-            txs.push({
-                receiverAddress: item.receiver,
-                amountUsdc: formatAmount(item.amountMicros),
-                txHash,
-            });
+        if (failure) {
+            const sent = txs.length;
+            const total = parsedRecipients.length;
+            return NextResponse.json({
+                success: false,
+                partial: sent > 0,
+                transfers: txs,
+                failedRecipient: failure,
+                error: sent > 0
+                    ? `Sent ${sent} of ${total} transfers, then recipient ${failure.index + 1} failed: ${failure.error}. The ${sent} completed transfer(s) were already settled on-chain — do not resend them; retry only the remaining recipients.`
+                    : `Transfer to recipient ${failure.index + 1} failed: ${failure.error}`,
+            }, { status: sent > 0 ? 207 : 400 });
         }
 
         return NextResponse.json({

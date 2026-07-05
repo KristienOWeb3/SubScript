@@ -29,6 +29,11 @@ declare global {
   }
 }
 
+/* Circle Google social sign-in is disabled server-side (the completion endpoint returns 503
+   until identity is verified against a single-use challenge), so the button is hidden unless
+   the deployment explicitly opts in. Advertising a button that always fails erodes trust. */
+const CIRCLE_GOOGLE_ENABLED = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_ENABLED === "true";
+
 export default function SignupPage() {
   const router = useRouter();
   /* Optional post-onboarding destination (e.g. a /subscribe/[planId] link a new
@@ -594,7 +599,7 @@ export default function SignupPage() {
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-[10px] leading-relaxed text-emerald-300 flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Recommended:</strong> Register with Email or Google to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
+                  <strong>Recommended:</strong> Register with Email{CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} to create a secure <strong>Server-Signed Wallet</strong>. This will be fully compatible with our upcoming mobile app. Web3 connected wallets are web-only.
                 </span>
               </div>
 
@@ -610,13 +615,15 @@ export default function SignupPage() {
               </button>
               <p className="-mt-2 px-3 text-center text-[10px] leading-relaxed text-white/40">
                 {merchantSignupIntent
-                  ? "Merchant accounts use email or Google sign-in for security, recovery, and professional invoicing."
+                  ? `Merchant accounts use email${CIRCLE_GOOGLE_ENABLED ? " or Google" : ""} sign-in for security, recovery, and professional invoicing.`
                   : "Email wallets use SubScript-managed recovery. Connect an external wallet for self-custody."}
               </p>
 
-              <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
-                <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
-              </div>
+              {CIRCLE_GOOGLE_ENABLED && (
+                <div onClick={() => posthog.capture("signup_method_selected", { method: "circle_google" })}>
+                  <CircleGoogleWalletButton onSuccess={handleLoginSuccess} />
+                </div>
+              )}
 
               {/* External/self-custody wallets are for USERS only — merchant accounts must be
                   email/embedded (server-recoverable) for a more professional, recoverable account. */}

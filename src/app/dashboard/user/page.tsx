@@ -963,7 +963,12 @@ export default function UserDashboard() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to send USDC from your generated wallet.");
+      const err = new Error(data.error || "Failed to send USDC from your generated wallet.");
+      /* On a partial batch failure the API returns the transfers that already settled; surface
+         them so a retry only covers the remaining recipients instead of double-paying. */
+      (err as any).partial = Boolean(data.partial);
+      (err as any).settledTransfers = data.transfers || [];
+      throw err;
     }
     return data.transfers as { receiverAddress: string; amountUsdc: string; txHash: string }[];
   };
@@ -1102,7 +1107,10 @@ export default function UserDashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      if (data.cancelAtPeriodEnd && data.accessUntil) {
+      if (data.message) {
+        setPlanManagerStatus(data.message);
+        triggerToast("Subscription cancelled");
+      } else if (data.cancelAtPeriodEnd && data.accessUntil) {
         const until = new Date(data.accessUntil).toLocaleDateString();
         setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
         triggerToast(`Cancelled — access until ${until}`);

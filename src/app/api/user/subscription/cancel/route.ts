@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { getWalletCustody } from "@/lib/custody";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
@@ -56,8 +57,43 @@ export async function POST(request: Request) {
             }, { status: 200 });
         }
 
-        /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately. */
-        await requireGasSponsored(wallet.toLowerCase());
+        /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately.
+           Gas: legacy embedded wallets need a SubScript-funded top-up; Circle wallets are covered
+           by Gas Station and need no sponsor EOA (mirrors the execute-tx custody-kind gate). */
+        const custody = await getWalletCustody(wallet.toLowerCase());
+        const gas = custody.kind === "legacy"
+            ? await ensureGasSponsored(wallet.toLowerCase())
+            : { sponsored: true as const };
+
+        /* If gas can't be sponsored we cannot submit the on-chain cancel — but a cancellation has
+           no payment principal to protect, so failing closed just traps the user in a subscription
+           they've asked to end. Degrade to the same deferred path used for in-period cancels: flag
+           cancel-at-period-end (stops future billing now) and let the customer-billing keeper finalize
+           the on-chain cancel once gas is available. */
+        if (!gas.sponsored) {
+            console.warn(
+                `[subscription/cancel] gas sponsorship unavailable (${gas.reason || "unknown"}); ` +
+                `deferring on-chain cancel of sub ${subscriptionId} to the billing keeper.`
+            );
+            await mirrorSubscriptionCancelAtPeriodEnd({
+                subscriptionId,
+                merchantAddress: sub.merchant,
+                subscriber: wallet.toLowerCase(),
+                amountUsdc: sub.amount,
+                periodSeconds: sub.period,
+                nextPaymentSeconds: sub.nextPayment,
+            });
+            await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
+                console.error("[subscription/cancel] survey trigger failed:", err)
+            );
+            return NextResponse.json({
+                success: true,
+                cancelAtPeriodEnd: true,
+                pendingOnChain: true,
+                message: "Cancellation recorded — future billing is stopped. The on-chain cancellation will finalize automatically.",
+            }, { status: 200 });
+        }
+
         const txHash = await cancelFromEmbedded(wallet, subscriptionId);
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
