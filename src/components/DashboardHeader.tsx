@@ -63,6 +63,7 @@ export default function DashboardHeader({
     profilePic,
 }: DashboardHeaderProps) {
     const [copiedAddress, setCopiedAddress] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
@@ -71,6 +72,10 @@ export default function DashboardHeader({
     const [usdcBalance, setUsdcBalance] = useState("0.00");
     const [merchantAlias, setMerchantAlias] = useState<string | null>(propMerchantAlias || null);
     const [balancesVisible, setBalancesVisible] = useState(true);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (propMerchantAlias !== undefined) {
@@ -92,8 +97,8 @@ export default function DashboardHeader({
         return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const isConnected = realIsConnected || isTestMode || !!embeddedWallet;
-    const address = realAddress || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
+    const isConnected = (mounted ? realIsConnected : false) || isTestMode || !!embeddedWallet;
+    const address = (mounted ? realAddress : undefined) || (isTestMode ? "0x835A9aEd7287068778e11df9D922B3FfaC7cFc29" : embeddedWallet?.wallet);
 
     useEffect(() => {
         if (!address) return;

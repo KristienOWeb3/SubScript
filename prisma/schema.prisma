@@ -130,27 +130,27 @@ model PaymentLinkPayment {
 }
 
 model Merchant {
-  walletAddress          String           @id @map("wallet_address")
-  tier                   String           @default("FREE") @map("tier")
-  payoutDestination      String?          @map("payout_destination")
-  availableBalanceUsdc   BigInt           @default(0) @map("available_balance_usdc")
-  reservedBalanceUsdc    BigInt           @default(0) @map("reserved_balance_usdc")
-  shieldedPayoutsEnabled Boolean          @default(false) @map("shielded_payouts_enabled")
-  viewKeyHash            String?          @map("view_key_hash")
-  verified               Boolean          @default(false) @map("verified")
-  profilePic             String?          @map("profile_pic")
-  pushEnabled            Boolean          @default(true) @map("push_enabled")
-  emailEnabled           Boolean          @default(true) @map("email_enabled")
-  payoutSettlementEnabled Boolean         @default(true) @map("payout_settlement_enabled")
-  disputeAlertsEnabled   Boolean          @default(true) @map("dispute_alerts_enabled")
-  churnSurveyEnabled     Boolean          @default(true) @map("churn_survey_enabled")
-  churnSurveyQuestion    String?          @map("churn_survey_question")
-  securityMultiSigEnabled Boolean         @default(false) @map("security_multi_sig_enabled")
-  createdAt              DateTime         @default(now()) @map("created_at")
-  updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at")
-  subscriptions          Subscription[]
-  paymentSessions        PaymentSession[]
-  meteredVaults          MeteredVault[]
+  walletAddress           String           @id @map("wallet_address")
+  tier                    String           @default("FREE") @map("tier")
+  payoutDestination       String?          @map("payout_destination")
+  availableBalanceUsdc    BigInt           @default(0) @map("available_balance_usdc")
+  reservedBalanceUsdc     BigInt           @default(0) @map("reserved_balance_usdc")
+  shieldedPayoutsEnabled  Boolean          @default(false) @map("shielded_payouts_enabled")
+  viewKeyHash             String?          @map("view_key_hash")
+  verified                Boolean          @default(false) @map("verified")
+  profilePic              String?          @map("profile_pic")
+  pushEnabled             Boolean          @default(true) @map("push_enabled")
+  emailEnabled            Boolean          @default(true) @map("email_enabled")
+  payoutSettlementEnabled Boolean          @default(true) @map("payout_settlement_enabled")
+  disputeAlertsEnabled    Boolean          @default(true) @map("dispute_alerts_enabled")
+  churnSurveyEnabled      Boolean          @default(true) @map("churn_survey_enabled")
+  churnSurveyQuestion     String?          @map("churn_survey_question")
+  securityMultiSigEnabled Boolean          @default(false) @map("security_multi_sig_enabled")
+  createdAt               DateTime         @default(now()) @map("created_at")
+  updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at")
+  subscriptions           Subscription[]
+  paymentSessions         PaymentSession[]
+  meteredVaults           MeteredVault[]
 
   @@map("merchants")
 }
@@ -177,7 +177,7 @@ model Subscription {
   merchant                Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   currentNonce            Int       @default(0) @map("current_nonce")
   lastSettlementTimestamp DateTime? @map("last_settlement_timestamp")
-  nextBillingDate        DateTime? @map("next_billing_date")
+  nextBillingDate         DateTime? @map("next_billing_date")
   billingIntervalSeconds  BigInt    @map("billing_interval_seconds")
   amountCapUsdc           Decimal   @map("amount_cap_usdc")
   paymentTxHash           String?   @unique @map("payment_tx_hash")
@@ -199,7 +199,7 @@ model Subscription {
 }
 
 model PaymentSession {
-  sessionId           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("session_id")
+  sessionId           String    @id @default(dbgenerated("gen_random_uuid()")) @map("session_id") @db.Uuid
   merchantAddress     String    @map("merchant_address")
   merchant            Merchant  @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   txHash              String?   @unique @map("tx_hash")
@@ -271,14 +271,14 @@ model PayoutBatchItem {
 }
 
 model IdempotencyKey {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  executionKey   String   @unique @map("execution_key")
-  status         String
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  executionKey    String   @unique @map("execution_key")
+  status          String
   responsePayload Json?    @map("response_payload")
-  expiresAt      DateTime @map("expires_at")
-  lastAccessedAt DateTime @default(now()) @map("last_accessed_at")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @map("updated_at")
+  expiresAt       DateTime @map("expires_at")
+  lastAccessedAt  DateTime @default(now()) @map("last_accessed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
 
   @@index([executionKey])
   @@index([expiresAt])
@@ -376,20 +376,20 @@ model AuditEvent {
 }
 
 model Customer {
-  walletAddress        String   @id @map("wallet_address")
-  email                String?
-  profilePic           String?  @map("profile_pic")
-  spendingLimitDaily   BigInt?  @map("spending_limit_daily")
-  spendingLimitWeekly  BigInt?  @map("spending_limit_weekly")
-  spendingLimitMonthly BigInt?  @map("spending_limit_monthly")
-  pushEnabled          Boolean  @default(true) @map("push_enabled")
-  emailEnabled         Boolean  @default(true) @map("email_enabled")
-  debitSuccessEnabled  Boolean  @default(true) @map("debit_success_enabled")
-  expiryWarningEnabled Boolean  @default(true) @map("expiry_warning_enabled")
-  securityShieldEnabled    Boolean  @default(false) @map("security_shield_enabled")
-  securityMultiSigEnabled  Boolean  @default(false) @map("security_multi_sig_enabled")
-  createdAt            DateTime @default(now()) @map("created_at")
-  meteredVaults        MeteredVault[]
+  walletAddress           String         @id @map("wallet_address")
+  email                   String?
+  profilePic              String?        @map("profile_pic")
+  spendingLimitDaily      BigInt?        @map("spending_limit_daily")
+  spendingLimitWeekly     BigInt?        @map("spending_limit_weekly")
+  spendingLimitMonthly    BigInt?        @map("spending_limit_monthly")
+  pushEnabled             Boolean        @default(true) @map("push_enabled")
+  emailEnabled            Boolean        @default(true) @map("email_enabled")
+  debitSuccessEnabled     Boolean        @default(true) @map("debit_success_enabled")
+  expiryWarningEnabled    Boolean        @default(true) @map("expiry_warning_enabled")
+  securityShieldEnabled   Boolean        @default(false) @map("security_shield_enabled")
+  securityMultiSigEnabled Boolean        @default(false) @map("security_multi_sig_enabled")
+  createdAt               DateTime       @default(now()) @map("created_at")
+  meteredVaults           MeteredVault[]
 
   @@map("customers")
 }
@@ -501,8 +501,52 @@ model AccountRole {
   role      String   // "USER" or "ENTERPRISE"
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  kycVerification KycVerification?
 
   @@map("account_roles")
+}
+
+model KycVerification {
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress     String                 @unique @map("wallet_address")
+  accountRole       String                 @map("account_role")
+  kind              String
+  countryCode       String                 @map("country_code")
+  provider          String
+  providerCaseId    String?                @unique @map("provider_case_id")
+  requestedLevel    String                 @default("STANDARD") @map("requested_level")
+  status            String                 @default("PENDING")
+  reasonCode        String?                @map("reason_code")
+  consentVersion    String                 @map("consent_version")
+  consentedAt       DateTime               @map("consented_at")
+  submittedAt       DateTime?              @map("submitted_at")
+  providerUpdatedAt DateTime?              @map("provider_updated_at")
+  decidedAt         DateTime?              @map("decided_at")
+  expiresAt         DateTime?              @map("expires_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @default(now()) @updatedAt @map("updated_at")
+  revision          Int                    @default(1)
+  account           AccountRole            @relation(fields: [walletAddress], references: [address], onDelete: Restrict)
+  events            KycVerificationEvent[]
+
+  @@index([status, createdAt(sort: Desc)], map: "kyc_verifications_review_queue_idx")
+  @@map("kyc_verifications")
+}
+
+model KycVerificationEvent {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  verificationId  String          @map("verification_id") @db.Uuid
+  providerEventId String?         @unique @map("provider_event_id")
+  actorType       String          @map("actor_type")
+  actorId         String?         @map("actor_id")
+  fromStatus      String?         @map("from_status")
+  toStatus        String          @map("to_status")
+  reasonCode      String?         @map("reason_code")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  verification    KycVerification @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+
+  @@index([verificationId, createdAt(sort: Desc)], map: "kyc_verification_events_verification_created_idx")
+  @@map("kyc_verification_events")
 }
 
 model SubscriptDm {
@@ -578,8 +622,8 @@ model FiatFundingIntent {
   destinationChainId          Int                @map("destination_chain_id")
   settlementTxHash            String?            @unique @map("settlement_tx_hash")
   expiresAt                   DateTime           @map("expires_at")
-  receivedAt                  DateTime?          @map("received_at")
-  settledAt                   DateTime?          @map("settled_at")
+  receivedAt                  DateTime?           @map("received_at")
+  settledAt                   DateTime?           @map("settled_at")
   createdAt                   DateTime           @default(now()) @map("created_at")
   updatedAt                   DateTime           @default(now()) @updatedAt @map("updated_at")
   events                      FiatFundingEvent[]
@@ -619,4 +663,3 @@ model Referral {
   @@index([referrerAddress])
   @@map("referrals")
 }
-

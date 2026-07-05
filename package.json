@@ -36,6 +36,7 @@
         "test:docs": "node --test src/app/docs/__tests__/docs-quality.test.mjs",
         "test:push": "node --test src/lib/__tests__/push-notifications.test.mjs",
         "test:security": "node --test src/lib/ops/__tests__/financial-hardening.test.mjs",
+        "test:kyc": "node --test src/lib/kyc/__tests__/kyc.test.mjs",
         "test:contracts": "hardhat test",
         "typecheck": "tsc --noEmit",
         "load:test": "node scripts/load-test.mjs",

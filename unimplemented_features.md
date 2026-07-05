@@ -122,11 +122,21 @@ Premium merchant surfaces exist, but ArcaneVM confidentiality and governed visib
 
 The product brief requires robust AML/KYC posture for high-value B2B transactions.
 
-Needed:
+Implemented foundation:
+
+- Wallet-bound KYC/KYB case lifecycle for individual and enterprise accounts.
+- Provider-portal handoff without storing raw documents or biometrics in SubScript.
+- Controlled review statuses and append-only transition history.
+- Enterprise approval synchronization with public merchant verification badges.
+- Legacy direct merchant-verification toggle retired.
+
+Still needed before production compliance claims:
 
 - Jurisdiction-specific policy.
-- Provider integrations.
+- Licensed provider integration, signed webhooks, and authoritative status polling.
 - Monitoring thresholds.
+- Sanctions, PEP, liveness, business-registry, and enhanced-due-diligence controls.
+- Provider retention/deletion agreement and reviewer-access policy.
 - Legal review before production claims.
 
 ## 5. External Arc Roadmap Claims

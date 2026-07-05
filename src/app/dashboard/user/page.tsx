@@ -28,9 +28,9 @@ import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
+import KycVerificationPanel from "@/components/KycVerificationPanel";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
-import KycVerificationPanel from "@/components/KycVerificationPanel";
 import {
   AlertCircle,
   ArrowDown,
@@ -513,7 +513,7 @@ export default function UserDashboard() {
   const [referralsLoading, setReferralsLoading] = useState<boolean>(false);
   const [referralCopySuccess, setReferralCopySuccess] = useState<boolean>(false);
 
-  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "limits" | "transactions" | "notifications" | "security" | "support" | "spend-analysis">("menu");
+  const [accountSubView, setAccountSubView] = useState<"menu" | "profile" | "kyc" | "limits" | "transactions" | "notifications" | "security" | "support" | "spend-analysis">("menu");
   const [spendSearchQuery, setSpendSearchQuery] = useState("");
 
   useEffect(() => {
@@ -2085,11 +2085,13 @@ export default function UserDashboard() {
     );
   }
 
-  const sortedSubscriptions = [...subscriptions].sort((a, b) => {
-    const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
-    const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
-    return aNext - bNext;
-  });
+  const sortedSubscriptions = [...subscriptions]
+    .filter((s) => s.status === "ACTIVE")
+    .sort((a, b) => {
+      const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
+      const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
+      return aNext - bNext;
+    });
 
   /* ---- Home overview (derived from existing data; no dedicated analytics backend) ---- */
   // Display-only fiat estimate. Not a live oracle — clearly a rough naira reference for the balance.
@@ -2388,7 +2390,7 @@ export default function UserDashboard() {
                   <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                     <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.length} active</span>
+                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE").length} active</span>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
@@ -3191,18 +3193,21 @@ export default function UserDashboard() {
                         <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
                       </button>
 
-                      <div className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group opacity-40 cursor-not-allowed">
+                      <button
+                        onClick={() => setAccountSubView("kyc")}
+                        className="w-full text-left p-4 hover:bg-white/[0.03] rounded-2xl flex items-center justify-between transition-all group"
+                      >
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50">
+                          <div className="p-2.5 rounded-xl bg-white/5 text-white/50 group-hover:bg-[#ccff00]/10 group-hover:text-[#ccff00] transition-all">
                             <CheckCircle2 className="h-4 w-4" />
                           </div>
                           <div>
                             <span className="block text-xs font-bold text-white uppercase tracking-wide">KYC Verification</span>
-                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Verify your account and identity</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Start or review provider verification</span>
                           </div>
                         </div>
-                        <span className="rounded bg-white/10 px-1.5 py-0.5 text-[8px] font-bold text-white/45 uppercase tracking-wide">Soon</span>
-                      </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
+                      </button>
 
                       <button
                         onClick={() => setAccountSubView("spend-analysis")}
@@ -3303,6 +3308,22 @@ export default function UserDashboard() {
                   </div>
                 )}
 
+                {/* 2. KYC VIEW */}
+                {accountSubView === "kyc" && (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 font-sans text-xs">
+                      <button
+                        onClick={() => setAccountSubView("menu")}
+                        className="p-2 rounded-full hover:bg-white/5 text-white/60 hover:text-white transition-all"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <h2 className="text-sm font-black uppercase tracking-wider text-white">KYC Verification</h2>
+                    </div>
+                    <KycVerificationPanel accent="#ccff00" />
+                  </div>
+                )}
+
                 {/* 2. PROFILE VIEW (Inspiration from Screenshot 1) */}
                 {accountSubView === "profile" && (
                   <div className="space-y-6">
@@ -3324,8 +3345,8 @@ export default function UserDashboard() {
                           <input type="file" accept="image/*" onChange={handleProfilePicUpload} disabled={uploadingPic} className="hidden" />
                         </label>
                       </div>
-                      <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
-                        Verified Account
+                      <span className="rounded-full bg-white/5 px-3 py-1 text-[9px] font-bold text-white/45 uppercase tracking-widest">
+                        Individual account
                       </span>
                       {uploadError && <p className="text-[10px] text-red-300 font-sans">{uploadError}</p>}
                     </div>
@@ -3898,11 +3919,6 @@ export default function UserDashboard() {
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                       <h2 className="text-sm font-black uppercase tracking-wider text-white">Security & Keys</h2>
-                    </div>
-
-                    {/* Identity Verification (KYC) — visible placeholder, activates at mainnet. */}
-                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 shadow-2xl">
-                      <KycVerificationPanel className="" />
                     </div>
 
                     {/* Wallet Security Card */}
@@ -5359,7 +5375,7 @@ function MerchantPlanManager({
               loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
             }`}
           >
-            Hard Cancel
+            Cancel current subscription
           </motion.button>
         )}
         <motion.button

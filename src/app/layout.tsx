@@ -233,7 +233,7 @@ export default async function RootLayout({
     const nonce = (await headers()).get("x-nonce") || undefined;
 
     return (
-        <html lang="en">
+        <html lang="en" suppressHydrationWarning>
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
                     nonce={nonce}

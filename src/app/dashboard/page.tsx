@@ -3177,7 +3177,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-4 pt-4 border-t border-white/5">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">Merchant Verification & Tiers</h3>
                         <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
-                            SubScript uses progressive merchant verification tiers to prevent fraud and unlock advanced protocol capabilities.
+                            Provider verification adds a public trust badge. Product access remains governed by your plan and each feature's own eligibility rules.
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -3190,9 +3190,9 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-red-400">✗ Cannot create payment links</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No API/Webhooks access</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No vault commits</li>
+                                    <li className="flex items-center gap-1 text-white/60">• Payment links remain available</li>
+                                    <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
+                                    <li className="flex items-center gap-1 text-white/60">• Regulated rails may stay limited</li>
                                 </ul>
                             </div>
 
@@ -3234,7 +3234,7 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
-                    {/* Identity Verification (KYC) — visible placeholder, activates at mainnet. */}
+                    {/* Identity Verification (KYC/KYB) */}
                     <KycVerificationPanel />
 
                     {/* DNS / Alias Section */}
