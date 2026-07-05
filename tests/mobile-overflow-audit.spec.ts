@@ -393,7 +393,7 @@ test.describe("mobile overflow audit", () => {
     await expect(sidebar).toBeVisible();
     await expect(walletLabel).toBeVisible({ timeout: 120_000 });
     await expect(subscriptionsTitle).toBeVisible();
-    await expect(desktopPage.getByRole("button", { name: "Manage Commit" })).toBeVisible();
+    await expect(desktopPage.getByRole("button", { name: "Manage Commit", exact: true })).toBeVisible();
 
     const walletCard = walletLabel.locator("xpath=ancestor::section[1]");
     const subscriptionsCard = subscriptionsTitle.locator("xpath=ancestor::section[1]");

@@ -48,7 +48,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 - Fee‑free, set‑and‑forget USDC subscriptions — no card declines or maintenance charges
 - One‑tap checkout and peer‑to‑peer transfers from an in‑app wallet
 - Built‑in messaging with payment requests, receipts, and status — right in the thread
-- Email-verification onboarding with an in-app wallet; Google sign-in is paused pending server-side identity verification
+- Email-verification onboarding with an in-app wallet (supports both legacy EOA and Circle developer-controlled MPC wallets, flag-gated by `WALLET_PROVIDER=circle`); Google sign-in is paused pending server-side identity verification
 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing
@@ -113,7 +113,7 @@ npm run build
 ## On the roadmap
 
 Capabilities that stay deployment‑scoped until code, contracts, and production config prove
-them live: direct fiat‑to‑USDC on‑ramps, encrypted private‑key export, dedicated invoice
+them live: full Circle developer-controlled MPC wallet custody cutover (re-enabling Google login, sweep-migrating legacy wallets, deleting the legacy AES path), direct fiat‑to‑USDC on‑ramps, encrypted private‑key export (for legacy wallets), dedicated invoice
 objects with custom terms, sponsored "Pay for Me" relationships, configurable dunning,
 Chainlink Automation execution, Circle Paymaster gas sponsorship, ArcaneVM governed
 confidentiality, and Arc post‑quantum resilience.

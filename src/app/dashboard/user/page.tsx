@@ -483,6 +483,10 @@ export default function UserDashboard() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [userSettings, setUserSettings] = useState<any>(null);
+  const mustBackupWallet = Boolean(
+    userSettings?.walletBackup?.available && 
+    !userSettings?.walletBackup?.completedAt
+  );
   const [settingsTransactions, setSettingsTransactions] = useState<any[]>([]);
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
@@ -1995,7 +1999,7 @@ export default function UserDashboard() {
               </div>
 
               {/* Right Column: Active Subscriptions Skeleton */}
-              <div className="md:col-span-1 md:h-[330px] order-3 md:order-2">
+              <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
                 <div className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                   <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                     <div className="h-4 w-36 subscript-skeleton rounded-full" />
@@ -2211,7 +2215,125 @@ export default function UserDashboard() {
       <AnimatedGradientBg variant="dashboard" />
 
       <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
-        {!isMobile && (
+        {mustBackupWallet ? (
+          <div className="flex-1 flex items-center justify-center p-6 md:h-full overflow-y-auto">
+            <div className="max-w-xl w-full space-y-6 py-12">
+              <div className="liquid-glass border border-red-500/20 bg-red-500/5 backdrop-blur-xl rounded-[28px] p-6 text-center shadow-2xl space-y-4">
+                <div className="mx-auto w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20">
+                  <Lock className="h-6 w-6 text-red-400" />
+                </div>
+                <h2 className="text-xl font-bold uppercase tracking-tight text-white">Private Key Backup Required</h2>
+                <p className="text-sm text-white/60 leading-relaxed font-sans">
+                  Your SubScript wallet has been generated, but your private key is not backed up yet. 
+                  Because SubScript uses non-custodial embedded wallets, you must download your recovery key to ensure you never lose access to your funds.
+                </p>
+                <p className="text-xs text-[#ccff00]/80 font-bold uppercase tracking-wide">
+                  The dashboard remains locked until backup is completed.
+                </p>
+              </div>
+
+              <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-[28px] p-6 sm:p-8 space-y-5 shadow-2xl">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-black uppercase tracking-[0.16em] text-white/50 flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-[#ccff00]" /> Export & Verify Wallet Backup
+                    </h3>
+                    <p className="text-[10px] text-white/40 leading-relaxed">
+                      Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-black/30 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Account Email</span>
+                    <span className="min-w-0 truncate text-right text-[11px] font-mono text-white/70">{userSettings?.walletBackup?.email || userEmail || "Not linked"}</span>
+                  </div>
+                </div>
+
+                {exportedPrivateKey && (
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                      <p className="break-all font-mono text-[11px] leading-relaxed text-red-100">
+                        {privateKeyVisible ? exportedPrivateKey : "*".repeat(Math.min(exportedPrivateKey.length, 64))}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button type="button" onClick={() => setPrivateKeyVisible((value) => !value)} className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white transition flex items-center justify-center gap-2">
+                        {privateKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {privateKeyVisible ? "Hide" : "Show"}
+                      </button>
+                      <button type="button" onClick={handleCopyPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                        <Copy className="h-4 w-4" /> Copy
+                      </button>
+                      <button type="button" onClick={handleDownloadPrivateKey} className="rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#ccff00] transition flex items-center justify-center gap-2">
+                        <Download className="h-4 w-4" /> Download
+                      </button>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={loadUserSettings}
+                      className="w-full mt-4 rounded-2xl bg-[#ccff00] hover:bg-[#ccff00]/90 text-black py-4 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                    >
+                      I have saved my key, Proceed to Dashboard
+                    </button>
+                  </div>
+                )}
+
+                {walletBackupError && <p className="text-[11px] text-red-300">{walletBackupError}</p>}
+
+                {!exportedPrivateKey && (
+                  exportOtpStage ? (
+                    <div className="space-y-3">
+                      <p className="text-[10px] text-white/50 leading-relaxed text-center">
+                        Enter the 6-digit verification code sent to your email to reveal your private key.
+                      </p>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={exportOtpCode}
+                        onChange={(e) => setExportOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-center font-mono text-lg tracking-[0.4em] text-white focus:border-[#ccff00]/50 focus:outline-none"
+                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleExportWallet}
+                          disabled={walletBackupLoading || exportOtpCode.length !== 6}
+                          className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                        >
+                          {walletBackupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          Confirm & Reveal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setExportOtpStage(false); setExportOtpCode(""); setWalletBackupError(null); }}
+                          className="w-full rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 py-3.5 text-xs font-black uppercase tracking-[0.16em] text-white/70 transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestExportOtp}
+                      disabled={exportOtpSending}
+                      className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition"
+                    >
+                      {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Export Private Key to Unlock
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {!isMobile && (
           <UserDesktopSidebar
             activeTab={activeTab}
             pendingDmCount={pendingDmCount}
@@ -2386,7 +2508,7 @@ export default function UserDashboard() {
                 </div>
 
                 {/* Right Column: Active Subscriptions */}
-                <div className="md:col-span-1 md:h-[330px] order-3 md:order-2">
+                <div className="hidden md:block md:col-span-1 md:h-[330px] order-3 md:order-2">
                   <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                     <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
@@ -4231,15 +4353,18 @@ export default function UserDashboard() {
         </div>
       </main>
         </div>
+          </>
+        )}
       </div>
 
       {/* Mobile-only Bottom Navigation Bar */}
-      {isMobile && userWallet && !isActiveMobileDm && (
+      {isMobile && userWallet && !isActiveMobileDm && !mustBackupWallet && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[92%] max-w-sm -translate-x-1/2 items-center justify-between gap-3">
           {/* Capsule Navigation Menu */}
           <nav
             aria-label="Primary navigation"
-            className="liquid-glass flex flex-1 items-center justify-around rounded-full bg-black/30 backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))" }}
           >
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton

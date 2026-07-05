@@ -7,7 +7,7 @@ import {
 } from "@/components/icons";
 
 interface DashboardSkeletonProps {
-    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll";
+    activeTab: "overview" | "premium" | "apikeys" | "checkout" | "webhooks" | "analytics" | "payment-links" | "plans" | "settings" | "payroll" | "offramp";
 }
 
 export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps) {
@@ -250,6 +250,30 @@ export default function DashboardSkeleton({ activeTab }: DashboardSkeletonProps)
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                );
+
+            case "offramp":
+                return (
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
+                        <div>
+                            <Skeleton className="h-5 w-48 mb-2" />
+                            <Skeleton className="h-3 w-80" />
+                        </div>
+                        <div className="space-y-6 bg-black/40 border border-white/5 rounded-2xl p-6">
+                            <div className="flex justify-between items-center">
+                                <Skeleton className="h-8 w-24" />
+                                <Skeleton className="h-8 w-24" />
+                            </div>
+                            <Skeleton className="h-2 w-full mt-4" />
+                        </div>
+                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl flex items-start gap-4">
+                            <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+                            <div className="space-y-2 flex-1">
+                                <Skeleton className="h-4 w-32" />
+                                <Skeleton className="h-3 w-full" />
+                            </div>
                         </div>
                     </div>
                 );

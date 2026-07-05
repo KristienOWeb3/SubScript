@@ -81,10 +81,11 @@ const tabs = [
     { id: "apikeys", label: "API Keys", icon: Key },
     { id: "checkout", label: "Checkout Setup", icon: Code2 },
     { id: "webhooks", label: "Webhooks", icon: Broadcast },
+    { id: "offramp", label: "Off-Ramp", icon: ArrowRightLeft },
     { id: "settings", label: "Profile & DNS", icon: User },
 ] as const;
 
-type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll";
+type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | "apikeys" | "checkout" | "webhooks" | "settings" | "payroll" | "offramp";
 
 type MerchantPlan = {
     id: string;
@@ -486,6 +487,7 @@ export default function DashboardPage() {
     const [settlementTimeframe, setSettlementTimeframe] = useState<string>('6M');
     const [balanceVisible, setBalanceVisible] = useState(true);
     const [timeframeOpen, setTimeframeOpen] = useState(false);
+    const [fiatSplit, setFiatSplit] = useState(50);
 
     /* QR Code modal states */
     const [activeQrCodeLink, setActiveQrCodeLink] = useState<string | null>(null);
@@ -2384,7 +2386,7 @@ export default function DashboardPage() {
 
 <SubScriptCheckoutButton
   amountUsdc="${subCap}"
-  title="${subName}"
+  planName="${subName}"
   description="${subInterval} access"
   externalReference="user_or_order_id"
 />`, [subCap, subInterval, subName]);
@@ -3975,6 +3977,68 @@ Please complete the following implementation tasks:
         };
 
         switch (activeTab) {
+            case "offramp":
+                return (
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
+                        <div>
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <ArrowRightLeft className={`w-5 h-5 ${primaryColorText}`} />
+                                Fiat Escape Hatch (Off-Ramp)
+                            </h2>
+                            <p className="text-xs text-white/50 font-sans leading-relaxed">
+                                Avoid liquidity crunches. Route a percentage of incoming USDC subscription revenue directly to your corporate USD bank account.
+                            </p>
+                        </div>
+
+                        {/* Settlement Slider */}
+                        <div className="space-y-6 bg-black/40 border border-white/5 rounded-2xl p-6">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Bank Allocation</span>
+                                    <p className="text-lg font-bold text-white font-mono mt-1">{fiatSplit}% <span className="text-xs text-white/40 font-normal">to Chase (...4829)</span></p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Treasury Wallet</span>
+                                    <p className="text-lg font-bold text-white font-mono mt-1">{100 - fiatSplit}% <span className="text-xs text-white/40 font-normal">to Arc wallet</span></p>
+                                </div>
+                            </div>
+                            
+                            {/* Interactive Slider Input */}
+                            <div className="relative pt-4">
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="100" 
+                                    value={fiatSplit}
+                                    onChange={(e) => setFiatSplit(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#00d2b4]"
+                                    style={{
+                                        accentColor: '#00d2b4'
+                                    }}
+                                />
+                                <div className="flex justify-between text-3xs text-white/30 font-mono mt-2 uppercase">
+                                    <span>0% (All Crypto)</span>
+                                    <span>50% Split</span>
+                                    <span>100% (All Fiat)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Guarantee Block */}
+                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl flex items-start gap-4">
+                            <div className="p-2 rounded-xl flex-shrink-0 border bg-[#00d2b4]/10 border-[#00d2b4]/20 text-[#00d2b4]">
+                                <Check className="w-5 h-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs font-bold text-white uppercase tracking-wider">Settlement Guarantee</p>
+                                <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+                                    All conversion trades are executed atomically on-chain. US dollar settlements are dispatched instantly and guaranteed to clear in your corporate checking account within 24 hours of deposit. Off-ramp processing incurs a flat 0.5% conversion fee.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+
             case "settings":
                 return renderSettingsTab();
  
@@ -5070,7 +5134,7 @@ Please complete the following implementation tasks:
                                     </div>
                                     <div className="flex items-center gap-4">
                                         {copiedText === "API Secret Key Rolled" && (
-                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">Rolled & Copied</span>
+                                            <span className="text-[10px] text-[#00d2b4] font-bold animate-pulse">API Secret Key Rolled</span>
                                         )}
                                         <button
                                             onClick={handleRollKeys}
@@ -5243,11 +5307,9 @@ Please complete the following implementation tasks:
                                     <span className="text-xs font-bold text-white/40 uppercase tracking-widest">Checkout Snippet (REST · no SDK)</span>
                                     <p className="text-[10px] text-white/30">A fetch-based checkout button + intent route. No SDK to install.</p>
                                 </div>
-                                <div className="bg-white/[0.02] border border-white/5 rounded-xl p-5 text-center flex-1 flex items-center justify-center">
-                                    <p className="text-xs text-white/60 leading-relaxed">
-                                        Checkout paywall configurations compiled successfully. Ready to deploy.
-                                    </p>
-                                </div>
+                                <pre className="bg-black/40 p-4 rounded-xl border border-white/5 overflow-x-auto text-[10px] font-mono text-emerald-400 text-left flex-1">
+                                    <code>{checkoutCode}</code>
+                                </pre>
                                 <button 
                                     onClick={() => handleCopy(checkoutCode, "Checkout Snippet")}
                                     className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 ${
@@ -5378,19 +5440,19 @@ Please complete the following implementation tasks:
                             </div>
 
                             {/* Add endpoint form */}
-                            <form onSubmit={handleAddWebhook} className="flex gap-4 items-center">
+                            <form onSubmit={handleAddWebhook} className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
                                 <input
                                     type="url"
                                     placeholder="https://yourserver.com/api/webhooks"
                                     value={webhookUrlInput}
                                     onChange={(e) => setWebhookUrlInput(e.target.value)}
                                     required
-                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
+                                    className="flex-1 w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-[#00d2b4] transition-colors font-sans"
                                 />
                                 <button
                                     type="submit"
                                     disabled={isAddingWebhook || !webhookUrlInput}
-                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-2"
+                                    className="px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
                                 >
                                     {isAddingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
                                     Add Endpoint

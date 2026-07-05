@@ -21,12 +21,6 @@ function hashOtp(email: string, code: string) {
     return crypto.createHmac("sha256", otpSecret()).update(`${email}:${code}`).digest("hex");
 }
 
-/**
- * Step-up authentication for the most destructive action on the platform: revealing a wallet's
- * raw private key. A valid session alone is not enough — exposing the key would let a stolen
- * cookie or an XSS payload drain the wallet irreversibly. The caller must present a fresh,
- * single-use OTP delivered to the account email (request one via /api/auth/otp/send).
- */
 async function verifyExportOtp(email: string, code: string): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
     if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
         return {
@@ -57,8 +51,6 @@ async function verifyExportOtp(email: string, code: string): Promise<{ ok: true 
         return { ok: true };
     }
 
-    /* Preserve useful failure messages without reintroducing the replay race. An incorrect code
-       remains usable until expiry; an expired code is cleaned up conditionally. */
     const record = await withPgClient(async (client) => {
         const result = await client.query(
             `select expires_at from otp_codes where email = $1 limit 1`,
@@ -129,14 +121,11 @@ export async function POST(request: Request) {
             }, { status: 409 });
         }
 
-        /* Step-up: require a fresh OTP before disclosing the key. */
         const otpCheck = await verifyExportOtp(record.email, otpCode);
         if (!otpCheck.ok) {
             return otpCheck.response;
         }
 
-        /* MPC-secured (Circle) wallets have no extractable key — refuse export cleanly. Legacy
-           AES-backed wallets can still be exported after the OTP step-up above. */
         const custody = await getWalletCustody(normalizedWallet);
         if (!custody.canExportRawKey) {
             return NextResponse.json({
@@ -144,6 +133,16 @@ export async function POST(request: Request) {
             }, { status: 400 });
         }
         const privateKey = await custody.getRawPrivateKey();
+
+        // Update backupCompletedAt timestamp
+        await withPgClient((client) =>
+            client.query(
+                `update user_embedded_wallets
+                    set backup_completed_at = now()
+                  where wallet_address = $1`,
+                [normalizedWallet]
+            )
+        ).catch((dbErr) => console.error("Failed to update wallet backup timestamp:", dbErr));
 
         /* Best-effort audit trail for this sensitive disclosure. */
         await withPgClient((client) =>

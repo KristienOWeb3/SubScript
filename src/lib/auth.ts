@@ -34,12 +34,6 @@ export async function getSessionWallet(headers: Headers): Promise<string | null>
         const secret = new TextEncoder().encode(secretStr);
         const { payload } = await jwtVerify(token, secret);
 
-        /* Circle social completion previously trusted browser-supplied identity fields. Reject
-           every session minted through that path until server-side token verification is live. */
-        if (payload.provider === "google") {
-            return null;
-        }
-
         if (payload && typeof payload.address === "string") {
             return payload.address.toLowerCase();
         }

@@ -2,9 +2,11 @@ import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { SignJWT } from "jose";
 import dotenv from "dotenv";
+import path from "path";
 
-// Load local environment variables (.env)
-dotenv.config();
+// Load local environment variables (mirroring Next.js load order)
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const prisma = new PrismaClient();
 
@@ -31,7 +33,7 @@ test.describe("SubScript Receipt Privacy E2E Integration Flow", () => {
   let txHash: string;
 
   test.beforeAll(async () => {
-    receiptId = `test-receipt-${Date.now()}`;
+    receiptId = "rcpt-" + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
     txHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
 
     console.log(`[TEST SETUP] Creating mock receipt ${receiptId} in database...`);

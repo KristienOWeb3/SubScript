@@ -10,10 +10,10 @@ test("Google/Circle completion cannot mint sessions from client-asserted identit
     const route = source("src/app/api/auth/circle/wallet/complete/route.ts");
     const auth = source("src/lib/auth.ts");
 
-    assert.match(route, /status:\s*503/);
-    assert.doesNotMatch(route, /new SignJWT/);
+    assert.doesNotMatch(route, /status:\s*503/);
+    assert.match(route, /verifyGoogleIdToken/);
     assert.doesNotMatch(route, /getCircleEmail/);
-    assert.match(auth, /payload\.provider\s*===\s*"google"/);
+    assert.doesNotMatch(auth, /payload\.provider\s*===\s*"google"/);
 });
 
 test("batch payouts fail closed until reservation is atomic", () => {
@@ -34,9 +34,9 @@ test("withdrawal audit is bound to the authenticated merchant and transaction se
 test("unverified public webhook receiver is retired", () => {
     const route = source("src/app/api/webhooks/route.ts");
 
-    assert.match(route, /status:\s*410/);
+    assert.match(route, /verifyCircleSignature/);
     assert.doesNotMatch(route, /console\.log/);
-    assert.doesNotMatch(route, /x-subscript-signature/);
+    assert.match(route, /status:\s*401/);
 });
 
 test("outbound webhooks never follow redirects", () => {

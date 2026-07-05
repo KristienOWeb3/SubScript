@@ -47,9 +47,10 @@ The persistent database layer tracks offchain state and audit trails.
 
 ### Authentication and Sessions
 
-- Signature-based wallet auth.
-- Email/OTP and Google-powered embedded wallet flows.
-- Production target: enforce encrypted private-key export after Google wallet provisioning.
+- Signature-based wallet auth (SIWE).
+- Email/OTP onboarding supporting both legacy (local AES-encrypted key) and Circle (developer-controlled MPC wallet) embedded wallet flows, flag-gated by `WALLET_PROVIDER=circle` (active in Vercel Preview).
+- Paused Google-powered embedded wallet flow (fails closed pending server-side verification of Google OAuth tokens).
+- Production target: enforce encrypted private-key export for legacy keys (Circle MPC keys are non-extractable).
 
 ### Checkout Intents and Payment Links
 

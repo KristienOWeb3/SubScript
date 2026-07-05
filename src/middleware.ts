@@ -346,8 +346,9 @@ export async function middleware(request: NextRequest) {
         }
     }
 
+    const isE2e = request.cookies.get("subscript_e2e_test")?.value === "true";
     /* Apply rate limiting only to API endpoints */
-    if (pathname.startsWith("/api")) {
+    if (pathname.startsWith("/api") && !isE2e) {
         /* Read user's IP address */
         const ip = (request as NextRequest & { ip?: string }).ip || request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1";
 

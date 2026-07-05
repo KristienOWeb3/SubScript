@@ -91,7 +91,7 @@ function PopupContent() {
             }
         };
 
-        const completeCircleLogin = async (session: CircleSession) => {
+        const completeCircleLogin = async (session: CircleSession, googleIdToken: string | null) => {
             clearVerifyWatchdog();
             const completeRes = await fetch("/api/auth/circle/wallet/complete", {
                 method: "POST",
@@ -101,6 +101,7 @@ function PopupContent() {
                         userToken: session.userToken,
                         oAuthInfo: session.oAuthInfo,
                     },
+                    googleIdToken,
                 }),
             });
             const completed = await completeRes.json();
@@ -123,6 +124,9 @@ function PopupContent() {
                 if (!window.location.hash) {
                     throw new Error("Google did not return an OAuth response. Please start again from the sign in page.");
                 }
+
+                const hashParams = new URLSearchParams(window.location.hash.slice(1));
+                const googleIdToken = hashParams.get("id_token");
 
                 const configRes = await fetch("/api/auth/circle/google/config", { cache: "no-store" });
                 const config: CircleGoogleConfig & { error?: string } = await configRes.json();
@@ -161,7 +165,7 @@ function PopupContent() {
                            (same model as email/OTP, one account per email). Skip Circle's PIN wallet
                            challenge — sdk.execute() was the step that threw "Error encrypting data"
                            and created a separate account. */
-                        await completeCircleLogin(session);
+                        await completeCircleLogin(session, googleIdToken);
                     } catch (err: any) {
                         setStep("error");
                         setError(err.message || "Continue with Google failed.");

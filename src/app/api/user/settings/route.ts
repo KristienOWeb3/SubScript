@@ -69,8 +69,9 @@ export async function GET(request: Request) {
             email: string | null;
             provider: string | null;
             encrypted_private_key: string | null;
+            backup_completed_at: Date | null;
         }>(
-            `select email, provider, encrypted_private_key
+            `select email, provider, encrypted_private_key, backup_completed_at
                from user_embedded_wallets
               where wallet_address = $1
               limit 1`,
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
                         email: embeddedWalletRecord.email,
                         provider: embeddedWalletRecord.provider,
                         available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                        completedAt: embeddedWalletRecord.backup_completed_at || null,
                     } : null,
                 };
             }
@@ -164,6 +166,7 @@ export async function GET(request: Request) {
                         email: embeddedWalletRecord.email,
                         provider: embeddedWalletRecord.provider,
                         available: Boolean(embeddedWalletRecord.encrypted_private_key),
+                        completedAt: embeddedWalletRecord.backup_completed_at || null,
                     } : null,
                 };
             }

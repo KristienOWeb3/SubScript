@@ -6,9 +6,24 @@ This document tracks items from the June 2026 product brief that should not be d
 
 ## 1. Wallet Onboarding and Funding
 
+### Circle Developer-Controlled Wallet Custody Cutover
+
+The platform is transitioning embedded-wallet custody off local AES-encrypted private keys to Circle developer-controlled MPC wallets. 
+
+Completed (Stage 2c):
+- High-level `WalletCustody` seam abstraction with backend implementations for legacy and Circle wallets.
+- Execution routing: all embedded-wallet signing paths use the custody interface (contract execution and EIP-712 typed signing).
+- Durable provisioning idempotency via the `circle_wallet_provisioning` ledger table to prevent orphaning wallets on retry.
+- Wagmi/Viem integration active in Vercel Preview (flag-gated by `WALLET_PROVIDER=circle`).
+
+Still needed before production cutover:
+- [x] Re-enabling Google Social sign-in (rebuilding `/api/auth/circle/wallet/complete` with server-side validation of OAuth tokens).
+- [ ] Sweep-migrating the 5 legacy wallets to Circle wallets (migration script `scripts/migrate-legacy-wallets.mjs` completed and dry-run verified).
+- [ ] Deleting the legacy AES key-decryption path and `WALLET_ENCRYPTION_KEY` environment variable.
+
 ### Encrypted Private-Key Export
 
-Google-powered wallet onboarding exists, but the product brief requires a secure encrypted private-key export phase so users can recover wallet access independently if their social account is compromised.
+Google-powered wallet onboarding exists, but the product brief requires a secure encrypted private-key export phase so users can recover wallet access independently if their social account is compromised. Note that this applies only to legacy EOA wallets (MPC keys are non-extractable).
 
 Needed:
 
