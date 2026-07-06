@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
   formatUnits, 
@@ -117,6 +118,7 @@ interface Subscription {
   amountCapUsdc: string;
   billingIntervalSeconds: string;
   lastSettlementTimestamp: string | null;
+  cancelAtPeriodEnd: boolean;
   createdAt: string;
 }
 
@@ -356,6 +358,23 @@ export default function UserDashboard() {
 
     const detectLocalCurrency = () => {
       try {
+        // Prioritize timezone detection (most reliable indicator of current physical location)
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        if (tz.includes("Lagos") || tz.includes("Nigeria") || tz.includes("Africa/Lagos")) return { code: "NGN", symbol: "₦" };
+        if (tz.includes("London") || tz.includes("Europe/London")) return { code: "GBP", symbol: "£" };
+        if (tz.includes("Europe")) return { code: "EUR", symbol: "€" };
+        if (tz.includes("Calcutta") || tz.includes("Kolkata") || tz.includes("Asia/Kolkata")) return { code: "INR", symbol: "₹" };
+        if (tz.includes("Tokyo") || tz.includes("Asia/Tokyo")) return { code: "JPY", symbol: "¥" };
+        if (tz.includes("Sydney") || tz.includes("Melbourne") || tz.includes("Australia")) return { code: "AUD", symbol: "A$" };
+        if (tz.includes("Toronto") || tz.includes("Vancouver") || tz.includes("America/Toronto")) return { code: "CAD", symbol: "C$" };
+        if (tz.includes("Nairobi") || tz.includes("Kenya")) return { code: "KES", symbol: "KSh" };
+        if (tz.includes("Accra") || tz.includes("Ghana")) return { code: "GHS", symbol: "GH₵" };
+        if (tz.includes("Johannesburg") || tz.includes("South_Africa")) return { code: "ZAR", symbol: "R" };
+
+        // Next check browser language preferences
+        const languages = navigator.languages || [];
+        if (languages.some(lang => lang.toLowerCase().includes("ng"))) return { code: "NGN", symbol: "₦" };
+
         const locale = navigator.language || "en-US";
         const parts = locale.split("-");
         const country = parts[1] ? parts[1].toUpperCase() : "";
@@ -381,19 +400,6 @@ export default function UserDashboard() {
         if (country && countryToCurrency[country]) {
           return countryToCurrency[country];
         }
-
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-        if (tz.includes("Lagos")) return { code: "NGN", symbol: "₦" };
-        if (tz.includes("London")) return { code: "GBP", symbol: "£" };
-        if (tz.includes("Europe")) return { code: "EUR", symbol: "€" };
-        if (tz.includes("Calcutta") || tz.includes("Kolkata")) return { code: "INR", symbol: "₹" };
-        if (tz.includes("Tokyo")) return { code: "JPY", symbol: "¥" };
-        if (tz.includes("Sydney") || tz.includes("Melbourne")) return { code: "AUD", symbol: "A$" };
-        if (tz.includes("Toronto") || tz.includes("Vancouver")) return { code: "CAD", symbol: "C$" };
-        if (tz.includes("Nairobi")) return { code: "KES", symbol: "KSh" };
-        if (tz.includes("Accra")) return { code: "GHS", symbol: "GH₵" };
-        if (tz.includes("Johannesburg")) return { code: "ZAR", symbol: "R" };
-
       } catch (e) {
         console.error("Failed to detect currency from locale/timezone fallback:", e);
       }
@@ -405,24 +411,65 @@ export default function UserDashboard() {
 
     const fetchGeoCurrencyAndRate = async () => {
       let activeCurrency = initialCurrency;
+      let geoSuccess = false;
+      const currencySymbols: Record<string, string> = {
+        NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥",
+        INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
+      };
+
+      // Source 1: ipapi.co
       try {
         const geoRes = await fetch("https://ipapi.co/json/");
         if (geoRes.ok) {
           const geoData = await geoRes.json();
-          if (geoData.currency) {
-            const currencySymbols: Record<string, string> = {
-              NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥",
-              INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
-            };
+          if (geoData.currency && !geoData.error) {
             activeCurrency = {
               code: geoData.currency,
               symbol: currencySymbols[geoData.currency] || geoData.currency
             };
             setDetectedCurrency(activeCurrency);
+            geoSuccess = true;
           }
         }
       } catch (e) {
-        console.log("Geo IP lookup failed, using browser locale fallback:", e);
+        console.log("ipapi.co check failed:", e);
+      }
+
+      // Source 2: ip-api.com fallback
+      if (!geoSuccess) {
+        try {
+          const geoRes2 = await fetch("http://ip-api.com/json/");
+          if (geoRes2.ok) {
+            const geoData2 = await geoRes2.json();
+            if (geoData2.status === "success" && geoData2.countryCode) {
+              const countryMap: Record<string, { code: string; symbol: string }> = {
+                NG: { code: "NGN", symbol: "₦" },
+                GB: { code: "GBP", symbol: "£" },
+                DE: { code: "EUR", symbol: "€" },
+                FR: { code: "EUR", symbol: "€" },
+                IT: { code: "EUR", symbol: "€" },
+                ES: { code: "EUR", symbol: "€" },
+                NL: { code: "EUR", symbol: "€" },
+                JP: { code: "JPY", symbol: "¥" },
+                IN: { code: "INR", symbol: "₹" },
+                AU: { code: "AUD", symbol: "A$" },
+                CA: { code: "CAD", symbol: "C$" },
+                US: { code: "USD", symbol: "$" },
+                ZA: { code: "ZAR", symbol: "R" },
+                KE: { code: "KES", symbol: "KSh" },
+                GH: { code: "GHS", symbol: "GH₵" }
+              };
+              const detected = countryMap[geoData2.countryCode];
+              if (detected) {
+                activeCurrency = detected;
+                setDetectedCurrency(activeCurrency);
+                geoSuccess = true;
+              }
+            }
+          }
+        } catch (e) {
+          console.log("ip-api.com check failed:", e);
+        }
       }
 
       try {
@@ -2090,7 +2137,7 @@ export default function UserDashboard() {
   }
 
   const sortedSubscriptions = [...subscriptions]
-    .filter((s) => s.status === "ACTIVE")
+    .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
     .sort((a, b) => {
       const aNext = a.lastSettlementTimestamp ? new Date(a.lastSettlementTimestamp).getTime() + Number(a.billingIntervalSeconds) * 1000 : Infinity;
       const bNext = b.lastSettlementTimestamp ? new Date(b.lastSettlementTimestamp).getTime() + Number(b.billingIntervalSeconds) * 1000 : Infinity;
@@ -2102,7 +2149,7 @@ export default function UserDashboard() {
   const localBalance = walletBalance * exchangeRate;
   // "30-day spend" proxy: sum of active subscriptions normalised to a 30-day cost.
   const monthlySpendUsdc = subscriptions
-    .filter((s) => s.status === "ACTIVE")
+    .filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd)
     .reduce((sum, s) => {
       const period = Math.max(1, Number(s.billingIntervalSeconds));
       const monthly = (Number(s.amountCapUsdc) / 1_000_000) * (2_592_000 / period);
@@ -2115,21 +2162,30 @@ export default function UserDashboard() {
   );
   // Unified recent-activity feed: subscriptions are "recurring", paid/settled payment DMs are "one-time".
   const recentTransactions = [
-    ...subscriptions.map((s) => ({
-      id: `sub-${s.subscriptionId}`,
-      kind: "recurring" as const,
-      name: s.merchantName || formatAddress(s.merchantAddress),
-      pic: s.merchantProfilePic,
-      detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
-      amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
-      time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
-      incoming: false,
-    })),
+    ...subscriptions.map((s) => {
+      const usdVal = Number(s.amountCapUsdc) / 1_000_000;
+      const localVal = usdVal * exchangeRate;
+      const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+      return {
+        id: `sub-${s.subscriptionId}`,
+        kind: "recurring" as const,
+        name: s.merchantName || formatAddress(s.merchantAddress),
+        pic: s.merchantProfilePic,
+        detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
+        amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+        localAmountLabel: `-${localLabel}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+        time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
+        incoming: false,
+      };
+    }),
     ...dms
       .filter((d) => d.amountUsdc && ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(d.messageType) || (d.amountUsdc && d.status === "PAID"))
       .map((d) => {
         const isDebitSuccess = d.messageType === "DEBIT_SUCCESS";
         const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
+        const usdVal = Number(d.amountUsdc) / 1_000_000;
+        const localVal = usdVal * exchangeRate;
+        const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
         return {
           id: `dm-${d.id}`,
           kind: "one-time" as const,
@@ -2137,6 +2193,7 @@ export default function UserDashboard() {
           pic: incoming ? d.senderProfilePic : d.receiverProfilePic,
           detail: d.title || d.description || (incoming ? "Received payment" : "Sent payment"),
           amountLabel: `${incoming ? "+" : "-"}$${formatUsdc(d.amountUsdc)}`,
+          localAmountLabel: `${incoming ? "+" : "-"}${localLabel}`,
           time: new Date(d.createdAt).getTime(),
           incoming,
         };
@@ -2512,7 +2569,7 @@ export default function UserDashboard() {
                   <section className="h-full rounded-3xl border border-white/5 bg-black/40 p-5 shadow-2xl backdrop-blur-xl liquid-glass sm:p-8 flex flex-col">
                     <div className="mb-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-white/70">Active Subscriptions</h2>
-                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE").length} active</span>
+                      <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[10px] font-bold text-[#ccff00] border border-[#ccff00]/20 w-fit">{subscriptions.filter((s) => s.status === "ACTIVE" && !s.cancelAtPeriodEnd).length} active</span>
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin">
@@ -2537,13 +2594,12 @@ export default function UserDashboard() {
                   <section className="liquid-glass rounded-[28px] border border-white/5 bg-black/40 p-5 text-white shadow-2xl backdrop-blur-xl">
                     <div className="flex items-center justify-between">
                       <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-white/70">Recent Transactions</h2>
-                      <button
-                        type="button"
-                        onClick={() => { setAllTxSearch(""); setAllTxOpen(true); }}
+                      <Link
+                        href="/dashboard/user/transactions"
                         className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-white/45 hover:text-[#ccff00] transition-colors"
                       >
                         View All <ArrowUpRight className="h-3 w-3" />
-                      </button>
+                      </Link>
                     </div>
 
                     <div className="mt-4 flex gap-2">
@@ -2582,7 +2638,10 @@ export default function UserDashboard() {
                               <p className="truncate text-sm font-black text-white">{tx.name}</p>
                               <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                             </div>
-                            <span className={`shrink-0 text-base font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
+                            <div className="text-right shrink-0">
+                              <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
+                              <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">{tx.localAmountLabel}</span>
+                            </div>
                           </div>
                         ))
                       )}

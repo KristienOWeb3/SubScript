@@ -50,6 +50,7 @@ export async function GET(request: Request) {
                 amountCapUsdc: sub.amountCapUsdc.toString(),
                 billingIntervalSeconds: sub.billingIntervalSeconds.toString(),
                 lastSettlementTimestamp: sub.lastSettlementTimestamp,
+                cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
                 createdAt: sub.createdAt
             };
         });
