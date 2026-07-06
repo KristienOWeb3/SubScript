@@ -5283,9 +5283,7 @@ function DmBubble({
       loadingKey: `decline-${dm.id}`,
     });
   }
-  if (dm.messageType === "DEBIT_SUCCESS" && isPending) {
-    actionItems.push({ key: "dismiss", label: "Dismiss", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
-  }
+  /* Renewal receipts (DEBIT_SUCCESS) show only "View Tx" — no dismiss/thanks prompt. */
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
   if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
     actionItems.push({ key: "thanks", label: "Thanks", onClick: onThanks, loadingKey: `thanks-${dm.id}` });
