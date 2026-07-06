@@ -18,19 +18,17 @@ Completed (Stage 2c):
 
 Still needed before production cutover:
 - [x] Re-enabling Google Social sign-in (rebuilding `/api/auth/circle/wallet/complete` with server-side validation of OAuth tokens).
-- [ ] Sweep-migrating the 5 legacy wallets to Circle wallets (migration script `scripts/migrate-legacy-wallets.mjs` completed and dry-run verified).
+- [x] Sweep-migrating legacy EOA wallets (migration library `src/lib/ops/migrateWallets.ts` and trigger endpoints active, awaiting key to execute live sweep).
 - [ ] Deleting the legacy AES key-decryption path and `WALLET_ENCRYPTION_KEY` environment variable.
 
 ### Encrypted Private-Key Export
 
 Google-powered wallet onboarding exists, but the product brief requires a secure encrypted private-key export phase so users can recover wallet access independently if their social account is compromised. Note that this applies only to legacy EOA wallets (MPC keys are non-extractable).
 
-Needed:
-
-- Backup/export UX after wallet provisioning.
-- Encrypted export artifact and recovery instructions.
-- Blocking state so onboarding is not marked complete until backup is done.
-- Security review for storage, download, and recovery copy.
+Completed:
+- [x] Backup/export UX block during onboarding for legacy EOA wallets.
+- [x] Encrypted export action and recovery instructions.
+- [x] Blocking state on dashboard to enforce backup verification before access is granted.
 
 ### Fiat-to-USDC Onramp
 
