@@ -996,6 +996,7 @@ export default function UserDashboard() {
     if (!userWallet) return;
     await navigator.clipboard.writeText(userWallet);
     setCopiedAddress(true);
+    triggerToast("Address copied to clipboard");
     setTimeout(() => setCopiedAddress(false), 1600);
   };
 
@@ -1537,6 +1538,7 @@ export default function UserDashboard() {
     try {
       await navigator.clipboard.writeText(linkResultUrl);
       setLinkCopied(true);
+      triggerToast("Shareable link copied!");
       setTimeout(() => setLinkCopied(false), 1600);
     } catch {
       /* clipboard unavailable */
@@ -3552,6 +3554,7 @@ export default function UserDashboard() {
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(userWallet || "");
+                            triggerToast("Address copied to clipboard");
                           }}
                           className="p-2 rounded-xl bg-white/5 text-white/40 hover:text-white transition"
                         >
@@ -4336,6 +4339,7 @@ export default function UserDashboard() {
                         if (!referralLink) return;
                         navigator.clipboard.writeText(referralLink);
                         setReferralCopySuccess(true);
+                        triggerToast("Referral link copied!");
                         setTimeout(() => setReferralCopySuccess(false), 3000);
                       }}
                       className="rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 px-6 py-3.5 text-xs font-black uppercase tracking-[0.16em] transition flex items-center justify-center gap-2 shrink-0 shadow-[0_0_15px_rgba(204,255,0,0.15)]"
@@ -4569,6 +4573,7 @@ export default function UserDashboard() {
         chainId={chainId}
         switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
+        triggerToast={triggerToast}
         refetchBalances={() => {
           refetchUsdc().catch(console.error);
           refetchSepolia().catch(console.error);
@@ -5909,6 +5914,7 @@ function DepositModal({
   switchChainAsync,
   writeContractAsync,
   refetchBalances,
+  triggerToast,
 }: {
   open: boolean;
   userWallet: string | null;
@@ -5922,6 +5928,7 @@ function DepositModal({
   switchChainAsync: any;
   writeContractAsync: any;
   refetchBalances: () => void;
+  triggerToast: (message: string) => void;
 }) {
   const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp" | "fiat">("menu");
 
@@ -6507,7 +6514,10 @@ function DepositModal({
                       </div>
                       <button
                         type="button"
-                        onClick={() => void navigator.clipboard.writeText(fiatIntent.accountNumber)}
+                        onClick={() => {
+                          void navigator.clipboard.writeText(fiatIntent.accountNumber);
+                          triggerToast("Account number copied!");
+                        }}
                         className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
                       >
                         <span>
@@ -6518,7 +6528,10 @@ function DepositModal({
                       </button>
                       <button
                         type="button"
-                        onClick={() => void navigator.clipboard.writeText(fiatIntent.transferReference)}
+                        onClick={() => {
+                          void navigator.clipboard.writeText(fiatIntent.transferReference);
+                          triggerToast("Reference code copied!");
+                        }}
                         className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
                       >
                         <span>
