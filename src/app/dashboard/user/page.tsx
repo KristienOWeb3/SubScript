@@ -331,7 +331,33 @@ export default function UserDashboard() {
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [balanceVisible, setBalanceVisible] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("subscript_balance_visible");
+      return stored !== "false";
+    }
+    return true;
+  });
+
+  const toggleBalanceVisible = () => {
+    setBalanceVisible((prev) => {
+      const newVal = !prev;
+      localStorage.setItem("subscript_balance_visible", String(newVal));
+      window.dispatchEvent(new Event("storage"));
+      return newVal;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const handleStorageChange = () => {
+        const current = localStorage.getItem("subscript_balance_visible");
+        setBalanceVisible(current !== "false");
+      };
+      window.addEventListener("storage", handleStorageChange);
+      return () => window.removeEventListener("storage", handleStorageChange);
+    }
+  }, []);
   const [txFilter, setTxFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [allTxOpen, setAllTxOpen] = useState(false);
   const [allTxSearch, setAllTxSearch] = useState("");
@@ -2478,7 +2504,7 @@ export default function UserDashboard() {
                         <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ccff00]/85">Connected Wallet Balance</span>
                         <button
                           type="button"
-                          onClick={() => setBalanceVisible((value) => !value)}
+                          onClick={toggleBalanceVisible}
                           className="text-white/40 hover:text-white transition-colors"
                           aria-label="Toggle balance visibility"
                         >
@@ -2537,7 +2563,7 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
                         <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
                         <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                          ${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          {balanceVisible ? `$${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2552,7 +2578,7 @@ export default function UserDashboard() {
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
                         <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                          ${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          {balanceVisible ? `$${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2583,7 +2609,7 @@ export default function UserDashboard() {
                       ) : (
                         <div className="space-y-3">
                           {sortedSubscriptions.map((sub) => (
-                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} />
+                            <SubscriptionRow key={sub.subscriptionId} subscription={sub} balanceVisible={balanceVisible} />
                           ))}
                         </div>
                       )}
@@ -2641,8 +2667,12 @@ export default function UserDashboard() {
                               <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
                             </div>
                             <div className="text-right shrink-0">
-                              <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
-                              <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">{tx.localAmountLabel}</span>
+                              <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
+                                {balanceVisible ? tx.amountLabel : "••••"}
+                              </span>
+                              <span className="block text-[9px] font-bold text-[#ccff00] mt-0.5">
+                                {balanceVisible ? tx.localAmountLabel : "••••"}
+                              </span>
                             </div>
                           </div>
                         ))
@@ -2714,6 +2744,7 @@ export default function UserDashboard() {
                           vault={vault}
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                          balanceVisible={balanceVisible}
                         />
                       ))}
                     </div>
@@ -3721,13 +3752,15 @@ export default function UserDashboard() {
                           </div>
                         </div>
                         <p className="mt-3 text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
-                          ${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {balanceVisible ? `$${totalSpending.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
                         </p>
                         <div className="mt-2 flex items-center gap-2">
                           {monthlySpendUsdc > 0 ? (
                             <>
                               <TrendingUp className="h-3.5 w-3.5 text-[#ccff00]" />
-                              <span className="text-[10px] font-bold text-[#ccff00]">${monthlySpendUsdc.toFixed(2)}/mo recurring</span>
+                              <span className="text-[10px] font-bold text-[#ccff00]">
+                                {balanceVisible ? `$${monthlySpendUsdc.toFixed(2)}/mo recurring` : "••••/mo recurring"}
+                              </span>
                             </>
                           ) : (
                             <span className="text-[10px] font-bold text-white/30">No active recurring spend</span>
@@ -3768,7 +3801,7 @@ export default function UserDashboard() {
                               <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat.color }}>{cat.label}</span>
                             </div>
                             <p className="text-xl font-extrabold tracking-tight text-white">
-                              ${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {balanceVisible ? `$${cat.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "••••"}
                             </p>
                             {totalSpending > 0 && (
                               <p className="text-[9px] font-bold text-white/30 mt-1">{((cat.total / totalSpending) * 100).toFixed(0)}% of total</p>
@@ -3827,7 +3860,7 @@ export default function UserDashboard() {
                                   </p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{tx.amountLabel}</span>
+                                  <span className={`text-sm font-extrabold ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>{balanceVisible ? tx.amountLabel : "••••"}</span>
                                   <span className={`block text-[8px] font-bold uppercase tracking-wider mt-0.5 ${tx.kind === "recurring" ? "text-[#ccff00]/60" : "text-sky-400/60"}`}>
                                     {tx.kind === "recurring" ? "Recurring" : "One-time"}
                                   </span>
@@ -5082,7 +5115,7 @@ function RoundAction({ icon: Icon, label, onClick }: { icon: LucideIcon; label: 
   );
 }
 
-function SubscriptionRow({ subscription }: { subscription: Subscription }) {
+function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subscription; balanceVisible: boolean }) {
   const intervalDays = Math.max(1, Math.round(Number(subscription.billingIntervalSeconds) / 86400));
   return (
     <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-black/20 hover:bg-black/35 hover:border-white/10 transition px-4 py-3.5">
@@ -5099,7 +5132,9 @@ function SubscriptionRow({ subscription }: { subscription: Subscription }) {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-xs font-black text-[#ccff00]">{formatUsdc(subscription.amountCapUsdc)} USDC</p>
+        <p className="text-xs font-black text-[#ccff00]">
+          {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
+        </p>
         <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
       </div>
     </div>
@@ -5249,7 +5284,7 @@ function DmBubble({
     });
   }
   if (dm.messageType === "DEBIT_SUCCESS" && isPending) {
-    actionItems.push({ key: "dismiss", label: "Thanks", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
+    actionItems.push({ key: "dismiss", label: "Dismiss", onClick: onDismiss, loadingKey: `dismiss-${dm.id}` });
   }
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
   if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
@@ -7151,10 +7186,12 @@ function MeteredVaultRow({
   vault,
   onCommit,
   onWithdraw,
+  balanceVisible,
 }: {
   vault: any;
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
+  balanceVisible: boolean;
 }) {
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
@@ -7174,8 +7211,8 @@ function MeteredVaultRow({
           </div>
           <div className="min-w-0">
             <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{vault.merchantName}</p>
-            <p className="mt-1 text-[10px] text-white/40">
-              Used {formatUsdc(vault.accruedUsageUsdc)} / {formatUsdc(vault.balanceUsdc)} USDC committed this cycle
+            <p className="mt-1 text-[10px] text-white/45">
+              Used {balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} / {balanceVisible ? formatUsdc(vault.balanceUsdc) : "•••"} USDC committed this cycle
             </p>
           </div>
         </div>
@@ -7186,7 +7223,9 @@ function MeteredVaultRow({
 
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-[#ccff00]">{formatUsdc(vault.balanceUsdc)} USDC</p>
+          <p className="text-sm font-black text-[#ccff00]">
+            {balanceVisible ? `${formatUsdc(vault.balanceUsdc)} USDC` : "•••• USDC"}
+          </p>
           <p className="text-[9px] uppercase text-white/35">committed balance</p>
         </div>
         <div className="flex items-center gap-2">

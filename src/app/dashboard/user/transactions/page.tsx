@@ -59,8 +59,24 @@ export default function UserTransactionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "recurring" | "one-time">("all");
 
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [detectedCurrency, setDetectedCurrency] = useState({ code: "NGN", symbol: "₦" });
   const [exchangeRate, setExchangeRate] = useState(1500); // Fallback rate
+
+  // Sync balanceVisible with localStorage across tabs
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("subscript_balance_visible");
+      setBalanceVisible(stored !== "false");
+
+      const handleStorageChange = () => {
+        const current = localStorage.getItem("subscript_balance_visible");
+        setBalanceVisible(current !== "false");
+      };
+      window.addEventListener("storage", handleStorageChange);
+      return () => window.removeEventListener("storage", handleStorageChange);
+    }
+  }, []);
 
   // Timezone-based geographic currency detection
   useEffect(() => {
@@ -336,10 +352,10 @@ export default function UserTransactionsPage() {
                   </div>
                   <div className="text-right">
                     <p className={`text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
-                      {tx.amountLabel}
+                      {balanceVisible ? tx.amountLabel : "••••"}
                     </p>
                     <p className="mt-1 text-[9px] font-bold text-[#ccff00]">
-                      {tx.localAmountLabel}
+                      {balanceVisible ? tx.localAmountLabel : "••••"}
                     </p>
                   </div>
                 </div>
