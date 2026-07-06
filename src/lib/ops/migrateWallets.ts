@@ -143,7 +143,7 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
                     const createRes = await circleClient.createWallets({
                         idempotencyKey,
                         walletSetId,
-                        blockchain,
+                        blockchains: [blockchain],
                         accountType,
                         count: 1,
                     });
