@@ -5529,6 +5529,14 @@ function MerchantPlanManager({
   onCancel: () => void;
 }) {
   const hasActiveSubscription = !!activeSubscription;
+  const activePlan = activeSubscription
+    ? plans.find(
+        (p) =>
+          activeSubscription.amountCapUsdc === p.amountUsdc &&
+          activeSubscription.billingIntervalSeconds === p.periodSeconds
+      )
+    : null;
+  const planLabel = activePlan ? activePlan.name : "Active Plan";
 
   return (
     <div className="space-y-3">
@@ -5538,7 +5546,9 @@ function MerchantPlanManager({
         className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">Merchant plan controls</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">
+            {hasActiveSubscription ? planLabel : "Merchant Plan Controls"}
+          </p>
           <p className="truncate text-xs font-bold text-white">
             {hasActiveSubscription
               ? `${formatUsdc(activeSubscription.amountCapUsdc)} USDC / ${formatPlanPeriod(activeSubscription.billingIntervalSeconds)}`
@@ -5555,11 +5565,11 @@ function MerchantPlanManager({
             type="button"
             onClick={onCancel}
             disabled={loadingAction === `cancel-sub-${activeSubscription.subscriptionId}`}
-            className={`dm-quick-button relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
+            className={`dm-quick-button flex-1 min-w-0 text-center truncate relative overflow-hidden border-red-400/20 bg-red-500/10 text-red-200 ${
               loadingAction === `cancel-sub-${activeSubscription.subscriptionId}` ? "quick-action-loading" : ""
             }`}
           >
-            Cancel current subscription
+            Cancel current plan
           </motion.button>
         )}
         <motion.button
@@ -5568,7 +5578,7 @@ function MerchantPlanManager({
           transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
           type="button"
           onClick={onToggle}
-          className="dm-quick-button dm-action-menu-trigger relative overflow-hidden"
+          className={`dm-quick-button dm-action-menu-trigger relative overflow-hidden ${hasActiveSubscription ? "flex-1 min-w-0 text-center truncate" : ""}`}
         >
           {open ? "Hide Plans" : hasActiveSubscription ? "Manage Plan" : "Subscribe"}
         </motion.button>
@@ -5650,7 +5660,7 @@ function MerchantPlanManager({
                           <motion.span
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
-                            transition={{ type: "spring", stiffness: 500, damping: 14 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
                             className="rounded-full border border-[#ccff00]/20 bg-[#ccff00]/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-[#ccff00]"
                           >
                             Current
