@@ -238,7 +238,7 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
 
                     // Update receipts
                     await client.query("update receipts set payer_address = $2 where payer_address = $1", [oldAddr, newAddr]);
-                    await client.query("update receipts set recipient_address = $2 where recipient_address = $1", [oldAddr, newAddr]);
+                    await client.query("update receipts set beneficiary_address = $2 where beneficiary_address = $1", [oldAddr, newAddr]);
                     await client.query("update receipts set merchant_address = $2 where merchant_address = $1", [oldAddr, newAddr]);
 
                     // Update payment links
