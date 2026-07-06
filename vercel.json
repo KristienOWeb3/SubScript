@@ -17,7 +17,7 @@
     },
     {
       "path": "/api/cron/kyc-expiry",
-      "schedule": "17 * * * *"
+      "schedule": "0 5 * * *"
     }
   ]
 }
