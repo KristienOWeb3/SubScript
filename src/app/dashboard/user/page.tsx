@@ -1048,7 +1048,7 @@ export default function UserDashboard() {
   const getActiveSubscriptionForMerchant = (merchantAddress: string | null | undefined) => {
     if (!merchantAddress) return null;
     return subscriptions.find(
-      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE"
+      (sub) => sub.merchantAddress.toLowerCase() === merchantAddress.toLowerCase() && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
     ) || null;
   };
 
