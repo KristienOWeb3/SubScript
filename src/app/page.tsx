@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode, Suspense } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import {
     ArrowRight,
@@ -26,6 +27,22 @@ import {
     Zap,
 } from "@/components/icons";
 import Navbar from "@/components/Navbar";
+
+// Lazy load heavy animation components
+const MockupDashboardCard = dynamic(
+    () => import("./components/MockupDashboardCard"),
+    { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
+);
+
+const CodePanel = dynamic(
+    () => import("./components/CodePanel"),
+    { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
+);
+
+const MerchantApplicationForm = dynamic(
+    () => import("./components/MerchantApplicationForm"),
+    { ssr: false }
+);
 
 function XIcon({ className }: { className?: string }) {
     return (
@@ -443,20 +460,10 @@ export default function Home() {
         <main className="min-h-screen w-full max-w-[100vw] overflow-x-hidden relative z-0 bg-transparent selection:bg-[#00d2b4]/30 selection:text-white">
             <Navbar />
 
-            {/* Background Video (desktop only) */}
-            {mounted && !isMobile && (
-                <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none opacity-30">
-                    <video autoPlay muted loop playsInline className="w-full h-full object-cover">
-                        <source src="/subscript_video_pc.mp4" type="video/mp4" />
-                    </video>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/85 to-black/70" />
-                </div>
-            )}
-            {mounted && isMobile && (
-                <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/80" />
-                </div>
-            )}
+            {/* Background gradient only */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/80" />
+            </div>
 
             {/* Background orbs */}
             <div className="absolute top-0 right-0 w-[400px] h-[400px] sm:w-[700px] sm:h-[700px] bg-[#00d2b4]/5 rounded-full blur-[120px] -z-10 pointer-events-none" />

@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 const inter = Inter({
     subsets: ["latin"],
     variable: "--font-inter",
+    display: "swap",
+    preload: true,
 });
 
 const instrumentSerif = Instrument_Serif({
@@ -18,6 +20,8 @@ const instrumentSerif = Instrument_Serif({
     weight: ["400"],
     style: ["normal", "italic"],
     variable: "--font-instrument",
+    display: "swap",
+    preload: true,
 });
 
 function normalizePublicUrl(value: string | undefined) {
