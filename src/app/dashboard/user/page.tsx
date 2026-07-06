@@ -5537,8 +5537,8 @@ function MerchantPlanManager({
   const activePlan = activeSubscription
     ? plans.find(
         (p) =>
-          activeSubscription.amountCapUsdc === p.amountUsdc &&
-          activeSubscription.billingIntervalSeconds === p.periodSeconds
+          Number(activeSubscription.amountCapUsdc) === Number(p.amountUsdc) &&
+          Number(activeSubscription.billingIntervalSeconds) === Number(p.periodSeconds)
       )
     : null;
   const planLabel = activePlan ? activePlan.name : "Active Plan";
