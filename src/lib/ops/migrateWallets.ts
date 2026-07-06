@@ -195,7 +195,6 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
                         [oldAddr, newAddr, circleWalletId, circleUserId]
                     );
                     await client.query("update address_aliases set address = $2 where address = $1", [oldAddr, newAddr]);
-                    await client.query("update address_aliases set wallet_address = $2 where wallet_address = $1", [oldAddr, newAddr]);
                     
                     // Insert customer
                     const custRes = await client.query("select * from customers where wallet_address = $1", [oldAddr]);
@@ -214,7 +213,7 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
 
                     await client.query("update metered_vaults set user_address = $2 where user_address = $1", [oldAddr, newAddr]);
                     await client.query("update metered_vaults set merchant_address = $2 where merchant_address = $1", [oldAddr, newAddr]);
-                    await client.query("update metered_vaults set wallet_address = $2 where wallet_address = $1", [oldAddr, newAddr]);
+                    
 
                     // Insert merchant
                     const merchRes = await client.query("select * from merchants where wallet_address = $1", [oldAddr]);
