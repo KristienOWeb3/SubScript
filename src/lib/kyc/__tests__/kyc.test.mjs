@@ -217,19 +217,21 @@ test("public DTO redacts provider identifiers and includes controlled reason gui
 });
 
 test("admin key supports bearer and explicit header variants in constant-time helper", () => {
+    const correctKey = "correct-key-is-32-chars-long!!!!";
+    const wrongKey = "wrong-key-is-also-32-chars-long!";
     assert.equal(
-        kyc.verifyAdminApiKey(new Headers({ authorization: "Bearer correct-key" }), "correct-key"),
+        kyc.verifyAdminApiKey(new Headers({ authorization: `Bearer ${correctKey}` }), correctKey),
         true
     );
     assert.equal(
-        kyc.verifyAdminApiKey(new Headers({ "x-admin-api-key": "correct-key" }), "correct-key"),
+        kyc.verifyAdminApiKey(new Headers({ "x-admin-api-key": correctKey }), correctKey),
         true
     );
     assert.equal(
-        kyc.verifyAdminApiKey(new Headers({ authorization: "Bearer wrong-key" }), "correct-key"),
+        kyc.verifyAdminApiKey(new Headers({ authorization: `Bearer ${wrongKey}` }), correctKey),
         false
     );
-    assert.equal(kyc.verifyAdminApiKey(new Headers(), "correct-key"), false);
+    assert.equal(kyc.verifyAdminApiKey(new Headers(), correctKey), false);
     assert.equal(kyc.verifyAdminApiKey(new Headers({ "x-admin-api-key": "anything" }), ""), false);
 });
 
