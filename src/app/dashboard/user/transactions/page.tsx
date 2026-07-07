@@ -131,43 +131,21 @@ export default function UserTransactionsPage() {
     setDetectedCurrency(initialCurrency);
 
     const fetchGeoCurrencyAndRate = async () => {
-      let activeCurrency = initialCurrency;
       try {
-        const geoRes = await fetch("https://ipapi.co/json/");
-        if (geoRes.ok) {
-          const geoData = await geoRes.json();
-          if (geoData.currency) {
-            const currencySymbols: Record<string, string> = {
-              NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥",
-              INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
-            };
-            activeCurrency = {
-              code: geoData.currency,
-              symbol: currencySymbols[geoData.currency] || geoData.currency
-            };
+        const res = await fetch("/api/rates");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setDetectedCurrency({
+              code: data.currency,
+              symbol: data.symbol
+            });
+            setExchangeRate(Number(data.rate));
           }
         }
       } catch (e) {
-        console.log("Geo IP lookup failed, using browser locale fallback:", e);
+        console.error("Failed to fetch exchange rates from local API:", e);
       }
-
-      try {
-        const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
-        if (rateRes.ok) {
-          const rateData = await rateRes.json();
-          if (rateData.rates && rateData.rates[activeCurrency.code]) {
-            setExchangeRate(Number(rateData.rates[activeCurrency.code]));
-            setDetectedCurrency(activeCurrency);
-            return;
-          }
-        }
-      } catch (e) {
-        console.error("Failed to fetch real-time exchange rates:", e);
-      }
-
-      // If rates fail to load or the rate is missing, fallback cleanly to USD/1.0
-      setDetectedCurrency({ code: "USD", symbol: "$" });
-      setExchangeRate(1.0);
     };
 
     fetchGeoCurrencyAndRate();

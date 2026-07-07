@@ -15,7 +15,8 @@ import {
   Building2,
   Lock,
   MailCheck,
-  RefreshCw
+  RefreshCw,
+  LogOut
 } from "@/components/icons";
 import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
@@ -65,6 +66,10 @@ export default function SignupPage() {
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
   const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
+  
+  const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   /* CAPTCHA (Cloudflare Turnstile) states */
   const [captchaToken, setCaptchaToken] = useState("");
@@ -129,10 +134,11 @@ export default function SignupPage() {
               setRequiresEmailLinking(true);
             }
             if (data.role) {
-              const next = getSafeNext();
-              window.location.href = (next && data.role === "USER")
-                ? next
-                : getDashboardUrl(data.role as any, "/dashboard");
+              setActiveSession({
+                wallet: data.wallet,
+                email: data.email || undefined,
+                role: data.role
+              });
             } else {
               setShowRoleSelector(true);
             }
@@ -140,6 +146,8 @@ export default function SignupPage() {
         }
       } catch (err) {
         console.error("Failed to check active session on mount:", err);
+      } finally {
+        setCheckingSession(false);
       }
     };
     checkSession();
@@ -565,6 +573,81 @@ export default function SignupPage() {
                 Sign In
               </button>
             </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setActiveSession(null);
+    } catch (err) {
+      console.error("Signout error:", err);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleGoToDashboard = () => {
+    if (!activeSession) return;
+    const next = getSafeNext();
+    window.location.href = (next && activeSession.role === "USER")
+      ? next
+      : getDashboardUrl(activeSession.role as any, "/dashboard");
+  };
+
+  if (checkingSession || isSigningOut) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
+      </div>
+    );
+  }
+
+  if (activeSession) {
+    return (
+      <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
+        <AnimatedGradientBg />
+        
+        <div className="relative z-10 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
+              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">signup</span>
+            </h1>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+          </div>
+
+          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+            <div className="text-center space-y-2">
+              <h2 className="text-base font-bold uppercase tracking-wider text-white">Active Session Found</h2>
+              <p className="text-xs text-white/50 leading-relaxed">
+                You are currently signed in as:
+              </p>
+              <div className="bg-white/5 border border-white/10 p-3 rounded-xl font-mono text-[11px] break-all text-[#00d2b4]">
+                {activeSession.email || activeSession.wallet}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleGoToDashboard}
+                className="w-full py-3.5 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                Go to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out / Switch Account
+              </button>
+            </div>
           </div>
         </div>
       </div>

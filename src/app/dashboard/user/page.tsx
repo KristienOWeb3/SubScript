@@ -302,6 +302,7 @@ export default function UserDashboard() {
   const [linkQrShown, setLinkQrShown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [emailPromptValue, setEmailPromptValue] = useState("");
@@ -436,83 +437,21 @@ export default function UserDashboard() {
     setDetectedCurrency(initialCurrency);
 
     const fetchGeoCurrencyAndRate = async () => {
-      let activeCurrency = initialCurrency;
-      let geoSuccess = false;
-      const currencySymbols: Record<string, string> = {
-        NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥",
-        INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
-      };
-
-      // Source 1: ipapi.co
       try {
-        const geoRes = await fetch("https://ipapi.co/json/");
-        if (geoRes.ok) {
-          const geoData = await geoRes.json();
-          if (geoData.currency && !geoData.error) {
-            activeCurrency = {
-              code: geoData.currency,
-              symbol: currencySymbols[geoData.currency] || geoData.currency
-            };
-            geoSuccess = true;
+        const res = await fetch("/api/rates");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setDetectedCurrency({
+              code: data.currency,
+              symbol: data.symbol
+            });
+            setExchangeRate(Number(data.rate));
           }
         }
       } catch (e) {
-        console.log("ipapi.co check failed:", e);
+        console.error("Failed to fetch exchange rates from local API:", e);
       }
-
-      // Source 2: ip-api.com fallback
-      if (!geoSuccess) {
-        try {
-          const geoRes2 = await fetch("http://ip-api.com/json/");
-          if (geoRes2.ok) {
-            const geoData2 = await geoRes2.json();
-            if (geoData2.status === "success" && geoData2.countryCode) {
-              const countryMap: Record<string, { code: string; symbol: string }> = {
-                NG: { code: "NGN", symbol: "₦" },
-                GB: { code: "GBP", symbol: "£" },
-                DE: { code: "EUR", symbol: "€" },
-                FR: { code: "EUR", symbol: "€" },
-                IT: { code: "EUR", symbol: "€" },
-                ES: { code: "EUR", symbol: "€" },
-                NL: { code: "EUR", symbol: "€" },
-                JP: { code: "JPY", symbol: "¥" },
-                IN: { code: "INR", symbol: "₹" },
-                AU: { code: "AUD", symbol: "A$" },
-                CA: { code: "CAD", symbol: "C$" },
-                US: { code: "USD", symbol: "$" },
-                ZA: { code: "ZAR", symbol: "R" },
-                KE: { code: "KES", symbol: "KSh" },
-                GH: { code: "GHS", symbol: "GH₵" }
-              };
-              const detected = countryMap[geoData2.countryCode];
-              if (detected) {
-                activeCurrency = detected;
-                geoSuccess = true;
-              }
-            }
-          }
-        } catch (e) {
-          console.log("ip-api.com check failed:", e);
-        }
-      }
-
-      try {
-        const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
-        if (rateRes.ok) {
-          const rateData = await rateRes.json();
-          if (rateData.rates && rateData.rates[activeCurrency.code]) {
-            setExchangeRate(Number(rateData.rates[activeCurrency.code]));
-            setDetectedCurrency(activeCurrency);
-            return;
-          }
-        }
-      } catch (e) {
-        console.error("Failed to fetch real-time exchange rates:", e);
-      }
-
-      // If rates fail to load or the rate is missing, fallback cleanly to USD/1.0
-      setDetectedCurrency({ code: "USD", symbol: "$" });
-      setExchangeRate(1.0);
     };
 
     fetchGeoCurrencyAndRate();
@@ -923,9 +862,9 @@ export default function UserDashboard() {
 
   const redirectTo = useCallback((url: string, message: string) => {
     setRedirectMessage(message);
+    setRedirectUrl(url);
     setLoading(false);
-    router.replace(url);
-  }, [router]);
+  }, []);
 
   const verifySession = useCallback(async () => {
     try {
@@ -2151,17 +2090,23 @@ export default function UserDashboard() {
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
         <AnimatedGradientBg variant="dashboard" />
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
+          <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </span>
           <div className="space-y-2">
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">{redirectMessage}</p>
-            <p className="text-xs leading-5 text-white/50">If this takes more than a moment, use the button below.</p>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-white">Session Notice</p>
+            <p className="text-xs leading-5 text-white/50">{redirectMessage}</p>
           </div>
           <button
             type="button"
-            onClick={() => router.replace(getDashboardUrl("USER", "/signup"))}
+            onClick={() => {
+              if (redirectUrl) {
+                window.location.href = redirectUrl;
+              }
+            }}
             className="subscript-primary-button w-full"
           >
-            Go to Sign Up
+            Proceed
           </button>
         </div>
       </div>

@@ -424,39 +424,20 @@ export default function DashboardPage() {
         setDetectedCurrency(initialCurrency);
 
         const fetchGeoCurrencyAndRate = async () => {
-            let activeCurrency = initialCurrency;
             try {
-                /* First attempt geographical IP currency lookup */
-                const geoRes = await fetch("https://ipapi.co/json/");
-                if (geoRes.ok) {
-                    const geoData = await geoRes.json();
-                    if (geoData.currency) {
-                        const currencySymbols: Record<string, string> = {
-                            NGN: "₦", EUR: "€", GBP: "£", USD: "$", JPY: "¥", 
-                            INR: "₹", AUD: "A$", CAD: "C$", ZAR: "R", KES: "KSh", GHS: "GH₵"
-                        };
-                        activeCurrency = {
-                            code: geoData.currency,
-                            symbol: currencySymbols[geoData.currency] || geoData.currency
-                        };
-                        setDetectedCurrency(activeCurrency);
+                const res = await fetch("/api/rates");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setDetectedCurrency({
+                            code: data.currency,
+                            symbol: data.symbol
+                        });
+                        setExchangeRate(Number(data.rate));
                     }
                 }
             } catch (e) {
-                console.log("Geo IP lookup failed, using browser locale fallback:", e);
-            }
-
-            /* Fetch actual exchange rate relative to USD */
-            try {
-                const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
-                if (rateRes.ok) {
-                    const rateData = await rateRes.json();
-                    if (rateData.rates && rateData.rates[activeCurrency.code]) {
-                        setExchangeRate(Number(rateData.rates[activeCurrency.code]));
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to fetch real-time exchange rates:", e);
+                console.error("Failed to fetch exchange rates from local API:", e);
             }
         };
 
@@ -477,6 +458,7 @@ export default function DashboardPage() {
     const [exchangeRate, setExchangeRate] = useState<number>(1.0);
 
     /* Confidentiality states */
+    const [sessionAlert, setSessionAlert] = useState<"role_missing" | "wrong_role" | "wallet_mismatch" | null>(null);
     const [shieldedEnabled, setShieldedEnabled] = useState(false);
     const [viewKey, setViewKey] = useState("");
     const [isViewKeyRegistered, setIsViewKeyRegistered] = useState(false);
@@ -1394,13 +1376,13 @@ export default function DashboardPage() {
                 const data = await res.json();
                 if (data.loggedIn && data.wallet) {
                     if (!data.role) {
-                        console.warn("Missing account role, redirecting to signup");
-                        window.location.href = getDashboardUrl("USER", "/signup");
+                        console.warn("Missing account role");
+                        setSessionAlert("role_missing");
                         return;
                     }
                     if (data.role === "USER") {
-                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/user");
+                        console.warn("Unauthorized role for merchant dashboard");
+                        setSessionAlert("wrong_role");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -1448,19 +1430,18 @@ export default function DashboardPage() {
                             email: data.email
                         });
                     } else if (data.wallet.toLowerCase() !== address.toLowerCase()) {
-                        console.warn("Session wallet mismatch, logging out");
-                        await fetch("/api/auth/logout", { method: "POST" });
-                        window.location.href = getDashboardUrl("USER", "/login");
+                        console.warn("Session wallet mismatch");
+                        setSessionAlert("wallet_mismatch");
                         return;
                     }
                     if (!data.role) {
-                        console.warn("Missing account role, redirecting to signup");
-                        window.location.href = getDashboardUrl("USER", "/signup");
+                        console.warn("Missing account role");
+                        setSessionAlert("role_missing");
                         return;
                     }
                     if (data.role === "USER") {
-                        console.warn("Unauthorized role for merchant dashboard, redirecting to user dashboard");
-                        window.location.href = getDashboardUrl("USER", "/user");
+                        console.warn("Unauthorized role for merchant dashboard");
+                        setSessionAlert("wrong_role");
                         return;
                     }
                     setSessionWallet(data.wallet.toLowerCase());
@@ -5667,6 +5648,46 @@ Please complete the following implementation tasks:
         <div data-mounted={isMounted} className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4]">
             <AnimatedGradientBg variant="dashboard" />
             <div className="relative z-10">
+            {/* Session Consent Alerts Overlay */}
+            {sessionAlert && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+                    <div className="liquid-glass border border-white/10 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-6 relative overflow-hidden bg-[#0d0d0d] shadow-2xl">
+                        <div className="space-y-2">
+                            <span className="inline-flex p-3 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 mb-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </span>
+                            <h2 className="text-lg font-extrabold uppercase tracking-wider text-white">
+                                {sessionAlert === "role_missing" && "Account Incomplete"}
+                                {sessionAlert === "wrong_role" && "Incorrect Dashboard"}
+                                {sessionAlert === "wallet_mismatch" && "Wallet Mismatch"}
+                            </h2>
+                            <p className="text-xs text-white/50 leading-relaxed font-sans font-normal">
+                                {sessionAlert === "role_missing" && "Your active profile is missing an assigned role. Please complete your registration."}
+                                {sessionAlert === "wrong_role" && "This is the Enterprise Merchant dashboard, but your session is registered as an Individual User."}
+                                {sessionAlert === "wallet_mismatch" && "Your connected wallet address does not match your active session. Please sign in again."}
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={async () => {
+                                if (sessionAlert === "role_missing") {
+                                    window.location.href = getDashboardUrl("USER", "/signup?completeRole=1");
+                                } else if (sessionAlert === "wrong_role") {
+                                    window.location.href = getDashboardUrl("USER", "/user");
+                                } else {
+                                    await fetch("/api/auth/logout", { method: "POST" });
+                                    window.location.href = getDashboardUrl("USER", "/login");
+                                }
+                            }}
+                            className="w-full py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+                        >
+                            {sessionAlert === "role_missing" && "Complete Account Setup"}
+                            {sessionAlert === "wrong_role" && "Switch to User Dashboard"}
+                            {sessionAlert === "wallet_mismatch" && "Return to Login"}
+                        </button>
+                    </div>
+                </div>
+            )}
             <DashboardHeader 
                 embeddedWallet={embeddedWallet}
                 onDisconnect={handleLogout}

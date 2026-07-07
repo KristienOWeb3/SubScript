@@ -7,6 +7,38 @@ export interface FxRatesResponse {
     rates: Record<string, number>;
 }
 
+export const FALLBACK_RATES: Record<string, number> = {
+    USD: 1.0,
+    EUR: 0.92,
+    GBP: 0.79,
+    JPY: 160.5,
+    NGN: 1600.0,
+    INR: 83.5,
+    CAD: 1.37,
+    AUD: 1.50,
+    ZAR: 18.2,
+    KES: 129.0,
+    GHS: 15.2,
+    CNY: 7.25,
+    BRL: 5.5
+};
+
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+    USD: "$",
+    EUR: "€",
+    GBP: "£",
+    JPY: "¥",
+    NGN: "₦",
+    INR: "₹",
+    CAD: "C$",
+    AUD: "A$",
+    ZAR: "R",
+    KES: "KSh",
+    GHS: "GH₵",
+    CNY: "¥",
+    BRL: "R$"
+};
+
 export async function fetchExchangeRate(targetCurrency: string): Promise<number> {
     const target = targetCurrency.toUpperCase();
     if (target === "USD") {
@@ -44,7 +76,7 @@ export async function fetchExchangeRate(targetCurrency: string): Promise<number>
         return rate;
     } catch (error) {
         console.error(`[FX Oracle Error] Failed to fetch rate for ${targetCurrency}:`, error);
-        /* Return 1.0 (USD) as fallback to prevent page crash */
-        return 1.0;
+        /* Return historical fallback rate if available, otherwise 1.0 */
+        return FALLBACK_RATES[target] || 1.0;
     }
 }
