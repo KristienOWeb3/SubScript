@@ -14,7 +14,9 @@ SubScript helps consumers pay without dollar-card friction and helps merchants a
 - [Sign Up](https://www.subscriptonarc.com/signup): User and merchant account creation.
 - [Login](https://www.subscriptonarc.com/login): Account access for SubScript users and merchants.
 - [Privacy Policy](https://www.subscriptonarc.com/privacy): Data handling and privacy practices.
-- [Terms of Service](https://www.subscriptonarc.com/terms): Legal terms for using SubScript.
+- [Terms of Service](https://www.subscriptonarc.com/terms): Legal terms for using SubScript, including public-beta/testnet, warranty, and liability terms.
+- [Refund & Cancellation Policy](https://www.subscriptonarc.com/refunds): Cancellation rights, billing-error handling, merchant-of-record scope, and testnet-beta refund terms.
+- [Fulfillment Policy](https://www.subscriptonarc.com/fulfillment): Digital delivery terms, Premium activation timing, merchant webhook fulfillment, and vault settlement.
 
 ## Developer Resources
 

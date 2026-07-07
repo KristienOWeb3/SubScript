@@ -17,7 +17,7 @@ const sections = [
     title: "2. Account and Wallet Information",
     body: [
       "If you sign up with an external wallet, we may store your wallet address, selected role, account settings, alias, linked email, and notification preferences.",
-      "If you sign up with email or Continue with Google, supported wallet providers such as Circle may provision a user-controlled embedded wallet. SubScript may store the resulting wallet address, social login email, Circle user references, and account role. We do not store seed phrases.",
+      "If you sign up with email onboarding, SubScript provisions an embedded wallet through Circle developer-controlled MPC wallet infrastructure; key material for these embedded wallets is managed by SubScript's custody provider so the platform can execute the payment actions you request. SubScript may store the resulting wallet address, login email, Circle wallet references, and account role. We do not store seed phrases.",
       "If you link an email to a wallet account, that email is used for notifications and account communication. Linking email to a wallet does not by itself mean SubScript can recover an external self-custody wallet.",
     ],
   },
@@ -100,7 +100,7 @@ export default function PrivacyPolicy() {
             <h1 className="flex items-center gap-3 text-4xl font-extrabold uppercase leading-none tracking-tight text-white sm:text-5xl">
               Privacy <span className="font-serif font-normal italic lowercase tracking-normal text-[#00d2b4]">policy</span>
             </h1>
-            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: July 4th, 2026</p>
+            <p className="mt-4 font-mono text-xs text-white/40">Last Updated: July 8th, 2026</p>
           </div>
 
           <div className="liquid-glass space-y-8 rounded-[32px] border border-white/5 p-8 text-sm leading-relaxed text-white/70 md:p-10">
@@ -121,9 +121,11 @@ export default function PrivacyPolicy() {
         <footer className="border-t border-white/5 bg-[#111111]/30 py-12">
           <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 px-6 text-[10px] text-white/40 sm:flex-row">
             <span>© 2026 SubScript Protocol. All rights reserved.</span>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap justify-center gap-4">
               <Link href="/terms" className="transition hover:text-white">Terms of Service</Link>
               <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
+              <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
+              <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
             </div>
           </div>
         </footer>

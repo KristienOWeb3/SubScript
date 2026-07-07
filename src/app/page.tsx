@@ -467,6 +467,8 @@ export default function Home() {
                                     links: [
                                         { label: "Terms of Service", href: "/terms" },
                                         { label: "Privacy Policy", href: "/privacy" },
+                                        { label: "Refund Policy", href: "/refunds" },
+                                        { label: "Fulfillment Policy", href: "/fulfillment" },
                                     ],
                                 },
                             ].map((col) => (

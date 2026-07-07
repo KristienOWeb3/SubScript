@@ -90,11 +90,12 @@ const structuredData = {
             operatingSystem: "Web",
             url: appUrl,
             description: siteDescription,
+            softwareVersion: "Public Beta (Arc Testnet)",
             offers: {
                 "@type": "Offer",
-                price: "1",
+                price: "0",
                 priceCurrency: "USD",
-                description: "Merchants pay a transparent 1% processing fee on successful USDC payments. Subscribers pay no hidden maintenance or card fees.",
+                description: "Free to sign up. Merchants pay a transparent 1% processing fee on successful USDC payments. Subscribers pay no hidden maintenance or card fees.",
             },
             featureList: [
                 "Continue with Google wallet onboarding",

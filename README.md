@@ -16,6 +16,12 @@ hidden fees, or chargebacks.
 ![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?logo=nextdotjs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Settlement](https://img.shields.io/badge/settlement-USDC_on_Arc-2775CA)
+![Status](https://img.shields.io/badge/status-Public_Beta_on_Arc_Testnet-00d2b4)
+
+> **Public beta:** SubScript currently runs on the Arc **testnet** — all payments settle in
+> testnet USDC (no monetary value) while the protocol is hardened for mainnet.
+> See the [Terms](https://subscriptonarc.com/terms), [Refund Policy](https://subscriptonarc.com/refunds),
+> and [Fulfillment Policy](https://subscriptonarc.com/fulfillment).
 
 </div>
 
@@ -48,7 +54,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 - Fee‑free, set‑and‑forget USDC subscriptions — no card declines or maintenance charges
 - One‑tap checkout and peer‑to‑peer transfers from an in‑app wallet
 - Built‑in messaging with payment requests, receipts, and status — right in the thread
-- Email-verification onboarding with an in-app wallet (supports both legacy EOA and Circle developer-controlled MPC wallets, flag-gated by `WALLET_PROVIDER=circle`); Google sign-in is paused pending server-side identity verification
+- Email or Google sign-in provisions an in-app wallet backed by Circle developer-controlled MPC custody (existing legacy EOA wallets keep working); external self-custody wallets are supported via SIWE
 
 **For merchants**
 - Hosted checkout, payment links, and recurring billing

@@ -29,6 +29,8 @@ const publicRoutes = [
   "/docs",
   "/login",
   "/privacy",
+  "/refunds",
+  "/fulfillment",
   "/protocol",
   "/signin",
   "/signup",

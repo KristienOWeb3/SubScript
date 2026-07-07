@@ -20,7 +20,7 @@ The central command dashboard for merchants integrating the SubScript protocol.
 *   **Customization Panel:** Change plan name, plan description, price (USDC), and checkout layout parameters. The integration code updates dynamically.
 
 ### 4. Webhooks
-*   **Chronological Event Stream:** Inspect webhook payloads (e.g. `subscription.session.created`, `subscription.payment.failed`, `subscription.payment.succeeded`).
+*   **Live Webhook Deliveries:** Inspect webhook payloads (e.g. `subscription.session.created`, `subscription.payment.failed`, `subscription.payment.succeeded`).
 *   **Replay System:** Re-send historical webhooks directly from the developer panel.
 
 ### 5. Fiat Off-Ramp Settlement

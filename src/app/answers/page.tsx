@@ -42,6 +42,11 @@ const answerFacts = [
       "Unified Payment Authorization is SubScript's shared lifecycle for one-time payments, subscriptions, usage charges, invoice-like links, and AI-native payments: create an intent, approve a bounded USDC action, record an Arc memo receipt, and fulfill with a signed webhook.",
   },
   {
+    question: "Is SubScript live in production?",
+    answer:
+      "SubScript is in public beta on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover. Integrations built against the beta API carry over to mainnet with a configuration change.",
+  },
+  {
     question: "Which protocol claims are deployment-scoped?",
     answer:
       "Encrypted private-key export, fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, smart dunning schedules, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims should remain deployment-scoped until production configuration proves them live.",
