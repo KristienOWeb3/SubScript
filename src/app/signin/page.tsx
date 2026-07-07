@@ -55,17 +55,10 @@ function SignInContent() {
         const res = await fetch("/api/auth/session");
         if (res.ok) {
           const data = await res.json();
-          if (data.loggedIn) {
-            if (data.role) {
+          if (data.loggedIn && data.role) {
               window.location.href = safeNext && data.role === "USER"
                 ? safeNext
                 : getDashboardUrl(data.role as any, "/dashboard");
-            } else {
-              const params = new URLSearchParams();
-              params.set("completeRole", "1");
-              if (safeNext) params.set("next", safeNext);
-              window.location.href = `/signup?${params.toString()}`;
-            }
           }
         }
       } catch (err) {
@@ -115,11 +108,7 @@ function SignInContent() {
         setOtpError("No completed account exists for this email yet. Use Sign Up below to create one.");
         return;
       }
-      if (checkData.exists && !checkData.onboardingComplete) {
-        // Account exists but never chose a role — skip OTP and go straight to role picker
-        router.push(`/signup?completeRole=1&email=${encodeURIComponent(email)}`);
-        return;
-      }
+
       if (checkData.authMethod === "wallet") {
         setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; email recovery is not available for linked notification emails.");
         return;
@@ -210,11 +199,7 @@ function SignInContent() {
         setWalletMissingAccount(true);
         return;
       }
-      if (checkData.exists && !checkData.onboardingComplete) {
-        // Wallet registered but never chose a role — skip SIWE and go to role picker
-        router.push("/signup?completeRole=1");
-        return;
-      }
+
 
       // Verify wallet ownership via SIWE
       const nonceRes = await fetch("/api/auth/nonce");
