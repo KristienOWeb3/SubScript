@@ -60,8 +60,8 @@ export default function UserTransactionsPage() {
   const [filter, setFilter] = useState<"all" | "recurring" | "one-time">("all");
 
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const [detectedCurrency, setDetectedCurrency] = useState({ code: "NGN", symbol: "₦" });
-  const [exchangeRate, setExchangeRate] = useState(1500); // Fallback rate
+  const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
+  const [exchangeRate, setExchangeRate] = useState(1.0); // Fallback rate
 
   // Sync balanceVisible with localStorage across tabs
   useEffect(() => {

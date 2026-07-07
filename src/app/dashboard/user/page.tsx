@@ -318,8 +318,8 @@ export default function UserDashboard() {
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
-  const [detectedCurrency, setDetectedCurrency] = useState({ code: "NGN", symbol: "₦" });
-  const [exchangeRate, setExchangeRate] = useState(1600);
+  const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
+  const [exchangeRate, setExchangeRate] = useState(1.0);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [threadPlans, setThreadPlans] = useState<MerchantPlan[]>([]);
