@@ -31,9 +31,10 @@ function LoginChoiceContent() {
                 : getDashboardUrl(data.role as any, "/dashboard");
               return;
             } else {
-              window.location.href = safeNext
-                ? `/signup?next=${encodeURIComponent(safeNext)}`
-                : "/signup";
+              const params = new URLSearchParams();
+              params.set("completeRole", "1");
+              if (safeNext) params.set("next", safeNext);
+              window.location.href = `/signup?${params.toString()}`;
               return;
             }
           }

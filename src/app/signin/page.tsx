@@ -61,9 +61,10 @@ function SignInContent() {
                 ? safeNext
                 : getDashboardUrl(data.role as any, "/dashboard");
             } else {
-              window.location.href = safeNext
-                ? `/signup?next=${encodeURIComponent(safeNext)}`
-                : "/signup";
+              const params = new URLSearchParams();
+              params.set("completeRole", "1");
+              if (safeNext) params.set("next", safeNext);
+              window.location.href = `/signup?${params.toString()}`;
             }
           }
         }
@@ -84,10 +85,11 @@ function SignInContent() {
     if (data.role) {
       window.location.href = getDashboardUrl(data.role as any, "/dashboard");
     } else {
-      // If signed in but somehow role is missing, go to onboarding (signup role selector)
-      window.location.href = safeNext
-        ? `/signup?next=${encodeURIComponent(safeNext)}`
-        : getDashboardUrl("USER", "/signup");
+      // Authenticated but no role — go directly to role selection step
+      const params = new URLSearchParams();
+      params.set("completeRole", "1");
+      if (safeNext) params.set("next", safeNext);
+      window.location.href = `/signup?${params.toString()}`;
     }
   }, [safeNext]);
 
@@ -111,6 +113,11 @@ function SignInContent() {
       const checkData = await checkRes.json();
       if (!checkData.exists) {
         setOtpError("No completed account exists for this email yet. Use Sign Up below to create one.");
+        return;
+      }
+      if (checkData.exists && !checkData.onboardingComplete) {
+        // Account exists but never chose a role — skip OTP and go straight to role picker
+        router.push(`/signup?completeRole=1&email=${encodeURIComponent(email)}`);
         return;
       }
       if (checkData.authMethod === "wallet") {
@@ -201,6 +208,11 @@ function SignInContent() {
       const checkData = await checkRes.json();
       if (!checkData.exists) {
         setWalletMissingAccount(true);
+        return;
+      }
+      if (checkData.exists && !checkData.onboardingComplete) {
+        // Wallet registered but never chose a role — skip SIWE and go to role picker
+        router.push("/signup?completeRole=1");
         return;
       }
 

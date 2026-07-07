@@ -64,6 +64,7 @@ export default function SignupPage() {
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
+  const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
 
   /* CAPTCHA (Cloudflare Turnstile) states */
   const [captchaToken, setCaptchaToken] = useState("");
@@ -153,6 +154,14 @@ export default function SignupPage() {
     const refParam = params.get("ref") || params.get("referral");
     if (refParam) {
       localStorage.setItem("subscript_referrer", refParam.trim());
+    }
+
+    /* If redirected here from sign-in with completeRole=1, the user already
+       authenticated but is missing a role. Jump straight to the role picker
+       instead of showing the full signup form. */
+    if (params.get("completeRole") === "1") {
+      setShowRoleSelector(true);
+      setIsCompleteRoleFlow(true);
     }
 
     if (initialEmail) {
@@ -416,9 +425,14 @@ export default function SignupPage() {
         <div className="relative z-10 w-full max-w-md">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
-              SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">onboarding</span>
+              {isCompleteRoleFlow
+                ? <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">almost there</span></>
+                : <>SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">onboarding</span></>
+              }
             </h1>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">
+              {isCompleteRoleFlow ? "One last step to complete your account" : "Decentralized Payment Protocol"}
+            </p>
           </div>
 
           <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
