@@ -54,7 +54,7 @@ export default function MerchantApplicationForm() {
     return (
         <section id="apply" className="max-w-7xl mx-auto px-6 sm:px-12 py-16">
             <Reveal>
-                <div className="liquid-glass border border-white/5 bg-black/30 rounded-[2rem] p-8 sm:p-12 grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+                <div className="liquid-glass border border-white/5 bg-black/30 rounded-[2rem] p-6 sm:p-12 grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
                     <div>
                         <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">For businesses</span>
                         <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white">Apply to become a SubScript Merchant</h2>
@@ -64,7 +64,7 @@ export default function MerchantApplicationForm() {
                     </div>
 
                     {status === "success" ? (
-                        <div className="rounded-3xl border border-[#00d2b4]/30 bg-[#00d2b4]/[0.06] p-8 text-center">
+                        <div className="rounded-3xl border border-[#00d2b4]/30 bg-[#00d2b4]/[0.06] p-6 sm:p-8 text-center">
                             <ShieldCheck className="w-8 h-8 text-[#00d2b4] mx-auto mb-3" />
                             <h3 className="text-sm font-semibold text-white">Spot secured on priority list</h3>
                             <p className="mt-2 text-xs text-white/55 leading-relaxed">{message}</p>

@@ -245,7 +245,7 @@ export default function Home() {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                         {featureCardsLarge.map(({ icon: Icon, title, text }, i) => (
                             <Reveal key={title} delay={i * 0.08}>
-                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-8 h-full hover:border-[#00d2b4]/30 transition-colors">
+                                <div className="liquid-glass border border-white/5 bg-black/30 rounded-3xl p-6 sm:p-8 h-full hover:border-[#00d2b4]/30 transition-colors">
                                     <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00d2b4]/10 mb-5">
                                         <Icon className="w-5 h-5 text-[#00d2b4]" />
                                     </span>

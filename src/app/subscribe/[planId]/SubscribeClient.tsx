@@ -151,7 +151,7 @@ export default function SubscribeClient({
     const isEnterpriseViewer = session?.role === "ENTERPRISE";
 
     return (
-        <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-6 relative font-sans">
+        <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <AnimatedGradientBg />
 
             <div className="relative z-10 w-full max-w-md">
@@ -163,12 +163,12 @@ export default function SubscribeClient({
                 </div>
 
                 {isLoading ? (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center py-20">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center justify-center py-20">
                         <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
                         <p className="text-xs text-white/40 uppercase tracking-wider mt-4">Loading plan details...</p>
                     </div>
                 ) : loadError || !plan ? (
-                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-8 shadow-2xl bg-red-500/[0.02] flex flex-col items-center justify-center text-center gap-6 py-12">
+                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-red-500/[0.02] flex flex-col items-center justify-center text-center gap-6 py-12">
                         <div className="p-4 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400">
                             <AlertTriangle className="w-10 h-10" />
                         </div>
@@ -180,7 +180,7 @@ export default function SubscribeClient({
                         </div>
                     </div>
                 ) : (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
 
                         {/* Merchant identity */}
                         <div className="flex items-center gap-3">

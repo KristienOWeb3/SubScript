@@ -215,8 +215,8 @@ function PopupContent() {
             : "Verifying your Google account with Circle...";
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-[#121212] p-6 text-white font-sans">
-            <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-8 text-center shadow-2xl">
+        <div className="flex min-h-screen items-center justify-center bg-[#121212] p-4 sm:p-6 text-white font-sans">
+            <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-6 sm:p-8 text-center shadow-2xl">
                 {step === "error" ? null : (
                     <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-[#00d2b4]" />
                 )}

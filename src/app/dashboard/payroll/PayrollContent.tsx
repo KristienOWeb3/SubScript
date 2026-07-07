@@ -823,7 +823,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                     {/* Check if connected */}
                     {!isConnected ? (
                         <div className="space-y-8">
-                            <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                                 <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                     <AlertTriangle className="w-10 h-10" />
                                 </div>
@@ -893,7 +893,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                                 
                                 {/* Session check: Verify wallet ownership */}
                                 {isConnected && address && !sessionWallet && !embeddedWallet ? (
-                                    <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                                    <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                                         <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                                         <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                                         <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -1187,7 +1187,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
                                             {/* Error display */}
                                             {!pageIsLoading && loadError && (
-                                                <div className="liquid-glass border border-red-500/10 rounded-3xl p-8 text-center max-w-md mx-auto space-y-5 shadow-2xl bg-black/40">
+                                                <div className="liquid-glass border border-red-500/10 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-5 shadow-2xl bg-black/40">
                                                     <AlertTriangle size={36} className="text-red-400 mx-auto" />
                                                     <div className="space-y-1">
                                                         <h3 className="text-sm font-bold text-white uppercase tracking-wider">Failed to Load Campaigns</h3>

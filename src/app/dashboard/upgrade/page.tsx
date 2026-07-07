@@ -366,7 +366,7 @@ export default function UpgradePage() {
                     </div>
 
                     {!isConnected ? (
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                 <AlertTriangle className="w-10 h-10" />
                             </div>
@@ -392,7 +392,7 @@ export default function UpgradePage() {
                     ) : isPremium ? (
                         /* Active Premium Status Panel */
                         <div className="max-w-2xl mx-auto space-y-6">
-                            <div className="liquid-glass border border-[#d4a853]/30 rounded-3xl p-8 shadow-2xl relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent">
+                            <div className="liquid-glass border border-[#d4a853]/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
 
                                 <div className="flex items-center gap-3 mb-6">
@@ -468,7 +468,7 @@ export default function UpgradePage() {
                     ) : (
                         /* Pricing Card UI for Free Merchants */
                         <div className="max-w-md mx-auto space-y-6">
-                            <div className="liquid-glass border-2 border-[#d4a853]/40 rounded-[32px] p-8 shadow-[0_8px_30px_rgb(212,168,83,0.1)] relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                            <div className="liquid-glass border-2 border-[#d4a853]/40 rounded-[32px] p-6 sm:p-8 shadow-[0_8px_30px_rgb(212,168,83,0.1)] relative overflow-hidden bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="absolute top-0 right-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#d4a853]/10 via-transparent to-transparent pointer-events-none" />
 
                                 <div className="text-center mb-6">
