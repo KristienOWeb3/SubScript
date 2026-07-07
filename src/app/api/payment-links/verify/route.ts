@@ -1,50 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { decryptPrivateKey } from "@/lib/crypto";
 import { ethers } from "ethers";
-
-async function sweepEphemeralWallet(receiverPrivateKeyEncrypted: string, merchantAddress: string) {
-    try {
-        const privateKey = decryptPrivateKey(receiverPrivateKeyEncrypted);
-        const rpcUrl = process.env.ARC_RPC_PRIMARY || "https://rpc.testnet.arc.network";
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
-        const wallet = new ethers.Wallet(privateKey, provider);
-
-        const balance = await provider.getBalance(wallet.address);
-        if (balance === BigInt(0)) {
-            console.log(`[sweep] No balance to sweep from ephemeral wallet ${wallet.address}`);
-            return null;
-        }
-
-        const feeData = await provider.getFeeData();
-        const gasPrice = feeData.gasPrice || ethers.parseUnits("1", "gwei");
-        const gasLimit = BigInt(21000); // Standard native transfer gas limit
-        const fee = gasPrice * gasLimit;
-
-        if (balance <= fee) {
-            console.warn(`[sweep] Ephemeral wallet balance (${balance.toString()}) is too low to pay gas fee (${fee.toString()})`);
-            return null;
-        }
-
-        const sweepAmount = balance - fee;
-        console.log(`[sweep] Sweeping ${sweepAmount.toString()} USDC (native) from ${wallet.address} to merchant ${merchantAddress}`);
-
-        const tx = await wallet.sendTransaction({
-            to: merchantAddress,
-            value: sweepAmount,
-            gasLimit,
-            gasPrice
-        });
-
-        console.log(`[sweep] Sweep transaction submitted: ${tx.hash}`);
-        await tx.wait();
-        console.log(`[sweep] Sweep transaction confirmed: ${tx.hash}`);
-        return tx.hash;
-    } catch (err: any) {
-        console.error("[sweep] Sweep execution failed:", err);
-        return null;
-    }
-}
 
 import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
@@ -551,16 +507,8 @@ export async function POST(request: Request) {
                                 });
                             }
 
-                            /* Sweep funds if using ephemeral wallet */
-                            let sweepTxHash: string | null = null;
-                            if (!settlesDirectlyToUser && paymentLink.receiver_address && paymentLink.receiver_private_key) {
-                                console.log(`[verify] Running sweep for ephemeral wallet: ${paymentLink.receiver_address}`);
-                                sweepTxHash = await sweepEphemeralWallet(
-                                    paymentLink.receiver_private_key,
-                                    paymentLink.merchant_address
-                                );
-                            }
-
+                            /* Sweep funds if using ephemeral wallet (legacy/unused EOA receiver path retired) */
+                            const sweepTxHash: string | null = null;
                             /* Auto-create SubScript account if it does not exist (flowchart requirement) */
                             try {
                                 const { data: existingRole, error: roleQueryErr } = await supabase

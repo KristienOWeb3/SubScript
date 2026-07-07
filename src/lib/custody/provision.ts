@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { ethers } from "ethers";
-import { encryptPrivateKey } from "@/lib/crypto";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
 import { isCircleCustodyConfigured, createEmbeddedCircleWallet } from "@/lib/circle/devWallets";
 import { isCircleProviderSelected } from "@/lib/custody/walletProvider";
@@ -12,8 +10,7 @@ import { isCircleProviderSelected } from "@/lib/custody/walletProvider";
  * they keep resolving by whether they hold an encrypted key or a circle_wallet_id (see custody seam).
  *
  * Flag-gated: Circle only when WALLET_PROVIDER=circle AND Circle is fully configured (api key,
- * entity secret, wallet set). Otherwise legacy (raw key encrypted with WALLET_ENCRYPTION_KEY). So
- * prod is unchanged until the flag is set on a deployment with the Circle env in place.
+ * entity secret, wallet set). Otherwise, legacy EOA is no longer supported and throwing an error.
  */
 
 export interface ProvisionedWallet {
@@ -55,13 +52,9 @@ async function durableIdempotencyKey(refId: string): Promise<string> {
  * Provision a new embedded wallet.
  * @param refId  stable, non-PII application id for the user (e.g. a hash of their email), attached
  *               to the Circle wallet for reconciliation.
- * @param allowCircle  pass false to force the legacy path (e.g. offline mode, where Circle's network
- *               API is unavailable and only an encrypted key can be persisted).
  */
-export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle?: boolean }): Promise<ProvisionedWallet> {
-    const allowCircle = opts.allowCircle ?? true;
-
-    if (allowCircle && shouldProvisionCircleWallet()) {
+export async function provisionEmbeddedWallet(opts: { refId: string }): Promise<ProvisionedWallet> {
+    if (shouldProvisionCircleWallet()) {
         const wallet = await createEmbeddedCircleWallet({
             refId: opts.refId,
             idempotencyKey: await durableIdempotencyKey(opts.refId),
@@ -79,23 +72,7 @@ export async function provisionEmbeddedWallet(opts: { refId: string; allowCircle
         return { address: wallet.address, encryptedPrivateKey: null, circleWalletId: wallet.walletId };
     }
 
-    /* Fail closed: if the operator selected Circle custody (WALLET_PROVIDER=circle) but Circle is
-       not fully configured, do NOT silently fall back to generating a raw private key — that
-       reintroduces the single-WALLET_ENCRYPTION_KEY crown-jewel risk the cutover exists to remove.
-       Offline mode (allowCircle=false) is the one sanctioned legacy path — Circle needs the network,
-       and only an encrypted key can be persisted offline — so it is exempt. */
-    if (allowCircle && isCircleProviderSelected()) {
-        throw new Error(
-            "WALLET_PROVIDER=circle but Circle custody is not fully configured " +
-            "(need CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, and CIRCLE_ARC_WALLET_SET_ID). " +
-            "Refusing to fall back to legacy raw-key generation."
-        );
-    }
-
-    const legacy = ethers.Wallet.createRandom();
-    return {
-        address: legacy.address.toLowerCase(),
-        encryptedPrivateKey: encryptPrivateKey(legacy.privateKey),
-        circleWalletId: null,
-    };
+    throw new Error(
+        "Circle custody is not configured, and legacy raw-key generation is permanently disabled."
+    );
 }

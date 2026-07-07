@@ -135,68 +135,47 @@ export async function POST(request: Request) {
         let walletAddress = "";
         let walletRecord = null;
 
-        if (!isOfflineMode) {
-            try {
-                const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
-                if (isWalletOnlyEmailBinding(emailBinding)) {
-                    return NextResponse.json({
-                        error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
-                    }, { status: 409 });
-                }
-                if (emailBinding) {
-                    walletRecord = { wallet_address: emailBinding.walletAddress };
-                }
-            } catch (err: any) {
-                if (isConnectionError(err)) {
-                    isOfflineMode = true;
-                } else {
-                    return NextResponse.json({ error: err.message || "Failed to check wallet." }, { status: 500 });
-                }
-            }
+        if (isOfflineMode) {
+            return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
         }
 
-        if (isOfflineMode) {
-            walletRecord = getOfflineUserEmbeddedWallet(emailVal);
+        try {
+            const emailBinding = await withPgClient((client) => findAccountEmailBinding(client, emailVal));
+            if (isWalletOnlyEmailBinding(emailBinding)) {
+                return NextResponse.json({
+                    error: "This email is linked to a wallet-only SubScript account. Connect that wallet to sign in."
+                }, { status: 409 });
+            }
+            if (emailBinding) {
+                walletRecord = { wallet_address: emailBinding.walletAddress };
+            }
+        } catch (err: any) {
+            return NextResponse.json({ error: err.message || "Failed to check wallet." }, { status: 500 });
         }
 
         if (walletRecord) {
             walletAddress = walletRecord.wallet_address;
         } else {
-            /* Circle MPC when WALLET_PROVIDER=circle (else legacy). Offline mode forces legacy —
-               Circle needs the network and only an encrypted key can be persisted offline. */
             const refId = crypto.createHash("sha256").update(emailVal).digest("hex");
-            const provisioned = await provisionEmbeddedWallet({ refId, allowCircle: !isOfflineMode });
+            const provisioned = await provisionEmbeddedWallet({ refId });
             walletAddress = provisioned.address;
 
-            if (isOfflineMode) {
-                saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey!);
-            } else {
-                try {
-                    await withPgClient(async (client) => {
-                        await client.query(
-                            `insert into user_embedded_wallets (email, wallet_address, encrypted_private_key, circle_wallet_id, provider, updated_at)
-                             values ($1, $2, $3, $4, 'email_otp', now())
-                             on conflict (email) do update set
-                                wallet_address = excluded.wallet_address,
-                                encrypted_private_key = excluded.encrypted_private_key,
-                                circle_wallet_id = excluded.circle_wallet_id,
-                                provider = excluded.provider,
-                                updated_at = now()`,
-                            [emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey, provisioned.circleWalletId]
-                        );
-                    });
-                } catch (err: any) {
-                    if (isConnectionError(err) && provisioned.encryptedPrivateKey) {
-                        console.warn("⚠️ Database is offline. Storing legacy embedded wallet in offlineDb.");
-                        saveOfflineUserEmbeddedWallet(emailVal, walletAddress.toLowerCase(), provisioned.encryptedPrivateKey);
-                    } else if (isConnectionError(err)) {
-                        /* A Circle wallet can't be persisted offline (no encrypted key to store). */
-                        return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
-                    } else {
-                        console.error("Failed to store generated OTP embedded wallet:", err);
-                        return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
-                    }
-                }
+            try {
+                await withPgClient(async (client) => {
+                    await client.query(
+                        `insert into user_embedded_wallets (email, wallet_address, circle_wallet_id, provider, updated_at)
+                         values ($1, $2, $3, 'email_otp', now())
+                         on conflict (email) do update set
+                            wallet_address = excluded.wallet_address,
+                            circle_wallet_id = excluded.circle_wallet_id,
+                            provider = excluded.provider,
+                            updated_at = now()`,
+                        [emailVal, walletAddress.toLowerCase(), provisioned.circleWalletId]
+                    );
+                });
+            } catch (err: any) {
+                console.error("Failed to store generated OTP embedded wallet:", err);
+                return NextResponse.json({ error: "Failed to generate embedded wallet." }, { status: 500 });
             }
         }
 

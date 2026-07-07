@@ -57,10 +57,6 @@ export async function POST(request: Request) {
         const usdc = new ethers.Contract(USDC_NATIVE_GAS_ADDRESS, ERC20_ABI, provider);
         const currentAllowance: bigint = BigInt(await usdc.allowance(merchant, PERMIT2_ADDRESS));
         if (currentAllowance < PERMIT2_MAX_AMOUNT) {
-            if (custody.kind === "legacy") {
-                /* Circle SCA wallets get gas from Circle's Gas Station; only legacy EOAs need a top-up. */
-                await ensureGasSponsored(merchant).catch(() => { /* best-effort gas top-up */ });
-            }
             await custody.executeContract({
                 contractAddress: USDC_NATIVE_GAS_ADDRESS,
                 abi: ERC20_ABI,

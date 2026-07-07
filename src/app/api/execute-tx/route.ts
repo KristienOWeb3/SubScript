@@ -333,15 +333,8 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* Custody routing: legacy wallets sign with the decrypted key, Circle wallets
-               execute through Circle's contract-execution API (Gas Station pays their gas). */
+            /* Custody routing: execute through Circle's contract-execution API (Gas Station pays gas). */
             const custody = await getWalletCustody(wallet.toLowerCase());
-
-            /* SubScript-funded gas for user merchant-directed actions on legacy EOAs. Fail closed
-               so a checkout never consumes the user's advertised payment principal as gas. */
-            if (accountRole === "USER" && custody.kind === "legacy") {
-                await requireGasSponsored(wallet.toLowerCase());
-            }
 
             const { txHash } = await custody.executeContract({
                 contractAddress,

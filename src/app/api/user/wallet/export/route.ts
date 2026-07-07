@@ -2,13 +2,11 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
-import { getWalletCustody } from "@/lib/custody";
 import { sanitizeInput } from "@/utils/security";
 
 type EmbeddedWalletExportRecord = {
     email: string | null;
     provider: string | null;
-    encrypted_private_key: string | null;
 };
 
 function otpSecret() {
@@ -95,7 +93,7 @@ export async function POST(request: Request) {
 
         const normalizedWallet = wallet.toLowerCase();
         const record = await pgMaybeOne<EmbeddedWalletExportRecord>(
-            `select email, provider, encrypted_private_key
+            `select email, provider
                from user_embedded_wallets
               where wallet_address = $1
               limit 1`,
@@ -108,58 +106,10 @@ export async function POST(request: Request) {
             }, { status: 404 });
         }
 
-        if (!record.encrypted_private_key) {
-            return NextResponse.json({
-                error: "This embedded wallet is managed by Circle/Google and does not expose a private key through SubScript.",
-                provider: record.provider || null,
-            }, { status: 409 });
-        }
-
-        if (!record.email) {
-            return NextResponse.json({
-                error: "This wallet has no verified email on file, so key export cannot be confirmed. Contact support.",
-            }, { status: 409 });
-        }
-
-        const otpCheck = await verifyExportOtp(record.email, otpCode);
-        if (!otpCheck.ok) {
-            return otpCheck.response;
-        }
-
-        const custody = await getWalletCustody(normalizedWallet);
-        if (!custody.canExportRawKey) {
-            return NextResponse.json({
-                error: "This wallet is secured with multi-party computation and its private key cannot be exported.",
-            }, { status: 400 });
-        }
-        const privateKey = await custody.getRawPrivateKey();
-
-        // Update backupCompletedAt timestamp
-        await withPgClient((client) =>
-            client.query(
-                `update user_embedded_wallets
-                    set backup_completed_at = now()
-                  where wallet_address = $1`,
-                [normalizedWallet]
-            )
-        ).catch((dbErr) => console.error("Failed to update wallet backup timestamp:", dbErr));
-
-        /* Best-effort audit trail for this sensitive disclosure. */
-        await withPgClient((client) =>
-            client.query(
-                `insert into audit_events (actor, action, resource_type, resource_id, metadata)
-                 values ($1, 'WALLET_KEY_EXPORTED', 'WALLET', $1, $2::jsonb)`,
-                [normalizedWallet, JSON.stringify({ provider: record.provider })]
-            )
-        ).catch((auditErr) => console.error("Failed to log wallet export audit event:", auditErr));
-
         return NextResponse.json({
-            success: true,
-            wallet: normalizedWallet,
-            email: record.email,
-            provider: record.provider,
-            privateKey,
-        }, { status: 200 });
+            error: "This embedded wallet is secured with multi-party computation and its private key cannot be exported.",
+            provider: record.provider || null,
+        }, { status: 409 });
     } catch (error: any) {
         console.error("Wallet export failed:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
