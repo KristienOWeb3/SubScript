@@ -1450,7 +1450,7 @@ export default function DashboardPage() {
                     } else if (data.wallet.toLowerCase() !== address.toLowerCase()) {
                         console.warn("Session wallet mismatch, logging out");
                         await fetch("/api/auth/logout", { method: "POST" });
-                        window.location.href = "/signup";
+                        window.location.href = getDashboardUrl("USER", "/login");
                         return;
                     }
                     if (!data.role) {

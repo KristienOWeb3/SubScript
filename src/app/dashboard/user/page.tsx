@@ -933,7 +933,7 @@ export default function UserDashboard() {
       const res = await fetch("/api/auth/session");
       const data = await res.json();
       if (!data.loggedIn) {
-        redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
+        redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
         return;
       }
 
@@ -951,7 +951,7 @@ export default function UserDashboard() {
       if (!data.isEmbedded && accountAddress && data.wallet.toLowerCase() !== accountAddress.toLowerCase()) {
         console.warn("Session wallet mismatch, logging out");
         await fetch("/api/auth/logout", { method: "POST" });
-        redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
+        redirectTo(getDashboardUrl("USER", "/login"), "Signing you out...");
         return;
       }
 
@@ -961,7 +961,7 @@ export default function UserDashboard() {
       await Promise.all([loadSubscriptions(), loadDms(), loadUserSettings(), loadVaults()]);
     } catch (e) {
       console.error("Session verification error:", e);
-      redirectTo(getDashboardUrl("USER", "/signup"), "Redirecting to sign up...");
+      redirectTo(getDashboardUrl("USER", "/login"), "Redirecting to login...");
     } finally {
       setLoading(false);
     }
