@@ -429,7 +429,7 @@ export default function UserDashboard() {
       } catch (e) {
         console.error("Failed to detect currency from locale/timezone fallback:", e);
       }
-      return { code: "NGN", symbol: "₦" };
+      return { code: "USD", symbol: "$" };
     };
 
     const initialCurrency = detectLocalCurrency();
@@ -453,7 +453,6 @@ export default function UserDashboard() {
               code: geoData.currency,
               symbol: currencySymbols[geoData.currency] || geoData.currency
             };
-            setDetectedCurrency(activeCurrency);
             geoSuccess = true;
           }
         }
@@ -488,7 +487,6 @@ export default function UserDashboard() {
               const detected = countryMap[geoData2.countryCode];
               if (detected) {
                 activeCurrency = detected;
-                setDetectedCurrency(activeCurrency);
                 geoSuccess = true;
               }
             }
@@ -504,11 +502,17 @@ export default function UserDashboard() {
           const rateData = await rateRes.json();
           if (rateData.rates && rateData.rates[activeCurrency.code]) {
             setExchangeRate(Number(rateData.rates[activeCurrency.code]));
+            setDetectedCurrency(activeCurrency);
+            return;
           }
         }
       } catch (e) {
         console.error("Failed to fetch real-time exchange rates:", e);
       }
+
+      // If rates fail to load or the rate is missing, fallback cleanly to USD/1.0
+      setDetectedCurrency({ code: "USD", symbol: "$" });
+      setExchangeRate(1.0);
     };
 
     fetchGeoCurrencyAndRate();

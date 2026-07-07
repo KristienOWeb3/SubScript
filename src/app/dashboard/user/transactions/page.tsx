@@ -124,7 +124,7 @@ export default function UserTransactionsPage() {
       } catch (e) {
         console.error("Failed to detect currency from locale/timezone fallback:", e);
       }
-      return { code: "NGN", symbol: "₦" };
+      return { code: "USD", symbol: "$" };
     };
 
     const initialCurrency = detectLocalCurrency();
@@ -145,7 +145,6 @@ export default function UserTransactionsPage() {
               code: geoData.currency,
               symbol: currencySymbols[geoData.currency] || geoData.currency
             };
-            setDetectedCurrency(activeCurrency);
           }
         }
       } catch (e) {
@@ -158,11 +157,17 @@ export default function UserTransactionsPage() {
           const rateData = await rateRes.json();
           if (rateData.rates && rateData.rates[activeCurrency.code]) {
             setExchangeRate(Number(rateData.rates[activeCurrency.code]));
+            setDetectedCurrency(activeCurrency);
+            return;
           }
         }
       } catch (e) {
         console.error("Failed to fetch real-time exchange rates:", e);
       }
+
+      // If rates fail to load or the rate is missing, fallback cleanly to USD/1.0
+      setDetectedCurrency({ code: "USD", symbol: "$" });
+      setExchangeRate(1.0);
     };
 
     fetchGeoCurrencyAndRate();
