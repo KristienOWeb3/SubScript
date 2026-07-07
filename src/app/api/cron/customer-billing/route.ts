@@ -162,10 +162,23 @@ export async function POST(request: Request) {
                     continue;
                 }
 
-                /* Next unexecuted sequence. */
-                let sequenceId = 1;
-                while (await standardContract.isSequenceExecuted(subId, sequenceId)) {
-                    sequenceId++;
+                /* Bill only the LATEST due sequence — never back-charge lapsed periods. Walking up
+                   from the lowest unexecuted sequence would re-charge every period missed during an
+                   outage or funding gap. due(seq) = nextPayment + (seq - 1) * period, so the newest
+                   due sequence is floor((now - nextPayment) / period) + 1; earlier gaps stay
+                   unexecuted. */
+                const periodOnChain: bigint = BigInt(onChain[3]);
+                const nextPaymentOnChain: bigint = BigInt(onChain[4]);
+                const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+                if (nowSeconds < nextPaymentOnChain || periodOnChain <= BigInt(0)) {
+                    results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
+                    continue;
+                }
+                const sequenceId = Number((nowSeconds - nextPaymentOnChain) / periodOnChain) + 1;
+
+                if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                    results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN", success: true });
+                    continue;
                 }
 
                 /* The chain is the source of truth for "not too early". */

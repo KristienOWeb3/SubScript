@@ -8,6 +8,8 @@ import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -134,6 +136,48 @@ export async function POST(request: Request) {
                         continue;
                     }
 
+                    /* Revoke the on-chain PSA authorization FIRST. executePayment is permissionless,
+                       so a subscription left isActive after a "cancel at period end" remains chargeable
+                       on-chain even though the DB says CANCELED. Cancel is signed from the subscriber's
+                       embedded wallet (only the subscriber may cancel). If the wallet is externally
+                       controlled we cannot sign for it — proceed with the downgrade and warn the user
+                       to cancel from their own wallet instead of blocking the tier change forever. */
+                    const onChainSub = await standardContract.subscriptions(subId);
+                    const onChainSubscriber: string = onChainSub[0];
+                    const isActiveOnChain: boolean = onChainSub[5];
+                    let onChainCancelTxHash: string | null = null;
+                    if (isActiveOnChain) {
+                        try {
+                            await ensureGasSponsored(onChainSubscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                            onChainCancelTxHash = await cancelFromEmbedded(onChainSubscriber, BigInt(subId));
+                        } catch (cancelErr: any) {
+                            const { data: walletRow } = await supabase
+                                .from("user_embedded_wallets")
+                                .select("provider")
+                                .eq("wallet_address", onChainSubscriber.toLowerCase())
+                                .maybeSingle();
+                            if (walletRow?.provider !== "external_wallet") {
+                                /* Custodied wallet: transient failure — rethrow so this run records
+                                   DOWNGRADE_FAILED and the next run retries the on-chain cancel. */
+                                throw cancelErr;
+                            }
+                            console.warn(`[Downgrade] Cannot cancel sub ${subId} on-chain for external wallet ${onChainSubscriber}; advising user.`);
+                            await createBillingDm({
+                                supabase,
+                                senderAddress: merchantAddress,
+                                receiverAddress: onChainSubscriber,
+                                messageType: "EXPIRY_WARNING",
+                                amountUsdc: sub.amount_cap_usdc || 0,
+                                title: "Action needed: revoke subscription authorization",
+                                description: [
+                                    "Your premium plan was cancelled, but its on-chain authorization is still active.",
+                                    "Because your wallet is externally controlled, SubScript cannot revoke it for you.",
+                                    `Please call cancelSubscription(${subId}) on the SubScript contract or revoke its USDC allowance from your wallet.`,
+                                ].join("\n"),
+                            }).catch((dmErr: any) => console.error("Failed to create revoke-advisory DM:", dmErr));
+                        }
+                    }
+
                     /* Execute on-chain downgrade (setMerchantTier to 0) */
                     const currentContractTier = Number(await routerContract.merchantTiers(merchantAddress));
                     let downgradeTxHash = null;
@@ -189,7 +233,8 @@ export async function POST(request: Request) {
                         merchantAddress,
                         action: "DOWNGRADED",
                         success: true,
-                        txHash: downgradeTxHash
+                        txHash: downgradeTxHash,
+                        onChainCancelTxHash
                     });
 
                 } catch (err: any) {
@@ -478,13 +523,36 @@ export async function POST(request: Request) {
                     continue;
                 }
 
-                /* Determine the next sequence ID */
-                let sequenceId = 1;
-                while (await standardContract.isSequenceExecuted(subId, sequenceId)) {
-                    sequenceId++;
+                /* Bill only the LATEST due sequence — never back-charge lapsed periods. Walking up
+                   from the lowest unexecuted sequence would, after a FAILED gap, charge the user for
+                   every missed period (service they did not receive, since the tier was FREE during
+                   the gap). due(seq) = nextPayment + (seq - 1) * period, so the newest due sequence
+                   is floor((now - nextPayment) / period) + 1. Earlier gaps stay unexecuted. */
+                const nextPaymentTs = BigInt(subOnChain[4]);
+                const periodSeconds = BigInt(subOnChain[3]);
+                const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+                if (nowSeconds < nextPaymentTs || periodSeconds <= BigInt(0)) {
+                    results.push({
+                        subId,
+                        subscriber,
+                        action: "NOT_DUE_ON_CHAIN",
+                        success: false
+                    });
+                    continue;
+                }
+                const sequenceId = Number((nowSeconds - nextPaymentTs) / periodSeconds) + 1;
+
+                if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                    results.push({
+                        subId,
+                        subscriber,
+                        action: "ALREADY_SETTLED_ON_CHAIN",
+                        success: true
+                    });
+                    continue;
                 }
 
-                /* Check if payment is due on-chain */
+                /* Check if payment is due on-chain (authoritative clock) */
                 const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
                 if (!isDueOnChain) {
                     results.push({

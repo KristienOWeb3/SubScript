@@ -73,6 +73,21 @@ describe("SubScriptConfidential", function () {
       expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(merchant.address);
     });
 
+    it("should prevent a third party from hijacking a registered view key hash", async function () {
+      const { confidentialContract, merchant, stranger } = await loadFixture(deployConfidentialFixture);
+
+      const keyHash = ethers.keccak256(ethers.randomBytes(32));
+      await confidentialContract.connect(merchant).registerViewKey(keyHash);
+
+      /* A different account can never claim (or front-run onto) the same hash */
+      await expect(
+        confidentialContract.connect(stranger).registerViewKey(keyHash)
+      ).to.be.revertedWith("Key hash already registered");
+
+      /* The current holder may re-assert their own registration */
+      await confidentialContract.connect(merchant).registerViewKey(keyHash);
+    });
+
     it("should revert if view key hash is zero", async function () {
       const { confidentialContract, merchant } = await loadFixture(deployConfidentialFixture);
       const zeroHash = ethers.zeroPadValue("0x00", 32);
@@ -139,12 +154,13 @@ describe("SubScriptConfidential", function () {
       const recipients = [recipient1.address, recipient2.address];
       const amounts = [ethers.parseUnits("50", 6), ethers.parseUnits("75", 6)];
 
-      /* Execute shielded payout */
+      /* Execute shielded payout — only the key HASH goes on-chain; the plaintext key
+         must never appear in broadcast calldata. */
       const tx = await confidentialContract.executeBatchPayout(
         recipients,
         amounts,
         true, /* isShielded */
-        rawKey
+        keyHash
       );
 
       /* Verify tokens reached target destinations on-chain */

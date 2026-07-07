@@ -98,6 +98,7 @@ contract SubScriptPSA is ReentrancyGuard {
     error InvalidPeriod();
     error SubscriptionNotActive(uint256 subId);
     error PaymentNotDue(uint256 subId, uint256 expectedPayment, uint256 currentTime);
+    error PaymentWindowExpired(uint256 subId, uint256 sequenceId, uint256 windowEnd);
     error PaymentAlreadyExecuted(uint256 subId, uint256 sequenceId);
     error NotAuthorized(uint256 subId);
     error PlanReductionNotAllowed(uint256 subId);
@@ -227,6 +228,16 @@ contract SubScriptPSA is ReentrancyGuard {
         uint256 expectedPaymentTime = sub.nextPayment + ((_sequenceId - 1) * sub.period);
         if (block.timestamp < expectedPaymentTime) {
             revert PaymentNotDue(_subId, expectedPaymentTime, block.timestamp);
+        }
+
+        /* A sequence is chargeable only during its own billing window: once the next sequence
+           becomes due, the older one expires. This means a lapsed-but-uncancelled subscriber can
+           never be batch back-charged for missed periods, and a modifySubscription re-timing can
+           never make a burst of historical sequences simultaneously chargeable. At most one
+           sequence is executable at any moment. */
+        uint256 windowEnd = expectedPaymentTime + sub.period;
+        if (block.timestamp >= windowEnd) {
+            revert PaymentWindowExpired(_subId, _sequenceId, windowEnd);
         }
 
         /* Mark sequence as executed before transfer (Checks-Effects-Interactions) */
@@ -405,7 +416,8 @@ contract SubScriptPSA is ReentrancyGuard {
     }
 
     /*
-     * @notice Check whether a subscription's payment is currently due.
+     * @notice Check whether a subscription's payment is currently due (and not yet expired —
+     *         a sequence is only chargeable within its own billing window).
      */
     function isPaymentDue(uint256 _subId, uint256 _sequenceId) external view returns (bool) {
         Authorization storage sub = subscriptions[_subId];
@@ -413,7 +425,8 @@ contract SubScriptPSA is ReentrancyGuard {
         if (isSequenceExecuted(_subId, _sequenceId)) return false;
 
         uint256 expectedPaymentTime = sub.nextPayment + ((_sequenceId - 1) * sub.period);
-        return block.timestamp >= expectedPaymentTime;
+        return block.timestamp >= expectedPaymentTime
+            && block.timestamp < expectedPaymentTime + sub.period;
     }
 
     /* ────────────────── Keeper Compatibility ─────────────────────── */
@@ -430,7 +443,8 @@ contract SubScriptPSA is ReentrancyGuard {
         }
 
         uint256 expectedPaymentTime = sub.nextPayment + ((sequenceId - 1) * sub.period);
-        upkeepNeeded = block.timestamp >= expectedPaymentTime;
+        upkeepNeeded = block.timestamp >= expectedPaymentTime
+            && block.timestamp < expectedPaymentTime + sub.period;
         performData = checkData;
     }
 

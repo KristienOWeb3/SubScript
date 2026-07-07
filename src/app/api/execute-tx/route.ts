@@ -10,7 +10,7 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { ensureGasSponsored } from "@/lib/sponsor/gas";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -331,6 +331,13 @@ export async function POST(request: Request) {
         try {
             if (action === "withdraw") {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
+            }
+
+            /* Legacy AES-key EOA wallets pay Arc gas (USDC) from their own balance; top them up
+               from the sponsor wallet so a zero-gas wallet doesn't fail the sponsored action.
+               Circle wallets skip this — Gas Station pays their gas. Best-effort by design. */
+            if (walletRecord.encrypted_private_key && !walletRecord.circle_wallet_id) {
+                await ensureGasSponsored(wallet.toLowerCase());
             }
 
             /* Custody routing: execute through Circle's contract-execution API (Gas Station pays gas). */

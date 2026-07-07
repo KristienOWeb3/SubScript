@@ -176,9 +176,10 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     }
 
     /**
-     * @notice Withdraw unused escrow back to the user's wallet once the lock has elapsed
-     *         (one cycle / ~30 days after the commit). Dropping below the required commit
-     *         deactivates the vault — the user must re-commit to use the service again.
+     * @notice Withdraw unused escrow back to the user's wallet. Only possible while the
+     *         vault is inactive — i.e. before a commit ever activated it, or after the
+     *         cycle was settled/closed — and once the lock has elapsed. Re-committing at
+     *         least the required amount is what reactivates the service.
      */
     function withdrawSurplus(address merchant, uint256 amount) external nonReentrant {
         Vault storage v = vaults[msg.sender][merchant];
@@ -188,9 +189,6 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         require(amount > 0 && amount <= v.balance, "bad amount");
 
         v.balance -= amount;
-        if (v.balance < requiredCommit[merchant]) {
-            v.active = false;
-        }
 
         paymentToken.safeTransfer(msg.sender, amount);
         emit SurplusWithdrawn(msg.sender, merchant, amount, v.active);

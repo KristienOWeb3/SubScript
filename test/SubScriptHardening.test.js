@@ -183,4 +183,50 @@ describe("SubScript Hardening & Chaos Testing", function () {
       ).to.be.revertedWithCustomError(subScript, "InvalidPeriod");
     });
   });
+
+  describe("Arrears Expiry Window", function () {
+    it("should expire a missed sequence once the next one becomes due", async function () {
+      const { subScript, subscriber, merchant, keeper, AMOUNT, PERIOD } =
+        await loadFixture(deployHardeningFixture);
+
+      await subScript.connect(subscriber).createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      /* Skip two full periods without executing: sequence 1's window has closed */
+      await time.increase(PERIOD * 2 + 1);
+
+      expect(await subScript.isPaymentDue(1, 1)).to.equal(false);
+      await expect(
+        subScript.connect(keeper).executePayment(1, 1)
+      ).to.be.revertedWithCustomError(subScript, "PaymentWindowExpired");
+
+      /* Only the current sequence (2) is chargeable */
+      expect(await subScript.isPaymentDue(1, 2)).to.equal(true);
+      await expect(subScript.connect(keeper).executePayment(1, 2))
+        .to.emit(subScript, "PaymentExecuted");
+    });
+
+    it("should never allow batch back-charging of a lapsed subscription", async function () {
+      const { subScript, subscriber, merchant, keeper, AMOUNT, PERIOD } =
+        await loadFixture(deployHardeningFixture);
+
+      await subScript.connect(subscriber).createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      /* Lapse for 5 periods without any executions */
+      await time.increase(PERIOD * 5 + 1);
+
+      /* Sequences 1-4 are expired; only sequence 5 is inside its billing window */
+      for (const seq of [1, 2, 3, 4]) {
+        await expect(
+          subScript.connect(keeper).executePayment(1, seq)
+        ).to.be.revertedWithCustomError(subScript, "PaymentWindowExpired");
+      }
+      await expect(subScript.connect(keeper).executePayment(1, 5))
+        .to.emit(subScript, "PaymentExecuted");
+
+      /* Sequence 6 is not yet due */
+      await expect(
+        subScript.connect(keeper).executePayment(1, 6)
+      ).to.be.revertedWithCustomError(subScript, "PaymentNotDue");
+    });
+  });
 });

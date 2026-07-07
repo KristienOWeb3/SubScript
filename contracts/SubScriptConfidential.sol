@@ -28,9 +28,6 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     /* Mapping from viewKeyHash => merchant address */
     mapping(bytes32 => address) public viewKeyHashes;
 
-    /* CCTP Ethereum Sepolia USDC contract address */
-    address public constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
-
     /* Mapping from merchant => array of batch records */
     mapping(address => BatchRecord[]) private batchHistory;
 
@@ -60,9 +57,14 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
 
     /*
      * @notice Registers a hash of the View Key for governed access.
+     * @dev A hash can only be claimed once (or re-asserted by its current holder) so a
+     *      third party can never hijack an already-registered key hash or front-run a
+     *      merchant's registration to redirect their batch history.
      */
     function registerViewKey(bytes32 _viewKeyHash) external {
         require(_viewKeyHash != bytes32(0), "Invalid key hash");
+        address current = viewKeyHashes[_viewKeyHash];
+        require(current == address(0) || current == msg.sender, "Key hash already registered");
         viewKeyHashes[_viewKeyHash] = msg.sender;
         emit ViewKeyRegistered(msg.sender, _viewKeyHash);
     }
@@ -70,12 +72,16 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     /*
      * @notice Executes batch payout with opt-in shielding.
      *         Pulls total amount from caller (admin/owner) and routes to recipients.
+     * @param viewKeyHash The registered keccak256 hash of the merchant's view key. The
+     *        plaintext view key must NEVER be passed here: transaction calldata is public,
+     *        so submitting the key on-chain would let anyone replay it against
+     *        getDecryptedBatchHistory. Only the hash travels on-chain.
      */
     function executeBatchPayout(
         address[] calldata recipients,
         uint256[] calldata amounts,
         bool isShielded,
-        bytes32 viewKey
+        bytes32 viewKeyHash
     ) external onlyOwner nonReentrant {
         require(recipients.length == amounts.length, "Array length mismatch");
         require(recipients.length > 0, "Empty arrays");
@@ -96,7 +102,11 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
             IERC20(paymentToken).safeTransfer(recipients[i], amounts[i]);
         }
 
-        /* If isShielded is true, invoke native Arc precompile engine at address 0x88 using assembly */
+        /* If isShielded is true, invoke native Arc precompile engine at address 0x88 using assembly.
+           CAVEAT: on chains where 0x88 is not a live precompile, a CALL to an empty account
+           succeeds trivially, so `success` is not proof that shielding happened. Recipients and
+           amounts also remain visible in this transaction's public calldata regardless — the
+           precompile shields protocol-level state, not the submitted calldata. */
         if (isShielded) {
             address precompile = address(0x0000000000000000000000000000000000000088);
             bytes memory payload = abi.encode(recipients, amounts);
@@ -130,8 +140,7 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
         }
 
         /* Store the plaintext history for the merchant, if they've registered a view key */
-        bytes32 keyHash = keccak256(abi.encodePacked(viewKey));
-        address merchant = viewKeyHashes[keyHash];
+        address merchant = viewKeyHashes[viewKeyHash];
         if (merchant != address(0)) {
             batchHistory[merchant].push(BatchRecord({
                 recipients: recipients,
@@ -144,6 +153,8 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
 
     /*
      * @notice Allows an authorized caller holding the correct viewKey to retrieve the plaintext execution logs.
+     * @dev Intended for off-chain eth_call only — never submit the plaintext key inside a
+     *      broadcast transaction, or it becomes public calldata.
      */
     function getDecryptedBatchHistory(
         bytes32 viewKey

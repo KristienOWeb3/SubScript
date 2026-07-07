@@ -657,10 +657,13 @@ describe("SubScript", function () {
       const recipientBalBefore = await usdc.balanceOf(recipient.address);
       const treasuryBalBefore = await usdc.balanceOf(treasury.address);
 
-      // Perform withdrawal to recipient
+      // Perform withdrawal to recipient. Withdraw stays keyed to the merchant so rerouted
+      // payouts keep their merchant identity; PayoutDelivered records the destination.
       await expect(router.connect(merchant).withdrawTo(recipient.address))
         .to.emit(router, "Withdraw")
-        .withArgs(recipient.address, ethers.parseUnits("99", 6));
+        .withArgs(merchant.address, ethers.parseUnits("99", 6))
+        .and.to.emit(router, "PayoutDelivered")
+        .withArgs(merchant.address, recipient.address, ethers.parseUnits("99", 6), ethers.parseUnits("1", 6));
 
       const recipientBalAfter = await usdc.balanceOf(recipient.address);
       const treasuryBalAfter = await usdc.balanceOf(treasury.address);
@@ -668,6 +671,35 @@ describe("SubScript", function () {
       expect(recipientBalAfter - recipientBalBefore).to.equal(ethers.parseUnits("99", 6));
       expect(treasuryBalAfter - treasuryBalBefore).to.equal(ethers.parseUnits("1", 6));
       expect(await router.merchantBalances(merchant.address)).to.equal(0);
+    });
+
+    it("should never allow the owner to rescue paymentToken owed to merchants", async function () {
+      const { usdc, router, owner, subscriber, merchant } = await loadFixture(deployRouterFixture);
+
+      const amount = ethers.parseUnits("100", 6);
+      await router.connect(subscriber).depositForMerchant(merchant.address, amount, "receipt-1");
+      expect(await router.totalMerchantLiabilities()).to.equal(amount);
+
+      /* The entire balance is merchant-owed: any paymentToken rescue must revert */
+      await expect(
+        router.rescueERC20(await usdc.getAddress(), owner.address, 1)
+      ).to.be.revertedWith("Amount exceeds rescuable surplus");
+
+      /* Tokens sent directly to the contract (outside the ledger) are true surplus */
+      const surplus = ethers.parseUnits("5", 6);
+      await usdc.connect(subscriber).transfer(await router.getAddress(), surplus);
+      await expect(router.rescueERC20(await usdc.getAddress(), owner.address, surplus))
+        .to.emit(router, "ERC20Rescued")
+        .withArgs(await usdc.getAddress(), owner.address, surplus);
+
+      /* But not a single unit beyond the surplus */
+      await expect(
+        router.rescueERC20(await usdc.getAddress(), owner.address, 1)
+      ).to.be.revertedWith("Amount exceeds rescuable surplus");
+
+      /* Withdrawal releases the liability */
+      await router.connect(merchant).withdraw();
+      expect(await router.totalMerchantLiabilities()).to.equal(0);
     });
   });
 });
