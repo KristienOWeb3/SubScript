@@ -37,7 +37,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing Google ID token" }, { status: 400 });
         }
 
-        const clientId = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID;
+        const clientId = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
         if (!clientId) {
             return NextResponse.json({ error: "Google client configuration missing on server" }, { status: 500 });
         }
