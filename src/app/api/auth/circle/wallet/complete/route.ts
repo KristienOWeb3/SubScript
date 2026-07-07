@@ -16,7 +16,7 @@ async function verifyGoogleIdToken(idToken: string, clientId: string): Promise<{
         if (
             (payload.iss === "accounts.google.com" || payload.iss === "https://accounts.google.com") &&
             payload.aud === clientId &&
-            payload.email_verified === "true" &&
+            (payload.email_verified === "true" || payload.email_verified === true) &&
             payload.email
         ) {
             return { email: payload.email.toLowerCase(), sub: payload.sub };
@@ -31,7 +31,7 @@ async function verifyGoogleIdToken(idToken: string, clientId: string): Promise<{
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const googleIdToken = body.googleIdToken;
+        const googleIdToken = body.googleIdToken || body.circleAuth?.oAuthInfo?.idToken;
 
         if (!googleIdToken) {
             return NextResponse.json({ error: "Missing Google ID token" }, { status: 400 });

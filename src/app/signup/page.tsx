@@ -68,6 +68,7 @@ export default function SignupPage() {
   /* CAPTCHA (Cloudflare Turnstile) states */
   const [captchaToken, setCaptchaToken] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isTurnstileConfigured = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.turnstile) {
@@ -673,18 +674,20 @@ export default function SignupPage() {
                   </div>
 
                   {/* Cloudflare Turnstile for Wallet Signup */}
-                  <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
-                    <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
-                      Security Verification
-                    </label>
-                    <div id="turnstile-wallet-signup" className="my-2"></div>
-                  </div>
+                  {isTurnstileConfigured && (
+                    <div className="space-y-2 border-t border-white/5 pt-3 flex flex-col items-center">
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-white/50 self-start">
+                        Security Verification
+                      </label>
+                      <div id="turnstile-wallet-signup" className="my-2"></div>
+                    </div>
+                  )}
 
                   <div className="grid gap-2">
                     <button
                       type="button"
                       onClick={() => performSiwe(true)}
-                      disabled={siweLoading || !captchaToken}
+                      disabled={siweLoading || (isTurnstileConfigured && !captchaToken)}
                       className="w-full py-3 bg-[#00d2b4] text-black rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2"
                     >
                       {siweLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account With This Wallet"}
@@ -733,12 +736,14 @@ export default function SignupPage() {
                     </div>
 
                     {/* Cloudflare Turnstile */}
-                    <div className="space-y-2 pt-2 flex flex-col items-center">
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
-                        Security Verification
-                      </label>
-                      <div id="turnstile-email-signup" className="my-2"></div>
-                    </div>
+                    {isTurnstileConfigured && (
+                      <div className="space-y-2 pt-2 flex flex-col items-center">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                          Security Verification
+                        </label>
+                        <div id="turnstile-email-signup" className="my-2"></div>
+                      </div>
+                    )}
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />

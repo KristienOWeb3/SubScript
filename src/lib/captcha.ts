@@ -14,6 +14,11 @@ export async function verifyCaptchaToken(
 ): Promise<boolean> {
     const secret = process.env.TURNSTILE_SECRET_KEY;
     if (!secret) {
+        // In local development or preview environments, if the secret is not configured, allow it to pass for easier testing
+        if (process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview" || process.env.VERCEL_ENV === "development") {
+            console.warn("Captcha verification bypassed: TURNSTILE_SECRET_KEY is missing in a non-production or preview environment.");
+            return true;
+        }
         console.error("Captcha verification failed: TURNSTILE_SECRET_KEY is not configured (failing closed).");
         return false;
     }
