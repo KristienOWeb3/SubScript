@@ -555,6 +555,16 @@ export default function SignupPage() {
               {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Complete Signup"}
               {!roleLoading && <ArrowRight className="w-4 h-4" />}
             </button>
+
+            <p className="text-center text-xs text-white/40 pt-1">
+              Already have an account?{" "}
+              <button
+                onClick={() => router.push("/signin")}
+                className="text-[#00d2b4] hover:text-[#00d2b4]/80 font-semibold transition-colors"
+              >
+                Sign In
+              </button>
+            </p>
           </div>
         </div>
       </div>
