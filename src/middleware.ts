@@ -237,7 +237,7 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath) {
+    if (!isApiRoute && !isDashboardHost && !isLocalHost && isDashboardPath && (host === APEX_HOST || host === PUBLIC_HOST)) {
         const subUrl = request.nextUrl.clone();
         subUrl.protocol = "https:";
         subUrl.host = DASHBOARD_HOST;
