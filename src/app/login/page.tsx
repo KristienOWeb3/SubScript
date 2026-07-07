@@ -24,19 +24,11 @@ function LoginChoiceContent() {
         const res = await fetch("/api/auth/session");
         if (res.ok) {
           const data = await res.json();
-          if (data.loggedIn) {
-            if (data.role) {
+          if (data.loggedIn && data.role) {
               window.location.href = safeNext && data.role === "USER"
                 ? safeNext
                 : getDashboardUrl(data.role as any, "/dashboard");
               return;
-            } else {
-              const params = new URLSearchParams();
-              params.set("completeRole", "1");
-              if (safeNext) params.set("next", safeNext);
-              window.location.href = `/signup?${params.toString()}`;
-              return;
-            }
           }
         }
       } catch (err) {
