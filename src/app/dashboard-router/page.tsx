@@ -19,7 +19,7 @@ export default function DashboardRouterPage() {
 
                 if (!res.ok || !data.loggedIn) {
                     setMessage("Redirecting to sign in...");
-                    window.location.href = "https://www.subscriptonarc.com/login";
+                    window.location.href = getDashboardUrl("USER", "/login");
                     return;
                 }
 
@@ -30,11 +30,11 @@ export default function DashboardRouterPage() {
                 }
 
                 setMessage("Finishing account setup...");
-                window.location.href = "https://www.subscriptonarc.com/signup";
+                window.location.href = getDashboardUrl("USER", "/signup");
             } catch {
                 if (!cancelled) {
                     setMessage("Redirecting to sign in...");
-                    window.location.href = "https://www.subscriptonarc.com/login";
+                    window.location.href = getDashboardUrl("USER", "/login");
                 }
             }
         };

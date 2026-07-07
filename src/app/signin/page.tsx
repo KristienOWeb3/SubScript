@@ -49,6 +49,31 @@ function SignInContent() {
     }
   }, [initialEmail]);
 
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.loggedIn) {
+            if (data.role) {
+              window.location.href = safeNext && data.role === "USER"
+                ? safeNext
+                : getDashboardUrl(data.role as any, "/dashboard");
+            } else {
+              window.location.href = safeNext
+                ? `/signup?next=${encodeURIComponent(safeNext)}`
+                : "/signup";
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check active session on signin mount:", err);
+      }
+    };
+    checkSession();
+  }, [safeNext]);
+
   const handleLoginSuccess = useCallback((data: { success: boolean; wallet: string; role?: string | null }) => {
     // Honor a post-login destination for standard user accounts (e.g. a shared
     // /subscribe link). Merchants always land on their dashboard.

@@ -128,7 +128,10 @@ export default function SignupPage() {
               setRequiresEmailLinking(true);
             }
             if (data.role) {
-              setRoleError("This browser is already signed in. Use Sign In to open the existing dashboard, or log out before creating another account.");
+              const next = getSafeNext();
+              window.location.href = (next && data.role === "USER")
+                ? next
+                : getDashboardUrl(data.role as any, "/dashboard");
             } else {
               setShowRoleSelector(true);
             }
