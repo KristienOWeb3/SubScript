@@ -2150,7 +2150,7 @@ export default function UserDashboard() {
     return (
       <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#060608] px-6 text-white">
         <AnimatedGradientBg variant="dashboard" />
-        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-8 text-center shadow-2xl backdrop-blur-xl">
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/10 bg-black/45 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
           <Loader2 className="h-6 w-6 animate-spin text-[#ccff00]" />
           <div className="space-y-2">
             <p className="text-sm font-black uppercase tracking-[0.18em] text-white">{redirectMessage}</p>

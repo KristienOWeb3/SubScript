@@ -2480,7 +2480,7 @@ Please complete the following implementation tasks:
     const renderPaymentLinksTab = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                     <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                     <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                     <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -3089,7 +3089,7 @@ Please complete the following implementation tasks:
                             <span className="rounded-full border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-1 text-[10px] font-bold text-[#00d2b4]">{activePlans.length}</span>
                         </div>
                         {activePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                            <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
                                 No active plans yet. Create one above to get a shareable subscribe link.
                             </div>
                         ) : (
@@ -3107,7 +3107,7 @@ Please complete the following implementation tasks:
                             <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-bold text-white/45">{inactivePlans.length}</span>
                         </div>
                         {inactivePlans.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-xs text-white/40">
+                            <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-8 text-center text-xs text-white/40">
                                 Deactivated plans stay here for auditability.
                             </div>
                         ) : (
@@ -3735,7 +3735,7 @@ Please complete the following implementation tasks:
     const renderView = () => {
         if (isConnected && address && !sessionWallet && !embeddedWallet) {
             return (
-                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
+                <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans mt-12">
                     <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                     <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                     <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -3979,7 +3979,7 @@ Please complete the following implementation tasks:
         switch (activeTab) {
             case "offramp":
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
                         <div>
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <ArrowRightLeft className={`w-5 h-5 ${primaryColorText}`} />
@@ -4561,7 +4561,7 @@ Please complete the following implementation tasks:
             case "premium":
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -4582,7 +4582,7 @@ Please complete the following implementation tasks:
                 return (
                     <div className="space-y-8">
                         {/* Tier Status Card */}
-                        <div className={`liquid-glass border rounded-3xl p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
+                        <div className={`liquid-glass border rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden ${isPremium ? "border-[#d4a853]/30 bg-gradient-to-b from-[#d4a853]/[0.03] to-transparent" : "border-white/5"}`}>
                             <div className="flex items-start gap-4">
                                 <div className={`p-3 rounded-2xl ${isPremium ? "bg-[#d4a853]/10 border border-[#d4a853]/20 text-[#d4a853]" : "bg-white/5 border border-white/10 text-white/40"}`}>
                                     <Crown className="w-8 h-8" />
@@ -4956,7 +4956,7 @@ Please complete the following implementation tasks:
                             </div>
                         ) : (
                             /* Upgrade CTA for Standard tier */
-                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
+                            <div className="liquid-glass border border-[#d4a853]/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-gradient-to-b from-[#d4a853]/[0.02] to-transparent">
                                 <div className="max-w-lg mx-auto text-center space-y-6">
                                     <div className="space-y-2">
                                         <h3 className="text-lg font-extrabold text-white uppercase tracking-tight">Upgrade to Privacy Premium</h3>
@@ -5001,7 +5001,7 @@ Please complete the following implementation tasks:
             case "apikeys":
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -5024,7 +5024,7 @@ Please complete the following implementation tasks:
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
 
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-8">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
                         <div className="flex justify-between items-start">
                             <div>
                                 <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -5052,7 +5052,7 @@ Please complete the following implementation tasks:
                                 <span className="text-xs text-white/40">Loading keys...</span>
                             </div>
                         ) : !activeKey ? (
-                            <div className="border border-white/5 rounded-2xl p-8 text-center bg-black/20 space-y-4 font-sans">
+                            <div className="border border-white/5 rounded-2xl p-6 sm:p-8 text-center bg-black/20 space-y-4 font-sans">
                                 <Key className="w-8 h-8 mx-auto text-white/20" />
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white uppercase tracking-wider">No Active API Credentials</p>
@@ -5405,7 +5405,7 @@ Please complete the following implementation tasks:
             case "webhooks":
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
-                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
+                        <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
                             <Shield className="w-10 h-10 mx-auto text-[#00d2b4] animate-pulse" />
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider">Verify Wallet Ownership</h2>
                             <p className="text-xs text-white/50 leading-relaxed max-w-xs mx-auto">
@@ -5729,7 +5729,7 @@ Please complete the following implementation tasks:
                     <DashboardSkeleton activeTab={activeTab} />
                 ) : !isConnected ? (
                     <div className="space-y-8">
-                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                 <AlertTriangle className="w-10 h-10" />
                             </div>

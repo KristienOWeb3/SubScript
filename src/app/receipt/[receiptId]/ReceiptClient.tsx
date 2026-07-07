@@ -196,7 +196,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
 
     if (loading) {
         return (
-            <main className="min-h-screen bg-[#060608] text-white px-6 py-10 flex items-center justify-center">
+            <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-10 w-10 animate-spin text-[#00d2b4]" />
                     <p className="text-white/60 text-sm tracking-wide">Loading secure receipt...</p>
@@ -212,8 +212,8 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     // 1. Access Denied State (Not Logged In / Non-Authorized Wallet)
     if (authRequired || error) {
         return (
-            <main className="min-h-screen bg-[#060608] text-white px-6 py-10 flex items-center justify-center">
-                <section className="w-full max-w-lg border border-white/5 bg-white/[0.02] backdrop-blur-md rounded-3xl p-8 shadow-2xl text-center space-y-6">
+            <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
+                <section className="w-full max-w-lg border border-white/5 bg-white/[0.02] backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6">
                     <div className="mx-auto rounded-full bg-red-500/10 border border-red-500/20 p-4 w-16 h-16 flex items-center justify-center text-red-400">
                         <Lock className="h-8 w-8" />
                     </div>
@@ -278,7 +278,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const claimHref = `/signup?next=/user&claimReceipt=${encodeURIComponent(receiptId)}`;
 
     return (
-        <main className="min-h-screen bg-[#060608] text-white px-6 py-10 flex items-center justify-center">
+        <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
             <div className="w-full max-w-lg space-y-6">
                 <section className="w-full border border-white/10 bg-white/[0.03] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
                     <div className="flex items-start justify-between gap-4">
