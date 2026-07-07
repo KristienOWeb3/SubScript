@@ -421,7 +421,7 @@ export default function SignupPage() {
             <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
           </div>
 
-          <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+          <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
             <div className="text-center space-y-1.5">
               <h2 className="text-base font-bold uppercase tracking-wider text-white">Select Account Type</h2>
               <p className="text-xs text-white/50 leading-relaxed">
@@ -548,7 +548,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
+    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <AnimatedGradientBg />
       
       <div className="relative z-10 w-full max-w-md">
@@ -560,7 +560,7 @@ export default function SignupPage() {
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
           {/* Onboarding Progress Indicator */}
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
@@ -579,7 +579,7 @@ export default function SignupPage() {
                   }`}>
                     {isCompleted ? "✓" : s.step}
                   </div>
-                  <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                  <span className={`text-[9px] uppercase font-bold tracking-wider hidden sm:inline ${
                     isActive ? "text-[#00d2b4]" : isCompleted ? "text-white/80" : "text-white/30"
                   }`}>
                     {s.label}

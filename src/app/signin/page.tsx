@@ -240,7 +240,7 @@ function SignInContent() {
   }, [walletAuthRequested, isConnected, address, performSiwe]);
 
   return (
-    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-6 relative font-sans">
+    <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white flex items-center justify-center p-4 sm:p-6 relative font-sans">
       <AnimatedGradientBg />
       
       <div className="relative z-10 w-full max-w-md">
@@ -252,7 +252,7 @@ function SignInContent() {
           <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
         </div>
 
-        <div className="liquid-glass border border-white/5 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
+        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 backdrop-blur-md">
           
           <div className="flex items-center justify-between px-2 pb-4 border-b border-white/5">
             <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#00d2b4]">Authenticate</span>
