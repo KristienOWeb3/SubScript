@@ -428,7 +428,7 @@ export default function Home() {
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
                             <div className="col-span-2">
                                 <Link href="/" className="flex items-center gap-2.5">
-                                    <img src="/logo.png" alt="SubScript logo" className="w-8 h-8 object-contain" />
+                                    <img src="/logo.png" alt="SubScript logo" className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" />
                                     <span className="text-base font-bold text-white tracking-tight">SubScript</span>
                                 </Link>
                                 <p className="mt-4 text-xs leading-relaxed text-white/40 max-w-xs">

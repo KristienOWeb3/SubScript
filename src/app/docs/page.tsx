@@ -366,7 +366,7 @@ export default function DocsPage() {
           <div className="mx-auto flex max-w-7xl items-center justify-between">
             <div className="flex items-center gap-5">
               <Link href="/" className="flex items-center gap-2.5">
-                <Image src="/logo.png" alt="SubScript" width={28} height={28} className="h-7 w-7 object-contain" priority />
+                <Image src="/logo.png" alt="SubScript" width={28} height={28} className="h-7 w-7 object-contain drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]" priority />
                 <span className="text-sm font-semibold uppercase tracking-wider">
                   SubScript <span className="font-serif font-normal italic lowercase text-[#00d2b4]">docs</span>
                 </span>

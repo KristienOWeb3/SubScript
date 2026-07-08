@@ -4880,7 +4880,7 @@ function UserDesktopSidebar({
           <img
             src="/logo.png"
             alt="SubScript Logo"
-            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(204,255,0,0.35)]"
+            className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_10px_rgba(0,210,180,0.35)]"
           />
           <div className="hidden lg:block min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ccff00]">SubScript</p>
@@ -4989,7 +4989,7 @@ function HomeHeader({
             <img 
               src="/logo.png" 
               alt="SubScript Logo" 
-              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(204,255,0,0.4)]" 
+              className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(0,210,180,0.4)]"
             />
           </div>
           {/* Actions (Right) */}
