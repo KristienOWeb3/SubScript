@@ -4652,18 +4652,18 @@ Please complete the following implementation tasks:
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">
                                                 New Destination Address
                                             </label>
-                                            <div className="flex gap-3">
-                                                <input 
-                                                    type="text" 
-                                                    value={rerouteAddress} 
+                                            <div className="flex flex-col gap-3 sm:flex-row">
+                                                <input
+                                                    type="text"
+                                                    value={rerouteAddress}
                                                     onChange={(e) => setRerouteAddress(e.target.value)}
                                                     placeholder="0x... cold storage, multisig, or ledger address"
-                                                    className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
+                                                    className="min-w-0 w-full flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-[#d4a853]/50 transition-colors placeholder:text-white/20"
                                                 />
                                                 <button
                                                     onClick={handleReroute}
                                                     disabled={isRerouting || !rerouteAddress}
-                                                    className="px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                                    className="w-full sm:w-auto shrink-0 px-5 py-3 bg-[#d4a853] text-black font-bold rounded-xl text-xs uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                                 >
                                                     {isRerouting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
                                                     Reroute

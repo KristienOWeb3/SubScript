@@ -206,6 +206,9 @@ async function newAuditContext(
             available: true,
             email: `${role}@example.com`,
             provider: "email_otp",
+            /* Backup already completed: this suite audits the dashboard layout, which only
+               renders once the backup gate is satisfied. */
+            completedAt: "2026-01-01T00:00:00.000Z",
           },
         },
       });

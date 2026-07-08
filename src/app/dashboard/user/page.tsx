@@ -2258,8 +2258,8 @@ export default function UserDashboard() {
                 </div>
                 <h2 className="text-xl font-bold uppercase tracking-tight text-white">Private Key Backup Required</h2>
                 <p className="text-sm text-white/60 leading-relaxed font-sans">
-                  Your SubScript wallet has been generated, but your private key is not backed up yet. 
-                  Because SubScript uses non-custodial embedded wallets, you must download your recovery key to ensure you never lose access to your funds.
+                  Your SubScript wallet has been generated, but its private key is not backed up yet.
+                  This wallet type supports key export, so download your recovery key now to ensure you never lose access to your funds.
                 </p>
                 <p className="text-xs text-[#ccff00]/80 font-bold uppercase tracking-wide">
                   The dashboard remains locked until backup is completed.

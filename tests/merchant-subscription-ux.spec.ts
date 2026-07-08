@@ -64,8 +64,12 @@ test.describe("merchant subscription UX", () => {
 
     const plansNav = page.getByRole("button", { name: "Plans", exact: true });
     await expect(plansNav).toBeVisible();
-    await plansNav.click();
-    await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible();
+    /* A click during hydration can be swallowed, leaving the default (One-Time) panel up —
+       re-click until the Plans panel actually renders. */
+    await expect(async () => {
+      await plansNav.click();
+      await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(page.getByTestId("merchant-plan-row").filter({ hasText: plan.name })).toBeVisible();
 
     const swipeAcross = async (from: Locator, deltaX: number) => {
@@ -79,12 +83,28 @@ test.describe("merchant subscription UX", () => {
       await page.mouse.up();
     };
 
-    await swipeAcross(page.getByText("Create Subscription Plan", { exact: true }), -90);
-    await expect(page.getByText("Create Hosted Payment Link", { exact: true })).toBeVisible();
-    await swipeAcross(page.getByText("Create Hosted Payment Link", { exact: true }), 90);
-    await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible();
+    const planPanel = page.getByText("Create Subscription Plan", { exact: true });
+    const linkPanel = page.getByText("Create Hosted Payment Link", { exact: true });
+    /* A drag can land mid-animation and fail to cross the panel-switch threshold — swipe
+       again until the target panel actually settles. */
+    const settleToPanel = async (target: Locator, from: Locator, deltaX: number) => {
+      await expect(async () => {
+        if (!(await target.isVisible())) {
+          await swipeAcross(from, deltaX);
+        }
+        await expect(target).toBeVisible({ timeout: 2_000 });
+      }).toPass({ timeout: 30_000 });
+    };
+    await settleToPanel(linkPanel, planPanel, -90);
+    await settleToPanel(planPanel, linkPanel, 90);
 
-    const planRowOverflow = await page.getByTestId("merchant-plan-row").filter({ hasText: plan.name }).evaluate((row) => ({
+    const planRow = page.getByTestId("merchant-plan-row").filter({ hasText: plan.name });
+    /* The swipe-back animates the carousel track; wait for it to settle inside the viewport
+       before measuring, or the rect captures a mid-transition offset. */
+    await expect
+      .poll(async () => planRow.evaluate((row) => row.getBoundingClientRect().right), { timeout: 10_000 })
+      .toBeLessThanOrEqual(390);
+    const planRowOverflow = await planRow.evaluate((row) => ({
       clientWidth: row.clientWidth,
       scrollWidth: row.scrollWidth,
       rect: row.getBoundingClientRect().toJSON(),
