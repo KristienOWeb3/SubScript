@@ -35,6 +35,7 @@ you get the exact non-interactive command instead.
 | `npx @subscriptonarc/cli verify` | Verify generated files against the protocol templates. Exits `1` on FAIL. |
 | `npx @subscriptonarc/cli update` | Update generated files to the latest templates. |
 | `npx @subscriptonarc/cli trigger <event>` | Send a signed test webhook to your local endpoint. |
+| `npx @subscriptonarc/cli listen` | Forward **live** webhook events to localhost — build and test handlers without deploying a public URL. Polls your merchant event feed and re-delivers each event with a real `x-subscript-signature`. |
 
 ### Options
 
@@ -54,7 +55,8 @@ you get the exact non-interactive command instead.
 | `--offline` | `init`: scaffold with placeholder env values; skips installs and all network calls. |
 | `--no-components` | `init`: backend routes only, no React components. |
 | `--url <endpoint>` | `trigger`: target webhook URL. |
-| `--secret <whsec>` | `trigger`: signing secret (defaults to `SUBSCRIPT_WEBHOOK_SECRET` / `.env.local`). |
+| `--secret <whsec>` | `trigger`/`listen`: signing secret (defaults to `SUBSCRIPT_WEBHOOK_SECRET` / `.env.local`; `listen` generates and prints a session secret when none is configured). |
+| `--forward-to <url>` | `listen`: local endpoint to deliver events to (default `http://localhost:3000/api/webhooks`). |
 | `--no-telemetry` | Disable anonymous usage telemetry. |
 
 ### Exit codes

@@ -14,6 +14,7 @@ import { runDoctor } from "./commands/doctor.js";
 import { runVerify } from "./commands/verify.js";
 import { runUpdate } from "./commands/update.js";
 import { runTrigger } from "./commands/trigger.js";
+import { runListen } from "./commands/listen.js";
 
 const SUPPORTED_FRAMEWORKS = ["next-app", "next-pages", "react-spa", "express"] as const;
 type SupportedFramework = (typeof SUPPORTED_FRAMEWORKS)[number];
@@ -314,6 +315,7 @@ interface ParsedArgs {
     url?: string;
     secret?: string;
     key?: string;
+    forwardTo?: string;
     merchant?: string;
     framework?: string;
     planName?: string;
@@ -339,7 +341,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     let help = false;
     let version = false;
 
-    const valueFlags = ["session", "mode", "url", "secret", "key", "merchant", "framework", "plan-name", "amount", "interval"];
+    const valueFlags = ["session", "mode", "url", "secret", "key", "merchant", "framework", "plan-name", "amount", "interval", "forward-to"];
 
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
@@ -368,6 +370,7 @@ function parseArgs(argv: string[]): ParsedArgs {
         url: flags["url"],
         secret: flags["secret"],
         key: flags["key"],
+        forwardTo: flags["forward-to"],
         merchant: flags["merchant"],
         framework: flags["framework"],
         planName: flags["plan-name"],
@@ -401,6 +404,7 @@ Commands:
   verify                Verify generated files against the protocol templates (exit 1 on FAIL).
   update                Update generated SubScript files to the latest templates.
   trigger <event>       Send a signed test webhook to your endpoint (local testing).
+  listen                Forward live webhook events to localhost (no deploy needed).
 
 Options:
   -h, --help            Show this help (exit 0).
@@ -418,7 +422,8 @@ Options:
   --offline             init: scaffold with placeholder env values, no network, no installs.
   --no-components       init: skip frontend React components (backend routes only).
   --url <endpoint>      trigger: target webhook URL (default http://localhost:3000/api/webhooks).
-  --secret <whsec>      trigger: signing secret (defaults to SUBSCRIPT_WEBHOOK_SECRET / .env.local).
+  --secret <whsec>      trigger/listen: signing secret (defaults to SUBSCRIPT_WEBHOOK_SECRET / .env.local).
+  --forward-to <url>    listen: local endpoint to deliver events to (default http://localhost:3000/api/webhooks).
   --no-telemetry        Disable anonymous usage telemetry.
 
 Events for 'trigger':
@@ -433,6 +438,7 @@ Examples:
   npx @subscriptonarc/cli add webhook --json
   npx @subscriptonarc/cli doctor
   npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript
+  npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
 `);
 }
 
@@ -490,6 +496,9 @@ async function main() {
             break;
         case "trigger":
             await runTrigger({ event: args.sub, url: args.url, secret: args.secret });
+            break;
+        case "listen":
+            await runListen({ key: args.key, forwardTo: args.forwardTo || args.url, secret: args.secret });
             break;
         default:
             fail({

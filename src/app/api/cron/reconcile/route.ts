@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { reconcile } from "@/lib/payments/reconciliationWorker";
+import { healSubscriptionDrift } from "@/lib/subscriptions/driftHealer";
+
+/* Payment reconciliation + subscription drift healing both read the chain per row — give
+   the combined pass generous headroom. */
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
     try {
@@ -27,7 +32,18 @@ export async function POST(request: Request) {
 
         const result = await reconcile(supabase, 300);
 
-        return NextResponse.json(result, { status: result.success ? 200 : 500 });
+        /* Heal on-chain ↔ DB subscription drift (permissionless executes, explorer cancels,
+           authorizations left live behind a DB cancel). Best-effort: a drift failure must not
+           mask the payment-reconcile result this route primarily exists for. */
+        let drift: Awaited<ReturnType<typeof healSubscriptionDrift>> | { error: string };
+        try {
+            drift = await healSubscriptionDrift(supabase, 60);
+        } catch (driftErr: any) {
+            console.error("[reconcile] drift healer failed:", driftErr?.message || driftErr);
+            drift = { error: driftErr?.message || "drift healer failed" };
+        }
+
+        return NextResponse.json({ ...result, drift }, { status: result.success ? 200 : 500 });
 
     } catch (error: any) {
         console.error("Premium reconciliation error:", error);
