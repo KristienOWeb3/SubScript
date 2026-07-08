@@ -46,11 +46,12 @@ SubScript supports three discrete authentication and wallet provisioning channel
 graph TD
     Start[User Visits /signup] --> Select[Choose Auth Method]
     Select -->|Email OTP| VerifyOTP[Verify OTP Code]
-    Select -->|Google Social| GooglePaused[Unavailable pending server verification]
+    Select -->|Google Social| VerifyGoogle[Server verifies Google ID token + audience]
     Select -->|Web3 Wallet| SignSIWE[Sign SIWE Message]
     
     VerifyOTP --> checkWallet{Wallet Record Exists?}
-    checkWallet -->|No| CreateWallet[Generate Random EOA Wallet]
+    VerifyGoogle --> checkWallet
+    checkWallet -->|No| CreateWallet[Provision embedded wallet - Circle developer-controlled MPC when WALLET_PROVIDER=circle, legacy EOA otherwise]
     checkWallet -->|Yes| SetSession[Set Session Cookie]
     CreateWallet --> SetSession
     SignSIWE --> SetSession

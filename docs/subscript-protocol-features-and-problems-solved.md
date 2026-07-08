@@ -78,7 +78,7 @@ Streaming protocols require continuous locked liquidity and can collapse when ba
 
 ### 3.1 Continue With Google Setup
 
-SubScript supports mainstream onboarding through social login and embedded wallet creation. To preserve non-custodial permanence, onboarding must include a secure encrypted private-key export phase so users can recover wallet access independently if their social account is compromised.
+SubScript supports mainstream onboarding through social login and embedded wallet creation. Embedded wallets are provisioned through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider so the platform can execute the actions the user requests); external self-custody wallets are supported via SIWE. For legacy exportable email wallets, onboarding enforces a secure, OTP-verified encrypted private-key export phase so those users can recover wallet access independently. Key export does not apply to Circle MPC wallets — recovery for those follows the custody provider's model.
 
 ### 3.2 Set-and-Forget Automated Billing
 

@@ -31,6 +31,15 @@ testnet, so nothing changes until you set these.
 
 ### Mainnet contract addresses (override the testnet defaults)
 Leave any unset to keep the testnet default. A malformed value is ignored and falls back to the default.
+
+> ⚠️ **Deploy the CURRENT contract source at cutover — do not point mainnet at fresh deployments
+> of the old testnet bytecode.** The 2026-07-08 hardening pass exists only in source until deployed:
+> SubScriptPSA billing-window expiry (`PaymentWindowExpired` — no batch back-charging), Router
+> `totalMerchantLiabilities` + surplus-only `rescueERC20` + merchant-keyed `Withdraw`/`PayoutDelivered`
+> events, and Confidential view-key-hash `executeBatchPayout` + `registerViewKey` hijack guard.
+> PSA/Confidential are immutable (fresh deploy); Router is UUPS (upgrade the proxy); Vault upgrades
+> need `initializeV2(treasury)` via `upgradeToAndCall`. Run `npx hardhat test` + `forge test`
+> (49 + 20 tests) against the deployment commit first.
 | Var | Points at |
 | --- | --- |
 | `NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS` | SubScriptRouter |
@@ -122,10 +131,12 @@ All defaults are testnet, so unsetting the overrides is enough.
 
 Tracked in `docs/platform-feature-coverage.md`:
 - ⚖️ **AML/KYC + money-transmission posture** for your jurisdictions.
-- Product gaps if you market them: mandatory wallet export/backup after onboarding, first-class
-  invoices, sponsor / "Pay for Me" workflows, fiat→USDC onramp, configurable dunning, commitment/lock
-  windows, and production confirmation of Chainlink Automation, Circle Paymaster/Gas Station, and
-  ArcaneVM confidentiality.
+- ✅ Done since this list was written: mandatory wallet export/backup gate (live for exportable
+  email wallets), Google sign-in with server-side token verification, and the public-beta legal set
+  (/terms, /privacy, /refunds, /fulfillment).
+- Product gaps if you market them: first-class invoices, sponsor / "Pay for Me" workflows,
+  fiat→USDC onramp, configurable dunning, commitment/lock windows, and production confirmation of
+  Chainlink Automation, Circle Paymaster/Gas Station, and ArcaneVM confidentiality.
 - Engineering hygiene: no chain-event indexer (on-chain failures only sync when our code touches the
   sub), and the dual Prisma/Supabase data access pattern.
 

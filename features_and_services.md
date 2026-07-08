@@ -4,14 +4,14 @@ SubScript is a programmable stablecoin commerce layer built on Arc. It supports 
 
 ## 1. Core Smart Contract Architecture
 
-The protocol layer is designed to be non-custodial and stateless across block boundaries.
+The contracts never create debt and never take open-ended control of user funds: subscription billing pulls only bounded, per-period authorizations, and the Router holds merchant settlement in a liability-tracked pull-payment ledger until the merchant withdraws. (Wallet custody is a separate concern: embedded wallets use Circle developer-controlled MPC custody, while external self-custody wallets are supported via SIWE.)
 
 ### SubScriptRouter.sol
 
-- Routes Arc USDC deposits to merchant-defined destinations.
+- Routes Arc USDC deposits to merchant-defined destinations through a pull-payment claimable ledger.
 - Emits memo-bound receipt events so backend verification can bind amount, merchant, and receipt token.
-- Targets zero protocol balance across block boundaries.
-- Supports premium payout destination configuration for merchant treasury routing.
+- Tracks total merchant liabilities on-chain; the owner's token-rescue function can never sweep funds merchants are owed.
+- Supports premium payout destination configuration for merchant treasury routing; withdrawal events stay keyed to the merchant with the delivery destination recorded separately.
 
 ### SubScriptPSA.sol
 

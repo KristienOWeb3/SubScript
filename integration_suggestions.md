@@ -2,6 +2,8 @@
 
 This document details suggestions and security improvements for the next phase of the SubScript Protocol.
 
+Status audit 2026-07-08: #2 (multi-RPC failover) is implemented in `src/lib/payments/rpc.ts` (sequential provider failover with a failover metric). #4 (replay-protected webhooks) is implemented in `src/lib/webhooks.ts` (`x-subscript-signature: t=<unix>,v1=<hmac>` — HMAC over `timestamp.body`, regenerated per attempt; merchants must enforce a timestamp tolerance). #1, #3, #5, and #6 remain open.
+
 ---
 
 ## 1. Off-Chain Signature Pre-Validation

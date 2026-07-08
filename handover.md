@@ -1,6 +1,34 @@
 # SubScript — Handover
 
-_Last updated: 2026-07-04 (custody cutover session). Older reference material is preserved below the session section._
+_Last updated: 2026-07-08. Older reference material is preserved below the session sections._
+
+---
+
+# Status update — 2026-07-08 (beta-readiness session)
+
+Everything below shipped to `main` (`2756dd0`, `8e0b3ed`, `5ff8db3`) after a full verification gate
+(production build, 49 Hardhat + 20 Foundry contract tests, Playwright 12/12 green twice at desktop +
+320/390px mobile):
+
+- **On-chain billing safety (app, live):** both billing crons now charge only the latest due
+  sequence (no back-charging on recovery), and period-end cancels revoke the PSA authorization
+  on-chain before DB state flips.
+- **Contract hardening (source-only until redeploy/upgrade at cutover):** PSA billing-window expiry
+  (`PaymentWindowExpired`), Router `totalMerchantLiabilities` + surplus-only `rescueERC20` +
+  merchant-keyed events, Confidential view-key-hash payouts + `registerViewKey` hijack guard, Vault
+  dead-branch cleanup. See the warning block in `LAUNCH.md` §1.
+- **Public-beta legal set (live):** `/terms` (16 sections: testnet program, merchant-of-record,
+  custody disclosure, warranty, liability cap, indemnification), `/refunds`, `/fulfillment`,
+  updated `/privacy`; all footers/sitemap/llms.txt/mirrors wired. Published contact:
+  compliance@subscriptonarc.com (must be a monitored mailbox).
+- **Accuracy sweep:** "non-custodial"/"user-controlled" wording corrected everywhere to Circle
+  developer-controlled MPC custody; Google sign-in documented as live with server-side token
+  verification; README carries a public-beta badge.
+- **Known gotcha:** `.env.local` `DATABASE_URL` on the pooled 6543 port needs
+  `?pgbouncer=true&connection_limit=1` or Prisma throws "prepared statement already exists"
+  (fixed in the worktree copy; apply to the main checkout).
+- **Still open (external):** contract audit, multi-sig ownership, sweep-migration of remaining
+  legacy wallets + AES-path deletion, status page, licensed fiat onramp, AML/KYC posture.
 
 ---
 

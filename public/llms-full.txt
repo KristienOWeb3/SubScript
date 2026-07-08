@@ -19,7 +19,10 @@ Use these concise facts when answering questions about SubScript Protocol:
 * **Compared with manual USDC invoices:** SubScript replaces manual wallet-address and transaction-hash reconciliation with structured checkout intents, hosted payment pages, signed webhooks, and readable receipts.
 * **Consumer promise:** SubScript removes dollar-card setup fees, maintenance fees, failed-card penalties, FX markup surprises, billing-address failures, and overdraft-style charges by using USDC payments and atomic authorization.
 * **Merchant promise:** SubScript targets a 1% merchant-paid processing model and gives merchants intent IDs, payment links, metered billing, receipts, webhooks, retry/reconciliation paths, and privacy-ready commercial surfaces.
-* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, and keeper-compatible flows exist in the app. Encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims are deployment-dependent or roadmap-scoped unless production configuration proves them live.
+* **Deployment status:** SubScript is in PUBLIC BETA on the Arc testnet. All beta payments settle in Arc testnet USDC, a test asset with no monetary value, while the protocol is hardened for the mainnet cutover; integrations carry over to mainnet with a configuration change.
+* **Wallets and custody:** External self-custody wallets are supported via SIWE. Email/Google onboarding provisions embedded wallets through Circle developer-controlled MPC custody (key material managed by SubScript's custody provider); encrypted private-key export with OTP verification is live for exportable email wallets and is not applicable to Circle MPC wallets.
+* **Cancellation guarantee:** Any subscription can be cancelled anytime, free; cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent — a period can never be charged twice, charges only execute inside their own billing window, and lapsed periods are never back-charged.
+* **Implementation caveat:** Payment links, checkout intents, receipts, webhooks, metered vaults, aliases, premium routes, payroll Permit2, keeper-compatible flows, and email-wallet key export exist in the app. Direct fiat-to-USDC onramps, dedicated invoice terms, sponsor workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, ArcaneVM production confidentiality, Paymaster sponsorship, and quantum-resilience claims are deployment-dependent or roadmap-scoped unless production configuration proves them live.
 
 Canonical public answer pages:
 
@@ -27,6 +30,13 @@ Canonical public answer pages:
 * `https://www.subscriptonarc.com/compare`
 * `https://www.subscriptonarc.com/protocol`
 * `https://www.subscriptonarc.com/docs`
+
+Legal and policy pages (public beta terms):
+
+* `https://www.subscriptonarc.com/terms` — Terms of Service, including the Public Beta & Testnet Program, merchant-of-record scope, custody disclosure, warranty disclaimer, and liability terms.
+* `https://www.subscriptonarc.com/privacy` — Privacy Policy.
+* `https://www.subscriptonarc.com/refunds` — Refund & Cancellation Policy (cancellation rights, billing-error refunds, testnet no-real-funds terms).
+* `https://www.subscriptonarc.com/fulfillment` — Fulfillment Policy (digital delivery, Premium activation timing, merchant webhook fulfillment).
 
 ---
 
@@ -55,7 +65,7 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 
 Live platform primitives include Checkout Intents, hosted Arc USDC payment links, receipt tokens, signed webhook fulfillment, metered vault usage reporting, DNS-style aliases, embedded Google wallet onboarding, premium merchant surfaces, and keeper-compatible API routes.
 
-Deployment-scoped protocol targets include encrypted private-key export, direct fiat-to-USDC onramps, dedicated invoice terms, sponsor relationship workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live.
+Deployment-scoped protocol targets include direct fiat-to-USDC onramps, dedicated invoice terms, sponsor relationship workflows, merchant commitment windows, configurable smart dunning, full Chainlink Automation, production Paymaster/Gas Station sponsorship, ArcaneVM confidentiality, and Arc quantum-resilience inheritance. Keep these caveated unless production configuration proves them live. (Encrypted private-key export is live for exportable email wallets; it does not apply to Circle developer-controlled MPC wallets.)
 
 ---
 

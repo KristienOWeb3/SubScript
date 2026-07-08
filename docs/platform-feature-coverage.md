@@ -10,8 +10,8 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 | --- | --- | --- |
 | Unified Payment Authorization for one-time payments, recurring billing, usage billing, invoicing, and AI-native transactions | Partial | Checkout Intents, payment links, subscriptions, metered vaults, receipts, webhooks, and API surfaces exist. Dedicated invoice objects and AI-native wrappers need first-class product surfaces. |
 | Arc-native USDC payment layer | Implemented for hosted checkout | Direct Arc USDC hosted checkout and receipt-token binding exist. CCTP remains disabled until Arc-side memo settlement is verifiable in one bound flow. |
-| Continue with Google wallet setup | Disabled pending security repair | The completion endpoint fails closed until Circle identity is validated server-side and bound to a single-use login challenge. |
-| Circle developer-controlled wallet custody | Partially Implemented (Stage 2c complete) | All server-side signing is routed through the WalletCustody seam, Circle MPC integration is complete with durable provisioning idempotency, and legacy compatibility is active. Google sign-in re-enable (server-side verification), sweep-migration of 5 legacy wallets, and AES-path deletion are still required before full cutover. |
+| Continue with Google wallet setup | Implemented (re-enabled 2026-07) | The wallet-completion endpoint now verifies the Google ID token server-side (tokeninfo + client-ID audience check) before provisioning. Single-use login-challenge binding should still be confirmed as part of the mainnet security review. |
+| Circle developer-controlled wallet custody | Implemented (Stage 2c complete; legacy tail remains) | All server-side signing is routed through the WalletCustody seam, Circle MPC integration is complete with durable provisioning idempotency, and legacy compatibility is active for the remaining un-migrated AES wallets. Sweep-migration of the few legacy wallets and final AES-path deletion are the remaining cutover steps (`scripts/migrate-legacy-wallets.mjs`, `scripts/delete-legacy-wallet-data.js`). |
 | Zero-fee customer experience | Partial | UX/docs target user-paid-price-only flows. Production Circle Paymaster/Gas Station configuration must be verified before presenting this as live on mainnet. |
 | Fair merchant pricing at flat 1% | Documented | Public docs and product pages mention merchant-paid 1% pricing. Billing enforcement should be verified against live settlement/accounting. |
 | Pay for Me / sponsored subscriptions | Partial | Product model is documented. Add sponsor relationship schema, spending caps, beneficiary privacy rules, and revocation policy before marking live. |
@@ -28,20 +28,21 @@ Canonical product brief: [subscript-protocol-features-and-problems-solved.md](./
 | Decentralized keepers with Chainlink Automation | Partial | Keeper-compatible contract/API/cron routes exist. Production Chainlink upkeep registration and monitoring are not confirmed. |
 | Merchant lock windows and minimum commitments | Partial | Existing cancellation/retry state supports some commitment concepts. Add explicit UPA payload fields, UI disclosures, schema, and contract enforcement for 72-hour digital-good and 30-day SaaS ceilings. |
 | Smart dunning engine | Partial | Billing cron, retry counters, reconciliation, notifications, and subscription failure states exist. Add configurable Day 1/3/7 schedules and email/SMS templates. |
-| Legal/compliance for high-value B2B | Partial | Privacy/terms exist. AML/KYC and money-transmission posture must be tied to active jurisdictions and provider controls. |
+| Legal/compliance for high-value B2B | Implemented for beta (external items open) | Full public-beta legal set shipped 2026-07-08: /terms (16 sections incl. testnet program, merchant-of-record scope, custody disclosure, warranty, liability cap), /privacy, /refunds, /fulfillment, all footer-linked and mirrored for AEO. AML/KYC and money-transmission posture must still be tied to active jurisdictions and provider controls before mainnet. |
+| On-chain billing safety guarantees | Implemented (app) / source-ready (contracts) | Both billing crons charge only the latest due sequence (no back-charging); period-end cancellation revokes the on-chain authorization. Contract-level guarantees (billing-window expiry, Router liability-guarded rescue, view-key hash privacy) are fixed in source with full test coverage and take effect at the next deploy/upgrade. |
 | Arc quantum-resilience roadmap inheritance | External dependency | Keep as Arc roadmap positioning only. Do not claim SubScript independently provides PQ security without Arc documentation/deployment confirmation. |
 
 ## Highest-Priority Product Gaps
 
-1. Re-enable Google social sign-in (requires server-side verification of Google OAuth tokens and binding to a single-use login challenge before provisioning a Circle wallet).
-2. Execute the sweep-migration of the 5 legacy wallets to Circle wallets, and delete the legacy AES path (keys, decryption helpers).
+1. Finish the custody tail: sweep-migrate the remaining legacy AES wallets to Circle wallets, then delete the legacy AES path (keys, decryption helpers).
+2. Redeploy/upgrade the hardened contracts at the mainnet cutover (PSA billing-window expiry, Router liability-guarded rescue, Confidential view-key hash) — fixes are source-only until then.
 3. Add first-class invoice models: invoice number, due date, payer email/wallet, terms, status, payment link/intent association, and reminder state.
-3. Add sponsor relationships for Pay for Me: sponsor wallet, beneficiary wallet, merchant, spending cap, privacy boundaries, and revocation policy.
-4. Add dunning schedule configuration instead of hard-coded retry assumptions.
-5. Add UPA commitment terms to subscription authorization payloads and disclose lock windows before signing.
-6. Verify production Circle Paymaster/Gas Station, Chainlink Automation, and ArcaneVM settings before using live claims.
-7. Connect the bank-transfer funding state machine to a licensed provider only after compliance ownership, live limits/fees, refunds, Arc mainnet, and direct-or-CCTP settlement are verified.
+4. Add sponsor relationships for Pay for Me: sponsor wallet, beneficiary wallet, merchant, spending cap, privacy boundaries, and revocation policy.
+5. Add dunning schedule configuration instead of hard-coded retry assumptions.
+6. Add UPA commitment terms to subscription authorization payloads and disclose lock windows before signing.
+7. Verify production Circle Paymaster/Gas Station, Chainlink Automation, and ArcaneVM settings before using live claims.
+8. Connect the bank-transfer funding state machine to a licensed provider only after compliance ownership, live limits/fees, refunds, Arc mainnet, and direct-or-CCTP settlement are verified.
 
 ## Current Messaging Rule
 
-Marketing, docs, and LLM references should say that SubScript provides the live primitives for UPA commerce today and a testnet-only bank-transfer funding sandbox. Google social sign-in is paused pending server verification. Circle developer-controlled custody, real fiat onramps, dedicated invoices, sponsor workflows, commitment windows, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, and quantum resilience remain deployment-scoped until verified.
+Marketing, docs, and LLM references should say that SubScript is in PUBLIC BETA on the Arc testnet (beta payments settle in valueless testnet USDC) and provides the live primitives for UPA commerce today, plus a testnet-only bank-transfer funding sandbox. Google sign-in is live with server-side token verification; embedded wallets use Circle developer-controlled MPC custody (external self-custody wallets supported via SIWE). Real fiat onramps, dedicated invoices, sponsor workflows, commitment windows, full Chainlink Automation, production Paymaster sponsorship, ArcaneVM confidentiality, and quantum resilience remain deployment-scoped until verified. Cancellation and billing-safety guarantees (cancel-anytime revokes the on-chain authorization; no duplicate or back-charged periods) may be stated as live.

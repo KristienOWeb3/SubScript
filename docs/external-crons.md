@@ -64,6 +64,15 @@ If you use a scheduler other than the workflow above, hit each **via `GET`** wit
   gate every charge on the contract's sequence bitmap, and `internal/payroll` atomically
   claims each payday before moving funds. A missed run just delays work to the next
   tick — it never double-charges.
+- **No back-charging (2026-07-08).** Both billing crons charge only the LATEST due
+  sequence (`floor((now - nextPayment) / period) + 1`), never walking up from the lowest
+  unexecuted one — a keeper outage or funding gap delays at most the current period and
+  never bills the user for lapsed periods on recovery. The next contract deployment also
+  enforces this on-chain (a sequence expires once the next one becomes due).
+- **Period-end cancels revoke on-chain.** Both crons cancel the PSA authorization from
+  the subscriber's embedded wallet before flipping DB state, so a "cancelled" subscription
+  is never left chargeable on-chain. Externally-controlled wallets can't be signed for —
+  those users get an advisory DM to revoke from their own wallet.
 - **If a keeper silently stops,** the symptoms are: premium upgrades stuck "pending"
   (reconcile), subscriptions not renewing (cron-billing / customer-billing), payroll
   not paying out (internal/payroll), or premium not downgrading after non-payment

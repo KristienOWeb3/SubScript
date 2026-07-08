@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last Updated: June 20th, 2026
+Last Updated: July 8th, 2026
 
 ## 1. Privacy Principles
 
@@ -8,7 +8,7 @@ SubScript collects the minimum off-chain data needed to operate accounts, receip
 
 ## 2. Account and Wallet Data
 
-If you connect a wallet, SubScript may store your wallet address, selected role, account settings, alias, linked email, and notification preferences. If you use email or Continue with Google onboarding, supported wallet providers such as Circle may provision a user-controlled embedded wallet, and SubScript may store the resulting wallet address and provider references.
+If you connect a wallet, SubScript may store your wallet address, selected role, account settings, alias, linked email, and notification preferences. If you use email or Continue with Google onboarding, SubScript provisions an embedded wallet through Circle developer-controlled MPC infrastructure — key material for embedded wallets is managed by SubScript's custody provider so the platform can execute the payment actions you request — and SubScript may store the resulting wallet address and provider references. SubScript does not store seed phrases.
 
 ## 3. Payment and Receipt Data
 
