@@ -189,7 +189,7 @@ export default function DepositModal({
                                         size={140}
                                         level="H"
                                         includeMargin={false}
-                                        imageSettings={{ src: "/logo.png", height: 30, width: 30, excavate: true }}
+                                        imageSettings={{ src: "/logo-colored.png", height: 30, width: 30, excavate: true }}
                                     />
                                 </div>
 
