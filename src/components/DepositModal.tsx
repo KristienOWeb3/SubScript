@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, QrCode, Loader2 } from "@/components/icons";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCode } from "react-qrcode-logo";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -184,12 +184,23 @@ export default function DepositModal({
 
                                 {/* QR Code */}
                                 <div className="p-3 bg-white rounded-xl inline-block mb-4 shadow-inner">
-                                    <QRCodeSVG
+                                    <QRCode
                                         value={depositAddress}
                                         size={140}
-                                        level="H"
-                                        includeMargin={false}
-                                        imageSettings={{ src: "/logo-colored.png", height: 30, width: 30, excavate: true }}
+                                        ecLevel="H"
+                                        bgColor="#ffffff"
+                                        fgColor="#000000"
+                                        qrStyle="dots"
+                                        eyeRadius={[
+                                            [8, 8, 0, 8],
+                                            [8, 8, 8, 0],
+                                            [8, 0, 8, 8]
+                                        ]}
+                                        logoImage="/logo-colored.png"
+                                        logoWidth={28}
+                                        logoHeight={28}
+                                        removeQrCodeBehindLogo={true}
+                                        logoPadding={2}
                                     />
                                 </div>
 

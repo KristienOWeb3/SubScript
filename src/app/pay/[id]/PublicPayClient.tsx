@@ -8,7 +8,7 @@ import {
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
     Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert
 } from "@/components/icons";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCode } from "react-qrcode-logo";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
@@ -984,13 +984,23 @@ export default function PublicPayClient({
                                             Scan this QR code with your mobile wallet's browser to complete the payment on your phone.
                                         </p>
                                         <div className="flex justify-center p-3 bg-white rounded-xl">
-                                            <QRCodeSVG
+                                            <QRCode
                                                 value={checkoutUrl}
                                                 size={140}
-                                                level="H"
+                                                ecLevel="H"
                                                 bgColor="#ffffff"
                                                 fgColor="#000000"
-                                                imageSettings={{ src: "/logo-colored.png", height: 30, width: 30, excavate: true }}
+                                                qrStyle="dots"
+                                                eyeRadius={[
+                                                    [8, 8, 0, 8],
+                                                    [8, 8, 8, 0],
+                                                    [8, 0, 8, 8]
+                                                ]}
+                                                logoImage="/logo-colored.png"
+                                                logoWidth={28}
+                                                logoHeight={28}
+                                                removeQrCodeBehindLogo={true}
+                                                logoPadding={2}
                                             />
                                         </div>
                                     </motion.div>

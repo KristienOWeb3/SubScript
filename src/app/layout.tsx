@@ -1,12 +1,35 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Inter, Instrument_Serif } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import PrivyProviderWrapper from "@/components/PrivyProviderWrapper";
 import PostHogProvider from "@/components/providers/PostHogProvider";
 import PwaInstaller from "@/components/PwaInstaller";
 
 export const dynamic = "force-dynamic";
+
+const sukar = localFont({
+    src: [
+        {
+            path: "../../public/fonts/SukarRegular.ttf",
+            weight: "400",
+            style: "normal",
+        },
+        {
+            path: "../../public/fonts/SukarBold.ttf",
+            weight: "700",
+            style: "normal",
+        },
+        {
+            path: "../../public/fonts/SukarBlack.ttf",
+            weight: "900",
+            style: "normal",
+        },
+    ],
+    variable: "--font-sukar",
+    display: "swap",
+});
 
 const inter = Inter({
     subsets: ["latin"],
@@ -253,7 +276,7 @@ export default async function RootLayout({
 
     return (
         <html lang="en" suppressHydrationWarning>
-            <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
+            <body className={`${sukar.variable} ${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
                     nonce={nonce}
                     suppressHydrationWarning
