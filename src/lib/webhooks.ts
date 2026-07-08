@@ -73,6 +73,9 @@ export function subscriptionWebhookData(args: {
     txHash?: string | null;
     chainId?: number;
     reason?: string | null;
+    /* Sponsored subscriptions: the wallet receiving the service when it differs from the
+       paying subscriber. Merchants key entitlements off this when present. */
+    beneficiary?: string | null;
 }): Record<string, unknown> {
     const micros = args.amountUsdcMicros != null
         ? (typeof args.amountUsdcMicros === "bigint" ? args.amountUsdcMicros : BigInt(args.amountUsdcMicros)).toString()
@@ -89,6 +92,7 @@ export function subscriptionWebhookData(args: {
         subscriber: args.subscriber ?? null,
         merchant_address: args.merchantAddress ?? null,
         merchantAddress: args.merchantAddress ?? null,
+        ...(args.beneficiary ? { beneficiary: args.beneficiary, beneficiary_address: args.beneficiary, beneficiaryAddress: args.beneficiary } : {}),
         ...(args.reason ? { reason: args.reason } : {}),
         ...(settlement ? {
             transaction_hash: args.txHash,

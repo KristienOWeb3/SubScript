@@ -64,6 +64,9 @@ function formatPaymentLinkResponse(link: any) {
         checkoutUrl: buildCheckoutUrl(link.id),
         receiptToken: link.receipt_token || link.receiptToken || null,
         beneficiaryAddress,
+        invoiceNumber: link.invoice_number || null,
+        dueDate: link.due_date || null,
+        payerEmail: link.payer_email || null,
     };
 }
 
@@ -185,6 +188,12 @@ export async function POST(request: Request) {
             sandbox,
             beneficiary_address,
             beneficiaryAddress,
+            invoice_number,
+            invoiceNumber,
+            due_date,
+            dueDate,
+            payer_email,
+            payerEmail,
         } = body;
         const isSandboxRequest = sandbox === true || auth.apiKeyMode === "test";
 
@@ -221,6 +230,30 @@ export async function POST(request: Request) {
             }
         } catch {
             return NextResponse.json({ error: "Bad Request: Invalid amount_usdc" }, { status: 400 });
+        }
+
+        /* Invoice fields (v1): optional number, due date, and payer identity ride the
+           existing link/receipt/webhook lifecycle so a payment link can serve as an invoice. */
+        const rawInvoiceNumber = invoice_number ?? invoiceNumber;
+        const normalizedInvoiceNumber = typeof rawInvoiceNumber === "string" && rawInvoiceNumber.trim()
+            ? rawInvoiceNumber.trim().slice(0, 64)
+            : null;
+        const rawDueDate = due_date ?? dueDate;
+        let normalizedDueDate: string | null = null;
+        if (rawDueDate !== undefined && rawDueDate !== null && rawDueDate !== "") {
+            const parsed = new Date(typeof rawDueDate === "number" && rawDueDate < 10_000_000_000 ? rawDueDate * 1000 : rawDueDate);
+            if (Number.isNaN(parsed.getTime())) {
+                return NextResponse.json({ error: "Bad Request: due_date must be an ISO date or unix timestamp" }, { status: 400 });
+            }
+            normalizedDueDate = parsed.toISOString();
+        }
+        const rawPayerEmail = payer_email ?? payerEmail;
+        let normalizedPayerEmail: string | null = null;
+        if (rawPayerEmail !== undefined && rawPayerEmail !== null && rawPayerEmail !== "") {
+            if (typeof rawPayerEmail !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawPayerEmail.trim()) || rawPayerEmail.length > 254) {
+                return NextResponse.json({ error: "Bad Request: payer_email must be a valid email address" }, { status: 400 });
+            }
+            normalizedPayerEmail = rawPayerEmail.trim().toLowerCase();
         }
 
         let maxUses: number | null = null;
@@ -362,6 +395,9 @@ export async function POST(request: Request) {
                 receipt_token: generateReceiptId(title),
                 max_uses: maxUses,
                 beneficiary_address: normalizedBeneficiary,
+                invoice_number: normalizedInvoiceNumber,
+                due_date: normalizedDueDate,
+                payer_email: normalizedPayerEmail,
             })
             .select()
             .single();

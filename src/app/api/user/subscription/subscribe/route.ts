@@ -25,6 +25,18 @@ export async function POST(request: Request) {
         const planId = typeof body.planId === "string" ? body.planId : "";
         if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
 
+        /* Sponsored subscription ("Pay for Me"): the caller pays, someone else receives the
+           service. The beneficiary rides the mirror + merchant webhooks for entitlement mapping;
+           billing, cancellation rights, and on-chain authorization stay with the payer. */
+        let beneficiaryAddress: string | null = null;
+        if (body.beneficiaryAddress !== undefined && body.beneficiaryAddress !== null && body.beneficiaryAddress !== "") {
+            if (typeof body.beneficiaryAddress !== "string" || !ethers.isAddress(body.beneficiaryAddress)) {
+                return NextResponse.json({ error: "beneficiaryAddress must be a valid 0x address" }, { status: 400 });
+            }
+            beneficiaryAddress = body.beneficiaryAddress.toLowerCase();
+            if (beneficiaryAddress === wallet.toLowerCase()) beneficiaryAddress = null;
+        }
+
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan || !plan.active) {
             return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
@@ -97,6 +109,8 @@ export async function POST(request: Request) {
                         subscriber,
                         amountUsdc: plan.amountUsdc,
                         periodSeconds: plan.periodSeconds,
+                        beneficiaryAddress,
+                        minCommitmentSeconds: plan.minCommitmentSeconds,
                     });
                 }
 

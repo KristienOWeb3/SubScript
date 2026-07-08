@@ -4,6 +4,11 @@ export const ARC_MAINNET_CHAIN_ID = 5042001 as const;
 export const MERCHANT_ADDRESS = "0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295" as const;
 export const SUBSCRIPT_PROTOCOL_FEE_BPS = 100 as const;
 
+/* Shared signup-free sandbox merchant behind the published sk_test_demo_* key
+   (seeded by scripts/seed-demo-key.mjs). Test-mode keys are always sandboxed;
+   this address additionally gets an aggressive rate limit. */
+export const DEMO_MERCHANT_ADDRESS = "0xdeb0000000000000000000000000000000000001" as const;
+
 export const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
 
 /* Network-critical addresses are env-overridable so the mainnet cutover is a config change, not a

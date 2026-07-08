@@ -55,48 +55,50 @@ Still needed for live funding:
 
 ### Dedicated Invoice Engine
 
-Payment links and external references currently cover invoice-like collection. A first-class invoice engine needs:
+Shipped v1 (2026-07-08): payment links carry `invoice_number`, `due_date`, and `payer_email`,
+rendered on the hosted checkout page and riding the receipt/webhook lifecycle. Still needed for
+a first-class engine:
 
-- Invoice number.
-- Due date and custom terms such as `Due in 14 days`.
-- Payer email and wallet identity.
-- Invoice status lifecycle.
-- Reminder and webhook events.
-- Association with payment link, Checkout Intent, receipt, and merchant records.
+- [x] Invoice number, due date, payer email on the collection object.
+- Custom terms such as `Due in 14 days` as structured data.
+- Invoice status lifecycle (`sent → paid → overdue → void`).
+- Automatic reminder and overdue webhook events.
+- A standalone invoice object linked to intents/receipts (today the link IS the invoice).
 
 ### Sponsor Relationships / Pay for Me
 
-The product supports the sponsor model conceptually. Production support needs:
+Shipped v1 (2026-07-08): `beneficiaryAddress` on subscribe; the mirror stores it and renewal
+webhooks carry `beneficiary_address` so merchants grant entitlements to the beneficiary while
+the payer keeps billing and cancellation rights. Still needed for full sponsor workflows:
 
-- Sponsor wallet/account.
-- Beneficiary wallet/account.
-- Merchant or plan scope.
-- Spending cap.
-- Renewal cadence.
-- Revocation policy.
-- Privacy boundaries for what sponsors can see.
+- [x] Sponsor (payer) and beneficiary wallet separation carried through billing webhooks.
+- Sponsor invitations and beneficiary acceptance flow.
+- Spending caps and per-merchant scope.
+- Revocation policy and sponsor-visible privacy boundaries.
 
 ### Merchant Protection Commitments
 
-UPA payloads should support configurable merchant protections.
+Shipped v1 (2026-07-08): `merchant_plans.min_commitment_seconds` (DB-enforced ceiling: one
+billing period, max 30 days), disclosed on the subscribe page before authorization and
+snapshotted to `subscriptions.min_commitment_until`. Because in-period cancels already take
+effect at period end, commitments can never extend billing beyond the approved period.
+Still needed:
 
-Needed:
-
-- Service lock window fields.
-- Protocol ceiling enforcement: 72 hours for digital goods, 30 days for SaaS seats.
-- Minimum commitment period support.
-- Billing grace period support.
-- UI disclosure before signing.
-- Contract and database enforcement.
+- [x] Minimum commitment period with UI disclosure before signing and database enforcement.
+- 72-hour digital-goods vs 30-day SaaS good-type distinction.
+- Multi-period commitments (requires keeper-aware deferred cancellation).
+- Billing grace period fields and contract-level enforcement.
 
 ### Smart Dunning Engine
 
-Retry, billing, and reconciliation primitives exist, but configurable dunning needs:
+Shipped v1 (2026-07-08): per-merchant `dunning_max_failures` (1–10, ≈ days of daily-keeper
+grace) via `GET/PATCH /api/merchant/dunning`, honored by the customer-billing keeper; failed
+attempts already notify once and stop with an on-chain revoke at the limit. Still needed:
 
-- Merchant-configurable retry schedule, including Day 1, Day 3, and Day 7 presets.
-- Email/SMS top-up reminders.
-- Webhook events for failed attempt, retry scheduled, final failure, and suspended.
-- Automatic service suspension state after exhausted retries.
+- [x] Merchant-configurable retry budget honored by the keeper.
+- Day 1 / Day 3 / Day 7 schedule presets (offsets, not just counts).
+- Email/SMS top-up reminders per attempt.
+- Distinct webhook events for retry scheduled and service suspended.
 
 ## 3. Execution and Sponsorship
 

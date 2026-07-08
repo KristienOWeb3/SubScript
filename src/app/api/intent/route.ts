@@ -7,6 +7,8 @@ import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
+import { DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
 function validateReturnUrl(label: string, value: unknown): { ok: true; value?: string } | { ok: false; error: string } {
@@ -67,6 +69,16 @@ export async function POST(request: Request) {
 
         if (!merchantAddress) {
             return apiError({ status: 401, code: "unauthorized", requestId, message: "Unauthorized: Invalid or missing authentication credentials. Pass 'Authorization: Bearer sk_test_...' from Dashboard → Developers → API keys." });
+        }
+
+        /* The published signup-free demo key maps to a shared sandbox merchant: rate-limit it
+           hard so docs-page experimentation can never crowd out real traffic. Test-mode keys
+           are already forced to sandbox, so demo intents never touch settlement. */
+        if (merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
+            const rl = checkProviderRateLimit({ provider: "demo-intents", key: merchantAddress, limit: 30, windowMs: 60_000 });
+            if (!rl.ok) {
+                return apiError({ status: 429, code: "rate_limited", requestId, message: "The shared demo key is rate limited. Create your own free test key at Dashboard → Developers → API keys." });
+            }
         }
 
         // 2. Parse and validate body

@@ -91,6 +91,38 @@ subscription to cancel at period end.
 ### `POST /api/user/vault/report-usage` — report metered usage
 Body: `userAddress`, `amountUsdcMicros`. Accrues usage against the subscriber's vault.
 
+### Invoice fields on payment links
+`POST /api/payment-links` additionally accepts `invoice_number?`, `due_date?` (ISO or unix), and
+`payer_email?`. They ride the normal link → receipt → webhook lifecycle and render on the hosted
+checkout page, so a payment link can serve as an invoice.
+
+### Sponsored subscriptions
+Subscription creation accepts `beneficiaryAddress?` — a wallet that receives the service while
+the caller pays. Renewal webhooks then carry `beneficiary_address` so you key entitlements off
+the beneficiary, not the payer. Billing and cancellation rights stay with the payer.
+
+### Test clocks (sandbox) — simulate renewals without waiting
+Test-mode keys (`sk_test_…`) only. Simulated events are delivered to your real (test) webhook
+endpoints with `simulated: true` and `test_clock_id` in the payload — pair with
+`npx @subscriptonarc/cli listen` to watch them arrive locally.
+
+- `POST /api/test/clocks` `{ name? }` → create a clock frozen at "now" (max 10 per merchant)
+- `GET /api/test/clocks` / `GET /api/test/clocks/:id` → list / read (includes subscriptions)
+- `POST /api/test/clocks/:id/subscriptions` `{ amountUsdcMicros?|amountUsdc?, interval?|intervalSeconds?, name?, subscriberLabel? }` → attach a simulated subscription
+- `POST /api/test/clocks/:id/advance` `{ days? | seconds? }` → jump forward; one
+  `subscription.renewed` webhook fires per period that becomes due (max 50 events per call)
+- `DELETE /api/test/clocks/:id` → delete the clock and its simulated subscriptions
+
+### Demo key (signup-free sandbox)
+`sk_test_demo_subscript_sandbox_2026` — a shared, heavily rate-limited, sandbox-only key for
+trying `POST /api/intent` before creating an account. Data on the demo merchant is shared and
+may be wiped at any time; create your own free `sk_test_` key for real integration work.
+
+### `GET /api/merchant/dunning` / `PATCH /api/merchant/dunning` — configurable dunning
+Session-authenticated (merchant dashboard). `PATCH { maxFailures: 1..10 }` sets how many
+consecutive failed renewal attempts the keeper makes (roughly one per day) before a customer
+subscription is stopped. Default 4.
+
 ## Webhooks
 
 Events are POSTed to your registered endpoint(s). Each request is signed:

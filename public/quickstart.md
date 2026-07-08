@@ -4,6 +4,21 @@ Accept your first USDC payment in about five minutes. This is the guided path; f
 surface see the [API Reference](https://www.subscriptonarc.com/api-reference.md) and the
 [OpenAPI spec](https://www.subscriptonarc.com/openapi.json).
 
+## 0. Try it with zero setup (optional)
+
+No account needed for your very first call — a shared, rate-limited sandbox key is published
+right here:
+
+```bash
+curl -X POST https://www.subscriptonarc.com/api/intent \
+  -H "Authorization: Bearer sk_test_demo_subscript_sandbox_2026" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Hello SubScript", "amountUsdcMicros": "15000000"}'
+```
+
+The demo key is sandbox-only (nothing settles), shared with other developers, and rate limited.
+When you're ready for your own data, webhooks, and dashboard, create a free key below.
+
 ## 1. Get your keys
 
 From your merchant dashboard, copy a **secret key** (`sk_test_…` for sandbox) and create a

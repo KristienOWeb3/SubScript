@@ -89,6 +89,10 @@ model PaymentLink {
   maxUses              Int?                 @map("max_uses")
   useCount             Int                  @default(0) @map("use_count")
   beneficiaryAddress   String?              @map("beneficiary_address")
+  // Invoice engine v1: these ride the existing link/receipt/webhook lifecycle.
+  invoiceNumber        String?              @map("invoice_number")
+  dueDate              DateTime?            @map("due_date")
+  payerEmail           String?              @map("payer_email")
   receiverAddress      String?              @map("receiver_address")
   receiverPrivateKey   String?              @map("receiver_private_key")
   status               String               @default("PENDING") @map("status")
@@ -145,6 +149,8 @@ model Merchant {
   disputeAlertsEnabled    Boolean          @default(true) @map("dispute_alerts_enabled")
   churnSurveyEnabled      Boolean          @default(true) @map("churn_survey_enabled")
   churnSurveyQuestion     String?          @map("churn_survey_question")
+  // Failed renewal attempts before the keeper stops a customer subscription (zombie kill).
+  dunningMaxFailures      Int              @default(4) @map("dunning_max_failures")
   securityMultiSigEnabled Boolean          @default(false) @map("security_multi_sig_enabled")
   createdAt               DateTime         @default(now()) @map("created_at")
   updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at")
@@ -163,6 +169,8 @@ model MerchantPlan {
   detailsUrl      String?  @map("details_url")
   amountUsdc      BigInt   @map("amount_usdc")
   periodSeconds   BigInt   @map("period_seconds")
+  // Minimum commitment disclosed before subscribing; capped at one billing period and 30 days.
+  minCommitmentSeconds BigInt @default(0) @map("min_commitment_seconds")
   active          Boolean  @default(true)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
@@ -190,11 +198,17 @@ model Subscription {
   // "PREMIUM" (merchant -> SubScript, billed by the in-app cron) or "CUSTOMER"
   // (customer -> merchant plan, billed on-chain). See subscriptions/mirror.ts.
   kind                    String    @default("PREMIUM") @map("kind")
+  // Sponsored subscriptions: the wallet that receives the service when it differs from
+  // the paying subscriber. Carried in merchant webhooks for entitlement mapping.
+  beneficiaryAddress      String?   @map("beneficiary_address")
+  // Snapshot of the plan's commitment window at subscribe time (<= one period by constraint).
+  minCommitmentUntil      DateTime? @map("min_commitment_until")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
   @@index([merchantAddress])
   @@index([subscriber])
+  @@index([beneficiaryAddress])
   @@map("subscriptions")
 }
 
@@ -600,6 +614,35 @@ model MeteredVault {
   @@index([userAddress])
   @@index([merchantAddress])
   @@map("metered_vaults")
+}
+
+model TestClock {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress String                  @map("merchant_address")
+  name            String                  @default("test clock")
+  frozenTime      DateTime                @default(now()) @map("frozen_time")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  subscriptions   TestClockSubscription[]
+
+  @@index([merchantAddress])
+  @@map("test_clocks")
+}
+
+model TestClockSubscription {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clockId          String    @map("clock_id") @db.Uuid
+  clock            TestClock @relation(fields: [clockId], references: [id], onDelete: Cascade)
+  name             String    @default("test subscription")
+  amountUsdcMicros BigInt    @map("amount_usdc_micros")
+  intervalSeconds  BigInt    @map("interval_seconds")
+  subscriberLabel  String    @default("0x0000000000000000000000000000000000000t35") @map("subscriber_label")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  lastRenewedAt    DateTime? @map("last_renewed_at")
+  renewalsFired    Int       @default(0) @map("renewals_fired")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([clockId])
+  @@map("test_clock_subscriptions")
 }
 
 model FiatFundingIntent {

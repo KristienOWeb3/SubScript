@@ -37,8 +37,30 @@ const STANDARD_ABI = [
 ];
 
 /* Consecutive failed renewal attempts before we park the sub as PAST_DUE and stop retrying.
-   Until then it stays ACTIVE and is retried each run (cheap — only view calls until funded). */
-const MAX_RENEWAL_FAILURES = 4;
+   Until then it stays ACTIVE and is retried each run (cheap — only view calls until funded).
+   Merchants can tune this per-account (merchants.dunning_max_failures, 1–10) — configurable
+   dunning; this constant is only the fallback when no merchant row/config exists. */
+const DEFAULT_MAX_RENEWAL_FAILURES = 4;
+
+async function loadDunningConfig(supabase: any, merchantAddresses: string[]): Promise<Map<string, number>> {
+    const config = new Map<string, number>();
+    if (merchantAddresses.length === 0) return config;
+    const { data, error } = await supabase
+        .from("merchants")
+        .select("wallet_address, dunning_max_failures")
+        .in("wallet_address", merchantAddresses);
+    if (error) {
+        console.error("[customer-billing] dunning config query failed (using defaults):", error.message);
+        return config;
+    }
+    for (const row of data || []) {
+        const value = Number(row.dunning_max_failures);
+        if (Number.isFinite(value) && value >= 1 && value <= 10) {
+            config.set(String(row.wallet_address).toLowerCase(), value);
+        }
+    }
+    return config;
+}
 
 async function createBillingDm({
     supabase,
@@ -132,10 +154,15 @@ export async function POST(request: Request) {
         }
 
         const results: any[] = [];
+        const dunningConfig = await loadDunningConfig(
+            supabase,
+            [...new Set((dueSubs || []).map((s: any) => String(s.merchant_address).toLowerCase()))],
+        );
 
         for (const sub of dueSubs || []) {
             const subId = Number(sub.subscription_id);
             const merchantAddress: string = sub.merchant_address;
+            const maxRenewalFailures = dunningConfig.get(String(merchantAddress).toLowerCase()) ?? DEFAULT_MAX_RENEWAL_FAILURES;
 
             try {
                 /* Authoritative on-chain state. */
@@ -220,7 +247,7 @@ export async function POST(request: Request) {
                         })).catch(() => { /* best-effort */ });
                     }
 
-                    if (newFailures >= MAX_RENEWAL_FAILURES) {
+                    if (newFailures >= maxRenewalFailures) {
                         /* Zombie kill: repeated failed renewals mean the subscriber has effectively
                            abandoned the plan. Rather than leaving a live authorization that could
                            surprise-charge them later (the exact "zombie billing" SubScript exists to
@@ -323,6 +350,7 @@ export async function POST(request: Request) {
                     subscriber,
                     merchantAddress,
                     txHash: tx.hash,
+                    beneficiary: sub.beneficiary_address || null,
                 })).catch(() => { /* best-effort */ });
 
                 results.push({ subId, subscriber, action: "PAYMENT_EXECUTED", success: true, txHash: tx.hash });

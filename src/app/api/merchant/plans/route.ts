@@ -19,6 +19,7 @@ function formatPlan(p: any) {
         detailsUrl: p.detailsUrl ?? null,
         amountUsdc: p.amountUsdc.toString(),
         periodSeconds: p.periodSeconds.toString(),
+        minCommitmentSeconds: (p.minCommitmentSeconds ?? BigInt(0)).toString(),
         active: p.active,
     };
 }
@@ -117,6 +118,23 @@ export async function POST(request: Request) {
         }
         const periodSeconds = BigInt(Math.round(periodDays) * 24 * 60 * 60);
 
+        /* Optional minimum-commitment window, disclosed on the subscribe page before
+           authorization. Protocol ceilings: never more than one billing period, never more
+           than 30 days — an early cancel then simply takes effect at period end, so the
+           commitment can never extend billing beyond what the subscriber already approved. */
+        let minCommitmentSeconds = BigInt(0);
+        if (body.minCommitmentDays !== undefined && body.minCommitmentDays !== null && body.minCommitmentDays !== "") {
+            const days = Number(body.minCommitmentDays);
+            if (!Number.isFinite(days) || days < 0) {
+                return NextResponse.json({ error: "minCommitmentDays must be zero or a positive number of days" }, { status: 400 });
+            }
+            const capDays = Math.min(30, Math.round(periodDays));
+            if (days > capDays) {
+                return NextResponse.json({ error: `Minimum commitment cannot exceed ${capDays} days for this plan (one billing period, capped at 30 days).` }, { status: 400 });
+            }
+            minCommitmentSeconds = BigInt(Math.round(days * 24 * 60 * 60));
+        }
+
         const activeCount = await prisma.merchantPlan.count({
             where: { merchantAddress: wallet.toLowerCase(), active: true },
         });
@@ -132,6 +150,7 @@ export async function POST(request: Request) {
                 detailsUrl: detailsUrlResult.value,
                 amountUsdc,
                 periodSeconds,
+                minCommitmentSeconds,
             },
         });
         return NextResponse.json({ success: true, plan: formatPlan(plan) }, { status: 201 });

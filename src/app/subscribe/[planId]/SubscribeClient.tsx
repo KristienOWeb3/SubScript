@@ -15,6 +15,7 @@ type PlanData = {
     detailsUrl?: string | null;
     amountUsdc: string;
     periodSeconds: string;
+    minCommitmentSeconds?: string;
     merchantAddress: string;
     merchant?: {
         address: string;
@@ -97,6 +98,7 @@ export default function SubscribeClient({
                         detailsUrl: data.plan.detailsUrl ?? null,
                         amountUsdc: data.plan.amountUsdc,
                         periodSeconds: data.plan.periodSeconds,
+                        minCommitmentSeconds: data.plan.minCommitmentSeconds ?? "0",
                         merchantAddress: data.plan.merchantAddress,
                         merchant: data.merchant,
                     });
@@ -247,6 +249,15 @@ export default function SubscribeClient({
                             automatically every <span className="text-white/70 font-bold">{formatPeriod(plan.periodSeconds)}</span>. You can cancel
                             anytime from your SubScript dashboard.
                         </p>
+
+                        {Number(plan.minCommitmentSeconds || 0) > 0 && (
+                            <p className="rounded-xl border border-[#d4a853]/20 bg-[#d4a853]/5 px-4 py-3 text-[10px] leading-relaxed text-[#d4a853]">
+                                This plan has a minimum commitment of{" "}
+                                <span className="font-bold">{Math.max(1, Math.round(Number(plan.minCommitmentSeconds) / 86_400))} day{Math.round(Number(plan.minCommitmentSeconds) / 86_400) === 1 ? "" : "s"}</span>.
+                                Cancelling before it ends takes effect at the end of your current paid period — you are never billed beyond
+                                the period you already approved.
+                            </p>
+                        )}
 
                         {result ? (
                             <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">

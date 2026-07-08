@@ -43,6 +43,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
                 detailsUrl: plan.detailsUrl ?? null,
                 amountUsdc: plan.amountUsdc.toString(),
                 periodSeconds: plan.periodSeconds.toString(),
+                minCommitmentSeconds: (plan.minCommitmentSeconds ?? BigInt(0)).toString(),
                 merchantAddress,
             },
             merchant: {

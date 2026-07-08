@@ -11,12 +11,19 @@ export async function mirrorSubscriptionCreated({
     subscriber,
     amountUsdc,
     periodSeconds,
+    beneficiaryAddress,
+    minCommitmentSeconds,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
     subscriber: string;
     amountUsdc: bigint;
     periodSeconds: bigint;
+    /* Sponsored subscriptions: the wallet that receives the service when it differs
+       from the paying subscriber. Carried into merchant webhooks. */
+    beneficiaryAddress?: string | null;
+    /* Plan commitment window snapshot (<= one period). NULL/0 = no commitment. */
+    minCommitmentSeconds?: bigint | null;
 }) {
     try {
         const merchant = merchantAddress.toLowerCase();
@@ -25,6 +32,10 @@ export async function mirrorSubscriptionCreated({
         const period = BigInt(periodSeconds);
         const now = new Date();
         const nextBilling = new Date(now.getTime() + Number(period) * 1000);
+        const beneficiary = beneficiaryAddress ? beneficiaryAddress.toLowerCase() : null;
+        const commitmentUntil = minCommitmentSeconds && minCommitmentSeconds > BigInt(0)
+            ? new Date(now.getTime() + Number(minCommitmentSeconds) * 1000)
+            : null;
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
         await prisma.merchant.upsert({
@@ -45,6 +56,8 @@ export async function mirrorSubscriptionCreated({
                 nextBillingDate: nextBilling,
                 lastSettlementTimestamp: now,
                 cancelAtPeriodEnd: false,
+                beneficiaryAddress: beneficiary,
+                minCommitmentUntil: commitmentUntil,
                 updatedAt: now,
             },
             create: {
@@ -58,6 +71,8 @@ export async function mirrorSubscriptionCreated({
                 billingIntervalSeconds: period,
                 nextBillingDate: nextBilling,
                 lastSettlementTimestamp: now,
+                beneficiaryAddress: beneficiary,
+                minCommitmentUntil: commitmentUntil,
             },
         });
     } catch (err) {

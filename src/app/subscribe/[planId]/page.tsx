@@ -28,7 +28,7 @@ async function getPlan(planId: string) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { data: plan, error } = await supabase
         .from("merchant_plans")
-        .select("id, merchant_address, name, description, details_url, amount_usdc, period_seconds, active")
+        .select("id, merchant_address, name, description, details_url, amount_usdc, period_seconds, min_commitment_seconds, active")
         .eq("id", planId)
         .maybeSingle();
 
@@ -102,6 +102,7 @@ export default async function PublicSubscribePage({ params }: PageProps) {
             detailsUrl: plan.details_url ?? null,
             amountUsdc: String(plan.amount_usdc),
             periodSeconds: String(plan.period_seconds),
+            minCommitmentSeconds: String(plan.min_commitment_seconds ?? 0),
             merchantAddress: String(plan.merchant_address).toLowerCase(),
             merchant: {
                 address: String(plan.merchant_address).toLowerCase(),

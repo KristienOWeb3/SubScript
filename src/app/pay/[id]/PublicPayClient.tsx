@@ -648,6 +648,20 @@ export default function PublicPayClient({
                             {linkData.description && (
                                 <p className="text-xs text-white/50 leading-relaxed font-sans">{linkData.description}</p>
                             )}
+                            {(linkData.invoice_number || linkData.due_date) && (
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                                    {linkData.invoice_number && (
+                                        <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                                            Invoice {linkData.invoice_number}
+                                        </span>
+                                    )}
+                                    {linkData.due_date && (
+                                        <span className="text-[10px] font-mono uppercase tracking-wider text-[#d4a853]">
+                                            Due {new Date(linkData.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
 
