@@ -1,8 +1,86 @@
 # SubScript — Handover
 
-_Last updated: 2026-07-08. Older reference material is preserved below the session sections._
+_Last updated: 2026-07-08 (end of beta-readiness sessions). Older reference material is preserved below the session sections._
 
 ---
+
+# Status update — 2026-07-08 FINAL (beta launch cleared)
+
+The public testnet beta is cleared for launch. Everything below is live on `main` and verified
+against the production site (all policy pages 200, demo key creates real sandbox intents in prod,
+full Playwright suite green, 69 contract tests green).
+
+Shipped after the earlier status block below (commits `fed73dd` → `0fa8bb0`):
+
+- **/support help center** + in-dashboard support (user sidebar + settings card; merchant sidebar +
+  Profile & DNS card). Routing: support@subscriptonarc.com (general), compliance@subscriptonarc.com
+  (billing/refunds/privacy/legal/[SECURITY]). Both mailboxes created and routed by the user.
+- **Drift healer** in `/api/cron/reconcile` (src/lib/subscriptions/driftHealer.ts) — heals
+  behind-our-back on-chain cancels, revokes authorizations left live behind DB cancels, fixes
+  stale settlement timestamps. Closes the chain-event-indexer gap for the beta.
+- **`subscript listen`** (CLI webhook forwarding to localhost via `GET /api/cli/events`).
+- **All deployment-scoped product gaps closed as v1s** (migration `20260709000001` applied to
+  prod): sandbox test clocks (`/api/test/clocks`), signup-free demo key
+  (`sk_test_demo_subscript_sandbox_2026`, seeded by scripts/seed-demo-key.mjs), configurable
+  dunning (`merchants.dunning_max_failures`, `GET/PATCH /api/merchant/dunning`), plan commitment
+  windows (≤ 1 period/30d, disclosed pre-auth), invoice fields on payment links, sponsored
+  subscriptions (`beneficiaryAddress` → webhooks carry `beneficiary_address`).
+- **Prod DB repairs** (drift incidents #3/#4 pattern): `payment_sessions.processing_attempts/
+  last_error/failure_code`, `system_settings`, `premium_upgrade_events` were missing — the daily
+  payment reconcile had been silently failing; repaired directly, verified with a live run.
+- **Custody cutover 100% complete**: all custodial wallets on Circle MPC, legacy history wiped,
+  AES path retired, `WALLET_ENCRYPTION_KEY` deleted from Vercel (verified: zero encrypted blobs
+  remain in the DB). Prod `DATABASE_URL` carries `?pgbouncer=true&connection_limit=1`.
+
+**THE ONE REMAINING TECHNICAL ITEM — testnet redeploy of the hardened contracts.** The deployed
+testnet contracts still run pre-2026-07-08 bytecode; the hardening (PSA billing-window expiry,
+Router liability-guarded rescue, Confidential view-key fixes) is source-only until redeployed.
+App-layer keeper protections cover users meanwhile. When ready, start a fresh session with the
+prompt in `## Redeploy prompt` below. Needs the deployer/owner `PRIVATE_KEY` funded on Arc testnet.
+
+**Still open (external/human):** contract audit quotes, multi-sig (Safe) ownership + rehearsed
+pause/upgrade, AML/KYC posture, licensed fiat onramp (mainnet-scoped), status page/changelog.
+
+## Redeploy prompt (copy into a fresh session when ready)
+
+> Redeploy the hardened SubScript contracts to Arc testnet and cut the app over. Context:
+> the contract source on main (commit 2756dd0 and later) contains hardening that the deployed
+> testnet contracts predate — PSA billing-window expiry (PaymentWindowExpired), Router
+> totalMerchantLiabilities + surplus-only rescueERC20 + merchant-keyed Withdraw/PayoutDelivered
+> events, Confidential executeBatchPayout(viewKeyHash) + registerViewKey overwrite guard.
+> Deployed addresses and env override names are in src/lib/contracts/constants.ts; deploy scripts
+> and network config are in script/, scripts/, hardhat.config.js, and foundry.toml. LAUNCH.md §1
+> has a warning block describing exactly this task.
+>
+> Steps, in order:
+> 1. Run both contract suites first and require green: `npx hardhat test` (49) and `forge test` (20).
+> 2. SubScriptConfidential extends SubScriptPSA and the app points STANDARD_CONTRACT_ADDRESS and
+>    CONFIDENTIAL_CONTRACT_ADDRESS at the SAME deployed contract — deploy ONE new
+>    SubScriptConfidential with the same constructor params as the current deployment (read the
+>    existing deploy script for paymentToken = native USDC 0x3600…0000, the StableFX router
+>    address, treasury, and owner; verify against the live contract's public getters).
+> 3. SubScriptRouter (0x6946B7…) and SubScriptVault (0x8535…) are UUPS proxies — upgrade them
+>    in place with the new implementations (owner = deployer key). Vault: check whether
+>    initializeV2(treasury) already ran; if not, use upgradeToAndCall. Router/Vault addresses do
+>    NOT change; only the PSA/Confidential address changes.
+> 4. Before switching the app: enumerate ACTIVE on-chain subscriptions on the OLD PSA
+>    (subscriptions table mirror + SubscriptionCreated logs). For each, cancel on the old
+>    contract and recreate on the new one via custody (subscribeFromEmbedded — wallets are
+>    dev-controlled Circle MPC), updating the mirror rows with the new subscription ids; notify
+>    affected users by DM. The beta ToS §2 explicitly permits contract redeployment.
+> 5. Update NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS and NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS
+>    in Vercel (both to the new Confidential address) and in local env files; also update the
+>    testnet defaults in src/lib/contracts/constants.ts so the repo matches reality.
+> 6. Verify: run scripts/check-contracts.mjs and the contracts health check
+>    (src/lib/contracts/health.ts consumers), `npm run integration:smoke` against the deployment,
+>    one manual subscribe → keeper renewal (customer-billing cron) → cancel cycle on the new
+>    contract, confirm the drift healer reports 0 errors, and confirm executePayment on a lapsed
+>    sequence now reverts PaymentWindowExpired.
+> 7. Update LAUNCH.md (remove/mark the §1 warning), docs/platform-feature-coverage.md
+>    ("On-chain billing safety" row → fully live), and llms-full.txt if it mentions pending
+>    contract enforcement. Commit and push to main. Record the old addresses in handover.md
+>    for reference. Treat this as the mainnet cutover rehearsal: note every manual step you had
+>    to take so LAUNCH.md can be corrected accordingly.
 
 # Status update — 2026-07-08 (beta-readiness session)
 
