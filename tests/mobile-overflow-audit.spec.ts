@@ -458,54 +458,62 @@ test.describe("mobile overflow audit", () => {
     await mobileContext.close();
   });
 
+  async function runAudit(
+    browser: Browser,
+    viewport: { readonly name: string; readonly width: number; readonly height: number },
+    role: Role,
+    routes: readonly string[],
+    failures: any[],
+  ) {
+    const context = await newAuditContext(browser, viewport, role);
+    const page = await context.newPage();
+    for (const route of routes) {
+      const result = await visitAndAudit(page, route, `${viewport.name} ${route}`);
+      if (
+        result.horizontalOverflow > 1 ||
+        result.horizontalProtrusions.length > 0 ||
+        result.fixedVerticalProtrusions.length > 0 ||
+        result.clippedContent.length > 0
+      ) {
+        failures.push(result);
+      }
+    }
+    await context.close();
+  }
+
   test("keeps primary app routes inside mobile viewport bounds", async ({ browser }) => {
     const failures: any[] = [];
 
     for (const viewport of viewports) {
-      const publicContext = await newAuditContext(browser, viewport, "anonymous");
-      const publicPage = await publicContext.newPage();
-      for (const route of publicRoutes) {
-        const result = await visitAndAudit(publicPage, route, `${viewport.name} ${route}`);
-        if (
-          result.horizontalOverflow > 1 ||
-          result.horizontalProtrusions.length > 0 ||
-          result.fixedVerticalProtrusions.length > 0 ||
-          result.clippedContent.length > 0
-        ) {
-          failures.push(result);
-        }
-      }
-      await publicContext.close();
+      await runAudit(browser, viewport, "anonymous", publicRoutes, failures);
+      await runAudit(browser, viewport, "merchant", merchantRoutes, failures);
+      await runAudit(browser, viewport, "user", userRoutes, failures);
+    }
 
-      const merchantContext = await newAuditContext(browser, viewport, "merchant");
-      const merchantPage = await merchantContext.newPage();
-      for (const route of merchantRoutes) {
-        const result = await visitAndAudit(merchantPage, route, `${viewport.name} ${route}`);
-        if (
-          result.horizontalOverflow > 1 ||
-          result.horizontalProtrusions.length > 0 ||
-          result.fixedVerticalProtrusions.length > 0 ||
-          result.clippedContent.length > 0
-        ) {
-          failures.push(result);
-        }
-      }
-      await merchantContext.close();
+    expect(failures).toEqual([]);
+  });
 
-      const userContext = await newAuditContext(browser, viewport, "user");
-      const userPage = await userContext.newPage();
-      for (const route of userRoutes) {
-        const result = await visitAndAudit(userPage, route, `${viewport.name} ${route}`);
-        if (
-          result.horizontalOverflow > 1 ||
-          result.horizontalProtrusions.length > 0 ||
-          result.fixedVerticalProtrusions.length > 0 ||
-          result.clippedContent.length > 0
-        ) {
-          failures.push(result);
-        }
-      }
-      await userContext.close();
+  /* Beyond phones: large-phone width for every route, and the Tailwind breakpoint boundaries
+     (md=768 where the dashboard sidebars appear, lg=1024 where they expand, plus a large
+     desktop) for the authenticated dashboards — the surfaces where breakpoint regressions
+     actually happen. Public pages are single-column documents; proving them at 320/390/430
+     covers wider screens by construction. */
+  test("keeps dashboards inside tablet and desktop viewport bounds", async ({ browser }) => {
+    const failures: any[] = [];
+
+    const largePhone = { name: "large-phone", width: 430, height: 932 } as const;
+    await runAudit(browser, largePhone, "anonymous", publicRoutes, failures);
+    await runAudit(browser, largePhone, "merchant", merchantRoutes, failures);
+    await runAudit(browser, largePhone, "user", userRoutes, failures);
+
+    const wideViewports = [
+      { name: "tablet", width: 768, height: 1024 },
+      { name: "laptop", width: 1024, height: 768 },
+      { name: "desktop", width: 1440, height: 900 },
+    ] as const;
+    for (const viewport of wideViewports) {
+      await runAudit(browser, viewport, "merchant", merchantRoutes, failures);
+      await runAudit(browser, viewport, "user", userRoutes, failures);
     }
 
     expect(failures).toEqual([]);
