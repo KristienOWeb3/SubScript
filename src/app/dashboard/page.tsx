@@ -208,6 +208,7 @@ export default function DashboardPage() {
     const [planDetailsUrl, setPlanDetailsUrl] = useState("");
     const [planAmountUsdc, setPlanAmountUsdc] = useState("");
     const [planPeriodDays, setPlanPeriodDays] = useState("30");
+    const [planMinCommitmentDays, setPlanMinCommitmentDays] = useState("");
     const [planError, setPlanError] = useState<string | null>(null);
     const [planSuccess, setPlanSuccess] = useState<string | null>(null);
 
@@ -217,6 +218,15 @@ export default function DashboardPage() {
     const [linkDurationMinutes, setLinkDurationMinutes] = useState(1440); /* Default to 24 hours (1440 mins) */
     const [linkExternalReference, setLinkExternalReference] = useState("");
     const [linkMaxUses, setLinkMaxUses] = useState("1");
+    const [linkInvoiceNumber, setLinkInvoiceNumber] = useState("");
+    const [linkDueDate, setLinkDueDate] = useState("");
+    const [linkPayerEmail, setLinkPayerEmail] = useState("");
+
+    /* Configurable dunning: failed renewal attempts before the keeper stops a customer sub. */
+    const [dunningMaxFailures, setDunningMaxFailures] = useState("4");
+    const [dunningLoaded, setDunningLoaded] = useState(false);
+    const [dunningSaving, setDunningSaving] = useState(false);
+    const [dunningMessage, setDunningMessage] = useState<string | null>(null);
     const [isCreatingLink, setIsCreatingLink] = useState(false);
     const [linkError, setLinkError] = useState<string | null>(null);
     const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
@@ -588,6 +598,48 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+    /* Load the dunning config lazily, the first time the settings tab opens. */
+    useEffect(() => {
+        if (activeTab !== "settings" || dunningLoaded) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/merchant/dunning");
+                const data = await res.json().catch(() => ({}));
+                if (!cancelled && res.ok && data.success) {
+                    setDunningMaxFailures(String(data.dunning.maxFailures));
+                    setDunningLoaded(true);
+                }
+            } catch { /* keep the default; the card still saves */ }
+        })();
+        return () => { cancelled = true; };
+    }, [activeTab, dunningLoaded]);
+
+    const handleSaveDunning = async () => {
+        const value = Number(dunningMaxFailures);
+        if (!Number.isInteger(value) || value < 1 || value > 10) {
+            setDunningMessage("Choose a whole number between 1 and 10.");
+            return;
+        }
+        setDunningSaving(true);
+        setDunningMessage(null);
+        try {
+            const res = await fetch("/api/merchant/dunning", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ maxFailures: value }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to save");
+            setDunningMessage("Saved — applies from the next billing run.");
+            setTimeout(() => setDunningMessage(null), 4000);
+        } catch (err: any) {
+            setDunningMessage(err.message || "Failed to save dunning settings.");
+        } finally {
+            setDunningSaving(false);
+        }
+    };
     const [subTab, setSubTab] = useState<"subscriptions" | "one-time" | "commit">("subscriptions");
     /* Thumb-swipe or mouse-drag across the Payments & Subscriptions sub-tabs; taps still work. */
     const paymentSwipe = useSwipeTabs(["subscriptions", "one-time", "commit"] as const, subTab, setSubTab);
@@ -1124,6 +1176,12 @@ export default function DashboardPage() {
             setPlanError("Details link must start with http:// or https://");
             return;
         }
+        const commitmentDays = planMinCommitmentDays === "" ? 0 : Number(planMinCommitmentDays);
+        const commitmentCap = Math.min(30, Number(planPeriodDays));
+        if (!Number.isFinite(commitmentDays) || commitmentDays < 0 || commitmentDays > commitmentCap) {
+            setPlanError(`Minimum commitment must be between 0 and ${commitmentCap} days (one billing period, capped at 30).`);
+            return;
+        }
 
         setIsPlansLoading(true);
         try {
@@ -1136,6 +1194,7 @@ export default function DashboardPage() {
                     detailsUrl: trimmedDetailsUrl || undefined,
                     amountUsdc: planAmountUsdc,
                     periodDays: Number(planPeriodDays),
+                    minCommitmentDays: commitmentDays > 0 ? commitmentDays : undefined,
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -1145,6 +1204,7 @@ export default function DashboardPage() {
             setPlanDetailsUrl("");
             setPlanAmountUsdc("");
             setPlanPeriodDays("30");
+            setPlanMinCommitmentDays("");
             setPlanSuccess("Plan created. Copy its subscribe link below and share it with customers.");
             setToastMessage("Plan Created");
             setShowToast(true);
@@ -1206,7 +1266,10 @@ export default function DashboardPage() {
                     amount_usdc: rawAmount,
                     expires_at: linkDurationMinutes > 0 ? expiresTimestamp : null,
                     external_reference: linkExternalReference || null,
-                    max_uses: linkMaxUses ? Number(linkMaxUses) : null
+                    max_uses: linkMaxUses ? Number(linkMaxUses) : null,
+                    invoice_number: linkInvoiceNumber.trim() || null,
+                    due_date: linkDueDate || null,
+                    payer_email: linkPayerEmail.trim() || null
                 })
             });
 
@@ -1229,6 +1292,9 @@ export default function DashboardPage() {
             setLinkAmountUsdc("");
             setLinkDurationMinutes(1440);
             setLinkMaxUses("1");
+            setLinkInvoiceNumber("");
+            setLinkDueDate("");
+            setLinkPayerEmail("");
             setLinkExternalReference("");
             await fetchPaymentLinks();
         } catch (err: any) {
@@ -2598,6 +2664,43 @@ Please complete the following implementation tasks:
                                     />
                                 </div>
 
+                                <div className="col-span-2 space-y-3 rounded-2xl border border-white/5 bg-white/[0.015] p-4">
+                                    <p className="text-[9px] font-bold uppercase tracking-wide text-white/40">
+                                        Invoice details <span className="normal-case text-white/25">(optional — turns this link into an invoice; shown on the checkout page)</span>
+                                    </p>
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Invoice Number</label>
+                                            <input
+                                                type="text"
+                                                placeholder="INV-2026-001"
+                                                value={linkInvoiceNumber}
+                                                onChange={(e) => setLinkInvoiceNumber(e.target.value.slice(0, 64))}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Due Date</label>
+                                            <input
+                                                type="date"
+                                                value={linkDueDate}
+                                                onChange={(e) => setLinkDueDate(e.target.value)}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors [color-scheme:dark]"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Payer Email</label>
+                                            <input
+                                                type="email"
+                                                placeholder="billing@client.com"
+                                                value={linkPayerEmail}
+                                                onChange={(e) => setLinkPayerEmail(e.target.value)}
+                                                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="space-y-1 col-span-2">
                                     <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">Maximum Uses</label>
                                     <input
@@ -3016,6 +3119,21 @@ Please complete the following implementation tasks:
                         </div>
 
                         <div className="space-y-1">
+                            <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
+                                Minimum Commitment (days) <span className="normal-case text-white/25">(optional — disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="30"
+                                value={planMinCommitmentDays}
+                                onChange={(event) => setPlanMinCommitmentDays(event.target.value)}
+                                placeholder="0 = no commitment"
+                                className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
                                     Description <span className="normal-case text-white/25">(optional — shown to subscribers)</span>
@@ -3150,6 +3268,44 @@ Please complete the following implementation tasks:
                         >
                             Open the Help Center
                         </a>
+                    </div>
+                </div>
+
+                {/* Dunning / failed-renewal policy */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <ArrowRightLeft className="w-4 h-4 text-[#00d2b4]" />
+                            Failed-Renewal Policy (Dunning)
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            When a customer&apos;s renewal fails (insufficient balance), the keeper retries roughly
+                            once a day. Choose how many attempts to make before the subscription is stopped and the
+                            customer is notified. More attempts ≈ more days of grace.
+                        </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center font-sans">
+                        <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value={dunningMaxFailures}
+                            onChange={(e) => setDunningMaxFailures(e.target.value)}
+                            className="w-full sm:w-32 bg-black border border-white/10 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-[#00d2b4] transition-colors"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleSaveDunning}
+                            disabled={dunningSaving}
+                            className="w-full sm:w-auto shrink-0 px-6 py-3 bg-[#00d2b4] hover:bg-[#00d2b4]/80 disabled:opacity-50 text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                            {dunningSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                            Save
+                        </button>
+                        {dunningMessage && (
+                            <span className="text-[10px] text-white/50">{dunningMessage}</span>
+                        )}
                     </div>
                 </div>
 

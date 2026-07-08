@@ -68,6 +68,9 @@ const spec = {
                     amount_usdc: { type: "string", description: "Integer micro-USDC." },
                     receiptToken: { type: ["string", "null"] },
                     checkoutUrl: { type: "string", format: "uri" },
+                    invoiceNumber: { type: ["string", "null"], description: "Invoice v1: shown on the hosted checkout page." },
+                    dueDate: { type: ["string", "null"], format: "date-time" },
+                    payerEmail: { type: ["string", "null"] },
                 },
             },
             Subscription: {
@@ -145,10 +148,38 @@ const spec = {
                             currency: { type: "string", const: "USDC" },
                             subscriber: { type: ["string", "null"] },
                             merchant_address: { type: ["string", "null"] },
+                            beneficiary_address: { type: ["string", "null"], description: "Sponsored subscriptions: the wallet receiving the service when it differs from the paying subscriber. Key entitlements off this when present." },
                             reason: { type: "string", description: "Present on canceled/payment_failed events." },
                             transaction_hash: { type: ["string", "null"] },
                             chain_id: { type: "integer" },
                             explorer_url: { type: ["string", "null"] },
+                            simulated: { type: "boolean", description: "true when fired by a sandbox test clock — never real settlement." },
+                            test_clock_id: { type: "string", description: "Present when simulated." },
+                        },
+                    },
+                },
+            },
+            TestClock: {
+                type: "object",
+                description: "Sandbox test clock (test keys only). Advancing it fires signed subscription.renewed webhooks for each period that becomes due.",
+                properties: {
+                    id: { type: "string", format: "uuid" },
+                    name: { type: "string" },
+                    frozenTime: { type: "string", format: "date-time" },
+                    createdAt: { type: "string", format: "date-time" },
+                    subscriptions: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                id: { type: "string", format: "uuid" },
+                                name: { type: "string" },
+                                amountUsdcMicros: { type: "string" },
+                                intervalSeconds: { type: "string" },
+                                subscriberLabel: { type: "string" },
+                                lastRenewedAt: { type: ["string", "null"], format: "date-time" },
+                                renewalsFired: { type: "integer" },
+                            },
                         },
                     },
                 },
@@ -180,6 +211,9 @@ const spec = {
                                     idempotency_key: { type: "string" },
                                     max_uses: { type: "integer", minimum: 1, maximum: 10000 },
                                     expires_at: { type: ["integer", "string"] },
+                                    invoice_number: { type: "string", maxLength: 64, description: "Invoice v1: shown on the hosted checkout page and rides the receipt/webhook lifecycle." },
+                                    due_date: { type: ["integer", "string"], description: "Invoice due date (ISO date or unix timestamp)." },
+                                    payer_email: { type: "string", format: "email" },
                                 },
                             },
                         },
@@ -354,6 +388,75 @@ const spec = {
                     "402": { description: "Vault inactive or commit exhausted", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "No vault", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
+            },
+        },
+        "/api/test/clocks": {
+            post: {
+                summary: "Create a sandbox test clock (test keys only)",
+                description:
+                    "Test clocks simulate the recurring-billing pipeline without waiting real time or touching the chain. Requires an sk_test_ key; live keys are rejected. Max 10 clocks per merchant.",
+                requestBody: {
+                    required: false,
+                    content: { "application/json": { schema: { type: "object", properties: { name: { type: "string", maxLength: 60 } } } } },
+                },
+                responses: {
+                    "201": { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/TestClock" } } } },
+                    "403": { description: "Live key used — test clocks are sandbox-only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            get: {
+                summary: "List this merchant's test clocks",
+                responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { clocks: { type: "array", items: { $ref: "#/components/schemas/TestClock" } } } } } } } },
+            },
+        },
+        "/api/test/clocks/{id}": {
+            get: {
+                summary: "Read one test clock (with simulated subscriptions)",
+                parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+                responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/TestClock" } } } } },
+            },
+            delete: {
+                summary: "Delete a test clock and its simulated subscriptions",
+                parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+                responses: { "200": { description: "Deleted" } },
+            },
+        },
+        "/api/test/clocks/{id}/subscriptions": {
+            post: {
+                summary: "Attach a simulated subscription to a test clock",
+                parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+                requestBody: {
+                    required: false,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    name: { type: "string", maxLength: 60 },
+                                    amountUsdcMicros: { type: "string", description: "Integer micro-USDC (default 10000000 = 10 USDC)." },
+                                    amountUsdc: { type: "number", description: "Decimal USDC alternative." },
+                                    interval: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
+                                    intervalSeconds: { type: "integer", minimum: 60 },
+                                    subscriberLabel: { type: "string", maxLength: 64 },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: { "201": { description: "Created" } },
+            },
+        },
+        "/api/test/clocks/{id}/advance": {
+            post: {
+                summary: "Advance a test clock — fires one subscription.renewed webhook per due period",
+                description:
+                    "Simulated events are delivered to your real (test) webhook endpoints with a valid signature, plus `simulated: true` and `test_clock_id` in the payload. Max 365 days and 50 events per call. Pair with `npx @subscriptonarc/cli listen` to watch them arrive locally.",
+                parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+                requestBody: {
+                    required: true,
+                    content: { "application/json": { schema: { type: "object", properties: { days: { type: "number" }, seconds: { type: "number" } } } } },
+                },
+                responses: { "200": { description: "OK — includes eventsFired and per-subscription renewal counts" } },
             },
         },
     },

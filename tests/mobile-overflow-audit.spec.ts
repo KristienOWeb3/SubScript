@@ -51,6 +51,7 @@ const merchantRoutes = [
   "/dashboard?tab=webhooks",
   "/dashboard?tab=premium",
   "/dashboard?tab=payroll",
+  "/dashboard?tab=settings",
   "/dashboard?scroll=dns",
   "/dashboard/upgrade",
   "/dashboard/payroll",
