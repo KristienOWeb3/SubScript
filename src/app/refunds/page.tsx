@@ -117,6 +117,7 @@ export default function RefundPolicy() {
               <Link href="/privacy" className="transition hover:text-white">Privacy Policy</Link>
               <Link href="/refunds" className="transition hover:text-white">Refund Policy</Link>
               <Link href="/fulfillment" className="transition hover:text-white">Fulfillment Policy</Link>
+              <Link href="/support" className="transition hover:text-white">Support</Link>
             </div>
           </div>
         </footer>

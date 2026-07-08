@@ -17,6 +17,7 @@ SubScript helps consumers pay without dollar-card friction and helps merchants a
 - [Terms of Service](https://www.subscriptonarc.com/terms): Legal terms for using SubScript, including public-beta/testnet, warranty, and liability terms.
 - [Refund & Cancellation Policy](https://www.subscriptonarc.com/refunds): Cancellation rights, billing-error handling, merchant-of-record scope, and testnet-beta refund terms.
 - [Fulfillment Policy](https://www.subscriptonarc.com/fulfillment): Digital delivery terms, Premium activation timing, merchant webhook fulfillment, and vault settlement.
+- [Support & Contact](https://www.subscriptonarc.com/support): How to reach SubScript — general support (support@subscriptonarc.com), billing/refunds/privacy/legal and security disclosures (compliance@subscriptonarc.com), plus answers to common questions.
 
 ## Developer Resources
 

@@ -469,6 +469,7 @@ export default function Home() {
                                         { label: "Privacy Policy", href: "/privacy" },
                                         { label: "Refund Policy", href: "/refunds" },
                                         { label: "Fulfillment Policy", href: "/fulfillment" },
+                                        { label: "Support", href: "/support" },
                                     ],
                                 },
                             ].map((col) => (

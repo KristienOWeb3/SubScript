@@ -34,6 +34,7 @@ const publicRoutes = [
   "/protocol",
   "/signin",
   "/signup",
+  "/support",
   "/terms",
   "/waitlist",
   "/pay/mobile-audit-link",
