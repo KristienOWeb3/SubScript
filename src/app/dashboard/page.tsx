@@ -41,7 +41,7 @@ import {
     PlugZap, Loader2, Award, Crown, ExternalLink, ArrowDownToLine,
     Wallet, Shield, BarChart3, Link2, Zap, QrCode, Lock, Building2,
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
-    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare
+    ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle
 } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
@@ -3115,6 +3115,44 @@ Please complete the following implementation tasks:
 
         return (
             <div className="space-y-8 max-w-4xl mx-auto">
+                {/* Help & Support */}
+                <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <HelpCircle className="w-4 h-4 text-[#00d2b4]" />
+                            Help &amp; Support
+                        </h2>
+                        <p className="text-[11px] text-white/40 font-sans">
+                            Integration help, activation issues, billing questions, or security disclosures — real
+                            humans read every message.
+                        </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3 font-sans text-xs">
+                        <a
+                            href="mailto:support@subscriptonarc.com"
+                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">General support</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                        </a>
+                        <a
+                            href="mailto:compliance@subscriptonarc.com"
+                            className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                            <span className="block text-[9px] font-black uppercase tracking-wider text-white/35">Billing, legal &amp; security</span>
+                            <span className="mt-1 block break-all font-mono text-[10px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                        </a>
+                        <a
+                            href="/support"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                        >
+                            Open the Help Center
+                        </a>
+                    </div>
+                </div>
+
                 {/* Profile & Identity Section */}
                 <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-6">
                     <div>
@@ -5834,6 +5872,17 @@ Please complete the following implementation tasks:
                                     </button>
                                 );
                             })}
+
+                            <a
+                                href="/support"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full flex items-center justify-center lg:justify-start gap-3.5 px-4 py-4 lg:px-5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all border text-left bg-white/[0.01] border-white/5 text-white/50 hover:text-white hover:bg-[#00d2b4]/5 hover:border-[#00d2b4]/20"
+                                title="Help & Support"
+                            >
+                                <HelpCircle className="w-4 h-4 shrink-0 text-white/40" />
+                                <span className="hidden lg:inline">Support</span>
+                            </a>
                         </div>
 
                         {/* View Content */}

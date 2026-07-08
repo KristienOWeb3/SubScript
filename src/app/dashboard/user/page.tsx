@@ -46,6 +46,7 @@ import {
   Download,
   ExternalLink,
   Globe,
+  HelpCircle,
   Home,
   Link2,
   Loader2,
@@ -3563,6 +3564,42 @@ export default function UserDashboard() {
                       </div>
                     </div>
 
+                    {/* Help & Support Panel */}
+                    <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-3 shadow-2xl">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+                        <HelpCircle className="h-3.5 w-3.5 text-[#00d2b4]" /> Help &amp; Support
+                      </h4>
+                      <p className="text-[10px] leading-relaxed text-white/45 font-sans">
+                        Billing question, incorrect charge, or something not working? Real humans read every
+                        message — include your wallet address and a receipt ID or transaction hash if it&apos;s
+                        about a payment.
+                      </p>
+                      <div className="space-y-2 font-sans text-xs">
+                        <a
+                          href="mailto:support@subscriptonarc.com"
+                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                          <span className="text-white/60">General support</span>
+                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">support@subscriptonarc.com</span>
+                        </a>
+                        <a
+                          href="mailto:compliance@subscriptonarc.com"
+                          className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/5"
+                        >
+                          <span className="text-white/60">Billing, refunds &amp; privacy</span>
+                          <span className="font-mono text-[11px] font-bold text-[#00d2b4]">compliance@subscriptonarc.com</span>
+                        </a>
+                        <a
+                          href="/support"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-full rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4] transition hover:bg-[#00d2b4]/10"
+                        >
+                          Open the Help Center
+                        </a>
+                      </div>
+                    </div>
+
                     {/* DNS Management Panel */}
                     <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 space-y-4 shadow-2xl">
                       <h4 className="text-[10px] font-black uppercase tracking-wider text-white/50 flex items-center gap-1.5">
@@ -4904,6 +4941,17 @@ function UserDesktopSidebar({
             <p className="mt-0.5 truncate text-[10px] font-mono text-white/35">{formatAddress(userWallet)}</p>
           </div>
         </button>
+
+        <a
+          href="/support"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full items-center justify-center gap-2 rounded-full lg:rounded-2xl border border-white/5 bg-white/[0.02] p-3.5 lg:px-4 lg:py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/45 transition hover:border-[#00d2b4]/25 hover:bg-[#00d2b4]/10 hover:text-[#00d2b4]"
+          title="Help & Support"
+        >
+          <HelpCircle className="h-4 w-4 shrink-0" />
+          <span className="hidden lg:inline">Support</span>
+        </a>
 
         <button
           type="button"
