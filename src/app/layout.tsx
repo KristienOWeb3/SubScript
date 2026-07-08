@@ -122,6 +122,20 @@ const structuredData = {
             creator: {
                 "@id": `${appUrl}/#organization`,
             },
+            softwareHelp: { "@type": "CreativeWork", url: `${appUrl}/docs` },
+            downloadUrl: "https://www.npmjs.com/package/@subscriptonarc/cli",
+        },
+        {
+            "@type": "SoftwareSourceCode",
+            "@id": `${appUrl}/#cli`,
+            name: "@subscriptonarc/cli",
+            description:
+                "Command-line tool to integrate SubScript: scaffold checkout and signed-webhook routes, diagnose an integration, and forward live webhooks to localhost. Run `npx @subscriptonarc/cli init`.",
+            codeRepository: "https://github.com/KristienOWeb3/SubScript",
+            runtimePlatform: "Node.js",
+            programmingLanguage: "TypeScript",
+            targetProduct: { "@id": `${appUrl}/#software` },
+            url: "https://www.npmjs.com/package/@subscriptonarc/cli",
         },
         {
             "@type": "WebSite",

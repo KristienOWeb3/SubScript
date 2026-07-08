@@ -4,6 +4,38 @@
 
 SubScript helps consumers pay without dollar-card friction and helps merchants accept programmable USDC payments through a Unified Payment Authorization (UPA) framework.
 
+## Integrating? Start here (AI agents & developers)
+
+The fastest way to add SubScript to a project is the CLI — it scaffolds the checkout route,
+the signed-webhook handler, and env config for your framework:
+
+```bash
+# Interactive setup:
+npx @subscriptonarc/cli init
+# Or non-interactive (agent/CI friendly):
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
+# Add individual pieces to an existing app:
+npx @subscriptonarc/cli add checkout
+npx @subscriptonarc/cli add webhook
+# Diagnose an existing integration (exits 1 with fixes on stderr):
+npx @subscriptonarc/cli doctor
+# Forward live webhooks to localhost while developing (no public URL needed):
+npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
+```
+
+Make your very first API call with no account, using the shared sandbox demo key:
+
+```bash
+curl -X POST https://www.subscriptonarc.com/api/intent \
+  -H "Authorization: Bearer sk_test_demo_subscript_sandbox_2026" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Hello SubScript", "amountUsdcMicros": "15000000"}'
+```
+
+For a single-file integration guide, load the drop-in agent skill:
+https://www.subscriptonarc.com/skills/subscript-integration/SKILL.md
+Machine-readable API contract: https://www.subscriptonarc.com/openapi.json
+
 ## Core Pages
 
 - [Home](https://www.subscriptonarc.com/): Product overview for SubScript's Arc-native USDC payment layer.

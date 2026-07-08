@@ -109,9 +109,35 @@ npx tsc --noEmit --pretty false
 npm run build
 ```
 
+## Integrate in minutes (CLI)
+
+```bash
+# Scaffold checkout + signed-webhook routes + env for your framework:
+npx @subscriptonarc/cli init
+# Non-interactive (agent/CI):
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
+# Add pieces to an existing app, diagnose, or forward live webhooks to localhost:
+npx @subscriptonarc/cli add checkout
+npx @subscriptonarc/cli doctor
+npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
+```
+
+First API call with no account (shared sandbox demo key):
+
+```bash
+curl -X POST https://www.subscriptonarc.com/api/intent \
+  -H "Authorization: Bearer sk_test_demo_subscript_sandbox_2026" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Hello SubScript", "amountUsdcMicros": "15000000"}'
+```
+
 ## Documentation
 
 - Developer docs: [`/docs`](https://subscriptonarc.com/docs)
+- Quickstart: [`/quickstart.md`](https://subscriptonarc.com/quickstart.md)
+- OpenAPI 3.1 spec: [`/openapi.json`](https://subscriptonarc.com/openapi.json)
+- CLI: [`@subscriptonarc/cli`](https://www.npmjs.com/package/@subscriptonarc/cli) · SDK: [`@subscriptonarc/sdk`](https://www.npmjs.com/package/@subscriptonarc/sdk) · MCP: `@subscriptonarc/mcp`
+- Agent skill: [`/skills/subscript-integration/SKILL.md`](https://subscriptonarc.com/skills/subscript-integration/SKILL.md)
 - Product overview: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
 - Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
 - LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt)

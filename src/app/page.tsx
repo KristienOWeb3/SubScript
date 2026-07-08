@@ -122,7 +122,7 @@ export default function Home() {
     const faqs = [
         ["Do my customers need to understand crypto?", "No. Customers sign in with Google, receive an embedded wallet automatically, and pay the advertised USDC price. There are no seed phrases, browser extensions, or gas tokens to manage."],
         ["What does SubScript cost?", "Merchants pay a flat 1% fee on successful payments. Subscribers pay nothing — no setup fees, maintenance fees, or failed-payment penalties."],
-        ["How do I integrate?", "A no-code merchant can launch with a hosted payment link in minutes. Developers add checkout with one REST call to create an intent, then fulfill orders from signed webhook events. Sandbox keys are available for testing."],
+        ["How do I integrate?", "A no-code merchant can launch with a hosted payment link in minutes. Developers can scaffold checkout and signed-webhook routes in one command with the CLI — `npx @subscriptonarc/cli init` — or make a first REST call with no account using the sandbox demo key. Under the hood it is one REST call to create an intent, then fulfilling orders from signed webhook events. Sandbox keys and test clocks let you test end to end before going live."],
         ["Can customers cancel at any time?", "Yes. Authorizations are bounded and revocable on-chain, so a cancelled subscription cannot be charged again — cancellation is enforced by the payment layer itself, not by a support queue."],
         ["What is Arc?", "Arc is a USDC-native network built for payments, with sub-second settlement finality and predictable fees. SubScript uses it as the settlement layer for every transaction."],
     ];

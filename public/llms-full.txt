@@ -71,6 +71,23 @@ Deployment-scoped protocol targets include direct fiat-to-USDC onramps, standalo
 
 ## 2. Developer REST API Reference
 
+Fastest integration path — the CLI scaffolds the checkout route, the signed-webhook handler,
+and env config for your framework (Next.js App/Pages, React SPA, Express):
+
+```bash
+npx @subscriptonarc/cli init                         # interactive
+npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
+npx @subscriptonarc/cli add checkout                 # or: add webhook
+npx @subscriptonarc/cli doctor                       # diagnose (exit 1 + fixes on stderr)
+npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks   # local webhooks
+npx @subscriptonarc/cli trigger payment.succeeded    # fire a synthetic signed event
+```
+
+Packages: `@subscriptonarc/cli` (integration), `@subscriptonarc/sdk` (typed client),
+`@subscriptonarc/mcp` (MCP server for agents). Machine-readable contract: `/openapi.json`.
+No account needed for a first call — the shared sandbox demo key
+`sk_test_demo_subscript_sandbox_2026` (rate limited, sandbox-only) works against `POST /api/intent`.
+
 All backend requests to the SubScript API must be authenticated using the API Key in the `Authorization` header:
 `Authorization: Bearer sk_test_...`
 
