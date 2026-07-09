@@ -43,7 +43,7 @@ import {
     Play, Pause, Trash2, Globe, ArrowDown, ArrowUpRight, ArrowUp, ChevronDown, User, Share2,
     ShieldCheck, Save, Home, SquaresFour, Broadcast, MessageSquare, HelpCircle
 } from "@/components/icons";
-import { QRCodeSVG } from "qrcode.react";
+import RoundedQRCode from "@/components/RoundedQRCode";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
@@ -6130,13 +6130,13 @@ Please complete the following implementation tasks:
 
                         {/* QR Code display */}
                         <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
-                            <QRCodeSVG
+                            <RoundedQRCode
                                 value={activeQrCodeLink}
                                 size={180}
                                 level="H"
                                 bgColor="#ffffff"
                                 fgColor="#000000"
-                                imageSettings={{ src: "/favicon-48x48.png", height: 40, width: 40, excavate: true }}
+                                imageSettings={{ src: "/logo-colored.png", height: 40, width: 40, excavate: true }}
                             />
                         </div>
 

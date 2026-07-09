@@ -4,26 +4,29 @@
 
 @font-face {
   font-family: 'Sukar';
-  src: url('/fonts/SukarRegular.otf') format('opentype'),
-       url('/fonts/Sukar Regular.ttf') format('truetype');
+  src: url('/fonts/SukarRegular.woff2') format('woff2'),
+       url('/fonts/SukarRegular.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
   font-family: 'Sukar';
-  src: url('/fonts/SukarBold.otf') format('opentype'),
-       url('/fonts/Sukar Bold.ttf') format('truetype');
+  src: url('/fonts/SukarBold.woff2') format('woff2'),
+       url('/fonts/SukarBold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
   font-family: 'Sukar';
-  src: url('/fonts/SukarBlack.otf') format('opentype'),
-       url('/fonts/Sukar Black.ttf') format('truetype');
+  src: url('/fonts/SukarBlack.woff2') format('woff2'),
+       url('/fonts/SukarBlack.ttf') format('truetype');
   font-weight: 900;
   font-style: normal;
+  font-display: swap;
 }
 
 :root {

@@ -8,7 +8,7 @@ import {
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
     Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert
 } from "@/components/icons";
-import { QRCodeSVG } from "qrcode.react";
+import RoundedQRCode from "@/components/RoundedQRCode";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
@@ -984,7 +984,7 @@ export default function PublicPayClient({
                                             Scan this QR code with your mobile wallet's browser to complete the payment on your phone.
                                         </p>
                                         <div className="flex justify-center p-3 bg-white rounded-xl">
-                                            <QRCodeSVG
+                                            <RoundedQRCode
                                                 value={checkoutUrl}
                                                 size={140}
                                                 level="H"

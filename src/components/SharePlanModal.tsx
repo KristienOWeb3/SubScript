@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, Download, Share2, Send, ShieldCheck, Zap, Layers, Loader2 } from "@/components/icons";
-import { QRCodeCanvas } from "qrcode.react";
+import RoundedQRCanvas from "@/components/RoundedQRCanvas";
 
 interface MerchantPlan {
     id: string;
@@ -607,9 +607,9 @@ export default function SharePlanModal({
                                     <X className="w-4 h-4" />
                                 </button>
 
-                                {/* Pre-rendered QRCodeCanvas hidden in DOM for canvas usage */}
+                                {/* Pre-rendered rounded QR canvas, hidden in the DOM, drawImage'd into the downloadable poster */}
                                 <div className="hidden">
-                                    <QRCodeCanvas
+                                    <RoundedQRCanvas
                                         id="plan-share-qr-canvas"
                                         value={subscribeUrl}
                                         size={320}
@@ -731,7 +731,7 @@ export default function SharePlanModal({
                                         </div>
                                         {/* QR Code Canvas */}
                                         <div className="bg-white p-1 rounded-lg border border-black/5 shrink-0 shadow-inner">
-                                            <QRCodeCanvas
+                                            <RoundedQRCanvas
                                                 value={subscribeUrl}
                                                 size={92}
                                                 level="H"

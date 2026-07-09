@@ -253,6 +253,12 @@ export default async function RootLayout({
 
     return (
         <html lang="en" suppressHydrationWarning>
+            <head>
+                {/* Preload the two most-used Sukar weights so branded text paints without a
+                    late swap. font-display: swap (globals.css) already prevents invisible text. */}
+                <link rel="preload" href="/fonts/SukarRegular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+                <link rel="preload" href="/fonts/SukarBold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+            </head>
             <body className={`${inter.variable} ${instrumentSerif.variable} font-sans antialiased`}>
                 <script
                     nonce={nonce}
