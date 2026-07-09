@@ -161,7 +161,7 @@ export default function LiquidGlassEffect({
         if (!supported) return;
 
         const mobileQuery = window.matchMedia("(max-width: 767px)");
-        let frame = 0;
+        let pending = false;
 
         const rebuild = () => {
             if (!mobileQuery.matches) {
@@ -197,9 +197,17 @@ export default function LiquidGlassEffect({
             });
         };
 
+        // requestAnimationFrame is suspended in hidden/background tabs, which
+        // would leave the effect permanently uninitialized there — a plain
+        // microtask debounce still coalesces bursty ResizeObserver callbacks
+        // without depending on the page being visible.
         const schedule = () => {
-            cancelAnimationFrame(frame);
-            frame = requestAnimationFrame(rebuild);
+            if (pending) return;
+            pending = true;
+            queueMicrotask(() => {
+                pending = false;
+                rebuild();
+            });
         };
 
         schedule();
@@ -207,7 +215,6 @@ export default function LiquidGlassEffect({
         observer.observe(parent);
         mobileQuery.addEventListener("change", schedule);
         return () => {
-            cancelAnimationFrame(frame);
             observer.disconnect();
             mobileQuery.removeEventListener("change", schedule);
         };
