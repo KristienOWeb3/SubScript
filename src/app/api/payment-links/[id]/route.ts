@@ -15,7 +15,7 @@ async function authenticateRequest(request: Request): Promise<{ wallet: string |
         const keyRecord = await prisma.apiKey.findFirst({
             where: {
                 revoked: false,
-                OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+                secretKeyHash: hashSecretKey(secretKey),
             }
         });
         if (keyRecord) {

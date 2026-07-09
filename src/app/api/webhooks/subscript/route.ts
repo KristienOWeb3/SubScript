@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { triggerExitSurvey } from "@/lib/payments/email";
@@ -20,8 +20,7 @@ function getSupabaseClient() {
 
 export async function POST(request: Request) {
     const supabase = getSupabaseClient();
-    let eventIdInserted: string | null = null;
-    
+
     try {
         /* 1. Enforce strict cryptographic HMAC-SHA256 signature verification */
         const signatureHeader = request.headers.get("x-subscript-signature");
@@ -75,36 +74,26 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Missing unique txHash" }, { status: 400 });
         }
 
-        /* 3. Database transaction execution & replay protection */
-        /* Direct insertion into webhook_events acts as a concurrent lock on the unique tx_hash */
-        const { data: eventLog, error: eventError } = await supabase
-            .from("webhook_events")
-            .insert({
-                tx_hash: txHash,
-                event_type: event,
-                payload: body
-            })
-            .select("id")
-            .single();
-
-        if (eventError) {
-            if (eventError.code === "23505") { /* unique_violation */
-                console.log(`[Webhook Replay Protected] Uniqueness clash on tx_hash ${txHash}. Ignoring event.`);
-                return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
-            }
-            console.error("[Webhook Database Error] Log insert failed:", eventError);
-            throw new Error(`Failed to log webhook event: ${eventError.message}`);
-        }
-
-        eventIdInserted = eventLog.id;
-
-        /* Extract merchant EVM wallet address and format */
+        /* 3. Extract the merchant identity. */
         const merchantAddress = (data.merchant || "").toLowerCase();
         if (!merchantAddress) {
-            throw new Error("Missing merchant address in data payload");
+            return NextResponse.json({ error: "Bad Request: Missing merchant address in data payload" }, { status: 400 });
         }
 
-        /* 4. Ensure Merchant wallet identity exists to prevent Foreign Key constraints failures */
+        /* 4. Replay short-circuit. The durable webhook_events row (unique on tx_hash) is the COMMIT
+           MARKER for a fully-processed event and is written LAST (step 8), not here. So its presence
+           means a previous delivery already completed every write below; skip re-processing. */
+        const { data: priorEvent } = await supabase
+            .from("webhook_events")
+            .select("id")
+            .eq("tx_hash", txHash)
+            .maybeSingle();
+        if (priorEvent) {
+            console.log(`[Webhook Replay Protected] tx_hash ${txHash} already processed. Ignoring event.`);
+            return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
+        }
+
+        /* 5. Ensure the merchant identity exists (idempotent — keyed by wallet_address). */
         const { error: merchantError } = await supabase
             .from("merchants")
             .upsert({
@@ -116,12 +105,25 @@ export async function POST(request: Request) {
             throw new Error(`Failed to sync merchant: ${merchantError.message}`);
         }
 
-        /* 5. Parse and upsert subscription details */
+        /* 6. Parse and upsert subscription details (idempotent — keyed by subscription_id). */
         const subIdStr = data.subscriptionId || data.subId;
         const cleanSubId = subIdStr ? parseInt(String(subIdStr).replace(/^sub_/, ""), 10) : null;
+        let exitSurveySubId: number | null = null;
 
         if (cleanSubId !== null && !isNaN(cleanSubId)) {
-            const amount = data.amount ? parseFloat(String(data.amount)) : 0;
+            /* amount_cap_usdc is integer micro-USDC everywhere else (mirror.ts writes micros; the
+               billing crons/driftHealer read it as amountUsdcMicros). The canonical webhook payload
+               carries `amount_usdc_micros` (integer) alongside a human `amount` (decimal). Prefer the
+               integer micros field; only fall back to converting the decimal (× 1e6) for legacy
+               senders. Writing parseFloat(decimal) straight into this column was 1e6× too small. */
+            const microsRaw = data.amount_usdc_micros ?? data.amountUsdcMicros;
+            let amountMicros = 0;
+            if (microsRaw !== undefined && microsRaw !== null && /^\d+$/.test(String(microsRaw).trim())) {
+                amountMicros = parseInt(String(microsRaw).trim(), 10);
+            } else if (data.amount !== undefined && data.amount !== null && data.amount !== "") {
+                const decimal = parseFloat(String(data.amount));
+                amountMicros = Number.isFinite(decimal) ? Math.round(decimal * 1_000_000) : 0;
+            }
             const period = data.period ? parseInt(String(data.period), 10) : 0;
             /* `last_settlement_timestamp` is when THIS payment settled (now), not the next due date.
                A BEFORE INSERT/UPDATE trigger (update_subscription_next_billing_date) derives
@@ -155,7 +157,7 @@ export async function POST(request: Request) {
                     last_settlement_timestamp: nowIso,
                     next_billing_date: nextBillingDate,
                     billing_interval_seconds: period,
-                    amount_cap_usdc: amount,
+                    amount_cap_usdc: amountMicros,
                     payment_tx_hash: data.nextCommitment || data.nullifierHash || null,
                     status: status,
                     kind,
@@ -168,9 +170,9 @@ export async function POST(request: Request) {
             }
 
             if (status === "CANCELED" || status === "FAILED") {
-                triggerExitSurvey(merchantAddress, cleanSubId, 0).catch(err => {
-                    console.error("Failed to trigger exit survey:", err);
-                });
+                /* Defer the (non-idempotent) survey email until the event is durably committed in
+                   step 8, so a retried run never sends it twice. */
+                exitSurveySubId = cleanSubId;
             }
         }
 
@@ -191,21 +193,46 @@ export async function POST(request: Request) {
             /* Execute premium alerts or configure automated payout cycles here */
         }
 
+        /* 8. Commit marker: write the durable, replay-protecting webhook_events row LAST. Because
+           every write above is an idempotent upsert, a failure before this point commits no event —
+           the sender's redelivery simply re-runs the upserts and reaches here once. The unique
+           tx_hash also resolves the concurrent-delivery race: the loser gets 23505 and returns. */
+        const { error: eventError } = await supabase
+            .from("webhook_events")
+            .insert({
+                tx_hash: txHash,
+                event_type: event,
+                payload: body
+            });
+
+        if (eventError) {
+            if (eventError.code === "23505") { /* unique_violation — a concurrent delivery committed first */
+                console.log(`[Webhook Replay Protected] Concurrent delivery already committed tx_hash ${txHash}.`);
+                return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
+            }
+            console.error("[Webhook Database Error] Event commit insert failed:", eventError);
+            throw new Error(`Failed to log webhook event: ${eventError.message}`);
+        }
+
+        /* 9. Non-idempotent side effects run only after the event is durably committed, so a retry of
+           a failed run never sends duplicate exit-survey emails. Deferred via after() so the send is
+           tied to the request lifecycle and not dropped when the serverless function returns. */
+        if (exitSurveySubId !== null) {
+            const surveySubId = exitSurveySubId;
+            after(() => {
+                triggerExitSurvey(merchantAddress, surveySubId, 0).catch(err => {
+                    console.error("Failed to trigger exit survey:", err);
+                });
+            });
+        }
+
         return NextResponse.json({ success: true, message: "Webhook processed and synced to Supabase" });
 
     } catch (err: any) {
-        console.error("[CRITICAL Webhook Exception] Transaction execution failed. Reverting state changes.", err);
-        
-        /* Manual transaction rollback boundary to preserve off-chain database integrity */
-        if (eventIdInserted) {
-            console.log(`[Rollback Active] Deleting logged webhook event ID: ${eventIdInserted}`);
-            try {
-                await supabase.from("webhook_events").delete().eq("id", eventIdInserted);
-            } catch (rollbackErr: any) {
-                console.error("[CRITICAL Rollback Failed] Failed to delete logged event during rollback:", rollbackErr);
-            }
-        }
-
+        /* No manual rollback: the durable webhook_events commit marker is written last, so a failure
+           here means it was never committed. Every prior write is an idempotent upsert keyed by a
+           natural key, so the sender's redelivery safely reprocesses and commits exactly once. */
+        console.error("[Webhook Exception] Processing failed before commit; safe to retry.", err);
         return NextResponse.json({ error: "Database transaction failed", details: err.message }, { status: 500 });
     }
 }

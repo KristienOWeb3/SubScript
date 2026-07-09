@@ -31,7 +31,7 @@ async function resolveMerchant(request: Request): Promise<string | null> {
             const apiKeyRecord = await prisma.apiKey.findFirst({
                 where: {
                     revoked: false,
-                    OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+                    secretKeyHash: hashSecretKey(secretKey),
                 },
             });
             if (apiKeyRecord) return apiKeyRecord.walletAddress.toLowerCase();

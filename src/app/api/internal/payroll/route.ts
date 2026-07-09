@@ -13,11 +13,13 @@ export const maxDuration = 300;
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
-/* ABI for ERC20 USDC token */
+/* ABI for ERC20 USDC token. `transfer` is required by the distribution-failure refund path
+   (usdcContract.transfer back to the org); without it the refund call throws at runtime. */
 const ERC20_ABI = [
     "function balanceOf(address account) external view returns (uint256)",
     "function allowance(address owner, address spender) external view returns (uint256)",
-    "function approve(address spender, uint256 amount) external returns (bool)"
+    "function approve(address spender, uint256 amount) external returns (bool)",
+    "function transfer(address to, uint256 amount) external returns (bool)"
 ];
 
 /* ABI for Permit2 allowance contract */
@@ -215,30 +217,125 @@ export async function POST(request: Request) {
                 );
                 await transferTx.wait();
 
-                /* Step C: Check and approve USDC allowance for Confidential contract if needed */
-                const contractAllowance = await usdcContract.allowance(
-                    keeperAddress,
-                    CONFIDENTIAL_CONTRACT_ADDRESS
-                );
-
-                if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
-                    const approveTx = await usdcContract.approve(
-                        CONFIDENTIAL_CONTRACT_ADDRESS,
-                        ethers.MaxUint256
+                /* From here the org's full payroll is sitting in the keeper wallet. If the approval
+                   or the batch distribution then fails, we MUST return those funds to the org —
+                   otherwise a failed distribution strands the org's money in the keeper EOA (the
+                   campaign is paused and the payday already advanced, so nothing retries it). Refund
+                   on any post-pull failure, then rethrow so the outer handler still pauses + audits. */
+                let batchTx: any;
+                try {
+                    /* Step C: Check and approve USDC allowance for Confidential contract if needed */
+                    const contractAllowance = await usdcContract.allowance(
+                        keeperAddress,
+                        CONFIDENTIAL_CONTRACT_ADDRESS
                     );
-                    await approveTx.wait();
-                }
 
-                const batchTx = await confidentialContract.executeBatchPayout(
-                    recipientAddresses,
-                    recipientAmounts,
-                    campaign.isShielded,
-                    ethers.ZeroHash
-                );
+                    if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
+                        const approveTx = await usdcContract.approve(
+                            CONFIDENTIAL_CONTRACT_ADDRESS,
+                            ethers.MaxUint256
+                        );
+                        await approveTx.wait();
+                    }
 
-                const receipt = await batchTx.wait();
-                if (receipt.status !== 1) {
-                    throw new Error("On-chain batch payout transaction execution reverted.");
+                    batchTx = await confidentialContract.executeBatchPayout(
+                        recipientAddresses,
+                        recipientAmounts,
+                        campaign.isShielded,
+                        ethers.ZeroHash
+                    );
+
+                    const receipt = await batchTx.wait();
+                    if (receipt.status !== 1) {
+                        throw new Error("On-chain batch payout transaction execution reverted.");
+                    }
+                } catch (distributionErr: any) {
+                    /* A thrown wait() does NOT prove the payout failed: ethers v6 also throws on
+                       TIMEOUT and TRANSACTION_REPLACED, where the batch may actually have settled or
+                       still be pending. Refunding blindly could double-spend. So resolve the payout's
+                       real on-chain state first and refund ONLY when we can confirm it did not move
+                       funds (never submitted, or mined-and-reverted). */
+                    const submittedHash: string | undefined =
+                        batchTx?.hash || distributionErr?.replacement?.hash || distributionErr?.receipt?.hash;
+                    let payoutSucceeded = false;
+                    let payoutDefinitelyFailed = false;
+                    if (!submittedHash) {
+                        /* Failed before any payout tx was broadcast (e.g. the approve step) → the
+                           pulled funds are still in the keeper, safe to refund. */
+                        payoutDefinitelyFailed = true;
+                    } else {
+                        try {
+                            const finalReceipt = await provider.getTransactionReceipt(submittedHash);
+                            if (finalReceipt?.status === 1) payoutSucceeded = true;
+                            else if (finalReceipt && finalReceipt.status === 0) payoutDefinitelyFailed = true;
+                            /* finalReceipt == null → still pending/unknown → leave both false (ambiguous). */
+                        } catch { /* provider read failed → treat as ambiguous */ }
+                    }
+
+                    if (payoutSucceeded) {
+                        console.error(`[payroll-cron] campaign ${campaign.id} payout reported an error but settled on-chain (${submittedHash}); NOT refunding.`);
+                        throw distributionErr;
+                    }
+                    if (!payoutDefinitelyFailed) {
+                        /* Unresolved (timeout/pending): refunding risks double-spending. Flag for a human. */
+                        console.error(`[payroll-cron] CRITICAL: campaign ${campaign.id} payout is UNRESOLVED (${submittedHash || "no hash"}); NOT refunding to avoid double-spend. Manual review required.`);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_PAYOUT_UNRESOLVED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    amountUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    keeper: keeperAddress,
+                                    payoutTxHash: submittedHash || null,
+                                    distributionError: distributionErr?.message || "unknown",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                        throw distributionErr;
+                    }
+
+                    /* Confirmed the payout did not move funds → the org's payroll is still in the
+                       keeper, so return it. */
+                    try {
+                        const refundTx = await usdcContract.transfer(orgAddress, totalPayrollAmount);
+                        await refundTx.wait();
+                        console.error(`[payroll-cron] distribution failed for campaign ${campaign.id}; refunded ${totalPayrollAmount} USDC to org ${orgAddress}: ${refundTx.hash}`);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_REFUNDED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    refundedUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    refundTxHash: refundTx.hash,
+                                    reason: distributionErr?.message || "distribution failed",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                    } catch (refundErr: any) {
+                        console.error(`[payroll-cron] CRITICAL: distribution AND refund failed for campaign ${campaign.id}; ${totalPayrollAmount} USDC stranded in keeper ${keeperAddress}:`, refundErr);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_FUNDS_STRANDED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    strandedUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    keeper: keeperAddress,
+                                    distributionError: distributionErr?.message || "unknown",
+                                    refundError: refundErr?.message || "unknown",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                    }
+                    throw distributionErr;
                 }
                 console.log(`[payroll-cron] submitted campaign ${campaign.id} through ${rpcEndpoint}: ${batchTx.hash}`);
 

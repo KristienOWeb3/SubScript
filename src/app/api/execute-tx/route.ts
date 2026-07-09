@@ -174,15 +174,28 @@ export async function POST(request: Request) {
             }
         }
 
-        /* Circuit Breaker Check */
-        const { data: settings } = await supabase
-            .from("system_settings")
-            .select("*")
-            .eq("id", 1)
-            .maybeSingle();
+        /* Circuit Breaker Check — fail CLOSED for withdrawals. Only the withdraw path consults this
+           flag, so the read is scoped to that branch (every other action avoids a wasted round trip).
+           Previously the check was nested in `if (settings)`, so a missing settings row or a failed
+           read silently allowed withdrawals, defeating the breaker exactly when the DB is unhealthy.
+           Withdrawals now proceed only when the row exists and `withdrawals_enabled` is explicitly set. */
+        if (action === "withdraw") {
+            const { data: settings, error: settingsError } = await supabase
+                .from("system_settings")
+                .select("withdrawals_enabled")
+                .eq("id", 1)
+                .maybeSingle();
 
-        if (settings) {
-            if (action === "withdraw" && !settings.withdrawals_enabled) {
+            if (settingsError || !settings || !settings.withdrawals_enabled) {
+                /* Log every trip, distinguishing DB-unhealthy from intentionally-disabled, so a 503
+                   is diagnosable. */
+                if (settingsError) {
+                    console.error(`[execute-tx] Circuit-breaker settings read failed; blocking withdrawal: ${settingsError.message}. requestId: ${requestId}`);
+                } else if (!settings) {
+                    console.warn(`[execute-tx] Circuit breaker: system_settings row missing; blocking withdrawal. requestId: ${requestId}`);
+                } else {
+                    console.warn(`[execute-tx] Circuit breaker: withdrawals_enabled is false; blocking withdrawal. requestId: ${requestId}`);
+                }
                 return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
             }
         }

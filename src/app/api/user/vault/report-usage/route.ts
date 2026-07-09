@@ -149,7 +149,7 @@ export async function POST(request: Request) {
         const secretKey = authHeader.replace("Bearer ", "");
 
         const apiKeyRecord = await prisma.apiKey.findFirst({
-            where: { OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }] }
+            where: { secretKeyHash: hashSecretKey(secretKey) }
         });
         if (!apiKeyRecord || apiKeyRecord.revoked) {
             return NextResponse.json({ error: "Unauthorized: Invalid or revoked API Key" }, { status: 401 });

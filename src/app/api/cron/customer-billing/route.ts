@@ -413,10 +413,16 @@ export async function POST(request: Request) {
             }
         }
 
-        const success = results.every((result) => result.success) && cancelResults.every((result) => result.success);
+        /* Only a genuine execution error should fail the run. Normal dunning outcomes
+           (RETRY_SCHEDULED when a subscriber is underfunded, ZOMBIE_KILLED after repeated
+           failures) are `success: false` but expected — treating them as a 500 made the external
+           scheduler retry the whole pass and fire false alarms every time any subscriber was short
+           on USDC. Reserve the 500 for unexpected per-sub exceptions and failed on-chain cancels. */
+        const hadHardError = results.some((result) => result.action === "EXECUTION_FAILED")
+            || cancelResults.some((result) => result.action === "CANCEL_AT_PERIOD_END_FAILED");
         return NextResponse.json(
-            { success, processed: results.length, results, cancellations: cancelResults },
-            { status: success ? 200 : 500 }
+            { success: !hadHardError, processed: results.length, results, cancellations: cancelResults },
+            { status: hadHardError ? 500 : 200 }
         );
     } catch (error: any) {
         console.error("Customer billing keeper error:", error);
