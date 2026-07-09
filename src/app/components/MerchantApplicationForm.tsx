@@ -12,7 +12,6 @@ export default function MerchantApplicationForm() {
     const [companyName, setCompanyName] = useState("");
     const [monthlyVolume, setMonthlyVolume] = useState(MONTHLY_VOLUME_OPTIONS[0]);
     const [useCase, setUseCase] = useState(USE_CASE_OPTIONS[0]);
-    const [walletAddress, setWalletAddress] = useState("");
     const [company, setCompany] = useState(""); // honeypot — real users leave this empty
     const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
     const [message, setMessage] = useState("");
@@ -31,7 +30,6 @@ export default function MerchantApplicationForm() {
                     companyName,
                     monthlyVolume,
                     useCase,
-                    walletAddress,
                     honeypot: company,
                 }),
             });
@@ -92,7 +90,9 @@ export default function MerchantApplicationForm() {
                                     {USE_CASE_OPTIONS.map((o) => <option key={o} value={o} className="bg-black">{o}</option>)}
                                 </select>
                             </div>
-                            <input type="text" value={walletAddress} onChange={(e) => setWalletAddress(e.target.value)} placeholder="Settlement wallet address (0x…)" className={inputClass} />
+                            <p className="text-[11px] text-white/35 leading-relaxed px-1">
+                                No crypto wallet needed — once approved, you'll create your merchant account with email or Google and we provision a secure server-signed wallet for you.
+                            </p>
                             {status === "error" && (
                                 <p className="text-xs text-red-400 font-medium">{message}</p>
                             )}
