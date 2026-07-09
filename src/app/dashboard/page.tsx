@@ -600,6 +600,12 @@ export default function DashboardPage() {
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
+    /* A tab switch always starts at the top — otherwise a scroll depth carried over
+       from a longer tab can sit past the end of a shorter one, showing only background. */
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [activeTab]);
+
     /* Load the dunning config lazily, the first time the settings tab opens. */
     useEffect(() => {
         if (activeTab !== "settings" || dunningLoaded) return;
@@ -6044,17 +6050,18 @@ Please complete the following implementation tasks:
 
                         {/* View Content */}
                         <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={activeTab}
-                                    initial={{ opacity: 0, y: 15, scale: 0.985 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -15, scale: 0.985 }}
-                                    transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
-                                >
-                                    {renderView()}
-                                </motion.div>
-                            </AnimatePresence>
+                            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
+                                mode="wait" gated the incoming tab on the outgoing exit spring, which
+                                dropped the presence on interrupted switches (slow mobile frames) and
+                                left the content area blank. */}
+                            <motion.div
+                                key={activeTab}
+                                initial={{ opacity: 0, y: 15, scale: 0.985 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
+                            >
+                                {renderView()}
+                            </motion.div>
                         </div>
                     </div>
                 )}

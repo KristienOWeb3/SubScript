@@ -277,6 +277,13 @@ export default function UserDashboard() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<UserTab>("home");
+
+  /* A tab switch always starts at the top — otherwise a scroll depth carried over
+     from a longer tab can sit past the end of a shorter one, showing only background. */
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
@@ -2432,15 +2439,14 @@ export default function UserDashboard() {
         <div className="grid grid-cols-1 gap-8 items-start">
           {/* Right main view content */}
           <div className="col-span-1 min-h-[500px]">
-            {/* One keyed child per active tab. AnimatePresence must track a SINGLE child whose key
-                changes only on tab switch — otherwise an unrelated re-render (the 8s DM poll) landing
-                mid exit-animation drops the presence and the screen goes blank. */}
-            <AnimatePresence mode="wait">
+            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
+                incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
+                whenever a re-render or second tap landed mid-exit on slow mobile frames, leaving
+                the content area permanently blank. */}
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
               className="min-h-0"
             >
@@ -4443,7 +4449,6 @@ export default function UserDashboard() {
               </section>
             )}
             </motion.div>
-          </AnimatePresence>
           </div>
         </div>
       </main>
