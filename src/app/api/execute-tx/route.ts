@@ -174,17 +174,21 @@ export async function POST(request: Request) {
             }
         }
 
-        /* Circuit Breaker Check */
-        const { data: settings } = await supabase
+        /* Circuit Breaker Check — fail CLOSED for withdrawals. Previously the check was nested in
+           `if (settings)`, so a missing settings row or a failed read silently allowed withdrawals,
+           defeating the breaker exactly when the DB is unhealthy. Withdrawals now proceed only when
+           the row exists and `withdrawals_enabled` is explicitly set. */
+        const { data: settings, error: settingsError } = await supabase
             .from("system_settings")
             .select("*")
             .eq("id", 1)
             .maybeSingle();
 
-        if (settings) {
-            if (action === "withdraw" && !settings.withdrawals_enabled) {
-                return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
+        if (action === "withdraw" && (settingsError || !settings || !settings.withdrawals_enabled)) {
+            if (settingsError) {
+                console.error(`[execute-tx] Circuit-breaker settings read failed; blocking withdrawal: ${settingsError.message}. requestId: ${requestId}`);
             }
+            return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
         }
 
         const { data: walletRecord, error: walletError } = await supabase

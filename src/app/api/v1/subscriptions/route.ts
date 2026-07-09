@@ -73,7 +73,7 @@ async function authenticateMerchant(request: Request): Promise<
         return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
     }
     const keyRecord = await prisma.apiKey.findFirst({
-        where: { revoked: false, OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }] },
+        where: { revoked: false, secretKeyHash: hashSecretKey(secretKey) },
     });
     if (!keyRecord) {
         return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };

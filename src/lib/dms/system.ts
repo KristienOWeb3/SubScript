@@ -24,11 +24,13 @@ export function parseUsdcToMicros(value: unknown) {
     }
 
     const trimmed = value.trim();
-    if (/^\d+$/.test(trimmed)) {
-        const whole = BigInt(trimmed);
-        return whole > BigInt(100_000) ? whole : whole * BigInt(USDC_DECIMALS);
-    }
 
+    /* Input here is always a HUMAN USDC amount — the dashboard send / request / payment-link / plan
+       / vault flows all pass a user-entered USDC value, and the programmatic micro-USDC APIs
+       (/intent, /v1/subscriptions, vault report-usage) parse `amountUsdcMicros` themselves and never
+       call this. So an integer means whole USDC, exactly like the decimal branch treats "10". The
+       previous `> 100_000 ? already-micros : × 1e6` heuristic was an unresolvable unit guess that
+       silently under-charged any amount over 100,000 USDC by 1,000,000×. */
     if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) {
         throw new Error("Amount must be a USDC value with up to 6 decimals");
     }

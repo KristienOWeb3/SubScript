@@ -57,7 +57,7 @@ export async function POST(request: Request) {
                     const keyRecord = await prisma.apiKey.findFirst({
                         where: {
                             revoked: false,
-                            OR: [{ secretKeyHash: hashSecretKey(secretKey) }, { secretKeyPlain: secretKey }],
+                            secretKeyHash: hashSecretKey(secretKey),
                         }
                     });
                     if (keyRecord) {

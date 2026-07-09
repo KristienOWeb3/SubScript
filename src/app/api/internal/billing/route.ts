@@ -48,13 +48,16 @@ export async function GET(request: Request) {
         for (const merchant of (premiumMerchants || [])) {
             const wallet = merchant.wallet_address.toLowerCase();
 
-            /* Check if there exists an active subscription where subscriber is the merchant and merchant_address is the Admin Wallet */
+            /* Premium subscriptions (merchant -> SubScript) are stored by activate_premium_merchant
+               with merchant_address = the MERCHANT's own wallet and kind = 'PREMIUM' (subscriber is
+               left null on that path). The prior query looked them up as merchant_address = the admin
+               wallet / subscriber = the merchant, which matched zero rows and downgraded every paying
+               merchant. Match on the merchant's own row instead. */
             const { data: sub, error: subError } = await supabaseAdmin
                 .from("subscriptions")
                 .select("status, next_billing_date")
                 .eq("kind", "PREMIUM")
-                .eq("merchant_address", PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase())
-                .eq("subscriber", wallet)
+                .eq("merchant_address", wallet)
                 .in("status", ["ACTIVE", "PAST_DUE"])
                 .maybeSingle();
 

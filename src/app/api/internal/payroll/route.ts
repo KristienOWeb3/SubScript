@@ -215,30 +215,76 @@ export async function POST(request: Request) {
                 );
                 await transferTx.wait();
 
-                /* Step C: Check and approve USDC allowance for Confidential contract if needed */
-                const contractAllowance = await usdcContract.allowance(
-                    keeperAddress,
-                    CONFIDENTIAL_CONTRACT_ADDRESS
-                );
-
-                if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
-                    const approveTx = await usdcContract.approve(
-                        CONFIDENTIAL_CONTRACT_ADDRESS,
-                        ethers.MaxUint256
+                /* From here the org's full payroll is sitting in the keeper wallet. If the approval
+                   or the batch distribution then fails, we MUST return those funds to the org —
+                   otherwise a failed distribution strands the org's money in the keeper EOA (the
+                   campaign is paused and the payday already advanced, so nothing retries it). Refund
+                   on any post-pull failure, then rethrow so the outer handler still pauses + audits. */
+                let batchTx: any;
+                try {
+                    /* Step C: Check and approve USDC allowance for Confidential contract if needed */
+                    const contractAllowance = await usdcContract.allowance(
+                        keeperAddress,
+                        CONFIDENTIAL_CONTRACT_ADDRESS
                     );
-                    await approveTx.wait();
-                }
 
-                const batchTx = await confidentialContract.executeBatchPayout(
-                    recipientAddresses,
-                    recipientAmounts,
-                    campaign.isShielded,
-                    ethers.ZeroHash
-                );
+                    if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
+                        const approveTx = await usdcContract.approve(
+                            CONFIDENTIAL_CONTRACT_ADDRESS,
+                            ethers.MaxUint256
+                        );
+                        await approveTx.wait();
+                    }
 
-                const receipt = await batchTx.wait();
-                if (receipt.status !== 1) {
-                    throw new Error("On-chain batch payout transaction execution reverted.");
+                    batchTx = await confidentialContract.executeBatchPayout(
+                        recipientAddresses,
+                        recipientAmounts,
+                        campaign.isShielded,
+                        ethers.ZeroHash
+                    );
+
+                    const receipt = await batchTx.wait();
+                    if (receipt.status !== 1) {
+                        throw new Error("On-chain batch payout transaction execution reverted.");
+                    }
+                } catch (distributionErr: any) {
+                    try {
+                        const refundTx = await usdcContract.transfer(orgAddress, totalPayrollAmount);
+                        await refundTx.wait();
+                        console.error(`[payroll-cron] distribution failed for campaign ${campaign.id}; refunded ${totalPayrollAmount} USDC to org ${orgAddress}: ${refundTx.hash}`);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_REFUNDED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    refundedUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    refundTxHash: refundTx.hash,
+                                    reason: distributionErr?.message || "distribution failed",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                    } catch (refundErr: any) {
+                        console.error(`[payroll-cron] CRITICAL: distribution AND refund failed for campaign ${campaign.id}; ${totalPayrollAmount} USDC stranded in keeper ${keeperAddress}:`, refundErr);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_FUNDS_STRANDED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    strandedUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    keeper: keeperAddress,
+                                    distributionError: distributionErr?.message || "unknown",
+                                    refundError: refundErr?.message || "unknown",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                    }
+                    throw distributionErr;
                 }
                 console.log(`[payroll-cron] submitted campaign ${campaign.id} through ${rpcEndpoint}: ${batchTx.hash}`);
 
