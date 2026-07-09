@@ -379,10 +379,6 @@ export default function SignupPage() {
 
   const handleRoleSelection = async () => {
     if (!selectedRole) return;
-    if (selectedRole === "ENTERPRISE" && !merchantSignupIntent) {
-      setRoleError("Merchant onboarding is invite-only. Continue as an Individual User unless you have a merchant invite link.");
-      return;
-    }
     if (requiresEmailLinking) {
       if (!email || !email.includes("@")) {
         setRoleError("Please enter a valid email address.");
@@ -486,13 +482,10 @@ export default function SignupPage() {
               {/* Enterprise Merchant Option */}
               <button
                 onClick={() => setSelectedRole("ENTERPRISE")}
-                disabled={!merchantSignupIntent}
                 className={`w-full p-5 border text-left rounded-2xl transition-all duration-300 relative overflow-hidden group ${
                   selectedRole === "ENTERPRISE"
                     ? "border-[#00d2b4] bg-[#00d2b4]/5 shadow-[0_0_20px_rgba(0,210,180,0.15)]"
-                    : merchantSignupIntent
-                      ? "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
-                      : "border-white/5 bg-white/[0.01] opacity-55 cursor-not-allowed"
+                    : "border-white/5 bg-white/[0.01] hover:border-[#00d2b4]/40 hover:bg-white/[0.02] hover:shadow-[0_0_15px_rgba(0,210,180,0.08)]"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -513,9 +506,7 @@ export default function SignupPage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-white/50 mt-3 leading-relaxed">
-                  {merchantSignupIntent
-                    ? "Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow."
-                    : "Merchant onboarding is invite-only. Use a merchant invite link to create this account type."}
+                  Configure subscription tiers, generate hosted payment links, run automated payroll runs, and manage cashflow.
                 </p>
               </button>
             </div>

@@ -47,7 +47,11 @@ export async function POST(request: Request) {
                 }
 
                 if (role === "ENTERPRISE") {
-                    const publicMerchantSignupEnabled = process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP === "true";
+                    /* Self-serve merchant signup is open by default. Set ALLOW_PUBLIC_MERCHANT_SIGNUP
+                       ="false" to re-gate it behind a MERCHANT_SIGNUP_CODE invite. Either way, merchant
+                       accounts must still be email/embedded (checked below) and KYB verification still
+                       gates trust-sensitive capabilities. */
+                    const publicMerchantSignupEnabled = process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP !== "false";
                     const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
                     const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
                     const hasValidInviteCode = Boolean(requiredMerchantCode) && providedMerchantCode === requiredMerchantCode;
