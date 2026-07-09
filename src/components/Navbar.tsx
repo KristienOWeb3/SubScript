@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Terminal, Menu, X as CloseIcon } from "@/components/icons";
 import { motion, AnimatePresence } from "framer-motion";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 
 // Circular SVGs for Socials
 function TwitterXIcon({ className }: { className?: string }) {
@@ -161,6 +162,7 @@ export default function Navbar() {
                 <nav
                     className={`w-full max-w-5xl liquid-glass rounded-full px-6 py-3.5 flex items-center justify-between pointer-events-auto transition-all duration-300 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] ${scrolled ? "bg-black/40 backdrop-blur-lg" : ""}`}
                 >
+                    <LiquidGlassEffect />
                     {/* Logo - Icon + Text */}
                     <Link href="/" className="flex items-center gap-2.5 group">
                         <img 

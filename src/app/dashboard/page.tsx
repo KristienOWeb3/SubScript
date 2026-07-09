@@ -12,6 +12,7 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
@@ -598,6 +599,12 @@ export default function DashboardPage() {
 
 
     const [activeTab, setActiveTab] = useState<TabId>("overview");
+
+    /* A tab switch always starts at the top — otherwise a scroll depth carried over
+       from a longer tab can sit past the end of a shorter one, showing only background. */
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [activeTab]);
 
     /* Load the dunning config lazily, the first time the settings tab opens. */
     useEffect(() => {
@@ -6043,17 +6050,18 @@ Please complete the following implementation tasks:
 
                         {/* View Content */}
                         <div className="md:col-span-11 lg:col-span-3 min-h-[500px]">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={activeTab}
-                                    initial={{ opacity: 0, y: 15, scale: 0.985 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -15, scale: 0.985 }}
-                                    transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
-                                >
-                                    {renderView()}
-                                </motion.div>
-                            </AnimatePresence>
+                            {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here.
+                                mode="wait" gated the incoming tab on the outgoing exit spring, which
+                                dropped the presence on interrupted switches (slow mobile frames) and
+                                left the content area blank. */}
+                            <motion.div
+                                key={activeTab}
+                                initial={{ opacity: 0, y: 15, scale: 0.985 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 340, damping: 28, bounce: 0.16 }}
+                            >
+                                {renderView()}
+                            </motion.div>
                         </div>
                     </div>
                 )}
@@ -6186,6 +6194,7 @@ Please complete the following implementation tasks:
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex w-[calc(100%-0.75rem)] max-w-sm items-center justify-between gap-2 md:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex min-w-0 flex-1 items-center justify-around liquid-glass rounded-full border border-white/5 bg-black/60 px-2 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                                    <LiquidGlassEffect />
                                     {mobileBottomTabs.map((tab) => (
                                         <AnimatedBottomNavButton
                                             key={tab.id}
