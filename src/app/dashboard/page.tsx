@@ -12,6 +12,7 @@ import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import DurationPicker from "@/components/DurationPicker";
@@ -6186,6 +6187,7 @@ Please complete the following implementation tasks:
                             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex w-[calc(100%-0.75rem)] max-w-sm items-center justify-between gap-2 md:hidden">
                                 {/* Capsule Navigation Menu */}
                                 <div className="flex min-w-0 flex-1 items-center justify-around liquid-glass rounded-full border border-white/5 bg-black/60 px-2 py-3.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                                    <LiquidGlassEffect />
                                     {mobileBottomTabs.map((tab) => (
                                         <AnimatedBottomNavButton
                                             key={tab.id}

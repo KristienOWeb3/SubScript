@@ -28,6 +28,7 @@ import { QRCode } from "react-qrcode-logo";
 import jsQR from "jsqr";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
+import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
 import { getDashboardUrl } from "@/utils/navigation";
@@ -4460,6 +4461,7 @@ export default function UserDashboard() {
             className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
             style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))" }}
           >
+            <LiquidGlassEffect />
             {userBottomTabs.map((tab) => (
               <AnimatedBottomNavButton
                 key={tab.id}
