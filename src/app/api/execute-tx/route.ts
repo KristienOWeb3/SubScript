@@ -187,8 +187,14 @@ export async function POST(request: Request) {
                 .maybeSingle();
 
             if (settingsError || !settings || !settings.withdrawals_enabled) {
+                /* Log every trip, distinguishing DB-unhealthy from intentionally-disabled, so a 503
+                   is diagnosable. */
                 if (settingsError) {
                     console.error(`[execute-tx] Circuit-breaker settings read failed; blocking withdrawal: ${settingsError.message}. requestId: ${requestId}`);
+                } else if (!settings) {
+                    console.warn(`[execute-tx] Circuit breaker: system_settings row missing; blocking withdrawal. requestId: ${requestId}`);
+                } else {
+                    console.warn(`[execute-tx] Circuit breaker: withdrawals_enabled is false; blocking withdrawal. requestId: ${requestId}`);
                 }
                 return NextResponse.json({ error: "Service Unavailable: Withdrawals are currently disabled by circuit breaker." }, { status: 503 });
             }

@@ -13,11 +13,13 @@ export const maxDuration = 300;
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
-/* ABI for ERC20 USDC token */
+/* ABI for ERC20 USDC token. `transfer` is required by the distribution-failure refund path
+   (usdcContract.transfer back to the org); without it the refund call throws at runtime. */
 const ERC20_ABI = [
     "function balanceOf(address account) external view returns (uint256)",
     "function allowance(address owner, address spender) external view returns (uint256)",
-    "function approve(address spender, uint256 amount) external returns (bool)"
+    "function approve(address spender, uint256 amount) external returns (bool)",
+    "function transfer(address to, uint256 amount) external returns (bool)"
 ];
 
 /* ABI for Permit2 allowance contract */
