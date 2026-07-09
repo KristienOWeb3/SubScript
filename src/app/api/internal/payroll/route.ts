@@ -248,6 +248,55 @@ export async function POST(request: Request) {
                         throw new Error("On-chain batch payout transaction execution reverted.");
                     }
                 } catch (distributionErr: any) {
+                    /* A thrown wait() does NOT prove the payout failed: ethers v6 also throws on
+                       TIMEOUT and TRANSACTION_REPLACED, where the batch may actually have settled or
+                       still be pending. Refunding blindly could double-spend. So resolve the payout's
+                       real on-chain state first and refund ONLY when we can confirm it did not move
+                       funds (never submitted, or mined-and-reverted). */
+                    const submittedHash: string | undefined =
+                        batchTx?.hash || distributionErr?.replacement?.hash || distributionErr?.receipt?.hash;
+                    let payoutSucceeded = false;
+                    let payoutDefinitelyFailed = false;
+                    if (!submittedHash) {
+                        /* Failed before any payout tx was broadcast (e.g. the approve step) → the
+                           pulled funds are still in the keeper, safe to refund. */
+                        payoutDefinitelyFailed = true;
+                    } else {
+                        try {
+                            const finalReceipt = await provider.getTransactionReceipt(submittedHash);
+                            if (finalReceipt?.status === 1) payoutSucceeded = true;
+                            else if (finalReceipt && finalReceipt.status === 0) payoutDefinitelyFailed = true;
+                            /* finalReceipt == null → still pending/unknown → leave both false (ambiguous). */
+                        } catch { /* provider read failed → treat as ambiguous */ }
+                    }
+
+                    if (payoutSucceeded) {
+                        console.error(`[payroll-cron] campaign ${campaign.id} payout reported an error but settled on-chain (${submittedHash}); NOT refunding.`);
+                        throw distributionErr;
+                    }
+                    if (!payoutDefinitelyFailed) {
+                        /* Unresolved (timeout/pending): refunding risks double-spending. Flag for a human. */
+                        console.error(`[payroll-cron] CRITICAL: campaign ${campaign.id} payout is UNRESOLVED (${submittedHash || "no hash"}); NOT refunding to avoid double-spend. Manual review required.`);
+                        await prisma.auditEvent.create({
+                            data: {
+                                actor: "KEEPER_CRON",
+                                action: "PAYROLL_CAMPAIGN_PAYOUT_UNRESOLVED",
+                                resourceType: "PAYROLL_CAMPAIGN",
+                                resourceId: campaign.id,
+                                metadata: {
+                                    amountUsdc: totalPayrollAmount.toString(),
+                                    organization: orgAddress,
+                                    keeper: keeperAddress,
+                                    payoutTxHash: submittedHash || null,
+                                    distributionError: distributionErr?.message || "unknown",
+                                },
+                            },
+                        }).catch(() => { /* audit is best-effort */ });
+                        throw distributionErr;
+                    }
+
+                    /* Confirmed the payout did not move funds → the org's payroll is still in the
+                       keeper, so return it. */
                     try {
                         const refundTx = await usdcContract.transfer(orgAddress, totalPayrollAmount);
                         await refundTx.wait();

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { triggerExitSurvey } from "@/lib/payments/email";
@@ -215,10 +215,14 @@ export async function POST(request: Request) {
         }
 
         /* 9. Non-idempotent side effects run only after the event is durably committed, so a retry of
-           a failed run never sends duplicate exit-survey emails. */
+           a failed run never sends duplicate exit-survey emails. Deferred via after() so the send is
+           tied to the request lifecycle and not dropped when the serverless function returns. */
         if (exitSurveySubId !== null) {
-            triggerExitSurvey(merchantAddress, exitSurveySubId, 0).catch(err => {
-                console.error("Failed to trigger exit survey:", err);
+            const surveySubId = exitSurveySubId;
+            after(() => {
+                triggerExitSurvey(merchantAddress, surveySubId, 0).catch(err => {
+                    console.error("Failed to trigger exit survey:", err);
+                });
             });
         }
 

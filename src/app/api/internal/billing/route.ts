@@ -53,12 +53,18 @@ export async function GET(request: Request) {
                left null on that path). The prior query looked them up as merchant_address = the admin
                wallet / subscriber = the merchant, which matched zero rows and downgraded every paying
                merchant. Match on the merchant's own row instead. */
+            /* subscriptions is keyed by subscription_id, so a merchant can hold more than one
+               PREMIUM row (e.g. a re-subscribe with a new subId). Order by the latest next_billing
+               and take one so maybeSingle() can't error on multiple rows and skip a legitimate
+               downgrade — the most recent authorization is the one that keeps them premium. */
             const { data: sub, error: subError } = await supabaseAdmin
                 .from("subscriptions")
                 .select("status, next_billing_date")
                 .eq("kind", "PREMIUM")
                 .eq("merchant_address", wallet)
                 .in("status", ["ACTIVE", "PAST_DUE"])
+                .order("next_billing_date", { ascending: false })
+                .limit(1)
                 .maybeSingle();
 
             if (subError) {
