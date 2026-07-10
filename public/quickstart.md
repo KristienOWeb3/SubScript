@@ -96,7 +96,17 @@ export async function POST(req: Request) {
 }
 ```
 
-## 5. Test it locally — no real payment needed
+## 5. Poll status when your UI needs it
+
+Webhooks are still the fulfillment source of truth, but support dashboards and AI test loops
+can poll an intent directly:
+
+```ts
+const intent = await subscript.intents.retrieve("clx_intent_123");
+console.log(intent.status); // PENDING | PAID | EXPIRED | EXHAUSTED | INACTIVE
+```
+
+## 6. Test it locally — no real payment needed
 
 With your dev server running, send a signed sample event to your handler:
 
@@ -113,7 +123,7 @@ npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000
 npx @subscriptonarc/cli trigger subscription.payment_failed --url http://localhost:3000/api/webhooks/subscript
 ```
 
-## 6. Subscriptions (optional)
+## 7. Subscriptions (optional)
 
 ```ts
 const sub = await subscript.subscriptions.create({
@@ -124,7 +134,18 @@ const sub = await subscript.subscriptions.create({
 // You'll then receive subscription.renewed on each cycle (and payment_failed / canceled).
 ```
 
-## 7. Go live
+## 8. Usage billing status (optional)
+
+For metered products, check the customer's vault before granting a session, then report usage:
+
+```ts
+const status = await subscript.usage.status("0xCustomerWallet...");
+if (!status.active) {
+  // Send the customer to status.onboarding?.dashboardUrl to commit or re-commit.
+}
+```
+
+## 9. Go live
 
 Swap `sk_test_` → `sk_live_`, point your webhook endpoint at production, and confirm your
 merchant payout wallet is set. That's it.

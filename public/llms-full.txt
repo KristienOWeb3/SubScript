@@ -50,7 +50,7 @@ Arc is the target foundation because it uses USDC as native gas and provides sub
 * **Checkout Intent ID**: A unique, developer-defined string (e.g. `intent_mario_1782000592279`) representing a payment session. It links the merchant's database state to the on-chain receipt.
 * **Hosted Payment Link**: A hosted page where the customer connects their wallet or logs in with Google to authorize the payment transaction.
 * **Pull-Debit Allowances**: For subscriptions and prepaid accounts, users sign Permit2 allowances, letting the merchant's keeper network execute recurring charges without user intervention.
-* **Prepaid Metered Vaults**: A prepaid credit system where a customer deposits USDC, and the merchant reports usage via API. If the customer's balance drops below a threshold, the system triggers an automatic pull-debit top-up.
+* **Prepaid Metered Vaults**: A prepaid commit system where a customer escrows USDC to one merchant service, the merchant can poll vault readiness, and usage accrues via API until cycle-end settlement draws the used amount.
 * **Usage-Based Billing**: Merchants can bill event-driven products such as API calls, AI token usage, storage capacity, pay-per-view media, or article access by reporting consumption against a user's metered vault.
 * **Sponsored Subscriptions / Pay for Me**: Third parties such as parents, employers, or teams can cover another user's subscription costs while preserving user privacy boundaries.
 * **Fiat-to-USDC Onboarding**: The product target is direct bank-transfer funding that converts fiat into USDC and deposits it into the user's SubScript wallet without external exchange/bridge complexity.
@@ -130,6 +130,25 @@ Generates a hosted checkout URL for an app-integrated payment session.
 }
 ```
 
+### Retrieve Checkout Intent Status
+Pollable status endpoint for dashboards, support tools, and AI test loops. Webhooks remain the fulfillment source of truth.
+
+* **Endpoint**: `GET /api/intent/[id]`
+* **Auth**: Public; no API key required.
+* **Legacy alias**: `GET /api/intent/status?id=<id>`
+* **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "intent": {
+    "id": "pay_link_uuid_123",
+    "status": "PENDING",
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/pay_link_uuid_123",
+    "latestPayment": null
+  }
+}
+```
+
 Live secret keys require a configured merchant payout destination. If the merchant account is not ready, the API returns:
 
 ```json
@@ -178,8 +197,28 @@ Fetch the state of an existing payment link.
 
 ---
 
+### Metered Vault: Status
+Checks whether one customer has an active metered vault for the authenticated merchant. Call this before rendering a paid session or job; it does not accrue usage.
+
+* **Endpoint**: `GET /api/user/vault/status?userAddress=0x...`
+* **Headers**:
+  * `Authorization: Bearer <SECRET_KEY>`
+* **Response (200 OK, no vault yet)**:
+```json
+{
+  "success": true,
+  "exists": false,
+  "active": false,
+  "code": "NO_VAULT",
+  "onboarding": {
+    "dashboardUrl": "https://www.subscriptonarc.com/dashboard/user?tab=commit&merchantAddress=0x...",
+    "action": "Ask the customer to open SubScript, choose Commit, select your merchant address, and escrow the required amount."
+  }
+}
+```
+
 ### Metered Vault: Report Usage
-Deducts balance from a user's prepaid vault and triggers an automatic top-up rule if the balance drops below the threshold. Use this for flexible usage-based billing, including API token consumption, AI model token processing, storage by gigabyte/day, or pay-per-view content.
+Accrues usage against a user's prepaid vault. Use this for flexible usage-based billing, including API token consumption, AI model token processing, storage by gigabyte/day, or pay-per-view content.
 
 * **Endpoint**: `POST /api/user/vault/report-usage`
 * **Headers**:
@@ -187,14 +226,18 @@ Deducts balance from a user's prepaid vault and triggers an automatic top-up rul
   * `Content-Type: application/json`
 * **Body Parameters (JSON)**:
   * `userAddress` (string, required): Payer's wallet address.
-  * `amountUsdc` (string, required): Usage amount in micro-USDC (e.g. `1500000` for $1.50).
+  * `amountUsdcMicros` (string, recommended): Usage amount in micro-USDC (e.g. `1500000` for $1.50).
+  * `amountUsdc` (string, legacy): Decimal USDC compatibility field.
 * **Response (200 OK)**:
 ```json
 {
   "success": true,
-  "balance": "8500000",
-  "threshold": "2000000",
-  "triggeredTopUp": false
+  "active": true,
+  "exhausted": false,
+  "accruedUsageUsdc": "1500000",
+  "balanceUsdc": "10000000",
+  "commitUsdc": "10000000",
+  "owedUsdc": "0"
 }
 ```
 

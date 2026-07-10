@@ -65,7 +65,7 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 
 **For developers**
 - One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
-- Checkout Intents (`/api/intent`), payment links (`/api/payment-links`), a metered usage API (`/api/user/vault/report-usage`), and a typed CLI
+- Checkout Intents (`/api/intent`, `GET /api/intent/:id`), payment links (`/api/payment-links`), subscriptions (`/api/v1/subscriptions`), metered vault status/reporting (`/api/user/vault/status`, `/api/user/vault/report-usage`), and a typed CLI
 - DNS‑style aliases for human‑readable payment identities
 
 ## How a payment works
@@ -120,6 +120,7 @@ npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next
 npx @subscriptonarc/cli add checkout
 npx @subscriptonarc/cli doctor
 npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
+npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript
 ```
 
 First API call with no account (shared sandbox demo key):
@@ -136,11 +137,11 @@ curl -X POST https://www.subscriptonarc.com/api/intent \
 - Developer docs: [`/docs`](https://subscriptonarc.com/docs)
 - Quickstart: [`/quickstart.md`](https://subscriptonarc.com/quickstart.md)
 - OpenAPI 3.1 spec: [`/openapi.json`](https://subscriptonarc.com/openapi.json)
+- LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt) · full context: [`/llms-full.txt`](https://subscriptonarc.com/llms-full.txt)
 - CLI: [`@subscriptonarc/cli`](https://www.npmjs.com/package/@subscriptonarc/cli) · SDK: [`@subscriptonarc/sdk`](https://www.npmjs.com/package/@subscriptonarc/sdk) · MCP: `@subscriptonarc/mcp`
 - Agent skill: [`/skills/subscript-integration/SKILL.md`](https://subscriptonarc.com/skills/subscript-integration/SKILL.md)
 - Product overview: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
 - Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
-- LLM index: [`/llms.txt`](https://subscriptonarc.com/llms.txt)
 
 ## On the roadmap
 

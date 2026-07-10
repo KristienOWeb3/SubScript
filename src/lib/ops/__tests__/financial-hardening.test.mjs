@@ -60,6 +60,14 @@ test("reconciliation reports aggregate failures through HTTP status", () => {
     assert.match(worker, /results\.every\(\(result\)\s*=>\s*result\.success\)/);
 });
 
+test("deterministic transaction verification failures are quarantined", () => {
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    const invalidTxBlock = processor.slice(processor.indexOf("if (!verificationResult.valid)"));
+
+    assert.match(invalidTxBlock, /status:\s*"FAILED_PERMANENTLY"/);
+    assert.match(invalidTxBlock, /failure_code:\s*"VERIFICATION_FAILED"/);
+});
+
 test("merchant premium upgrade supports embedded email wallet sessions", () => {
     const page = source("src/app/dashboard/upgrade/page.tsx");
 

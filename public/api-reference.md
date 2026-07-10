@@ -20,13 +20,13 @@ Authorization: Bearer sk_live_…   # production
 ```
 
 `sk_test_` keys (and any request with `"sandbox": true`) run in sandbox mode and never move
-real funds. `GET /api/intent/status` is public (no key required).
+real funds. `GET /api/intent/:id` and `GET /api/intent/status` are public (no key required).
 
 ## Amounts
 
 Amounts are **canonical integer micro-USDC**: 1 USDC = 1,000,000. So 15 USDC is `"15000000"`
-in the `amountUsdcMicros` field. The legacy decimal field `amountUsdc` is still accepted
-everywhere as an alias, but `amountUsdcMicros` is canonical and recommended.
+in the `amountUsdcMicros` field. Some legacy/testing endpoints also accept `amountUsdc`;
+check the endpoint notes when using it.
 
 ## Idempotency
 
@@ -70,7 +70,11 @@ Body: `title` (required), `amountUsdcMicros` (required), `description?`, `extern
 `maxUses?`, `expiresAt?`, `successUrl?`, `cancelUrl?`, `idempotencyKey?`, `sandbox?`.
 Returns `intent` with `id`, `checkoutUrl`, `chainId`, `usdcAddress`, and (if set) `returnUrls`.
 
-### `GET /api/intent/status?id=<id>` — payment status (public)
+### `GET /api/intent/:id` — payment status (public)
+Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
+`latestPayment.txHash` + `latestPayment.explorerUrl`.
+
+### `GET /api/intent/status?id=<id>` — payment status legacy query form (public)
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 `latestPayment.txHash` + `latestPayment.explorerUrl`.
 
@@ -87,6 +91,11 @@ subscriptions; no params lists your subscription checkout sessions.
 ### `DELETE /api/v1/subscriptions?id=<id>` — cancel
 `sub_<uuid>` cancels a not-yet-activated checkout session; `sub_<number>` flags an on-chain
 subscription to cancel at period end.
+
+### `GET /api/user/vault/status?userAddress=<0x...>` — check metered vault status
+Merchant API key required. Returns whether the customer's vault exists and is active for your
+merchant, plus `balanceUsdc`, `commitUsdc`, `owedUsdc`, `accruedUsageUsdc`, `remainingUsdc`,
+and an onboarding dashboard URL when the customer must commit or re-commit.
 
 ### `POST /api/user/vault/report-usage` — report metered usage
 Body: `userAddress`, `amountUsdcMicros`. Accrues usage against the subscriber's vault.

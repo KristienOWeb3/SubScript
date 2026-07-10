@@ -5,7 +5,7 @@ import test from "node:test";
 const docs = readFileSync(new URL("../page.tsx", import.meta.url), "utf8");
 
 test("docs lead developers through a complete first integration", () => {
-  for (const section of ["quickstart", "concepts", "developer", "webhooks", "testing"]) {
+  for (const section of ["quickstart", "concepts", "developer", "subscriptions", "usage", "webhooks", "testing"]) {
     assert.match(docs, new RegExp(`<section id="${section}"`));
   }
 
@@ -13,6 +13,25 @@ test("docs lead developers through a complete first integration", () => {
   assert.match(docs, /externalReference/);
   assert.match(docs, /idempotencyKey/);
   assert.match(docs, /checkoutUrl/);
+});
+
+test("docs expose agent-friendly verification and machine-readable surfaces", () => {
+  for (const required of [
+    "/openapi.json",
+    "/llms.txt",
+    "/api/intent/:id",
+    "/api/user/vault/status",
+    "npx @subscriptonarc/cli trigger",
+    "/api/test/clocks",
+  ]) {
+    assert.match(docs, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("docs present subscriptions as a first-class shipped API", () => {
+  assert.match(docs, /POST<\/span>\s*<span className="text-white\/70">\/api\/v1\/subscriptions/);
+  assert.match(docs, /fixed-schedule subscription checkouts today/i);
+  assert.match(docs, /subscription\.renewed/);
 });
 
 test("docs explain the identifiers developers must persist", () => {

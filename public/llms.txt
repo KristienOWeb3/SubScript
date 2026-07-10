@@ -68,9 +68,10 @@ Machine-readable API contract: https://www.subscriptonarc.com/openapi.json
 Authenticate with `Authorization: Bearer sk_test_…` (sandbox) or `sk_live_…` (production). Amounts are canonical integer micro-USDC: 1 USDC = 1000000, so 15 USDC = "15000000" in `amountUsdcMicros`. The legacy decimal field `amountUsdc` is still accepted everywhere as an alias.
 
 - One-time payment: `POST /api/intent` with `{ title, amountUsdcMicros, successUrl?, cancelUrl?, externalReference?, idempotencyKey?, sandbox? }`. Returns `intent.checkoutUrl`, `intent.id`, `chainId`, and `usdcAddress`.
-- Payment status: `GET /api/intent/status?id=<intentId>` returns `status` (PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE), `latestPayment.txHash`, and `latestPayment.explorerUrl`.
+- Payment status: `GET /api/intent/<intentId>` returns `status` (PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE), `latestPayment.txHash`, and `latestPayment.explorerUrl`. Legacy query form `GET /api/intent/status?id=<intentId>` remains supported.
 - Subscriptions: `POST /api/v1/subscriptions` with `{ amountUsdcMicros | planId, interval (daily|weekly|monthly|yearly) | intervalSeconds, intervalCount?, subscriber? }` returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` after on-chain authorization. List via `GET /api/v1/subscriptions` (`?id=sub_<n>` or `?subscriber=0x…`); cancel via `DELETE /api/v1/subscriptions?id=sub_<id>`.
-- Metered usage: `POST /api/user/vault/report-usage` with `{ userAddress, amountUsdcMicros }`.
+- Metered usage status: `GET /api/user/vault/status?userAddress=0x...` with a merchant secret key returns `NO_VAULT`, `VAULT_INACTIVE`, or `VAULT_ACTIVE`, plus active balance/commit/remaining fields and a commit-dashboard URL when customer action is needed.
+- Metered usage reporting: `POST /api/user/vault/report-usage` with `{ userAddress, amountUsdcMicros }` accrues usage only after your app decides to grant access.
 - Webhooks: signed with `x-subscript-signature: t=<unix>,v1=<hex>` = HMAC-SHA256 of `${t}.${rawBody}`. Canonical event name is `type: "payment.succeeded"` (`event: "payment.success"` is a back-compat alias); each field is sent in both snake_case (canonical) and camelCase. Payloads carry `chain_id`, `usdc_address`, `transaction_hash`, and `explorer_url` for on-chain reconciliation.
 
 ## Primary Concepts

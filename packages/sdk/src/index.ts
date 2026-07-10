@@ -143,6 +143,28 @@ export interface ReportUsageParams {
     amountUsdcMicros: string | bigint | number;
 }
 
+export interface VaultStatus {
+    success: boolean;
+    exists: boolean;
+    active: boolean;
+    code: "NO_VAULT" | "VAULT_ACTIVE" | "VAULT_INACTIVE" | string;
+    userAddress?: string;
+    merchantAddress?: string;
+    vault?: {
+        id: string;
+        userAddress: string;
+        merchantAddress: string;
+        active: boolean;
+        balanceUsdc: string;
+        commitUsdc: string;
+        owedUsdc: string;
+        accruedUsageUsdc: string;
+        remainingUsdc: string;
+        [key: string]: unknown;
+    };
+    onboarding?: { dashboardUrl: string; action: string } | null;
+}
+
 export interface WebhookEvent {
     id: string;
     type: string;
@@ -207,7 +229,7 @@ export class SubScript {
         create: (params: CreateIntentParams): Promise<Intent> =>
             this.request<{ intent: Intent }>("POST", "/api/intent", stringifyMicros(params)).then((r) => r.intent),
         retrieve: (id: string): Promise<Intent> =>
-            this.request<{ intent: Intent }>("GET", `/api/intent/status?id=${encodeURIComponent(id)}`).then((r) => r.intent),
+            this.request<{ intent: Intent }>("GET", `/api/intent/${encodeURIComponent(id)}`).then((r) => r.intent),
     };
 
     /** Recurring subscriptions. */
@@ -229,6 +251,8 @@ export class SubScript {
     readonly usage = {
         report: (params: ReportUsageParams): Promise<Record<string, unknown>> =>
             this.request<Record<string, unknown>>("POST", "/api/user/vault/report-usage", stringifyMicros(params)),
+        status: (userAddress: string): Promise<VaultStatus> =>
+            this.request<VaultStatus>("GET", `/api/user/vault/status?userAddress=${encodeURIComponent(userAddress)}`),
     };
 
     /** Webhook signature verification (no network calls). */

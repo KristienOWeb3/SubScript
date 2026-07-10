@@ -184,6 +184,39 @@ const spec = {
                     },
                 },
             },
+            VaultStatus: {
+                type: "object",
+                description: "Read-only status for one customer's metered vault with the authenticated merchant.",
+                properties: {
+                    success: { type: "boolean" },
+                    exists: { type: "boolean" },
+                    active: { type: "boolean" },
+                    code: { type: "string", enum: ["NO_VAULT", "VAULT_ACTIVE", "VAULT_INACTIVE"] },
+                    userAddress: { type: "string" },
+                    merchantAddress: { type: "string" },
+                    vault: {
+                        type: ["object", "null"],
+                        properties: {
+                            id: { type: "string" },
+                            userAddress: { type: "string" },
+                            merchantAddress: { type: "string" },
+                            active: { type: "boolean" },
+                            balanceUsdc: { type: "string", description: "Integer micro-USDC." },
+                            commitUsdc: { type: "string", description: "Integer micro-USDC required/committed." },
+                            owedUsdc: { type: "string", description: "Integer micro-USDC owed before reactivation." },
+                            accruedUsageUsdc: { type: "string", description: "Integer micro-USDC accrued this cycle." },
+                            remainingUsdc: { type: "string", description: "Integer micro-USDC left before exhaustion." },
+                        },
+                    },
+                    onboarding: {
+                        type: ["object", "null"],
+                        properties: {
+                            dashboardUrl: { type: "string", format: "uri" },
+                            action: { type: "string" },
+                        },
+                    },
+                },
+            },
         },
     },
     paths: {
@@ -300,9 +333,21 @@ const spec = {
         },
         "/api/intent/status": {
             get: {
-                summary: "Get a payment intent's status",
+                summary: "Get a payment intent's status (legacy query form)",
                 security: [],
                 parameters: [{ name: "id", in: "query", required: true, schema: { type: "string" } }],
+                responses: {
+                    "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" } } } } } },
+                    "404": { description: "Not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/intent/{id}": {
+            get: {
+                summary: "Get a payment intent's status",
+                description: "Pollable read endpoint for agents and backends that need to reconcile without waiting for a webhook. Return URLs are intentionally not exposed.",
+                security: [],
+                parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                 responses: {
                     "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" } } } } } },
                     "404": { description: "Not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
@@ -387,6 +432,18 @@ const spec = {
                     "200": { description: "OK", content: { "application/json": { schema: { type: "object" } } } },
                     "402": { description: "Vault inactive or commit exhausted", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "No vault", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/user/vault/status": {
+            get: {
+                summary: "Get a customer's metered vault status",
+                description: "Read-only merchant endpoint. Use it before rendering a metered session to decide whether to grant access, show a re-commit prompt, or send the customer to their SubScript Commit screen.",
+                parameters: [{ name: "userAddress", in: "query", required: true, schema: { type: "string" } }],
+                responses: {
+                    "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/VaultStatus" } } } },
+                    "400": { description: "Invalid user address", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
         },

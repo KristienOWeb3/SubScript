@@ -94,8 +94,8 @@ function verifyWebhook(body, signatureHeader, secret, toleranceSeconds = 300) {
 
 async function appReachable() {
   try {
-    await fetch(`${baseUrl}/manifest.webmanifest`, { method: "GET", signal: AbortSignal.timeout(5000) });
-    return true;
+    const res = await fetch(`${baseUrl}/api/openapi`, { method: "GET", signal: AbortSignal.timeout(5000) });
+    return res.ok;
   } catch {
     return false;
   }
@@ -163,6 +163,15 @@ async function main() {
     assert(r.json.intent?.status === "PENDING", `expected PENDING, got ${r.json.intent?.status}`);
   });
 
+  await check("retrieve intent via /api/intent/:id", async () => {
+    if (!reachable) return SKIP(`app not reachable at ${baseUrl}`);
+    if (!intentId) return SKIP("no intent created");
+    const r = await api("GET", `/api/intent/${encodeURIComponent(intentId)}`);
+    assert(r.ok && r.json.success, `status ${r.status}: ${JSON.stringify(r.json)}`);
+    assert(r.json.intent?.id === intentId, "returned intent id mismatch");
+    assert(r.json.intent?.status === "PENDING", `expected PENDING, got ${r.json.intent?.status}`);
+  });
+
   let subId = null;
   await check("create subscription (sandbox)", async () => {
     if (!reachable) return SKIP(`app not reachable at ${baseUrl}`);
@@ -202,6 +211,17 @@ async function main() {
       body: { userAddress: randAddress(), amountUsdcMicros: "1000" },
     });
     assert(r.status === 404 && r.json.code === "NO_VAULT", `expected 404 NO_VAULT, got ${r.status}: ${JSON.stringify(r.json)}`);
+  });
+
+  await check("vault status is pollable before usage", async () => {
+    if (!reachable) return SKIP(`app not reachable at ${baseUrl}`);
+    if (!secretKey) return SKIP("set SUBSCRIPT_SECRET_KEY to exercise vault status");
+    const userAddress = randAddress();
+    const r = await api("GET", `/api/user/vault/status?userAddress=${encodeURIComponent(userAddress)}`, {
+      headers: authHeaders(),
+    });
+    assert(r.ok && r.json.success, `status ${r.status}: ${JSON.stringify(r.json)}`);
+    assert(r.json.exists === false && r.json.code === "NO_VAULT", `expected no-vault status, got ${JSON.stringify(r.json)}`);
   });
 
   console.log("\nInbound webhook + keeper auth:");

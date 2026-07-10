@@ -227,14 +227,15 @@ export async function processPremiumUpgrade({
 
         if (!verificationResult.valid) {
             console.error(`[Premium Upgrade Failed] Transaction validation failed: ${verificationResult.error}. requestId: ${requestId}`);
-            
+
+            /* Verification failures are deterministic for a given transaction hash. Retrying
+               a tx that targeted the wrong contract only creates noisy keeper failures. */
             const newAttempts = (session.processing_attempts || 0) + 1;
-            const isPermanent = newAttempts >= 5;
             
             await supabase
                 .from("payment_sessions")
                 .update({
-                    status: isPermanent ? "FAILED_PERMANENTLY" : "FAILED",
+                    status: "FAILED_PERMANENTLY",
                     processing_attempts: newAttempts,
                     last_error: verificationResult.error || "Payment verification failed.",
                     failure_code: "VERIFICATION_FAILED",

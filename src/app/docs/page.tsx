@@ -19,6 +19,7 @@ import {
   MessageSquare,
   QrCode,
   ReceiptText,
+  RefreshCcw,
   Server,
   ShieldCheck,
   Terminal,
@@ -47,6 +48,7 @@ const sections: Section[] = [
   { id: "nocode", title: "No-code links", icon: Link2, group: "Platform" },
   { id: "vibecoder", title: "AI integration prompt", icon: MessageSquare, group: "Platform" },
   { id: "developer", title: "API reference", icon: Server, group: "Build" },
+  { id: "subscriptions", title: "Subscriptions", icon: RefreshCcw, group: "Build" },
   { id: "usage", title: "Usage billing", icon: Terminal, group: "Build" },
   { id: "webhooks", title: "Webhooks", icon: Webhook, group: "Build" },
   { id: "testing", title: "Test & debug", icon: Terminal, group: "Build" },
@@ -116,6 +118,16 @@ const intentResponseCode = `{
   }
 }`;
 
+const intentStatusCode = `// Poll when you need a synchronous status check.
+// Webhooks remain the source of truth for fulfillment.
+const status = await fetch("https://www.subscriptonarc.com/api/intent/clx_intent_123");
+const { intent } = await status.json();
+
+if (intent.status === "PAID") {
+  // Safe to reconcile dashboards or support views.
+  // Fulfillment should still be idempotent and webhook-driven.
+}`;
+
 const checkoutIntentCode = `// Run this on your server — never in a browser component.
 const response = await fetch("https://www.subscriptonarc.com/api/intent", {
   method: "POST",
@@ -157,6 +169,46 @@ export function UpgradeButton({ checkoutUrl }) {
       Pay with SubScript
     </a>
   );
+}`;
+
+const subscriptionCode = `const response = await fetch("https://www.subscriptonarc.com/api/v1/subscriptions", {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    title: "Kris's Script Pro",
+    amountUsdcMicros: "7000000",
+    interval: "weekly",
+    externalReference: "user_123:pro_weekly",
+    idempotencyKey: "sub_user_123_pro_weekly",
+    sandbox: true,
+  }),
+});
+
+const { subscription } = await response.json();
+
+// Redirect to hosted checkout. It becomes active after the customer
+// authorizes the bounded recurring payment on-chain.
+return redirect(subscription.checkoutUrl);`;
+
+const subscriptionResponseCode = `{
+  "success": true,
+  "sandbox": true,
+  "subscription": {
+    "id": "sub_7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb",
+    "object": "subscription",
+    "status": "incomplete",
+    "merchantAddress": "0xMerchant...",
+    "subscriber": null,
+    "amountUsdcMicros": "7000000",
+    "amountUsdc": "7",
+    "intervalSeconds": 604800,
+    "intervalCount": 1,
+    "interval": "weekly",
+    "checkoutUrl": "https://www.subscriptonarc.com/pay/7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb"
+  }
 }`;
 
 const webhookCode = `import crypto from "crypto";
@@ -273,10 +325,20 @@ await walletClient.writeContract({
   args: [merchantAddress, parseUnits("15", 6), receiptToken],
 });`;
 
-const meteredUsageCode = `// Merchant backend: ALWAYS call report-usage BEFORE you serve the unit of work,
-// and serve only if it returns 200. report-usage both ACCRUES the charge and
-// tells you whether access is allowed — treat any non-200 as "do not serve".
+const meteredUsageCode = `// Merchant backend: check readiness, then ALWAYS call report-usage BEFORE
+// you serve the unit of work. report-usage both ACCRUES the charge and tells
+// you whether access is allowed — treat any non-200 as "do not serve".
 // The customer commits to your vault once; you never collect per call.
+
+const statusRes = await fetch(
+  "https://www.subscriptonarc.com/api/user/vault/status?userAddress=0xCustomerWallet...",
+  { headers: { Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\` } }
+);
+const status = await statusRes.json();
+
+if (!status.active) {
+  return showCommitPrompt(status.onboarding?.dashboardUrl);
+}
 
 const res = await fetch("https://www.subscriptonarc.com/api/user/vault/report-usage", {
   method: "POST",
@@ -301,7 +363,9 @@ if (res.status === 402) {
   return denySession(body); // ask them to re-commit (or serve a smaller unit)
 }
 
-const usage = await res.json(); // 200 == accrued and within escrow — safe to serve
+const usage = await res.json();
+// 200 == accrued and within escrow — safe to serve.
+// usage.active === true, usage.accruedUsageUsdc grows over the 30-day cycle.
 grantSession();
 
 // You don't collect per call. At cycle end SubScript's keeper draws the accrued
@@ -507,13 +571,29 @@ export default function DocsPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {[
                   ["5 minutes", "First sandbox Checkout Intent"],
-                  ["One webhook", "Verified, idempotent fulfillment"],
-                  ["Arc-native", "USDC settlement with receipt binding"],
+                  ["OpenAPI + llms.txt", "Machine-readable specs for humans and agents"],
+                  ["Self-testable", "CLI trigger, local listener, and sandbox test clocks"],
                 ].map(([label, text]) => (
                   <div key={label} className="liquid-glass rounded-2xl border border-white/5 bg-black/25 p-5">
                     <p className="text-2xl font-bold text-[#00d2b4]">{label}</p>
                     <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
                   </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  ["OpenAPI", "/openapi.json"],
+                  ["LLM index", "/llms.txt"],
+                  ["Full agent context", "/llms-full.txt"],
+                ].map(([label, href]) => (
+                  <a
+                    key={href}
+                    href={href}
+                    className="rounded-2xl border border-white/5 bg-black/30 p-4 text-xs transition hover:border-[#00d2b4]/35 hover:bg-[#00d2b4]/10"
+                  >
+                    <span className="block font-semibold text-white">{label}</span>
+                    <span className="mt-1 block font-mono text-[#00d2b4]">{href}</span>
+                  </a>
                 ))}
               </div>
             </section>
@@ -778,6 +858,13 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
 
               <CodeBlock code={checkoutIntentCode} language="javascript" />
               <CodeBlock code={frontendEmbedCode} language="tsx" />
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Status polling</p>
+                <p className="mt-2">
+                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Fulfillment should still happen from the signed webhook.
+                </p>
+              </div>
+              <CodeBlock code={intentStatusCode} language="javascript" />
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
@@ -792,6 +879,76 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                     <p className="mt-1 text-[10px] leading-relaxed text-white/45">{text}</p>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section id="subscriptions" className="scroll-mt-24 space-y-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00d2b4]">
+                    Fixed-schedule recurring billing
+                  </p>
+                  <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Create weekly, monthly, or custom subscriptions</h2>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="rounded-md bg-[#00d2b4]/15 px-2 py-1 font-bold text-[#00d2b4]">POST</span>
+                  <span className="text-white/70">/api/v1/subscriptions</span>
+                </div>
+              </div>
+              <p className="text-sm leading-relaxed text-white/70">
+                SubScript supports fixed-schedule subscription checkouts today. Create a subscription from your backend, redirect the customer to the hosted checkout, and listen for subscription lifecycle webhooks. Metered vaults are a separate usage-based product, not a workaround for subscriptions.
+              </p>
+
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+                <table className="w-full min-w-[720px] text-left text-xs">
+                  <thead className="border-b border-white/5 bg-white/[0.03] text-[9px] uppercase tracking-widest text-white/40">
+                    <tr>
+                      <th className="px-4 py-3">Field</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Required</th>
+                      <th className="px-4 py-3">Meaning</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-white/65">
+                    {[
+                      ["amountUsdcMicros", "integer string", "Yes, unless planId", "Recurring charge amount in micro-USDC."],
+                      ["planId", "string", "Optional", "Use a saved merchant plan for amount and interval."],
+                      ["interval", "daily | weekly | monthly | yearly", "Yes, unless planId or intervalSeconds", "Named fixed schedule."],
+                      ["intervalSeconds", "integer", "Optional", "Custom schedule in seconds."],
+                      ["intervalCount", "integer", "Optional", "Multiplier for the interval; defaults to 1."],
+                      ["subscriber", "0x address", "Optional", "Preselect the expected subscriber wallet."],
+                      ["externalReference", "string ≤ 256", "Recommended", "Your user, account, or entitlement reference."],
+                      ["idempotencyKey", "string", "Recommended", "Stable key for one logical subscription checkout."],
+                    ].map(([field, type, required, meaning]) => (
+                      <tr key={field}>
+                        <td className="px-4 py-3 font-mono font-semibold text-[#00d2b4]">{field}</td>
+                        <td className="px-4 py-3 font-mono text-white/55">{type}</td>
+                        <td className="px-4 py-3">{required}</td>
+                        <td className="px-4 py-3 leading-relaxed">{meaning}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <CodeBlock code={subscriptionCode} language="javascript" />
+              <CodeBlock code={subscriptionResponseCode} language="json" />
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {[
+                  ["incomplete", "Created but not authorized yet. Redirect the customer to checkoutUrl."],
+                  ["active", "The customer authorized the recurring payment on-chain. Fulfill from the signed webhook."],
+                  ["canceled", "Unaccepted checkout sessions can be withdrawn by the merchant; active authorizations are customer-controlled."],
+                ].map(([status, text]) => (
+                  <div key={status} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <p className="font-mono text-sm font-bold text-[#00d2b4]">{status}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-white/55">{text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
+                Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
               </div>
             </section>
 
@@ -816,9 +973,10 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <h3 className="text-sm font-semibold text-white pt-2">How a developer integrates pay-per-session</h3>
               <ol className="space-y-2 text-xs leading-relaxed text-white/65 list-decimal pl-5">
                 <li><span className="font-bold text-white/85">Set your commit.</span> In Merchant dashboard → Vault (or <span className="font-mono">POST /api/merchant/vault/commit-config</span>) set the USDC a customer must escrow to use your service.</li>
-                <li><span className="font-bold text-white/85">Customer commits once.</span> They escrow ≥ the commit from their SubScript wallet; the vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
+                <li><span className="font-bold text-white/85">Customer commits once.</span> They open <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow at least the commit from their SubScript wallet. The vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
+                <li><span className="font-bold text-white/85">Check readiness.</span> Call <span className="font-mono">GET /api/user/vault/status?userAddress=0x...</span> with your secret key before rendering a metered session. It returns <span className="font-mono">NO_VAULT</span>, <span className="font-mono">VAULT_INACTIVE</span>, or <span className="font-mono">VAULT_ACTIVE</span>, plus a dashboard URL to show the customer when they need to commit.</li>
                 <li><span className="font-bold text-white/85">Report before you serve.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key <span className="font-bold text-white/85">before rendering each unit</span>, and serve only on a <span className="font-mono">200</span>. A <span className="font-mono">402</span> means do not serve: either the vault is inactive (<span className="font-mono">VAULT_INACTIVE</span>) or the charge would exceed the remaining escrow (<span className="font-mono">COMMIT_EXHAUSTED</span>). Reporting after you serve risks eating the last unit's cost yourself.</li>
-                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed the escrow is rejected outright (nothing is charged beyond the committed amount) and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed — and funds are never pulled from their main wallet.</li>
+                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed escrow is rejected outright and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed — and funds are never pulled from their main wallet.</li>
               </ol>
               <CodeBlock code={meteredUsageCode} language="javascript" />
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
@@ -910,6 +1068,19 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {[
+                  ["Local signed event", "npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript"],
+                  ["Forward real test events", "npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks/subscript"],
+                  ["Simulate renewals", "POST /api/test/clocks, attach a subscription, then POST /api/test/clocks/:id/advance"],
+                ].map(([title, command]) => (
+                  <div key={title} className="rounded-2xl border border-white/5 bg-black/30 p-5">
+                    <p className="text-xs font-semibold text-white">{title}</p>
+                    <p className="mt-3 break-words font-mono text-[10px] leading-relaxed text-[#00d2b4]">{command}</p>
+                  </div>
+                ))}
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
