@@ -601,6 +601,10 @@ export default function PublicPayClient({
                 }
 
                 const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${hash}`);
+                /* Once we've reached a terminal state (settled, verification-failed, or a server-sent
+                   error), suppress the transport onerror below so it can't overwrite the specific
+                   message with the generic "stream disconnected". */
+                let settled = false;
 
                 eventSource.addEventListener("status", (event) => {
                     try {
@@ -614,12 +618,14 @@ export default function PublicPayClient({
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
+                            settled = true;
                             eventSource.close();
                         } else if (data.status === "FAILED") {
                             setVerificationError(data.errorMessage || "Payment verification failed");
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
+                            settled = true;
                             eventSource.close();
                         }
                     } catch (e) {
@@ -627,7 +633,28 @@ export default function PublicPayClient({
                     }
                 });
 
+                /* Named server-sent error events (event: error) carry a real message; without this
+                   listener they'd only reach onerror and surface as the generic disconnect notice. */
+                eventSource.addEventListener("error", (event) => {
+                    const data = (event as MessageEvent).data;
+                    if (!data) return; /* transport error, not a server message — let onerror handle it */
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed?.message) {
+                            setVerificationError(parsed.message);
+                            setIsVerifying(false);
+                            setIsPaying(false);
+                            setIsEmbeddedPaying(false);
+                            settled = true;
+                            eventSource.close();
+                        }
+                    } catch {
+                        /* not a JSON payload; leave it to onerror */
+                    }
+                });
+
                 eventSource.onerror = (err) => {
+                    if (settled) return;
                     console.error("EventSource connection error:", err);
                     eventSource.close();
                     setVerificationError("Real-time stream disconnected. Please verify on explorer.");

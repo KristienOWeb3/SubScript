@@ -70,20 +70,46 @@ export async function POST(request: Request, { params }: RouteContext) {
 
         const settlesDirectlyToUser = isPeerRequestLink(link);
 
+        /* Both settlement paths need a valid receipt token downstream in /verify (the merchant path
+           uses it as the on-chain memo; the peer path still requires one for the receipt record), so
+           validate it BEFORE moving any funds rather than transferring and only failing at verify. */
+        if (!isReceiptId(link.receiptToken)) {
+            return NextResponse.json(
+                { error: "This checkout is missing a valid receipt token. Ask the merchant to regenerate the link." },
+                { status: 400 },
+            );
+        }
+        const receiptToken = link.receiptToken as string;
+
+        /* Single-flight guard: two concurrent POSTs (double-click, two tabs) would otherwise both pass
+           the read-only guards above and sign SEPARATE custody transfers — a double charge. Atomically
+           claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
+           and an already-completed one returns the original tx hash instead of paying again. */
+        const claimKey = `embedded-pay:${id}:${payer}`;
+        try {
+            await prisma.idempotencyKey.create({
+                data: { executionKey: claimKey, status: "PROCESSING", expiresAt: new Date(Date.now() + 5 * 60 * 1000) },
+            });
+        } catch (e: any) {
+            if (e?.code === "P2002") {
+                const existing = await prisma.idempotencyKey.findUnique({ where: { executionKey: claimKey } }).catch(() => null);
+                const priorTx = (existing?.responsePayload as any)?.txHash;
+                if (existing?.status === "COMPLETED" && priorTx) {
+                    return NextResponse.json({ success: true, txHash: priorTx, receiptId: receiptToken, settlesDirectlyToUser }, { status: 200 });
+                }
+                return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+            }
+            throw e;
+        }
+
         let txHash: string;
         try {
-            if (settlesDirectlyToUser) {
-                txHash = await payPeerLinkFromEmbedded(payer, recipient, amountMicros);
-            } else {
-                if (!isReceiptId(link.receiptToken)) {
-                    return NextResponse.json(
-                        { error: "This checkout is missing a valid receipt token. Ask the merchant to regenerate the link." },
-                        { status: 400 },
-                    );
-                }
-                txHash = await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, link.receiptToken as string);
-            }
+            txHash = settlesDirectlyToUser
+                ? await payPeerLinkFromEmbedded(payer, recipient, amountMicros)
+                : await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, receiptToken);
         } catch (err: any) {
+            /* Release the claim so a failed payment can be retried immediately. */
+            await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
             const message = err?.message || "Payment could not be signed from your SubScript wallet.";
             /* getWalletCustody throws for wallets with no server-held key (external/browser wallets). */
             const status = /no server-held key|connect a browser wallet/i.test(message) ? 400
@@ -92,10 +118,16 @@ export async function POST(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: message }, { status });
         }
 
+        /* Mark the claim COMPLETED with the tx hash so an accidental re-submit returns it idempotently. */
+        await prisma.idempotencyKey.update({
+            where: { executionKey: claimKey },
+            data: { status: "COMPLETED", responsePayload: { txHash } },
+        }).catch(() => {});
+
         return NextResponse.json({
             success: true,
             txHash,
-            receiptId: isReceiptId(link.receiptToken) ? link.receiptToken : null,
+            receiptId: receiptToken,
             settlesDirectlyToUser,
         }, { status: 200 });
     } catch (error: any) {
