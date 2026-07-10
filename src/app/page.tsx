@@ -41,11 +41,6 @@ const CodePanel = dynamic(
     { ssr: false, loading: () => <div className="w-full h-96 bg-gradient-to-b from-white/5 to-transparent rounded-3xl animate-pulse" /> }
 );
 
-const MerchantApplicationForm = dynamic(
-    () => import("./components/MerchantApplicationForm"),
-    { ssr: false }
-);
-
 function XIcon({ className }: { className?: string }) {
     return (
         <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -394,11 +389,6 @@ export default function Home() {
                 </section>
 
                 {/* -------------------------------------------------------- */}
-                {/* Merchant application (SUB-401)                            */}
-                {/* -------------------------------------------------------- */}
-                <MerchantApplicationForm />
-
-                {/* -------------------------------------------------------- */}
                 {/* Final CTA                                                 */}
                 {/* -------------------------------------------------------- */}
                 <section className="max-w-7xl mx-auto px-6 sm:px-12 py-20">
@@ -409,8 +399,8 @@ export default function Home() {
                                 Create a merchant account, generate a payment link or Checkout Intent, and settle in stablecoins on Arc — no card networks and no chargebacks.
                             </p>
                             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-                                <Link href="/signup" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-semibold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
-                                    Create an account <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                                <Link href="/signup?role=merchant" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-semibold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
+                                    Create a merchant account <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                                 </Link>
                                 <Link href="/docs" className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-sm transition-all">
                                     View documentation
