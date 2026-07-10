@@ -34,7 +34,7 @@ async function getPaymentLink(id: string) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, receiver_address")
+        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, receiver_address, state_snapshot")
         .eq("id", id)
         .maybeSingle();
 

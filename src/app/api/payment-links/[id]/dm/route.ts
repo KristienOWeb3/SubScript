@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createPaymentRequestDm } from "@/lib/dms/system";
-import { requireAccountRole } from "@/lib/accounts/roles";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -13,9 +13,16 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-        const roleCheck = await requireAccountRole(wallet, "USER");
-        if (!roleCheck.ok) {
-            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        /* Legacy accounts (pre role-first signup) have no account_roles row. They are still
+           valid logged-in payers, so heal them to USER instead of dead-ending the checkout
+           with a "finish signup" error. Merchant wallets are still rejected. */
+        const role = await resolveAccountRoleWithBackfill(wallet);
+        if (role !== "USER") {
+            return NextResponse.json({
+                error: role === "ENTERPRISE"
+                    ? "This action requires a user wallet. Merchant accounts can't receive payment-request DMs."
+                    : "Unable to verify your account. Please try again.",
+            }, { status: role === "ENTERPRISE" ? 403 : 500 });
         }
 
         const { id } = await params;

@@ -99,6 +99,18 @@ export default function PublicPayClient({
         linkData?.external_reference?.startsWith("peer-request:") ||
         linkData?.external_reference?.startsWith("dm-peer-request:");
 
+    /* Merchant-site return URLs from the checkout intent (POST /api/intent successUrl/cancelUrl).
+       A merchant integration opens this hosted checkout in a new tab, so after settlement the
+       payer is routed back to the merchant's site instead of dead-ending on "payment completed". */
+    const linkReturnUrls = (linkData?.state_snapshot?.returnUrls || {}) as { successUrl?: unknown; cancelUrl?: unknown };
+    const merchantSuccessUrl = typeof linkReturnUrls.successUrl === "string" ? linkReturnUrls.successUrl : null;
+    const merchantCancelUrl = typeof linkReturnUrls.cancelUrl === "string" ? linkReturnUrls.cancelUrl : null;
+    const hostOf = (value: string | null) => {
+        if (!value) return null;
+        try { return new URL(value).hostname; } catch { return null; }
+    };
+    const merchantSuccessHost = hostOf(merchantSuccessUrl);
+
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
@@ -156,6 +168,9 @@ export default function PublicPayClient({
     const hasInjectedProvider = typeof window !== "undefined" && Boolean((window as any).ethereum);
     const noWalletDetected = typeof window !== "undefined" && !hasInjectedProvider && walletConnectors.length <= 1;
 
+    /* Pre-payment only: files this request into the signed-in payer's inbox as a pending
+       payment-request DM so they can pay from their dashboard wallet. Never call this after
+       settlement — it would create a fresh PENDING request for something already paid. */
     const handleGoToDms = async () => {
         if (!linkData?.id) return;
         setIsCreatingDm(true);
@@ -172,6 +187,32 @@ export default function PublicPayClient({
             setIsCreatingDm(false);
         }
     };
+
+    const isPaymentSettled = verificationStatus === "Payment confirmed and settled successfully!";
+
+    /* Post-settlement return to the merchant site, carrying receipt evidence the merchant
+       integration can correlate server-side (webhooks remain the settlement authority). */
+    const buildMerchantReturnUrl = (base: string) => {
+        try {
+            const url = new URL(base);
+            url.searchParams.set("subscript_status", "success");
+            url.searchParams.set("subscript_checkout_id", String(linkData?.id || id));
+            if (receiptId) url.searchParams.set("subscript_receipt_id", receiptId);
+            if (successTxHash) url.searchParams.set("subscript_tx_hash", successTxHash);
+            return url.toString();
+        } catch {
+            return null;
+        }
+    };
+
+    useEffect(() => {
+        if (!isPaymentSettled || !merchantSuccessUrl) return;
+        const target = buildMerchantReturnUrl(merchantSuccessUrl);
+        if (!target) return;
+        const timer = setTimeout(() => { window.location.assign(target); }, 3500);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isPaymentSettled, merchantSuccessUrl, receiptId, successTxHash]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -682,8 +723,10 @@ export default function PublicPayClient({
 
                         {!isConnected ? (
                             <div className="space-y-4">
-                                {/* Already signed in to SubScript: offer DMs instead of a fresh connect. */}
-                                {sessionInfo?.loggedIn && (
+                                {/* Already signed in to SubScript: offer DMs instead of a fresh connect.
+                                    Merchant (enterprise) sessions are excluded — they can't receive
+                                    payment-request DMs, so the offer would only produce an error. */}
+                                {sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             You're already signed in to SubScript
@@ -835,37 +878,63 @@ export default function PublicPayClient({
                                                 View Tx on Explorer <ExternalLink className="w-3 h-3" />
                                             </a>
                                         )}
-                                        {verificationStatus === "Payment confirmed and settled successfully!" && (
+                                        {isPaymentSettled && (
                                             <div className="w-full pt-4 border-t border-white/5 space-y-3">
-                                                {dmError && (
-                                                    <p className="text-[10px] font-mono text-red-400 text-center">{dmError}</p>
+                                                {merchantSuccessUrl ? (
+                                                    /* Merchant checkout intent: route the payer back to the
+                                                       merchant's site (auto-redirects after a moment). */
+                                                    <>
+                                                        <p className="text-[10px] text-white/50 leading-relaxed text-center">
+                                                            Returning you to {merchantSuccessHost || "the merchant site"} in a few seconds...
+                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const target = buildMerchantReturnUrl(merchantSuccessUrl);
+                                                                if (target) window.location.assign(target);
+                                                            }}
+                                                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                                                        >
+                                                            Return to {merchantSuccessHost || "merchant site"} now <ArrowRight className="w-4 h-4" />
+                                                        </button>
+                                                    </>
+                                                ) : isUserRequest && sessionInfo?.loggedIn ? (
+                                                    /* Peer request paid by a signed-in user: the request DM was
+                                                       marked approved at settlement — go straight to the inbox
+                                                       (no DM creation; that would re-request the payment). */
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => router.push("/user?tab=inbox")}
+                                                        className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                                                    >
+                                                        Go to Inbox <ArrowRight className="w-4 h-4" />
+                                                    </button>
+                                                ) : (
+                                                    /* One-time merchant payment without a return URL: the receipt
+                                                       links above are the record — an inbox-DM CTA here would be
+                                                       misleading, one-time payments aren't a DM conversation. */
+                                                    <p className="text-[10px] text-white/40 leading-relaxed text-center">
+                                                        You're all set — save the receipt link above for your records.
+                                                        You can safely close this page.
+                                                    </p>
                                                 )}
-                                                <button
-                                                    type="button"
-                                                    onClick={handleGoToDms}
-                                                    disabled={isCreatingDm}
-                                                    className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                                                >
-                                                    {isCreatingDm ? (
-                                                        <>
-                                                            <Loader2 className="w-4 h-4 animate-spin text-black" />
-                                                            Opening Inbox DMs...
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            Go to Inbox DMs <ArrowRight className="w-4 h-4" />
-                                                        </>
-                                                    )}
-                                                </button>
                                             </div>
                                         )}
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {verificationError && (
-                                            <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left">
+                                            <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl text-left space-y-2">
                                                 <span className="text-red-400 text-[9px] font-bold uppercase tracking-wide block">Payment Failed</span>
                                                 <p className="text-red-200/70 text-[10px] font-mono mt-1 leading-normal break-words">{verificationError}</p>
+                                                {merchantCancelUrl && (
+                                                    <a
+                                                        href={merchantCancelUrl}
+                                                        className="text-[9px] font-mono text-white/40 hover:text-white/70 underline inline-flex items-center gap-1"
+                                                    >
+                                                        Back to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                )}
                                             </div>
                                         )}
 

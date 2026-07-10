@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { getWalletCustody, deterministicIdempotencyKey, cancelSubscriptionIdempotencyKey } from "@/lib/custody";
 import { getSessionWallet } from "@/lib/auth";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import {
     CONFIDENTIAL_CONTRACT_ADDRESS,
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
@@ -143,7 +144,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unable to verify account role" }, { status: 500 });
         }
 
-        const accountRole = roleData?.role || null;
+        /* Legacy accounts (pre role-first signup) have no account_roles row; heal them
+           via the shared resolver (explicit role > merchants row > backfilled USER)
+           instead of blocking sponsored execution with a "finish signup" dead end. */
+        const accountRole = roleData?.role || await resolveAccountRoleWithBackfill(wallet);
         if (!accountRole) {
             return NextResponse.json({ error: "Forbidden: Account role is required for sponsored execution." }, { status: 403 });
         }

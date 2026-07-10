@@ -162,10 +162,13 @@ const checkoutUrl = payload.intent.checkoutUrl;
 const intentId = payload.intent.id;
 const receiptToken = payload.intent.receiptToken;`;
 
-const frontendEmbedCode = `// Frontend: send the customer to hosted checkout
+const frontendEmbedCode = `// Frontend: open hosted checkout in a new tab so your app keeps its state.
+// After settlement, checkout routes the payer back to your successUrl with
+// ?subscript_status=success&subscript_checkout_id=...&subscript_receipt_id=...&subscript_tx_hash=...
+// (treat those as navigation hints only — confirm payment via webhook or the intent status API).
 export function UpgradeButton({ checkoutUrl }) {
   return (
-    <a href={checkoutUrl} className="subscript-button">
+    <a href={checkoutUrl} target="_blank" rel="noopener" className="subscript-button">
       Pay with SubScript
     </a>
   );

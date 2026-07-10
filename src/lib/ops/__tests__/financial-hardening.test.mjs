@@ -143,6 +143,53 @@ test("upgrade page never re-opens checkout after a payment transaction was submi
     assert.match(page, /Retry Verification/);
 });
 
+test("legacy accounts without a role row are healed, never dead-ended at checkout", () => {
+    const roles = source("src/lib/accounts/roles.ts");
+    const dmRoute = source("src/app/api/payment-links/[id]/dm/route.ts");
+    const executeTx = source("src/app/api/execute-tx/route.ts");
+    const dmSystem = source("src/lib/dms/system.ts");
+
+    /* The resolver backfills USER for payer wallets but must never mint ENTERPRISE. */
+    assert.match(roles, /resolveAccountRoleWithBackfill/);
+    assert.match(roles, /if \(merchantRecord\) return "ENTERPRISE";/);
+    assert.match(roles, /insert into account_roles \(address, role\) values \(\$1, 'USER'\) on conflict \(address\) do nothing/);
+
+    /* Checkout-side gates use the healing resolver instead of the "finish signup" dead end. */
+    assert.match(dmRoute, /resolveAccountRoleWithBackfill/);
+    assert.doesNotMatch(dmRoute, /requireAccountRole/);
+    assert.match(executeTx, /roleData\?\.role \|\| await resolveAccountRoleWithBackfill\(wallet\)/);
+
+    /* Request DMs for links whose creator predates role-first signup infer the side
+       from the merchants row / peer-link markers instead of throwing. */
+    assert.match(dmSystem, /merchantRow \? "ENTERPRISE" : isPeerLink \? "USER" : "ENTERPRISE"/);
+    assert.doesNotMatch(dmSystem, /This payment link's owner does not have a SubScript account/);
+});
+
+test("settled checkout routes back to the merchant successUrl or inbox, never re-requests payment", () => {
+    const payClient = source("src/app/pay/[id]/PublicPayClient.tsx");
+    const payPage = source("src/app/pay/[id]/page.tsx");
+
+    /* The server component must expose the intent's return URLs to the checkout client. */
+    assert.match(payPage, /state_snapshot/);
+    assert.match(payClient, /state_snapshot\?\.returnUrls/);
+
+    /* Post-settlement: auto-return to the merchant site with receipt evidence appended. */
+    assert.match(payClient, /subscript_status/);
+    assert.match(payClient, /subscript_receipt_id/);
+    assert.match(payClient, /window\.location\.assign\(target\)/);
+
+    /* The old success CTA created a fresh PENDING payment request for an already-paid
+       link. Success must never call the DM-creation endpoint; the inbox CTA is a plain
+       navigation and only for signed-in peer requests — one-time merchant payments get
+       the receipt, not an inbox-DM button. */
+    assert.doesNotMatch(payClient, /Go to Inbox DMs/);
+    assert.match(payClient, /isUserRequest && sessionInfo\?\.loggedIn \? \(/);
+    assert.match(payClient, /router\.push\("\/user\?tab=inbox"\)/);
+
+    /* Signed-in merchant (enterprise) sessions are never offered the request-DM shortcut. */
+    assert.match(payClient, /sessionInfo\?\.loggedIn && sessionInfo\.role !== "ENTERPRISE"/);
+});
+
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
     const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);

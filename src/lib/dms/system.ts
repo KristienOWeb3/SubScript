@@ -149,11 +149,21 @@ export async function createPaymentRequestDm({
     }
 
     const creatorAddress = link.merchantAddress.toLowerCase();
-    const creatorRole = await getAccountRole(creatorAddress);
     /* Links are created either by merchants (ENTERPRISE) or by users (peer-to-peer
-       "receive USDC" links). Both open a request DM the recipient can act on. */
+       "receive USDC" links). Both open a request DM the recipient can act on.
+       Creators that predate role-first signup have no account_roles row — infer their
+       side from the link itself (a merchants row, or the peer-request markers) instead
+       of dead-ending a working payment link. */
+    let creatorRole = await getAccountRole(creatorAddress);
     if (creatorRole !== "ENTERPRISE" && creatorRole !== "USER") {
-        throw new Error("This payment link's owner does not have a SubScript account.");
+        const merchantRow = await prisma.merchant.findUnique({
+            where: { walletAddress: creatorAddress },
+            select: { walletAddress: true },
+        }).catch(() => null);
+        const isPeerLink = link.merchantNameSnapshot === "SubScript user request" ||
+            (typeof link.externalReference === "string" &&
+                (link.externalReference.startsWith("peer-request:") || link.externalReference.startsWith("dm-peer-request:")));
+        creatorRole = merchantRow ? "ENTERPRISE" : isPeerLink ? "USER" : "ENTERPRISE";
     }
     const isMerchantLink = creatorRole === "ENTERPRISE";
     const messageType = isMerchantLink ? "PAYMENT_REQUEST" : "PEER_REQUEST";
