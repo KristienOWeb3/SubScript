@@ -273,9 +273,10 @@ await walletClient.writeContract({
   args: [merchantAddress, parseUnits("15", 6), receiptToken],
 });`;
 
-const meteredUsageCode = `// Merchant backend: charge per session (or per call / token / item) and
-// gate access in one request. The customer commits to your vault once;
-// report-usage both ACCRUES the charge and tells you if access is allowed.
+const meteredUsageCode = `// Merchant backend: ALWAYS call report-usage BEFORE you serve the unit of work,
+// and serve only if it returns 200. report-usage both ACCRUES the charge and
+// tells you whether access is allowed — treat any non-200 as "do not serve".
+// The customer commits to your vault once; you never collect per call.
 
 const res = await fetch("https://www.subscriptonarc.com/api/user/vault/report-usage", {
   method: "POST",
@@ -290,18 +291,21 @@ const res = await fetch("https://www.subscriptonarc.com/api/user/vault/report-us
 });
 
 if (res.status === 402) {
-  // Vault inactive: the customer owes a balance or dropped below your
-  // required commit. Block the session and ask them to re-commit.
-  const { owedUsdc, commitUsdc } = await res.json();
-  return denySession({ owedUsdc, commitUsdc });
+  const body = await res.json();
+  // Two "do not serve" cases:
+  //  - VAULT_INACTIVE:    owes a balance or dropped below your required commit.
+  //  - COMMIT_EXHAUSTED:  this charge would exceed their remaining escrow. The
+  //    whole request is rejected — nothing accrues, so a customer can never be
+  //    charged past what they committed. body.remainingUsdc tells you what's
+  //    left; you may retry with a smaller unit (<= remainingUsdc) if that fits.
+  return denySession(body); // ask them to re-commit (or serve a smaller unit)
 }
 
-const usage = await res.json();
-// usage.active === true, usage.accruedUsageUsdc grows over the 30-day cycle.
+const usage = await res.json(); // 200 == accrued and within escrow — safe to serve
 grantSession();
 
-// You don't collect per call. At cycle end SubScript's keeper draws the
-// accrued total from the customer's escrow; you withdraw it with merchantClaim
+// You don't collect per call. At cycle end SubScript's keeper draws the accrued
+// total from the customer's escrow; you withdraw it with merchantClaim
 // (Merchant dashboard -> Vault, or POST /api/merchant/vault/claim).`;
 
 export default function DocsPage() {
@@ -813,8 +817,8 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <ol className="space-y-2 text-xs leading-relaxed text-white/65 list-decimal pl-5">
                 <li><span className="font-bold text-white/85">Set your commit.</span> In Merchant dashboard → Vault (or <span className="font-mono">POST /api/merchant/vault/commit-config</span>) set the USDC a customer must escrow to use your service.</li>
                 <li><span className="font-bold text-white/85">Customer commits once.</span> They escrow ≥ the commit from their SubScript wallet; the vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
-                <li><span className="font-bold text-white/85">Report each session.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key at session start. It accrues the charge and returns the vault status — a <span className="font-mono">402</span> means the customer must re-commit, so gate access on the response.</li>
-                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. If usage exceeded the commit, the overage is recorded as owed and the service pauses until the customer re-commits — funds are never pulled from their main wallet.</li>
+                <li><span className="font-bold text-white/85">Report before you serve.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key <span className="font-bold text-white/85">before rendering each unit</span>, and serve only on a <span className="font-mono">200</span>. A <span className="font-mono">402</span> means do not serve: either the vault is inactive (<span className="font-mono">VAULT_INACTIVE</span>) or the charge would exceed the remaining escrow (<span className="font-mono">COMMIT_EXHAUSTED</span>). Reporting after you serve risks eating the last unit's cost yourself.</li>
+                <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed the escrow is rejected outright (nothing is charged beyond the committed amount) and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed — and funds are never pulled from their main wallet.</li>
               </ol>
               <CodeBlock code={meteredUsageCode} language="javascript" />
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
