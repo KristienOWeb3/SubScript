@@ -7,11 +7,16 @@ import { executeWithRpcFallback } from "./rpc";
 
 const normalizeAddress = (value: string) => ethers.getAddress(value).toLowerCase();
 
+/* Custody (Circle SCA) submissions historically failed verification for reasons that were
+   verifier bugs, not payment problems: tx.from is a bundler account (sender mismatch) and
+   tx.to is the 4337 EntryPoint rather than the SubScript contract (target mismatch). The
+   merchant was genuinely debited in those sessions, so they must stay re-verifiable after
+   the verifier fix instead of being permanently quarantined. */
 const isRecoverableCustodySenderMismatch = (session: any, txHash: string) => {
     if (!["FAILED", "FAILED_PERMANENTLY"].includes(String(session?.status || ""))) return false;
     if (session?.failure_code !== "VERIFICATION_FAILED") return false;
     if (!session?.tx_hash || session.tx_hash.toLowerCase() !== txHash.toLowerCase()) return false;
-    return /sender does not match session merchant|receipt sender does not match session merchant|transaction sender does not match session owner/i
+    return /sender does not match session merchant|receipt sender does not match session merchant|transaction sender does not match session owner|target is not subscript contract/i
         .test(String(session.last_error || ""));
 };
 
@@ -35,6 +40,7 @@ export async function processPremiumUpgrade({
     const normalizedUser = normalizeAddress(walletAddress);
 
     let session;
+    let isRecoveredSession = false;
     if (isReconciler) {
         console.log(`[Premium Upgrade Started] Reconciler bypass active. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
         const { data, error } = await supabase
@@ -75,7 +81,8 @@ export async function processPremiumUpgrade({
                         failure_code: "DUPLICATE_TX",
                         updated_at: new Date().toISOString()
                     })
-                    .eq("session_id", sessionId);
+                    .eq("session_id", sessionId)
+                    .neq("status", "COMPLETED");
 
                 return {
                     success: false,
@@ -121,6 +128,7 @@ export async function processPremiumUpgrade({
                 if (isRecoverableCustodySenderMismatch(currentSession, txHash)) {
                     console.warn(`[Premium Upgrade Recovery] Revalidating false-negative custody sender mismatch. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
                     session = currentSession;
+                    isRecoveredSession = true;
                 } else if (currentSession.status === "FAILED_PERMANENTLY") {
                     console.error(`[Premium Upgrade Failed] Session ${sessionId} is permanently failed. requestId: ${requestId}`);
                     return {
@@ -226,7 +234,12 @@ export async function processPremiumUpgrade({
                 return { isPendingReceipt: true, valid: false, error: "Receipt not found yet.", provider };
             }
 
-            const verification = await verifyTransaction(tx, receipt, session, provider);
+            /* Recovered and reconciled sessions were already paid but stalled, so they may be
+               reprocessed well after the payment block; the session-expiry-vs-block-timestamp
+               check below and the global tx-hash dedupe still bound replay. */
+            const verification = await verifyTransaction(tx, receipt, session, provider, {
+                allowAgedBlock: isReconciler || isRecoveredSession
+            });
             return {
                 isPendingReceipt: false,
                 valid: verification.valid,
@@ -349,11 +362,24 @@ export async function processPremiumUpgrade({
 
         if (lockError) {
             if (lockError.code === "23505") {
+                /* Another run (user click racing the reconciler on the same session) may have
+                   already activated this exact payment — that is a success, not a duplicate. */
+                const { data: latestSession } = await supabase
+                    .from("payment_sessions")
+                    .select("status")
+                    .eq("session_id", sessionId)
+                    .maybeSingle();
+
+                if (latestSession?.status === "COMPLETED") {
+                    console.log(`[Premium Upgrade Verified] Session ${sessionId} completed by a concurrent run. requestId: ${requestId}`);
+                    return { success: true, status: 200, tier: 1, upgradeTxHash: null, message: "Premium tier is already active." };
+                }
+
                 console.error(`[Premium Upgrade Failed] Global duplicate tx hash. requestId: ${requestId}, tx: ${txHash}`);
-                
+
                 const newAttempts = (session.processing_attempts || 0) + 1;
                 const isPermanent = newAttempts >= 5;
-                
+
                 await supabase
                     .from("payment_sessions")
                     .update({
@@ -363,7 +389,8 @@ export async function processPremiumUpgrade({
                         failure_code: "DUPLICATE_TX",
                         updated_at: new Date().toISOString()
                     })
-                    .eq("session_id", sessionId);
+                    .eq("session_id", sessionId)
+                    .neq("status", "COMPLETED");
 
                 return { success: false, status: 400, error: "Transaction has already been processed by another session." };
             }
@@ -442,7 +469,8 @@ export async function processPremiumUpgrade({
                 failure_code: failureCode,
                 updated_at: new Date().toISOString()
             })
-            .eq("session_id", sessionId);
+            .eq("session_id", sessionId)
+            .neq("status", "COMPLETED");
 
         if (isPermanent) {
             console.error(`[ALERT] FAILED_PERMANENTLY checkout session: ${sessionId}, reason: ${failureCode}, requestId: ${requestId}`);

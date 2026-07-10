@@ -41,7 +41,7 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
             .eq("status", "FAILED_PERMANENTLY")
             .eq("failure_code", "VERIFICATION_FAILED")
             .not("tx_hash", "is", null)
-            .or("last_error.ilike.%sender does not match session merchant%,last_error.ilike.%receipt sender does not match session merchant%,last_error.ilike.%transaction sender does not match session owner%")
+            .or("last_error.ilike.%sender does not match session merchant%,last_error.ilike.%receipt sender does not match session merchant%,last_error.ilike.%transaction sender does not match session owner%,last_error.ilike.%Target is not SubScript contract%")
             .order("updated_at", { ascending: true })
             .limit(remainingLimit);
 

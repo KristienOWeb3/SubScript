@@ -80,6 +80,10 @@ export default function UpgradePage() {
     const [checkoutError, setCheckoutError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
     const [sessionIdState, setSessionIdState] = useState<string | null>(null);
+    /* Set the moment a payment transaction is submitted on-chain. Once this exists the user has
+       (or may have) been debited, so the UI must never offer a fresh checkout — only re-running
+       server verification of this same transaction. */
+    const [submittedTxHash, setSubmittedTxHash] = useState<string | null>(null);
 
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancellationError, setCancellationError] = useState<string | null>(null);
@@ -239,26 +243,54 @@ export default function UpgradePage() {
     };
 
     const syncAndRedirect = useCallback(async (hash: string, sessionId = sessionIdState, subId?: number) => {
+        setCheckoutState("confirming");
         setCheckoutStatus("Syncing premium state with server...");
+        /* The server can legitimately need time after the payment lands: 202 while block
+           confirmations accrue, 404 while the RPC indexes the receipt, 409 while another
+           request (or the reconciler) holds the session. Those are pending states of an
+           already-paid transaction, not failures — poll instead of surfacing an error that
+           could push the user into paying again. */
+        const RETRYABLE_STATUSES = [202, 404, 409];
+        const MAX_ATTEMPTS = 12;
+        const RETRY_DELAY_MS = 5000;
         try {
-            const upgradeRes = await fetch("/api/premium/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash: hash,
-                    sessionId,
-                    subId,
-                }),
-            });
-            const upgradeData = await upgradeRes.json();
-            if (!upgradeRes.ok) {
-                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
-            }
+            let lastError = "Failed to finalize premium upgrade on server";
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                const upgradeRes = await fetch("/api/premium/upgrade", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        txHash: hash,
+                        sessionId,
+                        subId,
+                    }),
+                });
+                const upgradeData = await upgradeRes.json();
 
-            setSuccessTxHash(hash);
-            setCheckoutState("success");
-            setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
-            router.push("/merchant?upgradeSuccess=true");
+                if (upgradeRes.ok && upgradeData.success === true) {
+                    setSuccessTxHash(hash);
+                    setCheckoutState("success");
+                    setCheckoutStatus("Upgrade successful! Privacy Premium activated.");
+                    router.push("/merchant?upgradeSuccess=true");
+                    return;
+                }
+
+                lastError = upgradeData.error || lastError;
+                if (!RETRYABLE_STATUSES.includes(upgradeRes.status)) {
+                    throw new Error(lastError);
+                }
+
+                setCheckoutStatus(
+                    upgradeRes.status === 202
+                        ? "Payment received — waiting for block confirmations..."
+                        : "Payment submitted — waiting for the network to index the transaction..."
+                );
+                await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            }
+            throw new Error(
+                "Your payment was submitted on-chain but server confirmation is still pending. " +
+                "It will be finalized automatically — you can also retry verification below. Do not pay again."
+            );
         } catch (err: any) {
             console.error("Premium upgrade sync failed:", err);
             setCheckoutError(err.message || "Failed to sync premium state with server");
@@ -285,6 +317,7 @@ export default function UpgradePage() {
 
         setCheckoutError(null);
         setSuccessTxHash(null);
+        setSubmittedTxHash(null);
         setCheckoutState("preparing");
         setCheckoutStatus("Checking network settings...");
 
@@ -382,6 +415,7 @@ export default function UpgradePage() {
                 functionName: "createSubscription",
                 args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
+            setSubmittedTxHash(txHash);
 
             setCheckoutStatus("Confirming subscription on-chain...");
             if (embeddedWallet) {
@@ -405,11 +439,13 @@ export default function UpgradePage() {
                         log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
                 );
 
-                if (!createLog) {
-                    throw new Error("SubscriptionCreated event not found in logs.");
-                }
-
-                await syncAndRedirect(txHash, checkoutData.sessionId, Number(createLog.args.subId));
+                /* The server extracts the subId from the receipt logs itself, so a client-side
+                   parse miss must not abort verification of an already-paid transaction. */
+                await syncAndRedirect(
+                    txHash,
+                    checkoutData.sessionId,
+                    createLog ? Number(createLog.args.subId) : undefined
+                );
             } else {
                 setTxHashState(txHash as `0x${string}`);
             }
@@ -702,17 +738,38 @@ export default function UpgradePage() {
                                         <div className="w-full p-5 bg-red-500/5 border border-red-500/20 rounded-2xl text-center space-y-4">
                                             <div className="flex items-center justify-center gap-2 text-xs text-red-400 font-bold uppercase tracking-wider">
                                                 <XCircle className="w-4 h-4" />
-                                                <span>Transaction Failed</span>
+                                                <span>{submittedTxHash ? "Verification Incomplete" : "Transaction Failed"}</span>
                                             </div>
                                             <div className="p-3 bg-red-500/10 border border-red-500/10 rounded-xl text-red-300 text-[10px] font-mono break-all text-left leading-relaxed">
                                                 {checkoutError}
                                             </div>
-                                            <button
-                                                onClick={() => setCheckoutState("idle")}
-                                                className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
-                                            >
-                                                Retry Checkout
-                                            </button>
+                                            {submittedTxHash ? (
+                                                /* A payment transaction was already submitted on-chain. Re-running the
+                                                   checkout would charge the wallet a second time — only re-verification
+                                                   of the existing transaction is allowed from here. */
+                                                <>
+                                                    <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl text-yellow-200/80 text-[10px] leading-relaxed text-left">
+                                                        Your payment transaction was already submitted on-chain and will not be charged again.
+                                                        If verification keeps failing, premium is activated automatically once the payment is reconciled.
+                                                    </div>
+                                                    <div className="text-[9px] font-mono text-white/40 break-all text-left">
+                                                        Tx Hash: {submittedTxHash}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => syncAndRedirect(submittedTxHash)}
+                                                        className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                    >
+                                                        Retry Verification
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setCheckoutState("idle")}
+                                                    className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                                                >
+                                                    Retry Checkout
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>

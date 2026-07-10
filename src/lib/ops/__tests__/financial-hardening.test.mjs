@@ -98,10 +98,49 @@ test("premium finalization can recover false-negative custody sender mismatches"
     assert.match(processor, /\["FAILED",\s*"FAILED_PERMANENTLY"\]/);
     assert.match(processor, /failure_code !== "VERIFICATION_FAILED"/);
     assert.match(processor, /sender does not match session merchant/);
+    assert.match(processor, /target is not subscript contract/);
     assert.match(processor, /Revalidating false-negative custody sender mismatch/);
     assert.match(worker, /recoverablePermanentSessions/);
     assert.match(worker, /\.eq\("status",\s*"FAILED_PERMANENTLY"\)/);
     assert.match(worker, /last_error\.ilike\.\%sender does not match session merchant\%/);
+    assert.match(worker, /last_error\.ilike\.\%Target is not SubScript contract\%/);
+});
+
+test("premium verification accepts custody SCA submissions via the SubscriptionCreated event", () => {
+    const verifier = source("src/lib/payments/verifyTransaction.ts");
+
+    /* Circle embedded wallets are ERC-4337 smart accounts: tx.to is the EntryPoint, not the
+       SubScript contract, so a hard tx.to rejection falsely fails real payments after the
+       merchant was debited. The direct-calldata check must be scoped to direct calls only,
+       and the event matcher must pin every premium term including the period. */
+    assert.doesNotMatch(verifier, /return\s*\{\s*valid:\s*false,\s*error:\s*"Target is not SubScript contract"\s*\}/);
+    assert.match(verifier, /isDirectContractCall/);
+    assert.match(verifier, /if\s*\(isDirectContractCall\)/);
+    assert.match(verifier, /BigInt\(parsed\.args\.period\)\s*===\s*period/);
+
+    /* Recovered/reconciled sessions were paid but stalled, so re-verification must not
+       re-fail them on block age alone; fresh verifications keep the 24h bound. */
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    assert.match(verifier, /allowAgedBlock/);
+    assert.match(verifier, /!options\.allowAgedBlock &&/);
+    assert.match(processor, /allowAgedBlock:\s*isReconciler \|\| isRecoveredSession/);
+});
+
+test("legacy unauthenticated merchant upgrade verifier stays deleted", () => {
+    /* src/app/api/merchant/upgrade granted PREMIUM and overwrote payout_destination from any
+       replayed transaction hash with no auth, no session, and no idempotency. The only
+       supported finalizer is the session-scoped /api/premium/upgrade route. */
+    assert.throws(() => source("src/app/api/merchant/upgrade/route.ts"), /ENOENT/);
+});
+
+test("upgrade page never re-opens checkout after a payment transaction was submitted", () => {
+    const page = source("src/app/dashboard/upgrade/page.tsx");
+
+    assert.match(page, /setSubmittedTxHash\(txHash\)/);
+    assert.match(page, /RETRYABLE_STATUSES\s*=\s*\[202,\s*404,\s*409\]/);
+    assert.match(page, /upgradeData\.success === true/);
+    assert.match(page, /submittedTxHash \?/);
+    assert.match(page, /Retry Verification/);
 });
 
 test("failed on-chain cancellation is never persisted as canceled", () => {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
-import posthog from "posthog-js";
 import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -25,14 +24,6 @@ import {
     http,
     formatUnits,
     parseUnits,
-    parseEventLogs,
-    bytesToHex,
-    encodePacked,
-    getAddress,
-    isAddress,
-    keccak256,
-    getContract,
-    type Hex,
 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { 
@@ -48,13 +39,11 @@ import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
-import { 
-    ARC_TESTNET_CHAIN_ID, 
-    PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+import {
+    ARC_TESTNET_CHAIN_ID,
     PREMIUM_PLAN_ID,
-    PREMIUM_PLAN_PRICE_USDC,
-    SUBSCRIPT_ROUTER_ADDRESS, 
-    STANDARD_CONTRACT_ADDRESS, 
+    SUBSCRIPT_ROUTER_ADDRESS,
+    STANDARD_CONTRACT_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS,
     CONFIDENTIAL_CONTRACT_ADDRESS
 } from "@/lib/contracts/constants";
@@ -345,7 +334,6 @@ export default function DashboardPage() {
     };
 
 
-    const [isSubscribingPremium, setIsSubscribingPremium] = useState(false);
     const [premiumStatus, setPremiumStatus] = useState<string | null>(null);
     const [premiumError, setPremiumError] = useState<string | null>(null);
     const [rerouteAddress, setRerouteAddress] = useState("");
@@ -2040,198 +2028,9 @@ export default function DashboardPage() {
 
 
 
-    const getCheckoutErrorMessage = (error: any) => {
-        /* Walk the error to find the root cause if it is a viem/wagmi error */
-        let message = error?.shortMessage || error?.reason || error?.message || "";
-        let currentError = error;
-        while (currentError) {
-            if (currentError.shortMessage) {
-                message = currentError.shortMessage;
-            } else if (currentError.reason) {
-                message = currentError.reason;
-            } else if (currentError.details) {
-                message = currentError.details;
-            }
-            currentError = currentError.walk ? currentError.walk() : currentError.cause;
-        }
-
-        const code = error?.code || error?.cause?.code || error?.details?.code;
-        if (code === 4001 || /user rejected|rejected by user|user denied/i.test(String(message || ""))) {
-            return "Transaction was rejected in the wallet.";
-        }
-        if (/insufficient allowance/i.test(String(message || ""))) {
-            return "USDC allowance is insufficient for the premium router.";
-        }
-        if (/insufficient funds|exceeds balance/i.test(String(message || ""))) {
-            return "Wallet has insufficient USDC or gas balance for this payment.";
-        }
-        if (/execution reverted|revert/i.test(String(message || ""))) {
-            return `Contract reverted: ${message}`;
-        }
-        return message || "Premium checkout failed. Please try again.";
-    };
-
-    const handleUpgrade = async () => {
-        if (!isConnected || !activeMerchantAddress) {
-            setPremiumError("Please connect your merchant wallet first.");
-            return;
-        }
-
-        /* Enforce locking controls so user cannot submit multiple times */
-        if (isSubscribingPremium) {
-            return;
-        }
-
-        setIsSubscribingPremium(true);
-        setPremiumStatus("Checking network");
-        setPremiumError(null);
-
-        try {
-            if (!isAddress(activeMerchantAddress)) {
-                throw new Error("Connected wallet address is invalid.");
-            }
-
-            if (!embeddedWallet && chainId !== ARC_TESTNET_CHAIN_ID) {
-                setPremiumStatus("Switching to Arc Testnet");
-                if (switchChainAsync) {
-                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-                } else {
-                    switchChain?.({ chainId: ARC_TESTNET_CHAIN_ID });
-                    throw new Error("Switch to Arc Testnet and retry checkout.");
-                }
-            }
-
-            const userAddress = getAddress(activeMerchantAddress) as `0x${string}`;
-
-            /* Instantiate the USDC ERC20 contract using getContract from viem */
-            const usdcContract = getContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                client: publicClient,
-            });
-
-            setPremiumStatus("Checking USDC decimals");
-            const tokenDecimals = await usdcContract.read.decimals();
-            if (Number(tokenDecimals) !== 6) {
-                throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
-            }
-
-            const planPrice = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
-            const approvalAmount = parseUnits("120", Number(tokenDecimals));
-            const subscriptionPeriod = 2592000;
-
-            /* Register purchase intent session in the database first */
-            setPremiumStatus("Registering purchase intent");
-            const checkoutRes = await fetch("/api/premium/checkout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    merchantAddress: userAddress,
-                }),
-            });
-            const checkoutData = await checkoutRes.json();
-            if (!checkoutRes.ok) {
-                throw new Error(checkoutData.error || "Failed to initialize premium checkout session");
-            }
-
-            setPremiumStatus("Approving USDC Allowance");
-            await publicClient.simulateContract({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "approve",
-                account: userAddress,
-                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
-            });
-
-            const approveTxHash = await executeContractWrite({
-                address: USDC_NATIVE_GAS_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: "approve",
-                args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
-            });
-
-            setPremiumStatus("Waiting for approval confirmation...");
-            const approveReceipt = await publicClient.waitForTransactionReceipt({
-                hash: approveTxHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (approveReceipt.status !== "success") {
-                throw new Error("USDC approval transaction reverted.");
-            }
-
-            setPremiumStatus("Creating Premium Subscription");
-            await publicClient.simulateContract({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "createSubscription",
-                account: userAddress,
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
-            });
-
-            const txHash = await executeContractWrite({
-                address: STANDARD_CONTRACT_ADDRESS,
-                abi: STANDARD_ABI,
-                functionName: "createSubscription",
-                args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
-            });
-
-            posthog.capture("premium_upgrade_initiated");
-
-            setPremiumStatus("Confirming subscription on-chain...");
-            const receipt = await publicClient.waitForTransactionReceipt({
-                hash: txHash as `0x${string}`,
-                timeout: 120_000,
-            });
-
-            if (receipt.status !== "success") {
-                throw new Error("Subscription creation transaction reverted on-chain.");
-            }
-
-            const subscriptionLogs = parseEventLogs({
-                abi: STANDARD_ABI,
-                logs: receipt.logs,
-            });
-            const createLog = subscriptionLogs.find(
-                (log) =>
-                    log.eventName === "SubscriptionCreated" &&
-                    log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
-                    log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-            );
-
-            if (!createLog) {
-                throw new Error("SubscriptionCreated event not found in logs.");
-            }
-
-            const subId = Number(createLog.args.subId);
-
-            setPremiumStatus("Syncing premium state with server...");
-            const upgradeRes = await fetch("/api/premium/upgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    txHash,
-                    sessionId: checkoutData.sessionId,
-                    subId,
-                }),
-            });
-            const upgradeData = await upgradeRes.json();
-            if (!upgradeRes.ok) {
-                throw new Error(upgradeData.error || "Failed to finalize premium upgrade on server");
-            }
-
-            posthog.capture("premium_upgrade_success");
-
-            setPremiumStatus("Subscription active! Premium tier activated.");
-            await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 4000);
-        } catch (err: any) {
-            console.error("Premium subscription failed:", err);
-            setPremiumError(getCheckoutErrorMessage(err));
-        } finally {
-            setIsSubscribingPremium(false);
-        }
-    };
+    /* The premium checkout itself lives on /merchant/upgrade (src/app/dashboard/upgrade/page.tsx),
+       which handles both embedded (custody) and browser wallets and never re-runs a checkout after
+       a payment transaction was submitted. The dashboard only links there. */
 
     const handleCancelPremium = async () => {
         if (!isConnected || !activeMerchantAddress || !isPremium) {
