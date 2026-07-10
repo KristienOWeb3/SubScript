@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
@@ -127,7 +127,8 @@ export default function PublicPayClient({
 
     /* Detect an existing SubScript session so we can offer "go to DMs" instead of
        forcing a fresh wallet connection. */
-    const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null } | null>(null);
+    const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null } | null>(null);
+    const [isEmbeddedPaying, setIsEmbeddedPaying] = useState(false);
     useEffect(() => {
         let cancelled = false;
         fetch("/api/auth/session")
@@ -576,6 +577,74 @@ export default function PublicPayClient({
         }
     };
 
+    /* Submit the verification job and stream settlement status. Shared by the browser-wallet flow
+       (driven by the wagmi receipt effect below) and the embedded-wallet flow (handleEmbeddedPay),
+       so both settle through the identical /api/payment-links/verify pipeline. */
+    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number) => {
+        const run = async () => {
+            try {
+                const verifyRes = await fetch("/api/payment-links/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        txHash: hash,
+                        paymentLinkId: linkData?.id,
+                        payerAddress: payer || "",
+                        receiptId: rid,
+                        chainId: chain,
+                    })
+                });
+
+                if (!verifyRes.ok) {
+                    const verifyData = await verifyRes.json().catch(() => ({}));
+                    throw new Error(verifyData.error || "Failed to initiate verification");
+                }
+
+                const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${hash}`);
+
+                eventSource.addEventListener("status", (event) => {
+                    try {
+                        const data = JSON.parse((event as MessageEvent).data);
+                        if (data.status === "PENDING_CONFIRMATIONS") {
+                            setVerificationStatus(`Confirming: Received ${data.confirmations} block confirmations...`);
+                        } else if (data.status === "VERIFYING") {
+                            setVerificationStatus("Transaction confirmed. Verifying parameters...");
+                        } else if (data.status === "CONFIRMED") {
+                            setVerificationStatus("Payment confirmed and settled successfully!");
+                            setIsVerifying(false);
+                            setIsPaying(false);
+                            setIsEmbeddedPaying(false);
+                            eventSource.close();
+                        } else if (data.status === "FAILED") {
+                            setVerificationError(data.errorMessage || "Payment verification failed");
+                            setIsVerifying(false);
+                            setIsPaying(false);
+                            setIsEmbeddedPaying(false);
+                            eventSource.close();
+                        }
+                    } catch (e) {
+                        console.error("Error parsing event data:", e);
+                    }
+                });
+
+                eventSource.onerror = (err) => {
+                    console.error("EventSource connection error:", err);
+                    eventSource.close();
+                    setVerificationError("Real-time stream disconnected. Please verify on explorer.");
+                    setIsVerifying(false);
+                    setIsPaying(false);
+                    setIsEmbeddedPaying(false);
+                };
+            } catch (err: any) {
+                setVerificationError(err.message || "Payment verification failed");
+                setIsVerifying(false);
+                setIsPaying(false);
+                setIsEmbeddedPaying(false);
+            }
+        };
+        run();
+    }, [linkData]);
+
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && address && verifiedHash !== txHash) {
             if (txReceipt.status !== "success") {
@@ -585,72 +654,109 @@ export default function PublicPayClient({
                 return;
             }
             setVerifiedHash(txHash);
-            
-
-            const verifyPayment = async () => {
-                try {
-                    /* Submit verification job */
-                    const verifyRes = await fetch("/api/payment-links/verify", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            txHash,
-                            paymentLinkId: linkData.id,
-                            payerAddress: address || "",
-                            receiptId,
-                            chainId: chainId,
-                        })
-                    });
-
-                    if (!verifyRes.ok) {
-                        const verifyData = await verifyRes.json();
-                        throw new Error(verifyData.error || "Failed to initiate verification");
-                    }
-
-                    /* Subscribe to real-time status stream via SSE */
-                    const eventSource = new EventSource(`/api/payment-links/verify/status?txHash=${txHash}`);
-                    
-                    eventSource.addEventListener("status", (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.status === "PENDING_CONFIRMATIONS") {
-                                setVerificationStatus(`Confirming: Received ${data.confirmations} block confirmations...`);
-                            } else if (data.status === "VERIFYING") {
-                                setVerificationStatus("Transaction confirmed. Verifying parameters...");
-                            } else if (data.status === "CONFIRMED") {
-                                setVerificationStatus("Payment confirmed and settled successfully!");
-                                setIsVerifying(false);
-                                setIsPaying(false);
-                                eventSource.close();
-                            } else if (data.status === "FAILED") {
-                                setVerificationError(data.errorMessage || "Payment verification failed");
-                                setIsVerifying(false);
-                                setIsPaying(false);
-                                eventSource.close();
-                            }
-                        } catch (e) {
-                            console.error("Error parsing event data:", e);
-                        }
-                    });
-
-                    eventSource.onerror = (err) => {
-                        console.error("EventSource connection error:", err);
-                        eventSource.close();
-                        setVerificationError("Real-time stream disconnected. Please verify on explorer.");
-                        setIsVerifying(false);
-                        setIsPaying(false);
-                    };
-
-                } catch (err: any) {
-                    setVerificationError(err.message || "Payment verification failed");
-                    setIsVerifying(false);
-                    setIsPaying(false);
-                }
-            };
-
-            verifyPayment();
+            startVerification(txHash, receiptId, address, chainId);
         }
-    }, [isConfirmed, txHash, linkData, address, verifiedHash, chainId, receiptId]);
+    }, [isConfirmed, txReceipt, txHash, linkData, address, verifiedHash, chainId, receiptId, startVerification]);
+
+    /* Logged-in embedded (Circle/email) wallet users can't sign the page's wagmi transactions, so
+       they pay on-page through the custody-signing endpoint instead of being bounced to DMs. */
+    const embeddedPaySession = Boolean(sessionInfo?.loggedIn && sessionInfo?.isEmbedded && sessionInfo?.wallet);
+
+    const handleEmbeddedPay = async () => {
+        if (!linkData) return;
+        setVerificationError(null);
+        setVerificationStatus(null);
+        setIsEmbeddedPaying(true);
+        setVerificationStatus("Paying from your SubScript wallet...");
+        try {
+            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { method: "POST" });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success || !data.txHash) {
+                throw new Error(data.error || "Payment could not be completed.");
+            }
+            const hash = data.txHash as string;
+            const checkoutReceiptId = linkData.receipt_token;
+            const rid = data.receiptId || (isReceiptId(checkoutReceiptId) ? checkoutReceiptId : null);
+            setReceiptId(rid);
+            setSuccessTxHash(hash);
+            if (rid) setShareableReceiptUrl(receiptUrl(rid, window.location.origin));
+            setIsVerifying(true);
+            setVerificationStatus("Payment sent. Confirming settlement...");
+            startVerification(hash, rid, sessionInfo?.wallet || "", expectedChainId);
+        } catch (err: any) {
+            setVerificationError(err.message || "Payment failed");
+            setIsEmbeddedPaying(false);
+            setIsVerifying(false);
+        }
+    };
+
+    /* The verifying/settled panel is identical for browser and embedded wallets (it keys off
+       verificationStatus, not the wallet), so it's shared by both branches below. */
+    const verificationPanel = (
+        <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
+            <CheckCircle className="w-8 h-8 text-emerald-400" />
+            <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
+            {shareableReceiptUrl && (
+                <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
+                    Share receipt <ExternalLink className="w-3 h-3" />
+                </a>
+            )}
+            {successTxHash && (
+                <a href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
+                    View Tx on Explorer <ExternalLink className="w-3 h-3" />
+                </a>
+            )}
+            {isPaymentSettled && (
+                <div className="w-full pt-4 border-t border-white/5 space-y-3">
+                    {merchantSuccessUrl ? (
+                        /* Merchant checkout intent: route the payer back to the merchant's site. */
+                        <>
+                            <p className="text-[10px] text-white/50 leading-relaxed text-center">
+                                Returning you to {merchantSuccessHost || "the merchant site"} in a few seconds...
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const target = buildMerchantReturnUrl(merchantSuccessUrl);
+                                    if (target) window.location.assign(target);
+                                }}
+                                className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                            >
+                                Return to {merchantSuccessHost || "merchant site"} now <ArrowRight className="w-4 h-4" />
+                            </button>
+                        </>
+                    ) : isUserRequest && sessionInfo?.loggedIn ? (
+                        /* Peer request paid by a signed-in user: the request DM was marked approved at
+                           settlement — go to the inbox (no DM creation; that would re-request payment). */
+                        <button
+                            type="button"
+                            onClick={() => router.push("/user?tab=inbox")}
+                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                        >
+                            Go to Inbox <ArrowRight className="w-4 h-4" />
+                        </button>
+                    ) : sessionInfo?.loggedIn ? (
+                        /* One-time merchant payment (e.g. scanned QR) by a signed-in user with no merchant
+                           return URL: send them to their dashboard, where this payment now appears in
+                           transaction history. */
+                        <button
+                            type="button"
+                            onClick={() => router.push("/user/transactions")}
+                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                        >
+                            Go to Dashboard <ArrowRight className="w-4 h-4" />
+                        </button>
+                    ) : (
+                        /* Anonymous external-wallet payer: the receipt links above are the record. */
+                        <p className="text-[10px] text-white/40 leading-relaxed text-center">
+                            You're all set — save the receipt link above for your records.
+                            You can safely close this page.
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
@@ -787,10 +893,35 @@ export default function PublicPayClient({
 
                         {!isConnected ? (
                             <div className="space-y-4">
-                                {/* Already signed in to SubScript: offer DMs instead of a fresh connect.
-                                    Merchant (enterprise) sessions are excluded — they can't receive
-                                    payment-request DMs, so the offer would only produce an error. */}
-                                {sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
+                              {(embeddedPaySession && verificationStatus) ? verificationPanel : (
+                                <>
+                                {/* Embedded (Circle/email) wallet: pay on-page from the SubScript wallet
+                                    balance — no browser wallet to connect, and no DM detour for one-time
+                                    merchant payments. */}
+                                {embeddedPaySession && (
+                                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
+                                        <p className="text-[11px] leading-relaxed text-white/75">
+                                            Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
+                                        </p>
+                                        <button
+                                            onClick={handleEmbeddedPay}
+                                            disabled={isEmbeddedPaying}
+                                            className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                                        >
+                                            {isEmbeddedPaying ? (
+                                                <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment...</>
+                                            ) : (
+                                                <>Pay {(Number(linkData.amount_usdc) / 1_000_000).toFixed(2)} USDC <ArrowRight className="w-4 h-4" /></>
+                                            )}
+                                        </button>
+                                        {verificationError && <p className="text-[10px] font-mono text-red-400">{verificationError}</p>}
+                                    </div>
+                                )}
+
+                                {/* Peer (user-to-user) requests are conversational, so a signed-in user may
+                                    open them in DMs. One-time MERCHANT payments never route to DMs — they are
+                                    paid on this page. */}
+                                {isUserRequest && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             You're already signed in to SubScript
@@ -814,6 +945,14 @@ export default function PublicPayClient({
                                             <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a wallet</span>
                                             <span className="h-px flex-1 bg-white/10" />
                                         </div>
+                                    </div>
+                                )}
+
+                                {embeddedPaySession && (
+                                    <div className="flex items-center gap-3 pt-1">
+                                        <span className="h-px flex-1 bg-white/10" />
+                                        <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
+                                        <span className="h-px flex-1 bg-white/10" />
                                     </div>
                                 )}
 
@@ -868,6 +1007,8 @@ export default function PublicPayClient({
                                         </button>
                                     </>
                                 )}
+                                </>
+                              )}
                             </div>
                         ) : (
                             <div className="space-y-6">
@@ -919,72 +1060,7 @@ export default function PublicPayClient({
                                         </button>
                                     </div>
                                 ) : verificationStatus ? (
-                                    <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
-                                        <CheckCircle className="w-8 h-8 text-emerald-400" />
-                                        <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
-                                        {shareableReceiptUrl && (
-                                            <a
-                                                href={shareableReceiptUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1"
-                                            >
-                                                Share receipt <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        )}
-                                        {successTxHash && (
-                                            <a 
-                                                href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1"
-                                            >
-                                                View Tx on Explorer <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        )}
-                                        {isPaymentSettled && (
-                                            <div className="w-full pt-4 border-t border-white/5 space-y-3">
-                                                {merchantSuccessUrl ? (
-                                                    /* Merchant checkout intent: route the payer back to the
-                                                       merchant's site (auto-redirects after a moment). */
-                                                    <>
-                                                        <p className="text-[10px] text-white/50 leading-relaxed text-center">
-                                                            Returning you to {merchantSuccessHost || "the merchant site"} in a few seconds...
-                                                        </p>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                const target = buildMerchantReturnUrl(merchantSuccessUrl);
-                                                                if (target) window.location.assign(target);
-                                                            }}
-                                                            className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                                                        >
-                                                            Return to {merchantSuccessHost || "merchant site"} now <ArrowRight className="w-4 h-4" />
-                                                        </button>
-                                                    </>
-                                                ) : isUserRequest && sessionInfo?.loggedIn ? (
-                                                    /* Peer request paid by a signed-in user: the request DM was
-                                                       marked approved at settlement — go straight to the inbox
-                                                       (no DM creation; that would re-request the payment). */
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => router.push("/user?tab=inbox")}
-                                                        className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                                                    >
-                                                        Go to Inbox <ArrowRight className="w-4 h-4" />
-                                                    </button>
-                                                ) : (
-                                                    /* One-time merchant payment without a return URL: the receipt
-                                                       links above are the record — an inbox-DM CTA here would be
-                                                       misleading, one-time payments aren't a DM conversation. */
-                                                    <p className="text-[10px] text-white/40 leading-relaxed text-center">
-                                                        You're all set — save the receipt link above for your records.
-                                                        You can safely close this page.
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
+                                    verificationPanel
                                 ) : (
                                     <div className="space-y-4">
                                         {verificationError && (
