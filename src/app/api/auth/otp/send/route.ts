@@ -5,8 +5,11 @@ import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
+import { getSessionWallet } from "@/lib/auth";
+import { requireAccountRole } from "@/lib/accounts/roles";
 
 import { verifyCaptchaToken } from "@/lib/captcha";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 
@@ -36,13 +39,33 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { email, captchaCode, captchaToken, isSignup } = sanitizedBody;
+        const { email, captchaCode, captchaToken, isSignup, purpose } = sanitizedBody;
 
         if (!email || typeof email !== "string" || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
             return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
         }
 
         const emailLower = email.toLowerCase();
+        const isEmailBindingRequest = purpose === "bind_wallet_email";
+        if (isEmailBindingRequest) {
+            const sessionWallet = await getSessionWallet(request.headers);
+            if (!sessionWallet) {
+                return NextResponse.json({ error: "Sign in with this wallet before verifying an email." }, { status: 401 });
+            }
+            const roleCheck = await requireAccountRole(sessionWallet, "USER");
+            if (!roleCheck.ok) {
+                return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+            }
+        }
+        const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+        const ipLimit = checkProviderRateLimit({ provider: "otp-send-ip", key: requesterIp, limit: 10, windowMs: 10 * 60 * 1000 });
+        const emailLimit = checkProviderRateLimit({ provider: "otp-send-email", key: emailLower, limit: 3, windowMs: 10 * 60 * 1000 });
+        if (!ipLimit.ok || !emailLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many verification-code requests. Please wait before trying again." },
+                { status: 429, headers: { "Retry-After": String(Math.max(ipLimit.retryAfterSeconds, emailLimit.retryAfterSeconds)) } },
+            );
+        }
 
         /* Determine signup server-side. A brand-new email (no existing account binding) is a
            signup and must clear CAPTCHA. The client-sent `isSignup` flag is NOT trusted: a caller
@@ -68,7 +91,7 @@ export async function POST(request: Request) {
             }
         }
 
-        const isNewAccount = bindingKnown ? !hasExistingAccount : Boolean(isSignup);
+        const isNewAccount = !isEmailBindingRequest && (bindingKnown ? !hasExistingAccount : Boolean(isSignup));
         if (isNewAccount) {
             const isValid = await verifyCaptchaToken(captchaToken);
             if (!isValid) {

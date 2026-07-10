@@ -74,14 +74,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId, payerEmail } = body;
+        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
-        /* Optional email captured at checkout (e.g. the returning-payer prompt). */
-        const normalizedPayerEmail = typeof payerEmail === "string"
-            && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail.trim())
-            && payerEmail.trim().length <= 254
-            ? payerEmail.trim().toLowerCase()
-            : null;
         const isCctp = Number(chainId) in CCTP_CONFIG;
         const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
 
@@ -530,15 +524,8 @@ export async function POST(request: Request) {
                                         .from("customers")
                                         .insert({
                                             wallet_address: normalizedPayer,
-                                            ...(normalizedPayerEmail ? { email: normalizedPayerEmail } : {})
                                         });
-                                } else if (normalizedPayerEmail) {
-                                    /* Returning payer who just supplied an email at checkout — backfill it. */
-                                    await supabase
-                                        .from("customers")
-                                        .update({ email: normalizedPayerEmail })
-                                        .eq("wallet_address", normalizedPayer)
-                                        .is("email", null);
+
                                 }
                             } catch (accErr) {
                                 console.error("[verify] Failed to auto-create subscript account for payer:", accErr);

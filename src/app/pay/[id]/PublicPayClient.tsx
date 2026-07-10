@@ -137,11 +137,17 @@ export default function PublicPayClient({
         return () => { cancelled = true; };
     }, []);
 
-    /* Returning-payer email prompt: a wallet that already has a SubScript account but
-       no email on file must supply one at checkout (it's required for receipts). */
+    /* Returning-payer email prompt: an external wallet that already has a SubScript account
+       but no email on file must verify one at checkout via OTP — the payment verifier no
+       longer accepts a caller-supplied email, so binding happens only through the
+       authenticated /api/user/email flow. */
     const [payerNeedsEmail, setPayerNeedsEmail] = useState(false);
     const [payerEmailInput, setPayerEmailInput] = useState("");
     const [payerEmailError, setPayerEmailError] = useState<string | null>(null);
+    const [payerEmailCode, setPayerEmailCode] = useState("");
+    const [payerEmailStep, setPayerEmailStep] = useState<"email" | "code">("email");
+    const [isSendingPayerEmailCode, setIsSendingPayerEmailCode] = useState(false);
+    const [isVerifyingPayerEmail, setIsVerifyingPayerEmail] = useState(false);
     useEffect(() => {
         if (!address) {
             setPayerNeedsEmail(false);
@@ -150,10 +156,69 @@ export default function PublicPayClient({
         let cancelled = false;
         fetch(`/api/payer-status?address=${address}`)
             .then((res) => res.json())
-            .then((data) => { if (!cancelled) setPayerNeedsEmail(Boolean(data?.exists) && !data?.hasEmail); })
+            .then((data) => { if (!cancelled) { setPayerNeedsEmail(Boolean(data?.exists) && data?.isExternalWallet && !data?.hasEmail); setPayerEmailStep("email"); setPayerEmailCode(""); } })
             .catch(() => { if (!cancelled) setPayerNeedsEmail(false); });
         return () => { cancelled = true; };
     }, [address]);
+
+    const hasMatchingWalletSession = Boolean(
+        sessionInfo?.loggedIn && sessionInfo.wallet && address &&
+        sessionInfo.wallet.toLowerCase() === address.toLowerCase(),
+    );
+
+    const handleSendPayerEmailCode = async () => {
+        setPayerEmailError(null);
+        const email = payerEmailInput.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setPayerEmailError("Enter a valid email address.");
+            return;
+        }
+        if (!hasMatchingWalletSession) {
+            setPayerEmailError("Sign in with this connected wallet before adding an email.");
+            return;
+        }
+        setIsSendingPayerEmailCode(true);
+        try {
+            const response = await fetch("/api/auth/otp/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, purpose: "bind_wallet_email" }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Could not send a verification code.");
+            setPayerEmailStep("code");
+            setPayerEmailCode("");
+        } catch (error: any) {
+            setPayerEmailError(error.message || "Could not send a verification code.");
+        } finally {
+            setIsSendingPayerEmailCode(false);
+        }
+    };
+
+    const handleVerifyPayerEmail = async () => {
+        setPayerEmailError(null);
+        if (!/^\d{6}$/.test(payerEmailCode.trim())) {
+            setPayerEmailError("Enter the 6-digit code we emailed you.");
+            return;
+        }
+        setIsVerifyingPayerEmail(true);
+        try {
+            const response = await fetch("/api/user/email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: payerEmailInput.trim(), code: payerEmailCode.trim() }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Could not verify your email.");
+            setPayerNeedsEmail(false);
+            setPayerEmailStep("email");
+            setPayerEmailCode("");
+        } catch (error: any) {
+            setPayerEmailError(error.message || "Could not verify your email.");
+        } finally {
+            setIsVerifyingPayerEmail(false);
+        }
+    };
 
     /* De-duplicate discovered wallet connectors (EIP-6963 can surface several). */
     const walletConnectors = (() => {
@@ -346,9 +411,9 @@ export default function PublicPayClient({
         setVerificationStatus(null);
         setPayerEmailError(null);
 
-        /* Returning payer must provide an email before paying. */
-        if (payerNeedsEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmailInput.trim())) {
-            setPayerEmailError("Enter a valid email to continue.");
+        /* Returning payer must verify an email before paying. */
+        if (payerNeedsEmail) {
+            setPayerEmailError("Verify an email address before completing this payment.");
             return;
         }
 
@@ -534,7 +599,6 @@ export default function PublicPayClient({
                             payerAddress: address || "",
                             receiptId,
                             chainId: chainId,
-                            payerEmail: payerEmailInput.trim() || undefined
                         })
                     });
 
@@ -939,18 +1003,25 @@ export default function PublicPayClient({
                                         )}
 
                                         {payerNeedsEmail && (
-                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-2 text-left">
-                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Add your email</p>
+                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-3 text-left">
+                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Verify your email</p>
                                                 <p className="text-[10px] leading-relaxed text-white/55">
-                                                    Welcome back — we need an email for your receipt and account notifications before this payment.
+                                                    External wallets must verify an email for receipts and security notices before paying.
                                                 </p>
-                                                <input
-                                                    type="email"
-                                                    value={payerEmailInput}
-                                                    onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }}
-                                                    placeholder="you@example.com"
-                                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
-                                                />
+                                                {!hasMatchingWalletSession && (
+                                                    <p className="text-[10px] leading-relaxed text-amber-200/80">Sign in with this same wallet first, then return here to verify your email.</p>
+                                                )}
+                                                {payerEmailStep === "email" ? <>
+                                                    <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                                                    <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !hasMatchingWalletSession} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                        {isSendingPayerEmailCode ? "Sending code…" : "Send verification code"}
+                                                    </button>
+                                                </> : <>
+                                                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                                                    <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                        {isVerifyingPayerEmail ? "Verifying…" : "Verify email"}
+                                                    </button>
+                                                </>}
                                                 {payerEmailError && <p className="text-[10px] font-mono text-red-400">{payerEmailError}</p>}
                                             </div>
                                         )}
