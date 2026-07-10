@@ -65,6 +65,10 @@ export default function SignupPage() {
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
+  /* True only for external/self-custody wallet signups, which have no email. The "add your email
+     for push notifications" prompt is shown only for these — email/Google accounts already carry
+     an email, so they must never see it. */
+  const [isExternalWalletSignup, setIsExternalWalletSignup] = useState(false);
   const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
   
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
@@ -127,6 +131,7 @@ export default function SignupPage() {
           const data = await res.json();
           if (data.loggedIn) {
             setActiveMerchantAddress(data.wallet);
+            setIsExternalWalletSignup(data.provider === "external_wallet");
             if (data.email) {
               setEmail(data.email);
               setRequiresEmailLinking(false);
@@ -368,6 +373,8 @@ export default function SignupPage() {
       });
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
+        /* External-wallet signup: no email on file, so this is the one flow that prompts for one. */
+        setIsExternalWalletSignup(true);
         handleLoginSuccess(verifyData);
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
@@ -514,7 +521,7 @@ export default function SignupPage() {
               </button>
             </div>
 
-            {requiresEmailLinking && (
+            {requiresEmailLinking && isExternalWalletSignup && (
               <div className="space-y-2 pt-2 text-left">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
                   Email Address (for push notifications)
