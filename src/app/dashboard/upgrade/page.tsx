@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useConnect, useWriteContract, useSwitchChain, useWaitForTransactionReceipt } from "wagmi";
 import { useRouter } from "next/navigation";
 import { injected } from "wagmi/connectors";
 import {
@@ -24,6 +24,7 @@ import {
 import { 
     ARC_TESTNET_CHAIN_ID, 
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
+    PREMIUM_PLAN_PRICE_USDC,
     STANDARD_CONTRACT_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
@@ -37,14 +38,25 @@ const publicClient = createPublicClient({
 const ERC20_ABI = USDC_ERC20_ABI;
 const STANDARD_ABI = STANDARD_SUBSCRIPT_ABI;
 
+type EmbeddedWallet = {
+    wallet: string;
+    email: string;
+};
+
 export default function UpgradePage() {
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
-    const { address, isConnected } = useAccount();
+    const { address: browserAddress, chainId, isConnected: isBrowserConnected } = useAccount();
     const { connect, connectors, isPending: isConnecting } = useConnect();
-    const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
     const { switchChainAsync } = useSwitchChain();
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
+    const [embeddedWallet, setEmbeddedWallet] = useState<EmbeddedWallet | null>(null);
+    const [sessionAlert, setSessionAlert] = useState<string | null>(null);
+
+    const activeMerchantAddress = embeddedWallet?.wallet || browserAddress || "";
+    const isConnected = isBrowserConnected || Boolean(embeddedWallet);
+    const address = activeMerchantAddress;
 
     const [txHashState, setTxHashState] = useState<`0x${string}` | undefined>(undefined);
     const { data: txReceipt } = useWaitForTransactionReceipt({
@@ -97,6 +109,45 @@ export default function UpgradePage() {
     }, []);
 
     useEffect(() => {
+        const restoreSession = async () => {
+            try {
+                const res = await fetch("/api/auth/session");
+                const data = await res.json();
+
+                if (!data.loggedIn || !data.wallet) {
+                    setEmbeddedWallet(null);
+                    return;
+                }
+
+                if (!data.role) {
+                    setSessionAlert("Missing account role. Sign in again before upgrading.");
+                    return;
+                }
+
+                if (data.role === "USER") {
+                    setSessionAlert("This upgrade is only available from a merchant account.");
+                    return;
+                }
+
+                if (data.isEmbedded) {
+                    setEmbeddedWallet({
+                        wallet: String(data.wallet).toLowerCase(),
+                        email: data.email || "",
+                    });
+                } else {
+                    setEmbeddedWallet(null);
+                }
+            } catch (err) {
+                console.error("Error restoring upgrade session:", err);
+            } finally {
+                setIsAuthLoading(false);
+            }
+        };
+
+        restoreSession();
+    }, []);
+
+    useEffect(() => {
         if (!address) {
             setIsLoadingTier(false);
             return;
@@ -119,6 +170,60 @@ export default function UpgradePage() {
         }
     };
 
+    const executeContractWrite = async ({
+        address: contractAddress,
+        abi: contractAbi,
+        functionName,
+        args = [],
+    }: {
+        address: string;
+        abi: any;
+        functionName: string;
+        args?: any[];
+    }) => {
+        if (embeddedWallet) {
+            let action = "";
+            let serializedArgs: Record<string, string> = {};
+
+            if (functionName === "approve") {
+                action = "approveUsdc";
+                serializedArgs = { spender: String(args[0]), amount: args[1].toString() };
+            } else if (functionName === "createSubscription") {
+                action = "createPremiumSubscription";
+                serializedArgs = {
+                    merchant: String(args[0]),
+                    amount: args[1].toString(),
+                    period: args[2].toString(),
+                };
+            } else {
+                throw new Error(`Execution intent not allowlisted for embedded wallets: ${functionName}`);
+            }
+
+            const res = await fetch("/api/execute-tx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, args: serializedArgs }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Server transaction execution failed");
+            }
+            return data.txHash as string;
+        }
+
+        if (chainId !== ARC_TESTNET_CHAIN_ID) {
+            setCheckoutStatus("Switching network to Arc Testnet...");
+            await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        }
+
+        return await writeContractAsync({
+            address: contractAddress as `0x${string}`,
+            abi: contractAbi,
+            functionName,
+            args,
+        });
+    };
+
     const getCheckoutErrorMessage = (error: any) => {
         const message = error?.shortMessage || error?.reason || error?.details || error?.message;
         if (/user rejected|rejected by user|user denied/i.test(String(message || ""))) {
@@ -133,7 +238,7 @@ export default function UpgradePage() {
         return message || "An error occurred during subscription processing.";
     };
 
-    const syncAndRedirect = useCallback(async (hash: string) => {
+    const syncAndRedirect = useCallback(async (hash: string, sessionId = sessionIdState, subId?: number) => {
         setCheckoutStatus("Syncing premium state with server...");
         try {
             const upgradeRes = await fetch("/api/premium/upgrade", {
@@ -141,7 +246,8 @@ export default function UpgradePage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     txHash: hash,
-                    sessionId: sessionIdState
+                    sessionId,
+                    subId,
                 }),
             });
             const upgradeData = await upgradeRes.json();
@@ -163,17 +269,17 @@ export default function UpgradePage() {
     useEffect(() => {
         if (txReceipt) {
             if (txReceipt.status === "success") {
-                syncAndRedirect(txReceipt.transactionHash);
+                syncAndRedirect(txReceipt.transactionHash, sessionIdState || undefined);
             } else {
                 setCheckoutError("Subscription creation transaction reverted on-chain.");
                 setCheckoutState("error");
             }
         }
-    }, [txReceipt, syncAndRedirect]);
+    }, [sessionIdState, txReceipt, syncAndRedirect]);
 
     const handleUpgrade = async () => {
         if (!isConnected || !address) {
-            setCheckoutError("Please connect your merchant wallet first.");
+            setCheckoutError("Sign in with your merchant email wallet or connect your merchant wallet first.");
             return;
         }
 
@@ -185,8 +291,8 @@ export default function UpgradePage() {
         try {
             const userAddress = getAddress(address) as `0x${string}`;
 
-            /* 1. Ensure connected to Arc Testnet */
-            if (publicClient.chain.id !== ARC_TESTNET_CHAIN_ID) {
+            /* 1. Ensure connected browser wallets are on Arc Testnet. Embedded wallets are server-signed. */
+            if (!embeddedWallet && chainId !== ARC_TESTNET_CHAIN_ID) {
                 setCheckoutStatus("Switching network to Arc Testnet...");
                 await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
             }
@@ -204,7 +310,7 @@ export default function UpgradePage() {
                 throw new Error(`Unexpected USDC decimals: ${tokenDecimals}. Expected 6.`);
             }
 
-            const planPrice = parseUnits("10", Number(tokenDecimals));
+            const planPrice = parseUnits(PREMIUM_PLAN_PRICE_USDC, Number(tokenDecimals));
             const approvalAmount = parseUnits("120", Number(tokenDecimals)); /* Approve 12 months worth of allowance */
             const subscriptionPeriod = 2592000; /* 30 Days */
 
@@ -240,7 +346,7 @@ export default function UpgradePage() {
                     args: [STANDARD_CONTRACT_ADDRESS, approvalAmount],
                 });
 
-                const approveTxHash = await writeContractAsync({
+                const approveTxHash = await executeContractWrite({
                     address: USDC_NATIVE_GAS_ADDRESS,
                     abi: ERC20_ABI,
                     functionName: "approve",
@@ -270,7 +376,7 @@ export default function UpgradePage() {
                 args: [PREMIUM_PAYMENT_RECIPIENT_ADDRESS, planPrice, BigInt(subscriptionPeriod)],
             });
 
-            const txHash = await writeContractAsync({
+            const txHash = await executeContractWrite({
                 address: STANDARD_CONTRACT_ADDRESS,
                 abi: STANDARD_ABI,
                 functionName: "createSubscription",
@@ -278,7 +384,35 @@ export default function UpgradePage() {
             });
 
             setCheckoutStatus("Confirming subscription on-chain...");
-            setTxHashState(txHash as `0x${string}`);
+            if (embeddedWallet) {
+                const receipt = await publicClient.waitForTransactionReceipt({
+                    hash: txHash as `0x${string}`,
+                    timeout: 120_000,
+                });
+
+                if (receipt.status !== "success") {
+                    throw new Error("Subscription creation transaction reverted on-chain.");
+                }
+
+                const subscriptionLogs = parseEventLogs({
+                    abi: STANDARD_ABI,
+                    logs: receipt.logs,
+                });
+                const createLog = subscriptionLogs.find(
+                    (log) =>
+                        log.eventName === "SubscriptionCreated" &&
+                        log.args.subscriber?.toLowerCase() === userAddress.toLowerCase() &&
+                        log.args.merchant?.toLowerCase() === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
+                );
+
+                if (!createLog) {
+                    throw new Error("SubscriptionCreated event not found in logs.");
+                }
+
+                await syncAndRedirect(txHash, checkoutData.sessionId, Number(createLog.args.subId));
+            } else {
+                setTxHashState(txHash as `0x${string}`);
+            }
         } catch (err: any) {
             console.error("Premium upgrade failed:", err);
             setCheckoutError(getCheckoutErrorMessage(err));
@@ -340,6 +474,11 @@ export default function UpgradePage() {
             
             <div className="relative z-10">
                 <DashboardHeader 
+                    embeddedWallet={embeddedWallet}
+                    onDisconnect={() => {
+                        setEmbeddedWallet(null);
+                        fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+                    }}
                     isPremium={isPremium}
                     activeTab="premium"
                     onBackToOverview={() => router.push("/merchant")}
@@ -365,7 +504,24 @@ export default function UpgradePage() {
                         </p>
                     </div>
 
-                    {!isConnected ? (
+                    {sessionAlert ? (
+                        <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
+                            <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
+                                <AlertTriangle className="w-10 h-10" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-lg font-bold text-white uppercase tracking-wider">Merchant Session Required</h2>
+                                <p className="text-xs text-white/60 max-w-md leading-relaxed">
+                                    {sessionAlert}
+                                </p>
+                            </div>
+                        </div>
+                    ) : isAuthLoading ? (
+                        <div className="flex flex-col items-center justify-center py-24 gap-4">
+                            <Loader2 className="w-10 h-10 animate-spin text-[#d4a853]" />
+                            <p className="text-xs text-white/40 uppercase tracking-widest font-mono">Restoring Merchant Session...</p>
+                        </div>
+                    ) : !isConnected ? (
                         <div className="liquid-glass border border-yellow-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-yellow-500/[0.03] flex flex-col items-center justify-center text-center gap-6 max-w-2xl mx-auto py-12">
                             <div className="p-4 rounded-3xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-300">
                                 <AlertTriangle className="w-10 h-10" />
@@ -373,7 +529,7 @@ export default function UpgradePage() {
                             <div className="space-y-2">
                                 <h2 className="text-lg font-bold text-white uppercase tracking-wider">Wallet Connection Required</h2>
                                 <p className="text-xs text-white/60 max-w-md leading-relaxed">
-                                    Please connect your merchant wallet to verify subscription status and initiate the secure USDC checkout contract call.
+                                    Sign in with your merchant email wallet or connect your merchant wallet to verify subscription status and initiate the secure USDC checkout contract call.
                                 </p>
                             </div>
                             <button

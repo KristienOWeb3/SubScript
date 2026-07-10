@@ -60,6 +60,17 @@ test("reconciliation reports aggregate failures through HTTP status", () => {
     assert.match(worker, /results\.every\(\(result\)\s*=>\s*result\.success\)/);
 });
 
+test("merchant premium upgrade supports embedded email wallet sessions", () => {
+    const page = source("src/app/dashboard/upgrade/page.tsx");
+
+    assert.match(page, /fetch\("\/api\/auth\/session"\)/);
+    assert.match(page, /data\.isEmbedded/);
+    assert.match(page, /action\s*=\s*"approveUsdc"/);
+    assert.match(page, /action\s*=\s*"createPremiumSubscription"/);
+    assert.match(page, /fetch\("\/api\/execute-tx"/);
+    assert.doesNotMatch(page, /if\s*\(!isConnected\s*\)\s*\{[\s\S]{0,200}return;[\s\S]{0,200}\}\s*setCheckoutError\("Please connect your merchant wallet first\."\)/);
+});
+
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
     const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);
