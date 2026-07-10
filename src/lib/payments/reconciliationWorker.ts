@@ -24,13 +24,40 @@ export async function reconcile(supabase: any, limit: number = 300): Promise<{ s
     const reconciliationRunId = crypto.randomUUID();
 
     /* 2. Claim pending/failed sessions with transaction evidence atomically using PLpgSQL */
-    const { data: sessions, error } = await supabase
+    const { data: claimedSessions, error } = await supabase
         .rpc("claim_pending_payment_sessions", { batch_size: limit });
 
     if (error) {
         console.error(`[db_updated] Failed to claim payment sessions: ${error.message}`);
         return { success: false, processedCount: 0, results: [] };
     }
+
+    const remainingLimit = Math.max(0, limit - (claimedSessions?.length || 0));
+    let recoverablePermanentSessions: any[] = [];
+    if (remainingLimit > 0) {
+        const { data: recoverable, error: recoverableError } = await supabase
+            .from("payment_sessions")
+            .select("*")
+            .eq("status", "FAILED_PERMANENTLY")
+            .eq("failure_code", "VERIFICATION_FAILED")
+            .not("tx_hash", "is", null)
+            .or("last_error.ilike.%sender does not match session merchant%,last_error.ilike.%receipt sender does not match session merchant%,last_error.ilike.%transaction sender does not match session owner%")
+            .order("updated_at", { ascending: true })
+            .limit(remainingLimit);
+
+        if (recoverableError) {
+            console.error(`[db_updated] Failed to query recoverable permanent sender mismatches: ${recoverableError.message}`);
+        } else {
+            recoverablePermanentSessions = recoverable || [];
+        }
+    }
+
+    const sessions = [
+        ...(claimedSessions || []),
+        ...recoverablePermanentSessions.filter((session) =>
+            !(claimedSessions || []).some((claimed: any) => claimed.session_id === session.session_id)
+        )
+    ];
 
     const results: any[] = [];
 

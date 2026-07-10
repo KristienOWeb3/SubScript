@@ -92,12 +92,16 @@ test("premium verification trusts SubscriptionCreated subscriber over custody tx
 
 test("premium finalization can recover false-negative custody sender mismatches", () => {
     const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    const worker = source("src/lib/payments/reconciliationWorker.ts");
 
     assert.match(processor, /isRecoverableCustodySenderMismatch/);
     assert.match(processor, /\["FAILED",\s*"FAILED_PERMANENTLY"\]/);
     assert.match(processor, /failure_code !== "VERIFICATION_FAILED"/);
     assert.match(processor, /sender does not match session merchant/);
     assert.match(processor, /Revalidating false-negative custody sender mismatch/);
+    assert.match(worker, /recoverablePermanentSessions/);
+    assert.match(worker, /\.eq\("status",\s*"FAILED_PERMANENTLY"\)/);
+    assert.match(worker, /last_error\.ilike\.\%sender does not match session merchant\%/);
 });
 
 test("failed on-chain cancellation is never persisted as canceled", () => {
