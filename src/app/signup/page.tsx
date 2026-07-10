@@ -151,6 +151,16 @@ export default function SignupPage() {
             } else {
               setShowRoleSelector(true);
             }
+          } else {
+            /* Fresh, not-logged-in signup → ask what kind of account they want FIRST, before the
+               auth method (so merchants get the email/Google-only screen). Skip when the entry point
+               already declares the type: the merchant funnel, an email-resume link, or completeRole=1. */
+            const sp = new URLSearchParams(window.location.search);
+            const hint = (sp.get("role") || sp.get("type") || sp.get("account") || "").toLowerCase();
+            const merchantIntent = ["merchant", "enterprise", "business"].includes(hint);
+            if (!merchantIntent && !sp.get("email") && sp.get("completeRole") !== "1") {
+              setShowRoleSelector(true);
+            }
           }
         }
       } catch (err) {
@@ -433,6 +443,16 @@ export default function SignupPage() {
     }
   };
 
+  /* Pre-auth account-type step: the user picks User vs Merchant BEFORE choosing an auth method, so
+     the auth screen can adapt (merchants are email/Google only). This only records the choice and
+     advances to the auth method screen; the role is registered after authentication. */
+  const handleContinueToAuth = () => {
+    if (!selectedRole) return;
+    setRoleError(null);
+    setMerchantSignupIntent(selectedRole === "ENTERPRISE");
+    setShowRoleSelector(false);
+  };
+
   useEffect(() => {
     if (walletAuthRequested && isConnected && address) {
       performSiwe();
@@ -559,17 +579,17 @@ export default function SignupPage() {
             )}
 
             <button
-              onClick={handleRoleSelection}
+              onClick={activeMerchantAddress ? handleRoleSelection : handleContinueToAuth}
               disabled={!selectedRole || roleLoading}
               className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 transition-all font-bold text-xs uppercase tracking-wider text-black ${
-                !selectedRole 
-                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5" 
-                  : selectedRole === "USER"
-                    ? "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
-                    : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
+                !selectedRole
+                  ? "bg-white/10 text-white/40 cursor-not-allowed border border-white/5"
+                  : "bg-[#00d2b4] hover:bg-[#00d2b4]/85 shadow-[0_0_20px_rgba(0,210,180,0.2)]"
               }`}
             >
-              {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Complete Signup"}
+              {/* Pre-auth (no session yet) records the choice and moves to the auth method screen;
+                  post-auth it finalizes the account by registering the chosen role. */}
+              {roleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (activeMerchantAddress ? "Complete Signup" : "Continue")}
               {!roleLoading && <ArrowRight className="w-4 h-4" />}
             </button>
 
