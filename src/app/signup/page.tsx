@@ -65,6 +65,10 @@ export default function SignupPage() {
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [requiresEmailLinking, setRequiresEmailLinking] = useState(false);
+  /* True only for external/self-custody wallet signups, which have no email. The "add your email
+     for push notifications" prompt is shown only for these — email/Google accounts already carry
+     an email, so they must never see it. */
+  const [isExternalWalletSignup, setIsExternalWalletSignup] = useState(false);
   const [isCompleteRoleFlow, setIsCompleteRoleFlow] = useState(false);
   
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
@@ -127,6 +131,11 @@ export default function SignupPage() {
           const data = await res.json();
           if (data.loggedIn) {
             setActiveMerchantAddress(data.wallet);
+            /* An external wallet has no user_embedded_wallets row until register-role runs, so a
+               logged-in session with no provider AND no email is a not-yet-completed external-wallet
+               signup — keep it flagged so the email-for-push prompt stays visible on reload. OTP and
+               Google always carry a provider + email, so they never hit this fallback. */
+            setIsExternalWalletSignup(data.provider === "external_wallet" || (!data.provider && !data.email));
             if (data.email) {
               setEmail(data.email);
               setRequiresEmailLinking(false);
@@ -157,6 +166,9 @@ export default function SignupPage() {
     const roleHint = (params.get("role") || params.get("type") || params.get("account") || "").toLowerCase();
     const merchantIntent = ["merchant", "enterprise", "business"].includes(roleHint);
     setMerchantSignupIntent(merchantIntent);
+    /* Arrived via the merchant funnel (/signup?role=merchant) → pre-select the merchant card so
+       the intended account type is chosen for them and the role picker reads correctly. */
+    if (merchantIntent) setSelectedRole("ENTERPRISE");
     setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
 
     const refParam = params.get("ref") || params.get("referral");
@@ -213,7 +225,11 @@ export default function SignupPage() {
       });
     } else {
       if (!data.email && !email) {
+        /* No email on the login response is the SIWE / external-wallet path (OTP and Google always
+           return an email), so prompt for a push-notification email and flag it so the field stays
+           gated to this case — including on the very first SIWE success, before any reload. */
         setRequiresEmailLinking(true);
+        setIsExternalWalletSignup(true);
       }
       setShowRoleSelector(true);
     }
@@ -365,6 +381,8 @@ export default function SignupPage() {
       });
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
+        /* External-wallet signup: no email on file, so this is the one flow that prompts for one. */
+        setIsExternalWalletSignup(true);
         handleLoginSuccess(verifyData);
       } else {
         setSiweError(verifyData.error || "Wallet signature verification failed.");
@@ -511,7 +529,7 @@ export default function SignupPage() {
               </button>
             </div>
 
-            {requiresEmailLinking && (
+            {requiresEmailLinking && isExternalWalletSignup && (
               <div className="space-y-2 pt-2 text-left">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
                   Email Address (for push notifications)

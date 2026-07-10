@@ -156,9 +156,15 @@ export async function POST(request: Request) {
 
         if (accountRole.alreadyRegistered) {
             if (accountRole.role !== role) {
+                /* Roles are separate and immutable per account. Give an actionable message instead of
+                   a dead-end, distinguishing the common "personal user wants a merchant account" case. */
+                const message = accountRole.role === "USER" && role === "ENTERPRISE"
+                    ? "This email is already a personal SubScript account. Merchant accounts are separate — create your merchant account with a different email or wallet. Need to convert an existing account? Contact support."
+                    : "This account is already registered as a merchant. Use a different email or wallet to create a personal account.";
                 return NextResponse.json({
-                    error: `This wallet is already registered as ${accountRole.role}. Use a different wallet for ${role}.`,
+                    error: message,
                     role: accountRole.role,
+                    code: "ROLE_ALREADY_REGISTERED",
                 }, { status: 409 });
             }
             return NextResponse.json({ success: true, role: accountRole.role, message: "Role already registered for this wallet" }, { status: 200 });
