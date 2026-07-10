@@ -658,18 +658,23 @@ export default function DashboardPage() {
     const [usageSecretKey, setUsageSecretKey] = useState("");
     const [selectedApiKey, setSelectedApiKey] = useState("");
 
+    const [vaultsError, setVaultsError] = useState<string | null>(null);
     const fetchVaults = useCallback(async () => {
         setIsVaultsLoading(true);
+        setVaultsError(null);
         try {
             const res = await fetch("/api/user/vault/config");
-            if (res.ok) {
-                const data = await res.json();
-                if (data.success) {
-                    setVaults(data.vaults || []);
-                }
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
+                setVaults(data.vaults || []);
+            } else {
+                /* Don't render "no customers yet" over a failed load — that reads as
+                   real business data (zero escrows) when it's actually an error. */
+                setVaultsError(data?.error || "Customer escrows could not be loaded. Retry with Refresh.");
             }
         } catch (err) {
             console.error("Failed to load customer vaults:", err);
+            setVaultsError("Customer escrows could not be loaded. Retry with Refresh.");
         } finally {
             setIsVaultsLoading(false);
         }
@@ -3933,6 +3938,10 @@ Please complete the following implementation tasks:
                         {isVaultsLoading ? (
                             <div className="flex h-24 items-center justify-center">
                                 <Loader2 className="h-5 w-5 animate-spin text-[#00d2b4]" />
+                            </div>
+                        ) : vaultsError ? (
+                            <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-red-500/20 bg-red-500/[0.03] text-center p-4">
+                                <p className="text-xs text-red-300/80">{vaultsError}</p>
                             </div>
                         ) : vaults.length === 0 ? (
                             <div className="flex h-24 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center p-4">
