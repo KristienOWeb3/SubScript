@@ -51,7 +51,8 @@ export async function POST(request: Request) {
                        ="false" to re-gate it behind a MERCHANT_SIGNUP_CODE invite. Either way, merchant
                        accounts must still be email/embedded (checked below) and KYB verification still
                        gates trust-sensitive capabilities. */
-                    const publicMerchantSignupEnabled = process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP !== "false";
+                    const disableFlag = (process.env.ALLOW_PUBLIC_MERCHANT_SIGNUP || "").trim().toLowerCase();
+                    const publicMerchantSignupEnabled = !["false", "0", "no", "off"].includes(disableFlag);
                     const requiredMerchantCode = process.env.MERCHANT_SIGNUP_CODE;
                     const providedMerchantCode = typeof merchantSignupCode === "string" ? merchantSignupCode.trim() : "";
                     const hasValidInviteCode = Boolean(requiredMerchantCode) && providedMerchantCode === requiredMerchantCode;

@@ -61,9 +61,7 @@ graph TD
     RoleCheck -->|No| ShowSelector[Show Role Selector Gate]
     
     ShowSelector --> SelectRole[Select Individual User]
-    ShowSelector --> MerchantInvite{Merchant invite or public merchant signup enabled?}
-    MerchantInvite -->|Yes| SelectMerchant[Select Enterprise Merchant]
-    MerchantInvite -->|No| UserOnly[Enterprise option disabled]
+    ShowSelector --> SelectMerchant[Select Enterprise Merchant]
     SelectRole --> CheckEmailConflict{Email Already Registered?}
     SelectMerchant --> CheckEmailConflict
     CheckEmailConflict -->|Yes| ShowError[Reject Registration & Display Error]
@@ -87,9 +85,10 @@ To prevent role confusion, account hijack, and double email mapping, the onboard
   - Automatically routes to `/dashboard` (control center).
   - Allowed features: Billing tier setup, payroll campaigns, settlement triggers, and developer webhooks.
   - Strictly blocked from accessing user-facing dashboard functions.
-  - Public signup is invite-gated by default. New merchant creation requires either `ALLOW_PUBLIC_MERCHANT_SIGNUP=true` or a matching `MERCHANT_SIGNUP_CODE` supplied through a merchant invite link such as `/signup?role=merchant&invite=<code>`.
+  - Self-serve merchant signup is **open by default**: the Enterprise Merchant option is selectable on `/signup`, and `/signup?role=merchant` funnels straight into email/Google onboarding. To re-gate it behind invites, set `ALLOW_PUBLIC_MERCHANT_SIGNUP="false"` (accepts `false`/`0`/`no`/`off`); merchant creation then requires a matching `MERCHANT_SIGNUP_CODE` supplied through an invite link such as `/signup?role=merchant&invite=<code>`.
+  - Merchant accounts must still be email/embedded (server-signed) wallets — external/self-custody wallets stay users-only — and KYB verification still gates trust-sensitive capabilities.
 
-Normal `/signup` is user-first and does not expose public merchant account creation. Existing Enterprise accounts remain valid and continue routing to the merchant dashboard.
+Existing Enterprise accounts remain valid and continue routing to the merchant dashboard.
 
 ### B. Email Uniqueness Enforcement (Anti-Double-Mapping)
 An email address can only be mapped to exactly one wallet address. This rule is enforced across all API endpoints:
