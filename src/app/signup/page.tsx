@@ -157,6 +157,9 @@ export default function SignupPage() {
     const roleHint = (params.get("role") || params.get("type") || params.get("account") || "").toLowerCase();
     const merchantIntent = ["merchant", "enterprise", "business"].includes(roleHint);
     setMerchantSignupIntent(merchantIntent);
+    /* Arrived via the merchant funnel (/signup?role=merchant) → pre-select the merchant card so
+       the intended account type is chosen for them and the role picker reads correctly. */
+    if (merchantIntent) setSelectedRole("ENTERPRISE");
     setMerchantSignupCode(params.get("merchantCode") || params.get("invite") || "");
 
     const refParam = params.get("ref") || params.get("referral");
