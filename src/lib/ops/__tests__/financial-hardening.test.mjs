@@ -190,6 +190,23 @@ test("settled checkout routes back to the merchant successUrl or inbox, never re
     assert.match(payClient, /sessionInfo\?\.loggedIn && sessionInfo\.role !== "ENTERPRISE"/);
 });
 
+test("session cookies are domain-wide, self-healing, and fully cleared on logout", () => {
+    const cookies = source("src/lib/authCookies.ts");
+    const sessionRoute = source("src/app/api/auth/session/route.ts");
+
+    /* Any *.subscriptonarc.com host must scope the session cookie to the parent domain —
+       a host-only cookie on one subdomain bounces the user to login on every other. */
+    assert.match(cookies, /host\.endsWith\("\.subscriptonarc\.com"\)/);
+
+    /* Every valid session check re-issues the SAME token (original expiry, never
+       extended) with current cookie options, upgrading legacy host-only cookies. */
+    assert.match(sessionRoute, /setSessionCookie\(response, request, session\.token, session\.expiresAt\)/);
+    assert.match(sessionRoute, /session\.expiresAt && session\.expiresAt > new Date\(\)/);
+
+    /* Logout must clear both the domain-wide cookie and the legacy host-only variant. */
+    assert.match(cookies, /headers\.append\(\s*"Set-Cookie",\s*`subscript_session_token=; Path=\/; Max-Age=0;/);
+});
+
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
     const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);

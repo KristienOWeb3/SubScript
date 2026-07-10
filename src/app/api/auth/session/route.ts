@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedSessionToken } from "@/lib/auth";
+import { setSessionCookie } from "@/lib/authCookies";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { isConnectionError, getOfflineUserEmbeddedWalletByAddress } from "@/lib/offlineDb";
 import { pgMaybeOne } from "@/lib/serverPg";
@@ -11,11 +12,12 @@ type EmbeddedWalletSession = {
 
 export async function GET(request: Request) {
     try {
-        const wallet = await getSessionWallet(request.headers);
-        
-        if (!wallet) {
+        const session = await getVerifiedSessionToken(request.headers);
+
+        if (!session) {
             return NextResponse.json({ loggedIn: false }, { status: 200 });
         }
+        const wallet = session.wallet;
 
         let email: string | null = null;
         let provider: string | null = null;
@@ -67,14 +69,26 @@ export async function GET(request: Request) {
         const role = await getAccountRole(wallet);
         const isEmbedded = Boolean(provider && provider !== "external_wallet");
 
-        return NextResponse.json({ 
-            loggedIn: true, 
+        const response = NextResponse.json({
+            loggedIn: true,
             wallet,
             email,
             provider,
             isEmbedded,
             role
         }, { status: 200 });
+
+        /* Self-heal cookie scoping: re-issue the SAME token (original expiry, never
+           extended) with the current cookie options. Sessions created before the
+           domain-wide cookie helper — or on a host outside its old allowlist — carry a
+           host-only cookie the dashboard subdomain can't see, so "Go to Dashboard"
+           silently bounced back to login. Every session check now upgrades the cookie
+           to .subscriptonarc.com scope before the user navigates. */
+        if (session.expiresAt && session.expiresAt > new Date()) {
+            setSessionCookie(response, request, session.token, session.expiresAt);
+        }
+
+        return response;
     } catch (error) {
         console.error("Session API error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
