@@ -131,7 +131,11 @@ export default function SignupPage() {
           const data = await res.json();
           if (data.loggedIn) {
             setActiveMerchantAddress(data.wallet);
-            setIsExternalWalletSignup(data.provider === "external_wallet");
+            /* An external wallet has no user_embedded_wallets row until register-role runs, so a
+               logged-in session with no provider AND no email is a not-yet-completed external-wallet
+               signup — keep it flagged so the email-for-push prompt stays visible on reload. OTP and
+               Google always carry a provider + email, so they never hit this fallback. */
+            setIsExternalWalletSignup(data.provider === "external_wallet" || (!data.provider && !data.email));
             if (data.email) {
               setEmail(data.email);
               setRequiresEmailLinking(false);
@@ -221,7 +225,11 @@ export default function SignupPage() {
       });
     } else {
       if (!data.email && !email) {
+        /* No email on the login response is the SIWE / external-wallet path (OTP and Google always
+           return an email), so prompt for a push-notification email and flag it so the field stays
+           gated to this case — including on the very first SIWE success, before any reload. */
         setRequiresEmailLinking(true);
+        setIsExternalWalletSignup(true);
       }
       setShowRoleSelector(true);
     }
