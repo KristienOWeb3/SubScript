@@ -79,6 +79,27 @@ test("merchant premium upgrade supports embedded email wallet sessions", () => {
     assert.doesNotMatch(page, /if\s*\(!isConnected\s*\)\s*\{[\s\S]{0,200}return;[\s\S]{0,200}\}\s*setCheckoutError\("Please connect your merchant wallet first\."\)/);
 });
 
+test("premium verification trusts SubscriptionCreated subscriber over custody tx sender", () => {
+    const verifier = source("src/lib/payments/verifyTransaction.ts");
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+
+    assert.doesNotMatch(verifier, /Transaction sender does not match session merchant/);
+    assert.doesNotMatch(verifier, /Receipt sender does not match session merchant/);
+    assert.match(verifier, /subscriber:\s*normalizeAddress\(parsed\.args\.subscriber\)/);
+    assert.match(processor, /const txSubscriber = verificationResult\.subscriber/);
+    assert.doesNotMatch(processor, /const txSender = normalizeAddress\(verificationResult\.tx!\.from\)/);
+});
+
+test("premium finalization can recover false-negative custody sender mismatches", () => {
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+
+    assert.match(processor, /isRecoverableCustodySenderMismatch/);
+    assert.match(processor, /\["FAILED",\s*"FAILED_PERMANENTLY"\]/);
+    assert.match(processor, /failure_code !== "VERIFICATION_FAILED"/);
+    assert.match(processor, /sender does not match session merchant/);
+    assert.match(processor, /Revalidating false-negative custody sender mismatch/);
+});
+
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
     const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);

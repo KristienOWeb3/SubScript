@@ -14,7 +14,7 @@ const findSubscriptionCreatedLog = (
     subscriber: string,
     merchant: string,
     amount: bigint
-) => {
+): { subscriber: string; subId: string } | null => {
     for (const log of receipt.logs) {
         if (normalizeAddress(log.address) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS)) continue;
         try {
@@ -25,13 +25,16 @@ const findSubscriptionCreatedLog = (
                 normalizeAddress(parsed.args.merchant) === normalizeAddress(merchant) &&
                 BigInt(parsed.args.amount) === amount
             ) {
-                return true;
+                return {
+                    subscriber: normalizeAddress(parsed.args.subscriber),
+                    subId: parsed.args.subId.toString()
+                };
             }
         } catch {
             /* Ignore log parsing errors */
         }
     }
-    return false;
+    return null;
 };
 
 export async function verifyTransaction(
@@ -39,37 +42,26 @@ export async function verifyTransaction(
     receipt: any,
     session: any,
     provider: any
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; subscriber?: string; subId?: string }> {
     /* 1. Verify chain ID */
     if (Number(tx.chainId) !== ARC_TESTNET_CHAIN_ID) {
         console.error(`[tx_invalid_chain] Expected ${ARC_TESTNET_CHAIN_ID}, got ${tx.chainId}`);
         return { valid: false, error: `Invalid chain ID: ${tx.chainId}` };
     }
 
-    /* 2. Verify sender address matches session merchant */
-    if (normalizeAddress(tx.from) !== normalizeAddress(session.merchant_address)) {
-        console.error(`[tx_failed_verification] Transaction sender does not match session merchant`);
-        return { valid: false, error: "Transaction sender does not match session merchant" };
-    }
-
-    if (normalizeAddress(receipt.from) !== normalizeAddress(session.merchant_address)) {
-        console.error(`[tx_failed_verification] Receipt sender does not match session merchant`);
-        return { valid: false, error: "Receipt sender does not match session merchant" };
-    }
-
-    /* 3. Verify receipt status is successful */
+    /* 2. Verify receipt status is successful */
     if (receipt.status !== 1) {
         console.error(`[tx_failed_verification] Transaction reverted on-chain`);
         return { valid: false, error: "Transaction reverted on-chain" };
     }
 
-    /* 4. Target contract must be the standard SubScript contract */
+    /* 3. Target contract must be the standard SubScript contract */
     if (!tx.to || !receipt.to || normalizeAddress(tx.to) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS) || normalizeAddress(receipt.to) !== normalizeAddress(STANDARD_CONTRACT_ADDRESS)) {
         console.error(`[tx_failed_verification] Target is not SubScript contract`);
         return { valid: false, error: "Target is not SubScript contract" };
     }
 
-    /* 5. Parse transaction input data to assert it calls createSubscription(TREASURY_ADDRESS, 10 USDC, 30 days) */
+    /* 4. Parse transaction input data to assert it calls createSubscription(TREASURY_ADDRESS, 10 USDC, 30 days) */
     let parsedTx;
     try {
         parsedTx = SUBSCRIPT_INTERFACE.parseTransaction({ data: tx.data, value: tx.value });
@@ -89,13 +81,16 @@ export async function verifyTransaction(
         return { valid: false, error: "Calldata is not createSubscription to SubScript Treasury address of 10 USDC for 30 days" };
     }
 
-    /* 6. Verify SubscriptionCreated log in receipt logs */
-    if (!findSubscriptionCreatedLog(receipt, session.merchant_address, TREASURY_ADDRESS, BigInt(PREMIUM_PRICE))) {
+    /* 5. Verify SubscriptionCreated log in receipt logs. This event's subscriber is the
+       actual contract-level payer, which is authoritative for custody-generated wallets
+       where tx.from may be an execution account rather than the merchant wallet address. */
+    const subscriptionLog = findSubscriptionCreatedLog(receipt, session.merchant_address, TREASURY_ADDRESS, BigInt(PREMIUM_PRICE));
+    if (!subscriptionLog) {
         console.error(`[tx_failed_verification] SubscriptionCreated event log not found in receipt`);
         return { valid: false, error: "SubscriptionCreated event log not found in receipt" };
     }
 
-    /* 7. Verify transaction block timestamp is within the last 24 hours */
+    /* 6. Verify transaction block timestamp is within the last 24 hours */
     const block = await provider.getBlock(receipt.blockNumber);
     if (!block) {
         console.error(`[tx_failed_verification] Block metadata could not be retrieved`);
@@ -114,5 +109,5 @@ export async function verifyTransaction(
         return { valid: false, error: "Transaction block timestamp is in the future" };
     }
 
-    return { valid: true };
+    return { valid: true, subscriber: subscriptionLog.subscriber, subId: subscriptionLog.subId };
 }

@@ -7,6 +7,14 @@ import { executeWithRpcFallback } from "./rpc";
 
 const normalizeAddress = (value: string) => ethers.getAddress(value).toLowerCase();
 
+const isRecoverableCustodySenderMismatch = (session: any, txHash: string) => {
+    if (!["FAILED", "FAILED_PERMANENTLY"].includes(String(session?.status || ""))) return false;
+    if (session?.failure_code !== "VERIFICATION_FAILED") return false;
+    if (!session?.tx_hash || session.tx_hash.toLowerCase() !== txHash.toLowerCase()) return false;
+    return /sender does not match session merchant|receipt sender does not match session merchant|transaction sender does not match session owner/i
+        .test(String(session.last_error || ""));
+};
+
 export async function processPremiumUpgrade({
     supabase,
     txHash,
@@ -110,15 +118,17 @@ export async function processPremiumUpgrade({
                         error: "Payment verification is already in progress. Please wait."
                     };
                 }
-                if (currentSession.status === "FAILED_PERMANENTLY") {
+                if (isRecoverableCustodySenderMismatch(currentSession, txHash)) {
+                    console.warn(`[Premium Upgrade Recovery] Revalidating false-negative custody sender mismatch. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
+                    session = currentSession;
+                } else if (currentSession.status === "FAILED_PERMANENTLY") {
                     console.error(`[Premium Upgrade Failed] Session ${sessionId} is permanently failed. requestId: ${requestId}`);
                     return {
                         success: false,
                         status: 400,
                         error: "Checkout session has permanently failed due to retry exhaustion. Please contact support."
                     };
-                }
-                if (currentSession.status === "FAILED") {
+                } else if (currentSession.status === "FAILED") {
                     console.error(`[Premium Upgrade Failed] Session ${sessionId} is marked FAILED. requestId: ${requestId}`);
                     return {
                         success: false,
@@ -127,9 +137,12 @@ export async function processPremiumUpgrade({
                     };
                 }
             }
-            return { success: false, status: 404, error: "Checkout session not found." };
+            if (!session) {
+                return { success: false, status: 404, error: "Checkout session not found." };
+            }
+        } else {
+            session = sessionRes.data;
         }
-        session = sessionRes.data;
     }
 
     if (session.status === "COMPLETED") {
@@ -137,7 +150,10 @@ export async function processPremiumUpgrade({
         return { success: true, status: 200, tier: 1, message: "Premium tier is already active." };
     }
 
-    if (session.status === "FAILED_PERMANENTLY" || (session.processing_attempts || 0) >= 5) {
+    if (
+        (session.status === "FAILED_PERMANENTLY" && !isRecoverableCustodySenderMismatch(session, txHash)) ||
+        ((session.processing_attempts || 0) >= 5 && !isRecoverableCustodySenderMismatch(session, txHash))
+    ) {
         console.error(`[Premium Upgrade Failed] Session has permanently failed. requestId: ${requestId}, attempts: ${session.processing_attempts}`);
         return { success: false, status: 400, error: "Checkout session has permanently failed." };
     }
@@ -211,7 +227,16 @@ export async function processPremiumUpgrade({
             }
 
             const verification = await verifyTransaction(tx, receipt, session, provider);
-            return { isPendingReceipt: false, valid: verification.valid, error: verification.error, provider, tx, receipt };
+            return {
+                isPendingReceipt: false,
+                valid: verification.valid,
+                error: verification.error,
+                subscriber: verification.subscriber,
+                subId: verification.subId,
+                provider,
+                tx,
+                receipt
+            };
         });
 
         if (verificationResult.isPendingReceipt) {
@@ -246,17 +271,19 @@ export async function processPremiumUpgrade({
             return { success: false, status: 400, error: verificationResult.error || "Payment verification failed." };
         }
 
-        /* Revalidate Ownership: verify transaction sender matches session owner and authenticated walletAddress */
-        const txSender = normalizeAddress(verificationResult.tx!.from);
-        if (txSender !== sessionOwner || txSender !== normalizedUser) {
-            console.error(`[Premium Upgrade Failed] Transaction sender ${txSender} does not match session owner ${sessionOwner} or auth user ${normalizedUser}. requestId: ${requestId}`);
+        /* Revalidate Ownership: the contract-level subscriber must match the session owner and auth user.
+           Custody-generated wallets may submit through an execution account, so tx.from is not the
+           payer authority for premium activation. */
+        const txSubscriber = verificationResult.subscriber ? normalizeAddress(verificationResult.subscriber) : "";
+        if (txSubscriber !== sessionOwner || txSubscriber !== normalizedUser) {
+            console.error(`[Premium Upgrade Failed] Transaction subscriber ${txSubscriber || "unknown"} does not match session owner ${sessionOwner} or auth user ${normalizedUser}. requestId: ${requestId}`);
             
             await supabase
                 .from("payment_sessions")
                 .update({ tx_hash: null, status: "PENDING", updated_at: new Date().toISOString() })
                 .eq("session_id", sessionId);
 
-            return { success: false, status: 403, error: "Transaction sender does not match session owner." };
+            return { success: false, status: 403, error: "Transaction subscriber does not match session owner." };
         }
 
         /* On-Chain Confirmation Depth Check (Configurable) */
@@ -345,7 +372,7 @@ export async function processPremiumUpgrade({
         }
 
         /* 4. Extract subId from logs if not provided */
-        let extractedSubId = subId;
+        let extractedSubId = subId || (verificationResult.subId ? Number(verificationResult.subId) : undefined);
         if (!extractedSubId) {
             const subscriptInterface = new ethers.Interface([
                 "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)"
