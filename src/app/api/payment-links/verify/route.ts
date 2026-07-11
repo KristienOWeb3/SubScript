@@ -14,6 +14,7 @@ import {
     resolveFulfillmentAddress,
     validateBeneficiaryAddress,
 } from "@/lib/paymentLinks/beneficiary";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 
 export const maxDuration = 120;
 
@@ -59,9 +60,8 @@ async function parseBody(request: Request) {
 }
 
 function isUserPaymentLink(link: any) {
-    return link?.merchant_name_snapshot === "SubScript user request" ||
-        (typeof link?.external_reference === "string" &&
-            (link.external_reference.startsWith("peer-request:") || link.external_reference.startsWith("dm-peer-request:")));
+    /* Same peer/user-request predicate as /pay and the DM classifier — see isPeerRequestLink. */
+    return isPeerRequestLink(link);
 }
 
 export async function POST(request: Request) {

@@ -100,10 +100,12 @@ export default function PublicPayClient({
     const [error, setError] = useState<string | null>(null);
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
 
-    /* Derived variables */
-    const isUserRequest = linkData?.merchant_name_snapshot === "SubScript user request" ||
+    /* Derived variables — same peer/user-request predicate as the server (isPeerRequestLink). */
+    const isUserRequest = Boolean(
+        linkData?.merchant_name_snapshot === "SubScript user request" ||
         linkData?.external_reference?.startsWith("peer-request:") ||
-        linkData?.external_reference?.startsWith("dm-peer-request:");
+        linkData?.external_reference?.startsWith("dm-peer-request:")
+    );
 
     /* Merchant-site return URLs from the checkout intent (POST /api/intent successUrl/cancelUrl).
        A merchant integration opens this hosted checkout in a new tab, so after settlement the
@@ -796,7 +798,7 @@ export default function PublicPayClient({
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <AnimatedGradientBg />
             
-            <div className="relative z-10 w-full max-w-md">
+            <div className="relative z-10 w-full max-w-md lg:max-w-4xl">
 
                 <div className="text-center mb-8">
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
@@ -806,12 +808,12 @@ export default function PublicPayClient({
                 </div>
 
                 {isLoading ? (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center justify-center py-20">
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center justify-center py-20 lg:max-w-md lg:mx-auto">
                         <Loader2 className="w-8 h-8 animate-spin text-[#00d2b4]" />
                         <p className="text-xs text-white/40 uppercase tracking-wider mt-4">Loading purchase details...</p>
                     </div>
                 ) : error ? (
-                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-red-500/[0.02] flex flex-col items-center justify-center text-center gap-6 py-12">
+                    <div className="liquid-glass border border-red-500/20 rounded-3xl p-6 sm:p-8 shadow-2xl bg-red-500/[0.02] flex flex-col items-center justify-center text-center gap-6 py-12 lg:max-w-md lg:mx-auto">
                         <div className="p-4 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400">
                             <AlertTriangle className="w-10 h-10" />
                         </div>
@@ -823,7 +825,43 @@ export default function PublicPayClient({
                         </div>
                     </div>
                 ) : (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40">
+                    <div className="lg:flex lg:flex-row lg:items-stretch lg:gap-6">
+
+                        {/* Desktop-only: a large, scannable QR beside the checkout block, same height.
+                            Mobile keeps the inline "Pay on Mobile (Scan QR)" toggle further down — this
+                            panel is hidden below lg so mobile is unchanged. */}
+                        {checkoutUrl && (
+                            <aside className="hidden lg:flex lg:w-[360px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-white uppercase tracking-wider">Pay on mobile</p>
+                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[240px]">
+                                        Scan with your phone's wallet browser to complete this payment on mobile.
+                                    </p>
+                                </div>
+                                <div className="bg-white rounded-2xl p-5 w-full flex items-center justify-center">
+                                    <QRCode
+                                        value={checkoutUrl}
+                                        size={300}
+                                        ecLevel="H"
+                                        bgColor="#ffffff"
+                                        fgColor="#000000"
+                                        qrStyle="dots"
+                                        eyeRadius={[
+                                            [8, 8, 0, 8],
+                                            [8, 8, 8, 0],
+                                            [8, 0, 8, 8]
+                                        ]}
+                                        logoImage="/logo-colored.png"
+                                        logoWidth={52}
+                                        logoHeight={52}
+                                        removeQrCodeBehindLogo={true}
+                                        logoPadding={2}
+                                    />
+                                </div>
+                            </aside>
+                        )}
+
+                        <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 lg:flex-1 lg:min-w-0">
 
                         {/* Role Mismatch Warning Banner */}
                         {isRoleMismatch && (
@@ -1213,8 +1251,10 @@ export default function PublicPayClient({
                             </div>
                         )}
 
+                        {/* Inline QR toggle for mobile/tablet. On desktop (lg+) the large QR shows in the
+                            left panel beside the checkout, so this redundant toggle is hidden there. */}
                         {checkoutUrl && (
-                            <div className="border-t border-white/5 pt-4 space-y-3">
+                            <div className="border-t border-white/5 pt-4 space-y-3 lg:hidden">
                                 <button
                                     type="button"
                                     onClick={() => setShowQrCode(!showQrCode)}
@@ -1260,6 +1300,7 @@ export default function PublicPayClient({
 
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
+                        </div>
                         </div>
                     </div>
                 )}

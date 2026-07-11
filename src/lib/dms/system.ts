@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getAccountRole } from "@/lib/accounts/roles";
 import { createDmAndNotify } from "@/lib/dms/notifications";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 
 const USDC_DECIMALS = 1_000_000;
 
@@ -149,23 +149,14 @@ export async function createPaymentRequestDm({
     }
 
     const creatorAddress = link.merchantAddress.toLowerCase();
-    /* Links are created either by merchants (ENTERPRISE) or by users (peer-to-peer
-       "receive USDC" links). Both open a request DM the recipient can act on.
-       Creators that predate role-first signup have no account_roles row — infer their
-       side from the link itself (a merchants row, or the peer-request markers) instead
-       of dead-ending a working payment link. */
-    let creatorRole = await getAccountRole(creatorAddress);
-    if (creatorRole !== "ENTERPRISE" && creatorRole !== "USER") {
-        const merchantRow = await prisma.merchant.findUnique({
-            where: { walletAddress: creatorAddress },
-            select: { walletAddress: true },
-        }).catch(() => null);
-        const isPeerLink = link.merchantNameSnapshot === "SubScript user request" ||
-            (typeof link.externalReference === "string" &&
-                (link.externalReference.startsWith("peer-request:") || link.externalReference.startsWith("dm-peer-request:")));
-        creatorRole = merchantRow ? "ENTERPRISE" : isPeerLink ? "USER" : "ENTERPRISE";
-    }
-    const isMerchantLink = creatorRole === "ENTERPRISE";
+    /* Classify from the LINK METADATA, using the same predicate the hosted checkout (/pay
+       isUserRequest) and the embedded-pay route use. Keying off the creator's account role
+       instead let the two sides disagree: an ENTERPRISE-role creator whose link carried the
+       peer-request markers produced a PAYMENT_REQUEST here while /pay treated it as a user
+       request — so confirming the DM bounced back to /pay, which re-offered "Go to DMs", an
+       infinite loop. A real merchant checkout never carries the peer markers, so this is also
+       the correct signal. See [[isPeerRequestLink]]. */
+    const isMerchantLink = !isPeerRequestLink(link);
     const messageType = isMerchantLink ? "PAYMENT_REQUEST" : "PEER_REQUEST";
 
     if (creatorAddress === normalizedReceiver) {

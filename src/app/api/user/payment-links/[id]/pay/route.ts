@@ -9,17 +9,12 @@ import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { isReceiptId } from "@/lib/arc/memo";
 import { deterministicIdempotencyKey } from "@/lib/custody";
+import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
 };
-
-function isPeerRequestLink(link: { merchantNameSnapshot: string | null; externalReference: string | null }) {
-    return link.merchantNameSnapshot === "SubScript user request" ||
-        (typeof link.externalReference === "string" &&
-            (link.externalReference.startsWith("peer-request:") || link.externalReference.startsWith("dm-peer-request:")));
-}
 
 export async function POST(request: Request, { params }: RouteContext) {
     try {
