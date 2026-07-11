@@ -47,5 +47,10 @@ contract DeploySubScript is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
 
         vm.stopBroadcast();
+
+        console.log("SubScriptRouter proxy:", address(proxy));
+        console.log("SubScriptRouter impl :", address(implementation));
+        console.log("owner:                ", owner);
+        console.log("treasury:             ", treasury);
     }
 }
