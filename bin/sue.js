@@ -33,7 +33,8 @@ require("c:/Users/Kristien/OneDrive/Desktop/SubScript/node_modules/dotenv").conf
   path: "c:/Users/Kristien/OneDrive/Desktop/SubScript/.env.local"
 });
 
-const PROXY_ADDRESS = "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
+/* Overridable so the tool points at a freshly redeployed router (a redeploy changes this address). */
+const PROXY_ADDRESS = process.env.SUBSCRIPT_ROUTER_ADDRESS || process.env.NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS || "0x6946B7746c2968B195BD15319D25F67E587CAe3C";
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const TREASURY_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10";
 const ERC1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
@@ -175,25 +176,38 @@ async function captureStateSnapshot(provider, signer) {
 }
 
 /* Compile and run custom storage layout verification checks against baseline layout */
-async function validateStorageLayout() {
-  logInfo("Performing storage layout validation checks...");
+/* Deterministically resolve the canonical SubScriptRouter build artifact. Multiple build-info files
+   accumulate across incremental compiles, and picking an arbitrary (`find` first) one could validate
+   OR deploy stale bytecode and silently reinstate old vulnerabilities. Choose the NEWEST build-info
+   that actually contains SubScriptRouter with both a storage layout and deployable bytecode, so the
+   storage-layout check and the implementation deploy always use the SAME artifact. */
+function selectRouterBuild() {
   const buildInfoDir = path.join(__dirname, "../artifacts/build-info");
   if (!fs.existsSync(buildInfoDir)) {
     throw new Error("artifacts/build-info directory not found. Compile the project first.");
   }
-  const files = fs.readdirSync(buildInfoDir);
-  const jsonFile = files.find(f => f.endsWith(".json"));
-  if (!jsonFile) {
-    throw new Error("No compiler build-info JSON file found.");
+  const files = fs.readdirSync(buildInfoDir).filter(f => f.endsWith(".json"));
+  if (files.length === 0) {
+    throw new Error("No compiler build-info JSON file found. Compile the project first.");
   }
-
-  const buildInfo = JSON.parse(fs.readFileSync(path.join(buildInfoDir, jsonFile), "utf8"));
   const routerKey = "contracts/SubScriptRouter.sol";
-  const routerInfo = buildInfo.output.contracts[routerKey] && buildInfo.output.contracts[routerKey]["SubScriptRouter"];
+  const candidates = files
+    .map(f => ({ f, mtime: fs.statSync(path.join(buildInfoDir, f)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
 
-  if (!routerInfo || !routerInfo.storageLayout) {
-    throw new Error("SubScriptRouter storage layout metadata not found in build info.");
+  for (const { f } of candidates) {
+    const parsed = JSON.parse(fs.readFileSync(path.join(buildInfoDir, f), "utf8"));
+    const info = parsed?.output?.contracts?.[routerKey]?.["SubScriptRouter"];
+    if (info && info.storageLayout && info.evm?.bytecode?.object) {
+      return { jsonFile: f, buildInfo: parsed, routerInfo: info };
+    }
   }
+  throw new Error("SubScriptRouter build metadata (storage layout + bytecode) not found in any build-info file. Recompile the project.");
+}
+
+async function validateStorageLayout() {
+  logInfo("Performing storage layout validation checks...");
+  const { routerInfo } = selectRouterBuild();
 
   const compiledLayout = routerInfo.storageLayout.storage;
   const typesMap = routerInfo.storageLayout.types;
@@ -411,6 +425,9 @@ async function executeUpgrade(multisigMode) {
   logInfo(`Pre-upgrade state snapshot generated and saved to: ${snapshotFile}`);
 
   let upgradeStep = "LOCK_SYSTEM";
+  /* Implementation address the proxy pointed at before we upgraded it, captured so the failsafe can
+     roll the PROXY back on-chain (not just the DB) if a later step fails after the upgrade landed. */
+  let preImplAddress = null;
   try {
     /* 2. Lock Backend API */
     await setBackendSystemLockHttps(supabase, true);
@@ -426,12 +443,11 @@ async function executeUpgrade(multisigMode) {
     /* 5. Deploy new implementation */
     upgradeStep = "DEPLOY_IMPLEMENTATION";
     logInfo("Deploying new SubScriptRouter implementation contract...");
-    const buildInfoDir = path.join(__dirname, "../artifacts/build-info");
-    const files = fs.readdirSync(buildInfoDir);
-    const jsonFile = files.find(f => f.endsWith(".json"));
-    const buildInfo = JSON.parse(fs.readFileSync(path.join(buildInfoDir, jsonFile), "utf8"));
-    const routerKey = "contracts/SubScriptRouter.sol";
-    const routerBuild = buildInfo.output.contracts[routerKey]["SubScriptRouter"];
+    /* Use the SAME canonical artifact the storage-layout check validated (step 3) — never re-pick an
+       arbitrary build-info here, or a stale/vulnerable implementation could be deployed even though a
+       different (correct) artifact passed validation. */
+    const { jsonFile: routerBuildFile, routerInfo: routerBuild } = selectRouterBuild();
+    logInfo(`Using build-info artifact: ${routerBuildFile}`);
 
     const factory = new ethers.ContractFactory(
       routerBuild.abi,
@@ -473,6 +489,11 @@ async function executeUpgrade(multisigMode) {
     const proxyAbi = ["function upgradeToAndCall(address newImplementation, bytes data) external"];
     const proxy = new ethers.Contract(PROXY_ADDRESS, proxyAbi, signer);
 
+    /* Snapshot the current implementation so the failsafe can revert the proxy if a step after this
+       upgrade fails. */
+    const preImplHex = await provider.getStorage(PROXY_ADDRESS, ERC1967_IMPL_SLOT);
+    preImplAddress = "0x" + preImplHex.slice(-40);
+
     const upgradeTx = await proxy.upgradeToAndCall(implAddress, "0x");
     const receipt = await upgradeTx.wait();
     if (receipt.status !== 1) {
@@ -497,6 +518,36 @@ async function executeUpgrade(multisigMode) {
     logError(`Upgrade sequence failed during step: ${upgradeStep}. Error: ${err.message}`);
     logInfo("Initiating automatic failsafe rollback sequence...");
     
+    /* On-chain rollback FIRST: if the proxy was already upgraded (failure happened at/after
+       VERIFY_UPGRADE), revert it to the prior implementation so we never leave the proxy on new
+       bytecode while the DB is rolled back to the old schema. Only acts if the proxy currently points
+       at the freshly-deployed impl — otherwise the upgrade never landed and there's nothing to undo. */
+    if (preImplAddress && preImplAddress !== ethers.ZeroAddress) {
+      try {
+        const nowImplHex = await provider.getStorage(PROXY_ADDRESS, ERC1967_IMPL_SLOT);
+        const nowImpl = "0x" + nowImplHex.slice(-40);
+        if (nowImpl.toLowerCase() !== preImplAddress.toLowerCase()) {
+          logInfo(`Proxy was upgraded; reverting implementation to ${preImplAddress}...`);
+          const rbProxy = new ethers.Contract(
+            PROXY_ADDRESS,
+            ["function upgradeToAndCall(address newImplementation, bytes data) external"],
+            signer,
+          );
+          const rbTx = await rbProxy.upgradeToAndCall(preImplAddress, "0x");
+          await rbTx.wait();
+          const revertedHex = await provider.getStorage(PROXY_ADDRESS, ERC1967_IMPL_SLOT);
+          const reverted = "0x" + revertedHex.slice(-40);
+          if (reverted.toLowerCase() === preImplAddress.toLowerCase()) {
+            logInfo("Proxy implementation reverted successfully.");
+          } else {
+            logError(`CRITICAL: proxy revert did not take effect (impl=${reverted}). Manual rollback required.`);
+          }
+        }
+      } catch (proxyRollErr) {
+        logError(`CRITICAL: failed to revert proxy implementation to ${preImplAddress}: ${proxyRollErr.message}. Run the manual rollback command immediately.`);
+      }
+    }
+
     try {
       /* Attempt database down migration reverts */
       await rollbackDatabaseMigrations(dbClient, supabase, snapshot.snapshot_id);
