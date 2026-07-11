@@ -82,8 +82,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "get_private_routing_guide",
-        description: "Returns the developer integration guide for SubScript's Privacy-Enhanced Routing architecture.",
+        name: "get_integration_guide",
+        description: "Returns the developer integration guide for accepting SubScript payments — hosted checkout (recommended) and direct on-chain router/subscription calls.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -233,66 +233,76 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    if (name === "get_private_routing_guide") {
+    if (name === "get_integration_guide") {
       const guide = `
-# SubScript Privacy-Enhanced Routing Integration Guide
+# SubScript Integration Guide
 
-SubScript utilizes a commitment-reveal routing architecture to mathematically decouple the user's funding wallet (Payer) from the user's service access wallet (Burner). 
+SubScript settles USDC payments on the Arc Network. USDC is the gas token, and a 1% protocol
+fee (100 basis points) is deducted at settlement, so the merchant receives 99%. Amounts are
+always integer micro-USDC (1 USDC = 1000000).
 
-A 1% protocol fee (100 basis points) is automatically deducted at the contract level from all subscription payments, leaving 99% routed directly to the merchant.
+There are two ways to integrate. Hosted checkout is recommended for almost everyone.
 
-## Three-Step Integration Workflow
+## Option A — Hosted checkout (recommended, no contract calls)
 
-### Step 1: Deposit and Commitment (Payer Wallet)
-The user's funding wallet approves the SubScript Router to spend USDC, then calls the \`depositAndCommit\` function with a hashed secret (the commitment).
-- **USDC Approval:** approve the router to spend \`depositAmount\`.
-- **Function Call:** \`depositAndCommit(bytes32 commitment, uint256 amount)\`
+Your backend creates a payment intent; the payer completes payment on SubScript's hosted page;
+you learn the result by polling status and/or receiving a signed webhook.
+
+1. Create an intent (use the \`create_intent\` tool, or POST /api/intent) with an integer
+   micro-USDC amount and your own \`externalReference\`. You get back a \`checkoutUrl\` and an
+   intent \`id\`. Send the payer to \`checkoutUrl\`.
+2. Poll the \`get_payment_status\` tool (or GET /api/intent/status?id=...) until the status is
+   \`PAID\` (other terminal states: \`EXPIRED\`). The payer signs on-chain on the hosted page — you
+   never handle keys or calldata.
+3. Optionally verify the \`payment.succeeded\` webhook with the \`verify_webhook\` tool before
+   granting access. Webhooks are the settlement authority; treat the signature as required.
+
+## Option B — Direct on-chain (advanced)
+
+Call the contracts yourself from the payer's wallet. Use \`get_subscript_config\` for the
+current router/standard-contract/USDC addresses and \`get_subscript_abi\` for the ABI.
+
+### One-time payment — router \`depositForMerchant\`
+
+Approve USDC to the router, then call \`depositForMerchant(address merchant, uint256 amount,
+string memo)\`. Pass the intent's receipt token as \`memo\` so the DepositWithMemo event binds the
+payment to your order; SubScript verifies settlement from that event.
 
 \`\`\`typescript
-/* Example using Wagmi/Viem */
 import { useWriteContract } from 'wagmi';
 import { parseUnits } from 'viem';
 
-const { writeContractAsync: deposit } = useWriteContract();
+const { writeContractAsync } = useWriteContract();
 
-/* Generate a random 32-byte secret and hash it to create the commitment */
-const secret = crypto.getRandomValues(new Uint8Array(32));
-const commitment = keccak256(secret);
-
-await deposit({
-  address: ROUTER_ADDRESS,
-  abi: SUBSCRIPT_ABI,
-  functionName: 'depositAndCommit',
-  args: [commitment, parseUnits("10", 6)]
+// 1. approve(routerAddress, amount) on the USDC contract first, then:
+await writeContractAsync({
+  address: routerAddress,
+  abi: routerAbi,
+  functionName: 'depositForMerchant',
+  args: [merchantAddress, parseUnits('10', 6), receiptToken],
 });
 \`\`\`
 
----
+### Recurring subscription — \`createSubscription\`
 
-### Step 2: Local Commitment-Reveal Proof Generation
-The frontend compiles the secret pre-image and public parameters locally. The proof demonstrates that the user knows the secret pre-image corresponding to a valid commitment on-chain, without revealing the secret itself.
-
-\`\`\`typescript
-/* Load parameters and pre-images to verify commitment locally */
-const commitmentPayload = { secret: secret, commitment: commitment };
-\`\`\`
-
----
-
-### Step 3: Verify and Activate (Burner Wallet)
-The user switches to a clean, unlinkable **burner wallet** (to ensure privacy) and calls the \`verifyAndActivate\` function. This burner wallet acts as the subscriber and authorizes the merchant to trigger monthly payments anonymously.
-- **Function Call:** \`verifyAndActivate(bytes32[] proof, bytes32 nullifierHash, address merchant, uint256 amount, uint256 period)\`
+Call \`createSubscription(address merchant, uint256 amount, uint256 period)\` on the standard
+subscription contract (\`standardContractAddress\` from get_subscript_config). The first period
+is charged immediately, so approve enough USDC allowance to cover the billing horizon; the
+keeper debits each subsequent period against that allowance.
 
 \`\`\`typescript
-const { writeContractAsync: activate } = useWriteContract();
-
-await activate({
-  address: ROUTER_ADDRESS,
-  abi: SUBSCRIPT_ABI,
-  functionName: 'verifyAndActivate',
-  args: [proof, nullifierHash, merchantAddress, parseUnits("10", 6), 2592000n]
+await writeContractAsync({
+  address: standardContractAddress,
+  abi: subscriptionAbi,
+  functionName: 'createSubscription',
+  args: [merchantAddress, parseUnits('10', 6), 2592000n], // 2592000s = 30 days
 });
 \`\`\`
+
+Metered/usage billing (prepaid vault): the customer commits USDC to a per-merchant vault in the
+SubScript app; your backend reports consumption with the \`report_usage\` tool (or POST
+/api/user/vault/report-usage) using an integer micro-USDC amount. Usage accrues transparently and
+is drawn at cycle end — never more than the customer's committed balance.
       `.trim();
 
       return {
