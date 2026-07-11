@@ -32,6 +32,11 @@ function allowOfflineAuth() {
     return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
 }
 
+/* A 6-digit code with a 10-minute TTL is brute-forceable without a per-code guess budget
+   (per-IP limits don't hold against IP rotation). Five wrong guesses invalidate the code;
+   the legitimate user just requests a fresh one. */
+const MAX_OTP_FAILED_ATTEMPTS = 5;
+
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => null);
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
         try {
             record = await withPgClient(async (client) => {
                 const result = await client.query(
-                    "select code, expires_at from otp_codes where email = $1 and purpose = 'LOGIN' limit 1",
+                    "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' limit 1",
                     [emailVal]
                 );
                 return result.rows[0] || null;
@@ -90,7 +95,36 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Verification code expired or not found. Please request a new one." }, { status: 400 });
         }
 
+        /* Belt-and-suspenders: a row that somehow survived past its guess budget (e.g. the
+           invalidating delete below failed) is dead, not guessable. */
+        if (typeof record.failed_attempts === "number" && record.failed_attempts >= MAX_OTP_FAILED_ATTEMPTS) {
+            return NextResponse.json({ error: "Too many incorrect attempts. Please request a new verification code." }, { status: 429 });
+        }
+
         if (!safeHashMatch(record.code, hashOtp(emailVal, codeTrimmed))) {
+            /* Charge the wrong guess against this code's budget and invalidate it once spent.
+               The increment is atomic, so concurrent wrong guesses each consume budget and
+               cannot race past the limit. Counting failures must fail closed: if the counter
+               cannot be recorded, the guess is rejected without revealing anything. */
+            if (!isOfflineMode) {
+                try {
+                    await withPgClient(async (client) => {
+                        const bump = await client.query(
+                            "update otp_codes set failed_attempts = failed_attempts + 1 where email = $1 and purpose = 'LOGIN' returning failed_attempts",
+                            [emailVal]
+                        );
+                        const failedAttempts = Number(bump.rows[0]?.failed_attempts ?? 0);
+                        if (failedAttempts >= MAX_OTP_FAILED_ATTEMPTS) {
+                            await client.query(
+                                "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
+                                [emailVal]
+                            );
+                        }
+                    });
+                } catch (countErr) {
+                    console.error("OTP failed-attempt accounting error:", countErr);
+                }
+            }
             return NextResponse.json({ error: "Invalid verification code. Please check and try again." }, { status: 400 });
         }
 

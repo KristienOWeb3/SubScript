@@ -129,6 +129,7 @@ export async function POST(request: Request) {
                         expires_at = excluded.expires_at,
                         purpose = excluded.purpose,
                         wallet_address = excluded.wallet_address,
+                        failed_attempts = 0,
                         created_at = now()`,
                     [
                         emailLower,

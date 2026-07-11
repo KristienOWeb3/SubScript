@@ -36,6 +36,27 @@ test("wallet sessions are server-revocable and signatures are origin-bound", asy
     assert.match(message, /Chain ID:/);
 });
 
+test("login OTPs have a per-code guess budget", async () => {
+    /* The LOGIN verify path compares before consuming (a typo must not burn the code), which
+       left a 6-digit code brute-forceable across its TTL via IP rotation. Every wrong guess
+       must atomically charge the code's counter, the code dies at the limit, and a freshly
+       sent code starts with a clean budget. */
+    const [verify, send, migration] = await Promise.all([
+        source("src/app/api/auth/otp/verify/route.ts"),
+        source("src/app/api/auth/otp/send/route.ts"),
+        source("supabase/migrations/20260711131500_otp_failed_attempt_counter.sql"),
+    ]);
+
+    assert.match(verify, /MAX_OTP_FAILED_ATTEMPTS = 5/);
+    assert.match(verify, /select code, expires_at, failed_attempts from otp_codes/);
+    assert.match(verify, /record\.failed_attempts >= MAX_OTP_FAILED_ATTEMPTS/);
+    assert.match(verify, /set failed_attempts = failed_attempts \+ 1[\s\S]{0,80}returning failed_attempts/);
+    assert.match(verify, /failedAttempts >= MAX_OTP_FAILED_ATTEMPTS/);
+    assert.match(verify, /status: 429/);
+    assert.match(send, /failed_attempts = 0/);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFAULT 0/);
+});
+
 test("wallet-login nonces are server-issued and atomically single-use", async () => {
     /* The SIWE nonce used to live only in a client cookie, so verify-signature compared two
        attacker-controlled values and a captured signature stayed replayable. Nonces must be
