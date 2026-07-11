@@ -21,6 +21,8 @@ import {
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
+import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 export const maxDuration = 150;
 
@@ -116,6 +118,48 @@ export async function POST(request: Request) {
             periodSeconds: plan.periodSeconds,
             isChange: true,
         }).catch((err) => console.error("[subscription/change] DM creation failed:", err));
+
+        /* Notify the merchant's own backend so entitlement on their platform tracks a DM-initiated
+           plan change (the missing link that otherwise left the merchant's system stale). Keyed on
+           the subscriber — and beneficiary, when sponsored — which is the canonical customer identity
+           merchants map entitlement to, so it updates the SAME account rather than creating a second.
+           Best-effort and non-blocking: webhook delivery must never fail the user's plan change. */
+        try {
+            const mirrored = await prisma.subscription
+                .findUnique({
+                    where: { subscriptionId: BigInt(fromSubscriptionId) },
+                    select: { beneficiaryAddress: true },
+                })
+                .catch(() => null);
+            await dispatchMerchantWebhook(plan.merchantAddress, "subscription.updated", {
+                ...subscriptionWebhookData({
+                    subscriptionId: fromSubscriptionId,
+                    status: "updated",
+                    amountUsdcMicros: plan.amountUsdc,
+                    subscriber,
+                    merchantAddress: plan.merchantAddress,
+                    txHash,
+                    beneficiary: mirrored?.beneficiaryAddress ?? null,
+                }),
+                plan_id: plan.id,
+                planId: plan.id,
+                plan_name: plan.name,
+                planName: plan.name,
+                previous_amount_usdc_micros: current.amount.toString(),
+                previousAmountUsdcMicros: current.amount.toString(),
+                previous_period_seconds: Number(current.period),
+                previousPeriodSeconds: Number(current.period),
+                new_period_seconds: Number(plan.periodSeconds),
+                newPeriodSeconds: Number(plan.periodSeconds),
+                effective: mode === "immediate" && isUpgrade ? "immediate" : "next_renewal",
+                prorated_charge_usdc_micros: proratedChargeMicros > BigInt(0) ? proratedChargeMicros.toString() : null,
+                proratedChargeUsdcMicros: proratedChargeMicros > BigInt(0) ? proratedChargeMicros.toString() : null,
+                prorated_tx_hash: proratedTxHash,
+                proratedTxHash,
+            });
+        } catch (err) {
+            console.error("[subscription/change] merchant webhook dispatch failed:", err);
+        }
 
         return NextResponse.json({
             success: true,

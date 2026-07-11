@@ -59,13 +59,16 @@ export async function POST(request: Request) {
             }
             bindingWallet = sessionWallet.toLowerCase();
         }
+        /* IP limit is charged up front (cheap DoS guard). The per-email limit is deliberately NOT
+           charged here — it is charged just before the code is actually sent, so a request that
+           later fails CAPTCHA or hits the wallet-only 409 doesn't burn the 3-per-window email quota
+           without ever delivering a code. */
         const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
         const ipLimit = checkProviderRateLimit({ provider: "otp-send-ip", key: requesterIp, limit: 10, windowMs: 10 * 60 * 1000 });
-        const emailLimit = checkProviderRateLimit({ provider: "otp-send-email", key: emailLower, limit: 3, windowMs: 10 * 60 * 1000 });
-        if (!ipLimit.ok || !emailLimit.ok) {
+        if (!ipLimit.ok) {
             return NextResponse.json(
                 { error: "Too many verification-code requests. Please wait before trying again." },
-                { status: 429, headers: { "Retry-After": String(Math.max(ipLimit.retryAfterSeconds, emailLimit.retryAfterSeconds)) } },
+                { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSeconds) } },
             );
         }
 
@@ -99,6 +102,16 @@ export async function POST(request: Request) {
             if (!isValid) {
                 return NextResponse.json({ error: "Incorrect or expired CAPTCHA code. Please try again." }, { status: 400 });
             }
+        }
+
+        /* Charge the per-email quota only now that all validation/CAPTCHA/wallet-only gates have
+           passed and we're about to actually issue a code. */
+        const emailLimit = checkProviderRateLimit({ provider: "otp-send-email", key: emailLower, limit: 3, windowMs: 10 * 60 * 1000 });
+        if (!emailLimit.ok) {
+            return NextResponse.json(
+                { error: "Too many verification-code requests. Please wait before trying again." },
+                { status: 429, headers: { "Retry-After": String(emailLimit.retryAfterSeconds) } },
+            );
         }
 
         const code = crypto.randomInt(100000, 1000000).toString();

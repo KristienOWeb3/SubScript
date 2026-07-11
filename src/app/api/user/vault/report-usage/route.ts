@@ -24,13 +24,20 @@ type VaultUsageRow = {
     owed_usdc: string;
     accrued_usage_usdc: string;
     active: boolean;
+    usage_notified_bps: number;
 };
 
 type UsageResult =
     | { kind: "missing" }
     | { kind: "inactive"; vault: VaultUsageRow }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
-    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null };
+    | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
+
+/* Balance-usage thresholds (bps) that trigger a heads-up DM once each per cycle. 100% is covered
+   separately by COMMIT_EXHAUSTED, so it's intentionally not listed here. */
+const USAGE_THRESHOLD_BANDS = [5000, 8000];
+
+const formatUsdc = (micros: bigint) => (Number(micros) / 1_000_000).toFixed(2);
 
 async function insertExhaustionNotification(
     client: any,
@@ -61,16 +68,38 @@ async function insertExhaustionNotification(
     });
 }
 
+async function insertThresholdNotification(
+    client: any,
+    merchantAddress: string,
+    userAddress: string,
+    bandBps: number,
+    accrued: bigint,
+    balance: bigint,
+) {
+    const pct = bandBps / 100;
+    return insertPgDm(client, {
+        sender_address: merchantAddress,
+        receiver_address: userAddress,
+        message_type: "USAGE_THRESHOLD",
+        status: "PENDING",
+        amount_usdc: accrued.toString(),
+        title: `${pct}% of your committed balance used`,
+        description: `This merchant has reported ${formatUsdc(accrued)} of your ${formatUsdc(balance)} USDC committed balance as used. Service continues until the balance is fully used — review the usage breakdown in your dashboard.`,
+    });
+}
+
 async function accrueUsageAtomically(
     userAddress: string,
     merchantAddress: string,
     amountMicros: bigint,
+    note: string | null,
+    requestId: string,
 ): Promise<UsageResult> {
     return withPgClient(async (client) => {
         await client.query("begin");
         try {
             const selected = await client.query(
-                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active
+                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps
                    from metered_vaults
                   where user_address = $1 and merchant_address = $2
                   for update`,
@@ -113,13 +142,36 @@ async function accrueUsageAtomically(
                     set accrued_usage_usdc = $1,
                         updated_at = now()
                   where id = $2
-              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active`,
+              returning id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps`,
                 [nextAccrued.toString(), vault.id],
             );
+
+            /* Append-only ledger row for this charge — the user's transparent record. */
+            await client.query(
+                `insert into metered_usage_reports
+                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId],
+            );
+
             const exhausted = nextAccrued === balance;
             const notification = exhausted
                 ? await insertExhaustionNotification(client, merchantAddress, userAddress, commit)
                 : null;
+
+            /* Fire a one-time heads-up when a 50%/80% band is first crossed this cycle. Skip when the
+               balance is fully used — COMMIT_EXHAUSTED already covers that. Dedup is atomic via the
+               usage_notified_bps high-water mark, which re-arms when the cycle resets (draw/commit). */
+            let thresholdNotification: DmPushInput | null = null;
+            if (!exhausted) {
+                const alreadyNotified = Number(vault.usage_notified_bps ?? 0);
+                const newBps = balance > BigInt(0) ? Number((nextAccrued * BigInt(10000)) / balance) : 10000;
+                const band = [...USAGE_THRESHOLD_BANDS].reverse().find((b) => b <= newBps && b > alreadyNotified);
+                if (band) {
+                    await client.query(`update metered_vaults set usage_notified_bps = $1 where id = $2`, [band, vault.id]);
+                    thresholdNotification = await insertThresholdNotification(client, merchantAddress, userAddress, band, nextAccrued, balance);
+                }
+            }
 
             await client.query("commit");
             return {
@@ -127,6 +179,7 @@ async function accrueUsageAtomically(
                 vault: updated.rows[0] as VaultUsageRow,
                 exhausted,
                 notification,
+                thresholdNotification,
             } as const;
         } catch (error) {
             await client.query("rollback");
@@ -171,11 +224,14 @@ export async function POST(request: Request) {
         }
 
         const sanitizedBody = sanitizeInput(body);
-        const { userAddress, amountUsdc, amountUsdcMicros } = sanitizedBody;
+        const { userAddress, amountUsdc, amountUsdcMicros, note } = sanitizedBody;
 
         if (typeof userAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(userAddress)) {
             return NextResponse.json({ error: "Invalid user address" }, { status: 400 });
         }
+
+        /* Optional merchant-supplied line-item label for the user's ledger (e.g. "1.2M API calls"). */
+        const cleanNote = typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : null;
 
         /* Canonical unit is integer micro-USDC (`amountUsdcMicros`), consistent with /intent and
            /v1/subscriptions. The legacy decimal `amountUsdc` is still accepted for compatibility.
@@ -200,8 +256,9 @@ export async function POST(request: Request) {
         }
 
         const normalizedUser = userAddress.toLowerCase();
+        const requestId = crypto.randomUUID();
 
-        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros);
+        const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros, cleanNote, requestId);
 
         if (result.kind === "missing") {
             return NextResponse.json({
@@ -232,11 +289,13 @@ export async function POST(request: Request) {
         }
 
         scheduleDmPush(result.notification);
+        scheduleDmPush(result.thresholdNotification);
 
         return NextResponse.json({
             success: true,
             active: result.vault.active,
             exhausted: result.exhausted,
+            requestId,
             accruedUsageUsdc: result.vault.accrued_usage_usdc,
             balanceUsdc: result.vault.balance_usdc,
             commitUsdc: result.vault.commit_usdc,

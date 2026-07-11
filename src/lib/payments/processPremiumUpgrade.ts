@@ -236,7 +236,10 @@ export async function processPremiumUpgrade({
                 return { isPendingReceipt: true, valid: false, error: "Receipt not found yet.", provider };
             }
 
-            const verification = await verifyTransaction(tx, receipt, session, provider);
+            /* Reconciler re-processes sessions that were paid but stalled and can legitimately run
+               days later, so it skips the 24h block-age bound. Replay stays impossible: the tx hash
+               is globally single-use and block timestamp <= session expiry is still enforced. */
+            const verification = await verifyTransaction(tx, receipt, session, provider, { allowAgedBlock: isReconciler });
             return {
                 isPendingReceipt: false,
                 valid: verification.valid,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getAccountRole } from "@/lib/accounts/roles";
+import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 
 export async function GET(request: Request) {
     try {
@@ -11,7 +11,10 @@ export async function GET(request: Request) {
         }
 
         const normalizedUser = wallet.toLowerCase();
-        const role = await getAccountRole(normalizedUser);
+        /* Healing resolver: merchant wallets without an account_roles row (pre role-first
+           signup) resolve ENTERPRISE via their merchants row instead of 403ing, which made
+           the dashboard's Active Customer Escrows list silently render as empty. */
+        const role = await resolveAccountRoleWithBackfill(normalizedUser);
         
         if (role === "USER") {
             const vaults = await prisma.meteredVault.findMany({

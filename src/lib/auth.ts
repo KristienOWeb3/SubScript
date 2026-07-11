@@ -62,12 +62,18 @@ export function getCookieValue(cookieHeader: string, name: string): string | nul
     return value;
 }
 
+export type VerifiedSessionToken = {
+    token: string;
+    wallet: string;
+    expiresAt: Date | null;
+};
+
 /**
- * Helper to authenticate requests inside Next.js API routes by reading
- * the subscript_session_token cookie and verifying it as a signed JWT.
- * Returns the authenticated wallet address (lowercase), or null if unauthorized.
+ * Read and verify the session JWT from the request cookie. Returns the raw token,
+ * the authenticated wallet, and the token's own expiry (never extended) so callers
+ * can re-issue the exact same session cookie with current scoping options.
  */
-export async function getSessionWallet(headers: Headers): Promise<string | null> {
+export async function getVerifiedSessionToken(headers: Headers): Promise<VerifiedSessionToken | null> {
     const cookieStore = headers.get("cookie") || "";
     const token = getCookieValue(cookieStore, "subscript_session_token");
 
@@ -81,6 +87,8 @@ export async function getSessionWallet(headers: Headers): Promise<string | null>
 
         if (payload && typeof payload.address === "string" && typeof payload.jti === "string") {
             const address = payload.address.toLowerCase();
+            /* Revocation check (finding 21): the token must still have a live row in `sessions`,
+               so logout can invalidate a copied token. */
             const session = await pgMaybeOne<{ wallet: string }>(
                 `select wallet from sessions
                   where token = $1
@@ -89,11 +97,27 @@ export async function getSessionWallet(headers: Headers): Promise<string | null>
                   limit 1`,
                 [sessionTokenHash(token), address]
             );
-            return session ? address : null;
+            if (!session) return null;
+            /* Return the object shape callers use to re-issue the SAME cookie (session healing). */
+            return {
+                token,
+                wallet: address,
+                expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
+            };
         }
         return null;
     } catch (err) {
         console.error("JWT verification failed:", err);
         return null;
     }
+}
+
+/**
+ * Helper to authenticate requests inside Next.js API routes by reading
+ * the subscript_session_token cookie and verifying it as a signed JWT.
+ * Returns the authenticated wallet address (lowercase), or null if unauthorized.
+ */
+export async function getSessionWallet(headers: Headers): Promise<string | null> {
+    const session = await getVerifiedSessionToken(headers);
+    return session?.wallet ?? null;
 }

@@ -16,7 +16,9 @@ function isPrivateAddress(address: string) {
     if (isIP(normalized) === 6) {
         return normalized === "::" || normalized === "::1" ||
             normalized.startsWith("fc") || normalized.startsWith("fd") ||
-            normalized.startsWith("fe80:") || normalized.startsWith("::ffff:");
+            normalized.startsWith("fe80:") || normalized.startsWith("::ffff:") ||
+            /* Multicast ff00::/8 (e.g. ff02::1). */
+            normalized.startsWith("ff");
     }
     return false;
 }
@@ -42,7 +44,17 @@ export async function validateWebhookUrl(value: string) {
     }
 
     try {
-        const addresses = await lookup(hostname, { all: true, verbatim: true });
+        /* Bound the DNS resolution so a hostile/stalling resolver can't hang the request handler
+           until the OS resolver timeout (~30s), which would be a cheap DoS on registration/dispatch.
+           dns.lookup has no AbortSignal support, so race it against a timeout — the abandoned lookup
+           settles harmlessly in the background. */
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const addresses = await Promise.race([
+            lookup(hostname, { all: true, verbatim: true }),
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("dns-timeout")), 5000);
+            }),
+        ]).finally(() => { if (timer) clearTimeout(timer); });
         if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
             return { ok: false as const, error: "Webhook URL cannot resolve to a private or reserved network address" };
         }

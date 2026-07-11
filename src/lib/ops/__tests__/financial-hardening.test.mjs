@@ -162,3 +162,21 @@ test("reconciliation migration can reclaim NEEDS_RECONCILIATION sessions", () =>
 
     assert.match(migration, /candidate\.status = 'NEEDS_RECONCILIATION'/);
 });
+
+test("premium verification accepts custody SCA submissions via the SubscriptionCreated event", () => {
+    const verifier = source("src/lib/payments/verifyTransaction.ts");
+    /* Circle embedded wallets are ERC-4337 smart accounts: tx.to is the EntryPoint, not the
+       SubScript contract, so a hard tx.to rejection falsely fails real payments after the
+       merchant was debited. The direct-calldata check must be scoped to direct calls only,
+       and the event matcher must pin every premium term including the period. */
+    assert.doesNotMatch(verifier, /return\s*\{\s*valid:\s*false,\s*error:\s*"Target is not SubScript contract"\s*\}/);
+    assert.match(verifier, /isDirectContractCall/);
+    assert.match(verifier, /if\s*\(isDirectContractCall\)/);
+    assert.match(verifier, /BigInt\(parsed\.args\.period\)\s*===\s*period/);
+    /* Recovered/reconciled sessions were paid but stalled, so re-verification must not
+       re-fail them on block age alone; fresh verifications keep the 24h bound. */
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    assert.match(verifier, /allowAgedBlock/);
+    assert.match(verifier, /!options\.allowAgedBlock &&/);
+    assert.match(processor, /allowAgedBlock:\s*isReconciler/);
+});

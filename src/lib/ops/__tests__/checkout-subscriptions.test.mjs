@@ -15,8 +15,13 @@ test("hosted checkout only redirects to validated URLs stored on the payment lin
     assert.match(page, /validateStoredReturnUrl\(returnUrls\?\.cancelUrl\)/);
     assert.doesNotMatch(page, /searchParams/);
     assert.doesNotMatch(page, /resolvedSearchParams|searchParams\.returnUrl/);
-    assert.match(client, /window\.location\.assign\(successUrl\)/);
-    assert.match(client, /window\.location\.assign\(cancelUrl\)/);
+    /* The client derives its redirect targets solely from the server-validated successUrl/cancelUrl
+       props (never raw request input or the unvalidated state_snapshot), then redirects to that
+       validated URL. */
+    assert.match(client, /merchantSuccessUrl = typeof successUrl === "string"/);
+    assert.match(client, /merchantCancelUrl = typeof cancelUrl === "string"/);
+    assert.match(client, /window\.location\.assign/);
+    assert.doesNotMatch(client, /state_snapshot\?\.returnUrls/);
 });
 
 test("subscription API checkouts use the recurring subscribe surface", () => {

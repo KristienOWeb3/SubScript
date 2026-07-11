@@ -327,6 +327,8 @@ export default function UserDashboard() {
   const [vaultActionAmount, setVaultActionAmount] = useState("");
   const [vaultActionBusy, setVaultActionBusy] = useState(false);
   const [vaultActionError, setVaultActionError] = useState<string | null>(null);
+  /* Unverified-merchant commit warning (informed consent before escrowing to an unverified merchant). */
+  const [vaultUnverifiedWarning, setVaultUnverifiedWarning] = useState(false);
   const [isEmbeddedWalletSession, setIsEmbeddedWalletSession] = useState(false);
   const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
   const [exchangeRate, setExchangeRate] = useState(1.0);
@@ -1388,16 +1390,18 @@ export default function UserDashboard() {
     setVaultActionMerchantLocked(true);
     setVaultActionAmount("");
     setVaultActionError(null);
+    setVaultUnverifiedWarning(false);
     setVaultActionOpen(true);
   };
 
-  const submitVaultAction = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitVaultAction = async (event?: React.FormEvent, opts?: { acknowledgedUnverified?: boolean }) => {
+    event?.preventDefault();
     setVaultActionError(null);
     if (!vaultActionAmount || isNaN(Number(vaultActionAmount)) || Number(vaultActionAmount) <= 0) {
       setVaultActionError("Enter a valid amount.");
       return;
     }
+    const acknowledgedUnverified = opts?.acknowledgedUnverified === true;
     setVaultActionBusy(true);
     try {
       // Accept a 0x address or a registered alias for the merchant on a new commit.
@@ -1407,13 +1411,30 @@ export default function UserDashboard() {
         if (!resolved) throw new Error("Could not resolve that merchant name to an address.");
         merchantAddress = resolved;
       }
+
+      /* Committing escrows funds a merchant can bill metered usage against, so warn before
+         committing to a merchant SubScript hasn't verified. Applies to BOTH wallet paths (the
+         external-wallet path signs on-chain directly and never hits the server gate). Fail open on
+         a lookup error — this is an informed-consent warning, not a hard gate. */
+      if (vaultActionMode === "commit" && !acknowledgedUnverified) {
+        const verified = await fetch(`/api/merchant/profile?address=${merchantAddress}`)
+          .then((r) => r.json())
+          .then((d) => d?.verified !== false)
+          .catch(() => true);
+        if (!verified) {
+          setVaultUnverifiedWarning(true);
+          setVaultActionBusy(false);
+          return;
+        }
+      }
+
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount }),
+          body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
@@ -4726,6 +4747,39 @@ export default function UserDashboard() {
                 />
               </Field>
               {vaultActionError && <p className="text-[11px] font-bold text-red-300">{vaultActionError}</p>}
+              {vaultUnverifiedWarning ? (
+                <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-amber-300">Unverified merchant</p>
+                      <p className="text-[11px] leading-relaxed text-white/70">
+                        SubScript has not verified this merchant. Committing escrows funds they can bill
+                        metered usage against. Only commit to merchants you trust and have independently
+                        verified — funds lost to a fraudulent merchant may not be recoverable.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setVaultUnverifiedWarning(false); }}
+                      disabled={vaultActionBusy}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Go back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setVaultUnverifiedWarning(false); submitVaultAction(undefined, { acknowledgedUnverified: true }); }}
+                      disabled={vaultActionBusy}
+                      className="dm-quick-button min-w-0 border-amber-500/30 bg-amber-500/15 text-amber-200"
+                    >
+                      Commit anyway
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -4743,6 +4797,7 @@ export default function UserDashboard() {
                   {vaultActionBusy ? "Working..." : vaultActionMode === "commit" ? "Commit" : "Withdraw"}
                 </button>
               </div>
+              )}
             </motion.form>
           </motion.div>
         )}
