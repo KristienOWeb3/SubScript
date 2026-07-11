@@ -124,28 +124,31 @@ export async function POST(request: Request) {
                 const merchantAddress = sub.merchant_address;
 
                 try {
-                    /* Verify DB merchant tier is indeed 1 (Addition 2) */
+                    /* Verify the merchant record exists. A FREE tier is allowed through: on a
+                       re-run the tier was already downgraded but the subscription may still be
+                       awaiting on-chain revocation, and it must keep being re-checked. */
                     const { data: merchant, error: mError } = await supabase
                         .from("merchants")
                         .select("tier")
                         .eq("wallet_address", merchantAddress)
                         .maybeSingle();
 
-                    if (mError || !merchant || merchant.tier !== "PREMIUM") {
-                        console.warn(`[Downgrade Check] Merchant ${merchantAddress} tier is not PREMIUM (got ${merchant?.tier}). Skipping downgrade.`);
+                    if (mError || !merchant) {
+                        console.warn(`[Downgrade Check] Merchant ${merchantAddress} record missing (${mError?.message || "not found"}). Skipping downgrade.`);
                         continue;
                     }
 
                     /* Revoke the on-chain PSA authorization FIRST. executePayment is permissionless,
                        so a subscription left isActive after a "cancel at period end" remains chargeable
                        on-chain even though the DB says CANCELED. Cancel is signed from the subscriber's
-                       embedded wallet (only the subscriber may cancel). If the wallet is externally
-                       controlled we cannot sign for it — proceed with the downgrade and warn the user
-                       to cancel from their own wallet instead of blocking the tier change forever. */
+                       embedded wallet (only the subscriber may cancel — the contract enforces it, so
+                       there is no server-side override for externally controlled wallets). */
                     const onChainSub = await standardContract.subscriptions(subId);
                     const onChainSubscriber: string = onChainSub[0];
+                    const onChainAmount = BigInt(onChainSub[2] ?? 0);
                     const isActiveOnChain: boolean = onChainSub[5];
                     let onChainCancelTxHash: string | null = null;
+                    let awaitingExternalRevocation = false;
                     if (isActiveOnChain) {
                         try {
                             await ensureGasSponsored(onChainSubscriber.toLowerCase()).catch(() => { /* best-effort */ });
@@ -161,20 +164,48 @@ export async function POST(request: Request) {
                                    DOWNGRADE_FAILED and the next run retries the on-chain cancel. */
                                 throw cancelErr;
                             }
-                            console.warn(`[Downgrade] Cannot cancel sub ${subId} on-chain for external wallet ${onChainSubscriber}; advising user.`);
-                            await createBillingDm({
-                                supabase,
-                                senderAddress: merchantAddress,
-                                receiverAddress: onChainSubscriber,
-                                messageType: "EXPIRY_WARNING",
-                                amountUsdc: sub.amount_cap_usdc || 0,
-                                title: "Action needed: revoke subscription authorization",
-                                description: [
-                                    "Your premium plan was cancelled, but its on-chain authorization is still active.",
-                                    "Because your wallet is externally controlled, SubScript cannot revoke it for you.",
-                                    `Please call cancelSubscription(${subId}) on the SubScript contract or revoke its USDC allowance from your wallet.`,
-                                ].join("\n"),
-                            }).catch((dmErr: any) => console.error("Failed to create revoke-advisory DM:", dmErr));
+
+                            /* External wallet: we cannot sign the revocation, and the row must NOT
+                               be recorded CANCELED while the authorization can still fund a charge
+                               (anyone may call executePayment). It is provably un-chargeable right
+                               now only if the standing USDC allowance cannot cover one period. */
+                            let chargeable = true;
+                            try {
+                                const allowance: bigint = await usdcContract.allowance(onChainSubscriber, STANDARD_CONTRACT_ADDRESS);
+                                chargeable = onChainAmount > BigInt(0) && allowance >= onChainAmount;
+                            } catch {
+                                /* Fail closed: if the allowance cannot be read, assume chargeable. */
+                            }
+                            awaitingExternalRevocation = chargeable;
+                            console.warn(`[Downgrade] Cannot cancel sub ${subId} on-chain for external wallet ${onChainSubscriber}; ${chargeable ? "still chargeable — keeping in retry loop and advising user" : "allowance cannot fund a charge — proceeding"}.`);
+
+                            /* Re-advise at most once per open DM: the retry loop re-enters here every
+                               run until the user revokes, and each pass must not stack duplicates. */
+                            const { data: existingAdvisory } = await supabase
+                                .from("subscript_dms")
+                                .select("id")
+                                .ilike("receiver_address", onChainSubscriber)
+                                .eq("message_type", "EXPIRY_WARNING")
+                                .eq("title", "Action needed: revoke subscription authorization")
+                                .eq("status", "PENDING")
+                                .limit(1)
+                                .maybeSingle();
+                            if (!existingAdvisory) {
+                                await createBillingDm({
+                                    supabase,
+                                    senderAddress: merchantAddress,
+                                    receiverAddress: onChainSubscriber,
+                                    messageType: "EXPIRY_WARNING",
+                                    amountUsdc: sub.amount_cap_usdc || 0,
+                                    title: "Action needed: revoke subscription authorization",
+                                    description: [
+                                        "Your premium plan was cancelled, but its on-chain authorization is still active and could still be charged.",
+                                        "Because your wallet is externally controlled, SubScript cannot revoke it for you.",
+                                        `Please call cancelSubscription(${subId}) on the SubScript contract or revoke its USDC allowance from your wallet.`,
+                                        "Until then, the subscription will show as pending cancellation.",
+                                    ].join("\n"),
+                                }).catch((dmErr: any) => console.error("Failed to create revoke-advisory DM:", dmErr));
+                            }
                         }
                     }
 
@@ -191,7 +222,8 @@ export async function POST(request: Request) {
                         downgradeTxHash = tx.hash;
                     }
 
-                    /* On-chain success confirmed: update DB to tier = 'FREE' and status = CANCELED (Addition 2) */
+                    /* On-chain success confirmed: update DB to tier = 'FREE' (Addition 2). The
+                       service ends at period end as promised regardless of the authorization. */
                     await supabase
                         .from("merchants")
                         .update({
@@ -199,6 +231,25 @@ export async function POST(request: Request) {
                             updated_at: new Date().toISOString()
                         })
                         .eq("wallet_address", merchantAddress);
+
+                    /* A DB row must never read CANCELED while the on-chain authorization is
+                       still chargeable. Leave it ACTIVE + cancel_at_period_end so every run
+                       re-checks the chain; it transitions to CANCELED (with the canceled
+                       webhook + exit survey) once the sub is inactive on-chain or its
+                       allowance can no longer fund a charge. Billing skips
+                       cancel_at_period_end rows, so it can never be billed by our keeper
+                       while it waits. */
+                    if (awaitingExternalRevocation) {
+                        downgradeResults.push({
+                            subId,
+                            merchantAddress,
+                            action: "AWAITING_EXTERNAL_REVOCATION",
+                            success: false,
+                            txHash: downgradeTxHash,
+                            onChainCancelTxHash
+                        });
+                        continue;
+                    }
 
                     await supabase
                         .from("subscriptions")

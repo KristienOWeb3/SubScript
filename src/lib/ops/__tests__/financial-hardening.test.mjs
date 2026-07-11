@@ -143,6 +143,31 @@ test("failed on-chain cancellation is never persisted as canceled", () => {
     assert.match(route, /status:\s*revokedOnChain\s*\?\s*"CANCELED"\s*:\s*"PAST_DUE"/);
 });
 
+test("premium downgrades never record CANCELED while the on-chain authorization is chargeable", () => {
+    /* Only the subscriber can cancelSubscription on-chain, so an external wallet's PSA
+       authorization cannot be revoked server-side — and executePayment is permissionless.
+       The downgrade cron must therefore keep the row ACTIVE + cancel_at_period_end (which
+       billing skips) until the sub is inactive on-chain or its USDC allowance provably
+       cannot fund a charge, re-advising the user without stacking duplicate DMs. */
+    const route = source("src/app/api/cron/billing/route.ts");
+    const downgradeBlock = route.slice(
+        route.indexOf("Process Graceful Downgrades"),
+        route.indexOf("Query active/failed/past_due subscriptions"),
+    );
+
+    assert.match(downgradeBlock, /usdcContract\.allowance\(onChainSubscriber, STANDARD_CONTRACT_ADDRESS\)/);
+    assert.match(downgradeBlock, /onChainAmount > BigInt\(0\) && allowance >= onChainAmount/);
+    assert.match(downgradeBlock, /Fail closed: if the allowance cannot be read/);
+    assert.match(downgradeBlock, /AWAITING_EXTERNAL_REVOCATION/);
+    assert.ok(
+        downgradeBlock.indexOf("AWAITING_EXTERNAL_REVOCATION") < downgradeBlock.indexOf('status: "CANCELED"'),
+        "the awaiting-revocation gate must run before the CANCELED transition",
+    );
+    /* DM dedup: the retry loop re-enters every run and must not stack advisories. */
+    assert.match(downgradeBlock, /\.eq\("title", "Action needed: revoke subscription authorization"\)/);
+    assert.match(downgradeBlock, /\.eq\("status", "PENDING"\)/);
+});
+
 test("contract health honors production address overrides", () => {
     const check = source("scripts/check-contracts.mjs");
 
