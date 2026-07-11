@@ -70,6 +70,35 @@ test("settlement RPCs are hardened and service-role-only", () => {
     }
 });
 
+test("the receipt is persisted before settlement completion and repaired on the fast-path", () => {
+    /* The old order marked the claim COMPLETED and wrote the receipt after: a crash between
+       the two lost the receipt forever, because every retry returned on the completed
+       fast-path. The receipt must be upserted BEFORE finalize_payment_link_settlement, and
+       the COMPLETED fast-path must self-heal a missing receipt from database truth. */
+    const receiptWrite = route.indexOf('from("receipts")');
+    const finalizeCall = route.indexOf('"finalize_payment_link_settlement"');
+    assert.ok(receiptWrite > 0 && finalizeCall > 0, "receipt upsert and finalize call must both exist");
+
+    /* Order inside the verification job: the CONFIRMED receipt upsert precedes finalization. */
+    const jobStart = route.indexOf("Schedule the async verification job");
+    const job = route.slice(jobStart);
+    const jobReceiptUpsert = job.search(/upsert\(\{\s*receipt_id: finalReceiptId/);
+    const jobFinalize = job.indexOf('"finalize_payment_link_settlement"');
+    assert.ok(jobReceiptUpsert > 0, "verification job must upsert the receipt");
+    assert.ok(jobReceiptUpsert < jobFinalize, "receipt must persist before the settlement is finalized");
+    assert.match(route, /Failed to persist payment receipt/);
+
+    /* After finalization the payment row id is back-linked, never re-created. */
+    assert.match(route, /payment_link_payment_id: newPayment\.id/);
+    assert.match(route, /\.is\("payment_link_payment_id", null\)/);
+
+    /* The COMPLETED fast-path checks for and rebuilds a missing receipt. */
+    const fastPath = route.slice(route.indexOf('claimResult?.outcome === "COMPLETED"'), route.indexOf('"FINGERPRINT_MISMATCH"'));
+    assert.match(fastPath, /from\("receipts"\)/);
+    assert.match(fastPath, /Repaired missing receipt/);
+    assert.match(fastPath, /payment_link_payment_id: paymentRow\?\.id \?\? null/);
+});
+
 test("idempotency fingerprints cannot be rewritten after a claim", () => {
     assert.match(migration, /CREATE TRIGGER idempotency_keys_immutable_fingerprint/i);
     assert.match(migration, /BEFORE UPDATE OF request_fingerprint/i);

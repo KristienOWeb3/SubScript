@@ -209,12 +209,61 @@ export async function POST(request: Request) {
         }
         if (claimResult?.outcome === "COMPLETED") {
             const completedPaymentId = claimResult.responsePayload?.paymentId;
-            if (completedPaymentId) {
-                after(async () => {
+            after(async () => {
+                if (completedPaymentId) {
                     await deliverWebhookOutboxEvent(supabase, `evt_payment_${completedPaymentId}`)
                         .catch((error) => console.error("[verify] Webhook outbox retry failed:", error));
-                });
-            }
+                }
+                /* Self-heal a settlement completed before its receipt row persisted (crash in
+                   the old write order, or a receipt write that failed after finalization).
+                   The claim fingerprint already bound tx → link → payer → receipt id, and the
+                   payment row carries the verified block, so the receipt is rebuilt from
+                   database truth rather than re-verifying the chain. */
+                try {
+                    const { data: existingReceipt } = await supabase
+                        .from("receipts")
+                        .select("receipt_id")
+                        .eq("receipt_id", finalReceiptId)
+                        .maybeSingle();
+                    if (existingReceipt) return;
+
+                    const { data: paymentRow } = await supabase
+                        .from("payment_link_payments")
+                        .select("id, verification_block")
+                        .eq("tx_hash", normalizedTx)
+                        .maybeSingle();
+
+                    const { error: repairError } = await supabase
+                        .from("receipts")
+                        .upsert({
+                            receipt_id: finalReceiptId,
+                            payment_link_id: paymentLink.id,
+                            payment_link_payment_id: paymentRow?.id ?? null,
+                            tx_hash: normalizedTx,
+                            chain_id: Number(chainId),
+                            memo_contract: settlesDirectlyToUser
+                                ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
+                                : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+                            payer_address: normalizedPayer,
+                            beneficiary_address: normalizedBeneficiary,
+                            merchant_address: paymentLink.merchant_address.toLowerCase(),
+                            amount_usdc: paymentLink.amount_usdc.toString(),
+                            memo_note: finalReceiptId,
+                            share_url: receiptUrl(finalReceiptId, requestOrigin),
+                            status: "CONFIRMED",
+                            block_number: paymentRow?.verification_block != null ? String(paymentRow.verification_block) : null,
+                            confirmed_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: "receipt_id" });
+                    if (repairError) {
+                        console.error("[verify] Missing-receipt repair failed:", repairError.message);
+                    } else {
+                        console.warn(`[verify] Repaired missing receipt ${finalReceiptId} for settled tx ${normalizedTx}`);
+                    }
+                } catch (repairErr: any) {
+                    console.error("[verify] Missing-receipt repair errored:", repairErr?.message || repairErr);
+                }
+            });
             return NextResponse.json(claimResult.responsePayload, { status: 200 });
         }
         if (claimResult?.outcome === "FINGERPRINT_MISMATCH") {
@@ -489,6 +538,41 @@ export async function POST(request: Request) {
                             }
 
                             const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
+
+                            /* Persist the public receipt BEFORE the settlement is marked
+                               COMPLETED. The on-chain payment is already verified at this point,
+                               so the receipt reflects chain truth even if finalization retries;
+                               the reverse order left a crash window where the claim was
+                               COMPLETED but the receipt never existed — and every retry took the
+                               completed fast-path, so it was never written. The payment row id
+                               is back-filled after finalization. */
+                            const { error: receiptError } = await supabase
+                                .from("receipts")
+                                .upsert({
+                                    receipt_id: finalReceiptId,
+                                    payment_link_id: paymentLink.id,
+                                    tx_hash: normalizedTx,
+                                    chain_id: Number(chainId),
+                                    memo_contract: isCctp
+                                        ? CCTP_CONFIG[Number(chainId)].tokenMessenger.toLowerCase()
+                                        : settlesDirectlyToUser
+                                        ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
+                                        : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+                                    payer_address: normalizedPayer,
+                                    beneficiary_address: normalizedBeneficiary,
+                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
+                                    amount_usdc: paymentLink.amount_usdc.toString(),
+                                    memo_note: finalReceiptId,
+                                    share_url: shareUrl,
+                                    status: "CONFIRMED",
+                                    block_number: receipt.blockNumber.toString(),
+                                    confirmed_at: new Date().toISOString(),
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: "receipt_id" });
+                            if (receiptError) {
+                                throw new Error(`Failed to persist payment receipt: ${receiptError.message}`);
+                            }
+
                             const webhookPayload = settlesDirectlyToUser ? null : createPaymentSucceededWebhook({
                                 paymentId: "pending",
                                 checkoutSessionId: paymentLink.id,
@@ -566,32 +650,16 @@ export async function POST(request: Request) {
                                 console.error("[verify] Failed to record payment audit event:", auditError.message);
                             }
 
-                            const { error: receiptError } = await supabase
+                            /* Back-link the pre-persisted receipt to the payment row created by
+                               finalization. Best-effort: receipt_id + tx_hash already bind the
+                               receipt to this settlement, the FK is informational. */
+                            const { error: receiptLinkError } = await supabase
                                 .from("receipts")
-                                .upsert({
-                                    receipt_id: finalReceiptId,
-                                    payment_link_id: paymentLink.id,
-                                    payment_link_payment_id: newPayment.id,
-                                    tx_hash: normalizedTx,
-                                    chain_id: Number(chainId),
-                                    memo_contract: isCctp
-                                        ? CCTP_CONFIG[Number(chainId)].tokenMessenger.toLowerCase()
-                                        : settlesDirectlyToUser
-                                        ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
-                                        : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
-                                    payer_address: normalizedPayer,
-                                    beneficiary_address: normalizedBeneficiary,
-                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
-                                    amount_usdc: paymentLink.amount_usdc.toString(),
-                                    memo_note: finalReceiptId,
-                                    share_url: shareUrl,
-                                    status: "CONFIRMED",
-                                    block_number: receipt.blockNumber.toString(),
-                                    confirmed_at: new Date().toISOString(),
-                                    updated_at: new Date().toISOString()
-                                }, { onConflict: "receipt_id" });
-                            if (receiptError) {
-                                throw new Error(`Failed to persist payment receipt: ${receiptError.message}`);
+                                .update({ payment_link_payment_id: newPayment.id, updated_at: new Date().toISOString() })
+                                .eq("receipt_id", finalReceiptId)
+                                .is("payment_link_payment_id", null);
+                            if (receiptLinkError) {
+                                console.error("[verify] Failed to back-link receipt to payment row:", receiptLinkError.message);
                             }
 
                             const { data: payerSettings } = await supabase
