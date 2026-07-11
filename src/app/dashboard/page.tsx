@@ -11,6 +11,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import { getDashboardUrl } from "@/utils/navigation";
 import { buildCheckoutUrl, buildSubscribeUrl } from "@/lib/checkoutUrl";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
@@ -1698,7 +1699,7 @@ export default function DashboardPage() {
                 throw new Error(nonceData.error || "Failed to fetch nonce");
             }
             const fetchedNonce = nonceData.nonce;
-            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+            const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
             const signature = await signMessageAsync({ message });
             
             const res = await fetch("/api/auth/verify-signature", {

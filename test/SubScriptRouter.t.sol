@@ -177,18 +177,28 @@ contract SubScriptRouterTest is Test {
     /* Test: Rescue stuck ERC20 tokens */
     function testRescueERC20() public {
         uint256 stuckAmount = 50 * 10**6;
-        usdc.mint(address(router), stuckAmount);
+        MockUSDC otherToken = new MockUSDC();
+        otherToken.mint(address(router), stuckAmount);
 
         /* Non-owner cannot rescue */
         vm.prank(merchant);
         vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, merchant));
-        router.rescueERC20(address(usdc), owner, stuckAmount);
+        router.rescueERC20(address(otherToken), owner, stuckAmount);
 
         /* Owner can rescue */
         vm.prank(owner);
+        router.rescueERC20(address(otherToken), owner, stuckAmount);
+        assertEq(otherToken.balanceOf(owner), stuckAmount);
+        assertEq(otherToken.balanceOf(address(router)), 0);
+    }
+
+    function testPaymentTokenRescueAlwaysReverts() public {
+        uint256 stuckAmount = 50 * 10**6;
+        usdc.mint(address(router), stuckAmount);
+
+        vm.prank(owner);
+        vm.expectRevert("Payment token rescue disabled");
         router.rescueERC20(address(usdc), owner, stuckAmount);
-        assertEq(usdc.balanceOf(owner), stuckAmount);
-        assertEq(usdc.balanceOf(address(router)), 0);
     }
 
     /* Test: Pause and unpause */

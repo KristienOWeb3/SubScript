@@ -147,24 +147,19 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     }
 
     /**
-     * @notice Recover stuck ERC20 tokens in the contract.
-     * @dev For the paymentToken, only the surplus above the merchant pull-payment ledger
-     *      can ever be rescued — the owner cannot sweep funds merchants are owed.
+     * @notice Recover unrelated ERC20 tokens accidentally sent to the contract.
+     * @dev The payment token is intentionally never rescuable. The liability counter was added
+     *      after the first deployment and cannot prove that legacy merchant balances are covered;
+     *      treating an apparent surplus as owner funds could therefore steal merchant settlement.
      */
     function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
         require(token != address(0), "Invalid token address");
         require(to != address(0), "Invalid receiver address");
         require(amount > 0, "Amount must be greater than zero");
 
+        require(token != address(paymentToken), "Payment token rescue disabled");
         uint256 balance = IERC20(token).balanceOf(address(this));
-        if (token == address(paymentToken)) {
-            uint256 surplus = balance > totalMerchantLiabilities
-                ? balance - totalMerchantLiabilities
-                : 0;
-            require(amount <= surplus, "Amount exceeds rescuable surplus");
-        } else {
-            require(amount <= balance, "Insufficient balance");
-        }
+        require(amount <= balance, "Insufficient balance");
 
         IERC20(token).safeTransfer(to, amount);
         emit ERC20Rescued(token, to, amount);

@@ -23,6 +23,7 @@ import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 // Global type declaration for Cloudflare Turnstile
 declare global {
@@ -375,7 +376,7 @@ export default function SignupPage() {
         throw new Error(nonceData.error || "Failed to fetch SIWE nonce");
       }
       const fetchedNonce = nonceData.nonce;
-      const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+      const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
       const signature = await signMessageAsync({ message });
 
       const verifyRes = await fetch("/api/auth/verify-signature", {

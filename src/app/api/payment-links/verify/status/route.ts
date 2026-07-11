@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const txHash = searchParams.get("txHash")?.toLowerCase();
+
+    if (!txHash || !/^0x[a-f0-9]{64}$/.test(txHash)) {
+        return NextResponse.json({ error: "Invalid txHash query parameter" }, { status: 400 });
+    }
+    const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const rateLimit = checkProviderRateLimit({ provider: "payment-verification-status", key: requesterIp, limit: 10, windowMs: 60_000 });
+    if (!rateLimit.ok) {
+        return NextResponse.json(
+            { error: "Too many payment-status requests" },
+            { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+        );
+    }
 
     if (!txHash) {
         return NextResponse.json({ error: "Missing txHash query parameter" }, { status: 400 });

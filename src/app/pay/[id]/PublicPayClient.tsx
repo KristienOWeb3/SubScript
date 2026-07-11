@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import { 
@@ -28,6 +27,8 @@ export interface PublicPayClientProps {
     displayCurrency?: string;
     displayAmount?: number;
     exchangeRate?: number;
+    successUrl?: string;
+    cancelUrl?: string;
 }
 
 export default function PublicPayClient({ 
@@ -35,9 +36,10 @@ export default function PublicPayClient({
     initialLinkData,
     displayCurrency = "USD",
     displayAmount,
-    exchangeRate = 1.0
+    exchangeRate = 1.0,
+    successUrl,
+    cancelUrl
 }: PublicPayClientProps) {
-    const router = useRouter();
     const routedIntentRef = useRef<string | null>(null);
     const getFiatSymbol = (currency: string) => {
         switch (currency.toUpperCase()) {
@@ -109,27 +111,25 @@ export default function PublicPayClient({
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
 
-    /* Inbox DM creation states */
-    const [isCreatingDm, setIsCreatingDm] = useState(false);
-    const [dmError, setDmError] = useState<string | null>(null);
-
-    /* Detect an existing SubScript session so we can offer "go to DMs" instead of
-       forcing a fresh wallet connection. */
-    const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null } | null>(null);
-    useEffect(() => {
-        let cancelled = false;
-        fetch("/api/auth/session")
-            .then((res) => res.json())
-            .then((data) => { if (!cancelled) setSessionInfo(data); })
-            .catch(() => { if (!cancelled) setSessionInfo(null); });
-        return () => { cancelled = true; };
-    }, []);
 
     /* Returning-payer email prompt: a wallet that already has a SubScript account but
        no email on file must supply one at checkout (it's required for receipts). */
     const [payerNeedsEmail, setPayerNeedsEmail] = useState(false);
     const [payerEmailInput, setPayerEmailInput] = useState("");
     const [payerEmailError, setPayerEmailError] = useState<string | null>(null);
+    const [payerEmailCode, setPayerEmailCode] = useState("");
+    const [payerEmailStep, setPayerEmailStep] = useState<"email" | "code">("email");
+    const [isSendingPayerEmailCode, setIsSendingPayerEmailCode] = useState(false);
+    const [isVerifyingPayerEmail, setIsVerifyingPayerEmail] = useState(false);
+    const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string } | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/auth/session")
+            .then((response) => response.json())
+            .then((data) => { if (!cancelled) setSessionInfo(data); })
+            .catch(() => { if (!cancelled) setSessionInfo(null); });
+        return () => { cancelled = true; };
+    }, []);
     useEffect(() => {
         if (!address) {
             setPayerNeedsEmail(false);
@@ -138,7 +138,7 @@ export default function PublicPayClient({
         let cancelled = false;
         fetch(`/api/payer-status?address=${address}`)
             .then((res) => res.json())
-            .then((data) => { if (!cancelled) setPayerNeedsEmail(Boolean(data?.exists) && !data?.hasEmail); })
+            .then((data) => { if (!cancelled) { setPayerNeedsEmail(data?.isExternalWallet && !data?.hasEmail); setPayerEmailStep("email"); setPayerEmailCode(""); } })
             .catch(() => { if (!cancelled) setPayerNeedsEmail(false); });
         return () => { cancelled = true; };
     }, [address]);
@@ -156,20 +156,63 @@ export default function PublicPayClient({
     const hasInjectedProvider = typeof window !== "undefined" && Boolean((window as any).ethereum);
     const noWalletDetected = typeof window !== "undefined" && !hasInjectedProvider && walletConnectors.length <= 1;
 
-    const handleGoToDms = async () => {
-        if (!linkData?.id) return;
-        setIsCreatingDm(true);
-        setDmError(null);
+
+    const hasMatchingWalletSession = Boolean(
+        sessionInfo?.loggedIn && sessionInfo.wallet && address &&
+        sessionInfo.wallet.toLowerCase() === address.toLowerCase(),
+    );
+
+    const handleSendPayerEmailCode = async () => {
+        setPayerEmailError(null);
+        const email = payerEmailInput.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setPayerEmailError("Enter a valid email address.");
+            return;
+        }
+        if (!hasMatchingWalletSession) {
+            setPayerEmailError("Sign in with this connected wallet before adding an email.");
+            return;
+        }
+        setIsSendingPayerEmailCode(true);
         try {
-            const dmRes = await fetch(`/api/payment-links/${linkData.id}/dm`, { method: "POST" });
-            const dmData = await dmRes.json().catch(() => ({}));
-            if (!dmRes.ok) {
-                throw new Error(dmData.error || "Could not create SubScript DM");
-            }
-            router.push(dmData.dashboardUrl || `/user?tab=inbox&intent=${linkData.id}`);
-        } catch (err: any) {
-            setDmError(err.message || "Failed to initiate DM session. Please try again.");
-            setIsCreatingDm(false);
+            const response = await fetch("/api/auth/otp/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, purpose: "bind_wallet_email" }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Could not send a verification code.");
+            setPayerEmailStep("code");
+            setPayerEmailCode("");
+        } catch (error: any) {
+            setPayerEmailError(error.message || "Could not send a verification code.");
+        } finally {
+            setIsSendingPayerEmailCode(false);
+        }
+    };
+
+    const handleVerifyPayerEmail = async () => {
+        setPayerEmailError(null);
+        if (!/^\d{6}$/.test(payerEmailCode.trim())) {
+            setPayerEmailError("Enter the 6-digit code we emailed you.");
+            return;
+        }
+        setIsVerifyingPayerEmail(true);
+        try {
+            const response = await fetch("/api/user/email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: payerEmailInput.trim(), code: payerEmailCode.trim() }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Could not verify your email.");
+            setPayerNeedsEmail(false);
+            setPayerEmailStep("email");
+            setPayerEmailCode("");
+        } catch (error: any) {
+            setPayerEmailError(error.message || "Could not verify your email.");
+        } finally {
+            setIsVerifyingPayerEmail(false);
         }
     };
 
@@ -306,8 +349,8 @@ export default function PublicPayClient({
         setPayerEmailError(null);
 
         /* Returning payer must provide an email before paying. */
-        if (payerNeedsEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmailInput.trim())) {
-            setPayerEmailError("Enter a valid email to continue.");
+        if (payerNeedsEmail) {
+            setPayerEmailError("Verify an email address before completing this payment.");
             return;
         }
 
@@ -493,7 +536,6 @@ export default function PublicPayClient({
                             payerAddress: address || "",
                             receiptId,
                             chainId: chainId,
-                            payerEmail: payerEmailInput.trim() || undefined
                         })
                     });
 
@@ -517,6 +559,9 @@ export default function PublicPayClient({
                                 setIsVerifying(false);
                                 setIsPaying(false);
                                 eventSource.close();
+                                if (successUrl) {
+                                    window.location.assign(successUrl);
+                                }
                             } else if (data.status === "FAILED") {
                                 setVerificationError(data.errorMessage || "Payment verification failed");
                                 setIsVerifying(false);
@@ -545,7 +590,7 @@ export default function PublicPayClient({
 
             verifyPayment();
         }
-    }, [isConfirmed, txHash, linkData, address, verifiedHash, chainId, receiptId]);
+    }, [isConfirmed, txHash, txReceipt, linkData, address, verifiedHash, chainId, receiptId, successUrl]);
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
@@ -682,33 +727,6 @@ export default function PublicPayClient({
 
                         {!isConnected ? (
                             <div className="space-y-4">
-                                {/* Already signed in to SubScript: offer DMs instead of a fresh connect. */}
-                                {sessionInfo?.loggedIn && (
-                                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
-                                        <p className="text-[11px] leading-relaxed text-white/75">
-                                            You're already signed in to SubScript
-                                            {sessionInfo.email ? ` as ${sessionInfo.email}` : sessionInfo.wallet ? ` (${sessionInfo.wallet.slice(0, 6)}...${sessionInfo.wallet.slice(-4)})` : ""}.
-                                            Open this request in your DMs, or connect a wallet below to pay directly.
-                                        </p>
-                                        <button
-                                            onClick={handleGoToDms}
-                                            disabled={isCreatingDm}
-                                            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
-                                        >
-                                            {isCreatingDm ? (
-                                                <><Loader2 className="w-4 h-4 animate-spin text-black" /> Opening DMs...</>
-                                            ) : (
-                                                <>Go to my SubScript DMs <ArrowRight className="w-4 h-4" /></>
-                                            )}
-                                        </button>
-                                        {dmError && <p className="text-[10px] font-mono text-red-400">{dmError}</p>}
-                                        <div className="flex items-center gap-3 pt-1">
-                                            <span className="h-px flex-1 bg-white/10" />
-                                            <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a wallet</span>
-                                            <span className="h-px flex-1 bg-white/10" />
-                                        </div>
-                                    </div>
-                                )}
 
                                 {noWalletDetected ? (
                                     <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5 space-y-3 text-center">
@@ -835,30 +853,6 @@ export default function PublicPayClient({
                                                 View Tx on Explorer <ExternalLink className="w-3 h-3" />
                                             </a>
                                         )}
-                                        {verificationStatus === "Payment confirmed and settled successfully!" && (
-                                            <div className="w-full pt-4 border-t border-white/5 space-y-3">
-                                                {dmError && (
-                                                    <p className="text-[10px] font-mono text-red-400 text-center">{dmError}</p>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    onClick={handleGoToDms}
-                                                    disabled={isCreatingDm}
-                                                    className="w-full py-4 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                                                >
-                                                    {isCreatingDm ? (
-                                                        <>
-                                                            <Loader2 className="w-4 h-4 animate-spin text-black" />
-                                                            Opening Inbox DMs...
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            Go to Inbox DMs <ArrowRight className="w-4 h-4" />
-                                                        </>
-                                                    )}
-                                                </button>
-                                            </div>
-                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -870,18 +864,25 @@ export default function PublicPayClient({
                                         )}
 
                                         {payerNeedsEmail && (
-                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-2 text-left">
-                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Add your email</p>
+                                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] p-4 space-y-3 text-left">
+                                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Verify your email</p>
                                                 <p className="text-[10px] leading-relaxed text-white/55">
-                                                    Welcome back — we need an email for your receipt and account notifications before this payment.
+                                                    External wallets must verify an email for receipts and security notices before paying.
                                                 </p>
-                                                <input
-                                                    type="email"
-                                                    value={payerEmailInput}
-                                                    onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }}
-                                                    placeholder="you@example.com"
-                                                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none"
-                                                />
+                                                {!hasMatchingWalletSession && (
+                                                    <p className="text-[10px] leading-relaxed text-amber-200/80">Sign in with this same wallet first, then return here to verify your email.</p>
+                                                )}
+                                                {payerEmailStep === "email" ? <>
+                                                    <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                                                    <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !hasMatchingWalletSession} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                        {isSendingPayerEmailCode ? "Sending code…" : "Send verification code"}
+                                                    </button>
+                                                </> : <>
+                                                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                                                    <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                                                        {isVerifyingPayerEmail ? "Verifying…" : "Verify email"}
+                                                    </button>
+                                                </>}
                                                 {payerEmailError && <p className="text-[10px] font-mono text-red-400">{payerEmailError}</p>}
                                             </div>
                                         )}
@@ -1006,6 +1007,16 @@ export default function PublicPayClient({
                                     </motion.div>
                                 )}
                             </div>
+                        )}
+
+                        {cancelUrl && !verificationStatus && (
+                            <button
+                                type="button"
+                                onClick={() => window.location.assign(cancelUrl)}
+                                className="w-full text-[10px] font-bold uppercase tracking-wider text-white/40 transition hover:text-white/70"
+                            >
+                                Cancel checkout
+                            </button>
                         )}
 
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">

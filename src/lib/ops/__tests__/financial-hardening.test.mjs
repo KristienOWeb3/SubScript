@@ -79,6 +79,61 @@ test("merchant premium upgrade supports embedded email wallet sessions", () => {
     assert.doesNotMatch(page, /if\s*\(!isConnected\s*\)\s*\{[\s\S]{0,200}return;[\s\S]{0,200}\}\s*setCheckoutError\("Please connect your merchant wallet first\."\)/);
 });
 
+test("premium verification trusts SubscriptionCreated subscriber over custody tx sender", () => {
+    const verifier = source("src/lib/payments/verifyTransaction.ts");
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+
+    assert.doesNotMatch(verifier, /Transaction sender does not match session merchant/);
+    assert.doesNotMatch(verifier, /Receipt sender does not match session merchant/);
+    assert.match(verifier, /subscriber:\s*normalizeAddress\(parsed\.args\.subscriber\)/);
+    assert.match(processor, /const txSubscriber = verificationResult\.subscriber/);
+    assert.doesNotMatch(processor, /const txSender = normalizeAddress\(verificationResult\.tx!\.from\)/);
+});
+
+test("premium finalization can recover false-negative custody sender mismatches", () => {
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    const worker = source("src/lib/payments/reconciliationWorker.ts");
+    const migration = source("supabase/migrations/20260711003637_premium_upgrade_claim_ownership.sql");
+
+    assert.match(processor, /isRecoverableCustodySenderMismatch/);
+    assert.match(processor, /\["FAILED",\s*"FAILED_PERMANENTLY"\]/);
+    assert.match(processor, /failure_code !== "VERIFICATION_FAILED"/);
+    assert.match(processor, /sender does not match session merchant/);
+    assert.match(processor, /Revalidating false-negative custody sender mismatch/);
+    assert.match(worker, /rpc\("claim_pending_payment_sessions"/);
+    assert.match(worker, /p_claim_id:\s*reconciliationRunId/);
+    assert.doesNotMatch(worker, /\.eq\("status",\s*"FAILED_PERMANENTLY"\)/);
+    assert.match(migration, /candidate\.status = 'FAILED_PERMANENTLY'/);
+    assert.match(migration, /candidate\.failure_code = 'VERIFICATION_FAILED'/);
+    assert.match(migration, /FOR UPDATE SKIP LOCKED/);
+});
+
+test("premium retries reuse a global transaction lock only for the same session", () => {
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    const duplicateBlock = processor.slice(processor.indexOf("if (lockError)"));
+
+    assert.match(processor, /rpc\("claim_premium_payment_session"/);
+    assert.match(duplicateBlock, /select\("event_type,payload"\)/);
+    assert.match(duplicateBlock, /existingLock\?\.event_type === "premium_upgrade"/);
+    assert.match(duplicateBlock, /existingLock\?\.payload\?\.session_id/);
+    assert.match(duplicateBlock, /Existing transaction lock belongs to this session; resuming activation/);
+    assert.match(duplicateBlock, /Global transaction lock belongs to another session/);
+});
+
+test("premium terminal transitions require the active database claim", () => {
+    const processor = source("src/lib/payments/processPremiumUpgrade.ts");
+    const activation = source("src/lib/payments/activateSubscription.ts");
+    const worker = source("src/lib/payments/reconciliationWorker.ts");
+    const migration = source("supabase/migrations/20260711003637_premium_upgrade_claim_ownership.sql");
+
+    assert.match(processor, /\.eq\("status",\s*"PROCESSING"\)[\s\S]{0,160}\.eq\("processing_claim_id",\s*processingClaimId\)/);
+    assert.match(activation, /p_claim_id:\s*claimId/);
+    assert.match(activation, /status:\s*"NEEDS_RECONCILIATION"[\s\S]{0,500}\.eq\("status",\s*"PROCESSING"\)[\s\S]{0,160}\.eq\("processing_claim_id",\s*claimId\)/);
+    assert.match(worker, /failure_code:\s*"RECONCILIATION_CRASH"[\s\S]{0,500}\.eq\("status",\s*"PROCESSING"\)[\s\S]{0,160}\.eq\("processing_claim_id",\s*reconciliationRunId\)/);
+    assert.match(migration, /session\.processing_claim_id = p_claim_id[\s\S]{0,160}FOR UPDATE/);
+    assert.match(migration, /SET status = 'COMPLETED'[\s\S]{0,400}AND processing_claim_id = p_claim_id/);
+});
+
 test("failed on-chain cancellation is never persisted as canceled", () => {
     const route = source("src/app/api/cron/customer-billing/route.ts");
     const failureBlock = route.slice(route.indexOf("CANCEL_AT_PERIOD_END_FAILED") - 900);
@@ -103,7 +158,7 @@ test("contract health honors production address overrides", () => {
 });
 
 test("reconciliation migration can reclaim NEEDS_RECONCILIATION sessions", () => {
-    const migration = source("supabase/migrations/20260706000000_financial_safety_repairs.sql");
+    const migration = source("supabase/migrations/20260711003637_premium_upgrade_claim_ownership.sql");
 
-    assert.match(migration, /status\s+IN\s*\('PENDING',\s*'FAILED',\s*'NEEDS_RECONCILIATION'\)/i);
+    assert.match(migration, /candidate\.status = 'NEEDS_RECONCILIATION'/);
 });

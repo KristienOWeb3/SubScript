@@ -673,29 +673,25 @@ describe("SubScript", function () {
       expect(await router.merchantBalances(merchant.address)).to.equal(0);
     });
 
-    it("should never allow the owner to rescue paymentToken owed to merchants", async function () {
+    it("should never allow the owner to rescue the payment token", async function () {
       const { usdc, router, owner, subscriber, merchant } = await loadFixture(deployRouterFixture);
 
       const amount = ethers.parseUnits("100", 6);
       await router.connect(subscriber).depositForMerchant(merchant.address, amount, "receipt-1");
       expect(await router.totalMerchantLiabilities()).to.equal(amount);
 
-      /* The entire balance is merchant-owed: any paymentToken rescue must revert */
+      /* Legacy deposits predate the liability counter, so payment-token rescue stays disabled
+         even when the current counter appears to leave a surplus. */
       await expect(
         router.rescueERC20(await usdc.getAddress(), owner.address, 1)
-      ).to.be.revertedWith("Amount exceeds rescuable surplus");
+      ).to.be.revertedWith("Payment token rescue disabled");
 
-      /* Tokens sent directly to the contract (outside the ledger) are true surplus */
+      /* Direct transfers cannot be distinguished safely from pre-upgrade liabilities. */
       const surplus = ethers.parseUnits("5", 6);
       await usdc.connect(subscriber).transfer(await router.getAddress(), surplus);
-      await expect(router.rescueERC20(await usdc.getAddress(), owner.address, surplus))
-        .to.emit(router, "ERC20Rescued")
-        .withArgs(await usdc.getAddress(), owner.address, surplus);
-
-      /* But not a single unit beyond the surplus */
       await expect(
-        router.rescueERC20(await usdc.getAddress(), owner.address, 1)
-      ).to.be.revertedWith("Amount exceeds rescuable surplus");
+        router.rescueERC20(await usdc.getAddress(), owner.address, surplus)
+      ).to.be.revertedWith("Payment token rescue disabled");
 
       /* Withdrawal releases the liability */
       await router.connect(merchant).withdraw();

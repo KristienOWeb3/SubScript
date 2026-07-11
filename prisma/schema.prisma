@@ -359,6 +359,7 @@ model TransactionVerification {
 model WebhookDelivery {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   webhookEndpointId String   @map("webhook_endpoint_id") @db.Uuid
+  eventId           String?  @map("event_id")
   event             String
   status            String
   payload           Json
@@ -371,6 +372,7 @@ model WebhookDelivery {
 
   @@index([webhookEndpointId])
   @@index([status])
+  @@unique([webhookEndpointId, eventId], map: "webhook_deliveries_endpoint_event_unique")
   @@map("webhook_deliveries")
 }
 

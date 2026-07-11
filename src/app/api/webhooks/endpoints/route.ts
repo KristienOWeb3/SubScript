@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         }
 
         const { url } = body;
-        const urlValidation = validateWebhookUrl(url);
+        const urlValidation = await validateWebhookUrl(url);
         if (!urlValidation.ok) {
             return NextResponse.json({ error: urlValidation.error }, { status: 400 });
         }

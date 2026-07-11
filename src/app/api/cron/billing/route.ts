@@ -439,6 +439,7 @@ export async function POST(request: Request) {
                 }
             };
 
+            let claimedSequenceId: number | null = null;
             try {
                 /* Fetch subscription state on-chain */
                 const subOnChain = await standardContract.subscriptions(subId);
@@ -513,15 +514,7 @@ export async function POST(request: Request) {
                     continue;
                 }
 
-                /* Active on-chain, check balance and allowance */
-                const balance = await usdcContract.balanceOf(subscriber);
-                const allowance = await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS);
                 const requiredAmount = BigInt(subOnChain[2] || "10000000"); /* amount is index 2 */
-
-                if (balance < requiredAmount || allowance < requiredAmount) {
-                    await handlePaymentFailure(subscriber, "Insufficient balance or allowance");
-                    continue;
-                }
 
                 /* Bill only the LATEST due sequence — never back-charge lapsed periods. Walking up
                    from the lowest unexecuted sequence would, after a FAILED gap, charge the user for
@@ -541,20 +534,77 @@ export async function POST(request: Request) {
                     continue;
                 }
                 const sequenceId = Number((nowSeconds - nextPaymentTs) / periodSeconds) + 1;
-
-                if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: sequenceId,
+                    p_lease_seconds: 600,
+                });
+                if (claimError) {
+                    throw new Error(`Failed to claim billing sequence: ${claimError.message}`);
+                }
+                if (!claimed) {
                     results.push({
                         subId,
                         subscriber,
-                        action: "ALREADY_SETTLED_ON_CHAIN",
+                        action: "BILLING_SEQUENCE_ALREADY_CLAIMED",
+                        success: true,
+                    });
+                    continue;
+                }
+                claimedSequenceId = sequenceId;
+
+                if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
+                    /* A prior worker reached chain finality but died before mirroring state. Repair
+                       the database instead of misclassifying the contract's duplicate guard as a
+                       failed renewal. */
+                    await supabase.from("subscriptions").update({
+                        status: "ACTIVE",
+                        tier: 1,
+                        downgrade_failures: 0,
+                        last_settlement_timestamp: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    }).eq("subscription_id", subId);
+                    await supabase.from("merchants").update({
+                        tier: "PREMIUM",
+                        updated_at: new Date().toISOString(),
+                    }).eq("wallet_address", subscriber.toLowerCase());
+                    await supabase.rpc("complete_subscription_billing", {
+                        p_subscription_id: subId,
+                        p_sequence_id: sequenceId,
+                        p_tx_hash: null,
+                    });
+                    claimedSequenceId = null;
+                    results.push({
+                        subId,
+                        subscriber,
+                        action: "ALREADY_SETTLED_ON_CHAIN_REPAIRED",
                         success: true
                     });
+                    continue;
+                }
+
+                /* Active on-chain, check balance and allowance only after claiming the sequence so
+                   overlapping workers cannot emit duplicate dunning transitions. */
+                const balance = await usdcContract.balanceOf(subscriber);
+                const allowance = await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS);
+                if (balance < requiredAmount || allowance < requiredAmount) {
+                    await handlePaymentFailure(subscriber, "Insufficient balance or allowance");
+                    await supabase.rpc("release_subscription_billing", {
+                        p_subscription_id: subId,
+                        p_sequence_id: sequenceId,
+                    });
+                    claimedSequenceId = null;
                     continue;
                 }
 
                 /* Check if payment is due on-chain (authoritative clock) */
                 const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
                 if (!isDueOnChain) {
+                    await supabase.rpc("release_subscription_billing", {
+                        p_subscription_id: subId,
+                        p_sequence_id: sequenceId,
+                    });
+                    claimedSequenceId = null;
                     results.push({
                         subId,
                         subscriber,
@@ -632,6 +682,13 @@ export async function POST(request: Request) {
                     txHash: tx.hash,
                 })).catch(() => { /* delivery is best-effort */ });
 
+                await supabase.rpc("complete_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: sequenceId,
+                    p_tx_hash: tx.hash,
+                });
+                claimedSequenceId = null;
+
                 results.push({
                     subId,
                     subscriber,
@@ -646,7 +703,38 @@ export async function POST(request: Request) {
                 try {
                     const subOnChain = await standardContract.subscriptions(subId);
                     const subscriber = subOnChain[0];
-                    await handlePaymentFailure(subscriber, err.message || "Unknown error");
+                    if (claimedSequenceId !== null && await standardContract.isSequenceExecuted(subId, claimedSequenceId)) {
+                        await supabase.from("subscriptions").update({
+                            status: "ACTIVE",
+                            tier: 1,
+                            downgrade_failures: 0,
+                            last_settlement_timestamp: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                        }).eq("subscription_id", subId);
+                        await supabase.from("merchants").update({
+                            tier: "PREMIUM",
+                            updated_at: new Date().toISOString(),
+                        }).eq("wallet_address", subscriber.toLowerCase());
+                        await supabase.rpc("complete_subscription_billing", {
+                            p_subscription_id: subId,
+                            p_sequence_id: claimedSequenceId,
+                            p_tx_hash: null,
+                        });
+                        results.push({
+                            subId,
+                            subscriber,
+                            action: "PAYMENT_EXECUTED_STATE_REPAIRED",
+                            success: true,
+                        });
+                    } else {
+                        if (claimedSequenceId !== null) {
+                            await supabase.rpc("release_subscription_billing", {
+                                p_subscription_id: subId,
+                                p_sequence_id: claimedSequenceId,
+                            });
+                        }
+                        await handlePaymentFailure(subscriber, err.message || "Unknown error");
+                    }
                 } catch (fallbackErr: any) {
                     console.error(`Fallback check failed for sub ${subId}:`, fallbackErr);
                     results.push({

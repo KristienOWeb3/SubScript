@@ -18,6 +18,7 @@ import { getDashboardUrl } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 function SignInContent() {
   const router = useRouter();
@@ -217,7 +218,7 @@ function SignInContent() {
         throw new Error(nonceData.error || "Failed to fetch SIWE nonce");
       }
       const fetchedNonce = nonceData.nonce;
-      const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+      const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
       const signature = await signMessageAsync({ message });
 
       const verifyRes = await fetch("/api/auth/verify-signature", {

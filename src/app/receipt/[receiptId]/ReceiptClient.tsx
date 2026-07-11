@@ -7,6 +7,7 @@ import { injected } from "wagmi/connectors";
 import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, ShieldAlert, Key } from "@/components/icons";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { Identity } from "@/components/Identity";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 interface ReceiptClientProps {
     receiptId: string;
@@ -127,7 +128,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
             if (!nonceData.nonce) throw new Error("Failed to get SIWE nonce");
 
             // 2. Sign message
-            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${nonceData.nonce}`;
+            const message = buildWalletAuthMessage({ address: connectedAddress, nonce: nonceData.nonce, domain: window.location.host, uri: window.location.origin });
             const signature = await signMessageAsync({ message });
 
             // 3. Verify signature

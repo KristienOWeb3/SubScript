@@ -1,6 +1,7 @@
 /* API route for internal webhook and cron execution of merchant premium billing */
 
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { verifyWebhookSignature } from "@/lib/webhooks";
@@ -165,6 +166,26 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Missing subscriber address" }, { status: 400 });
         }
 
+        /* The signed raw body is immutable: replaying a captured request necessarily produces the
+           same digest. Claim it before changing entitlement state so an older success event cannot
+           be replayed after a cancellation/failure within the signature tolerance window. */
+        const executionKey = `internal-billing:${crypto.createHash("sha256").update(rawBody).digest("hex")}`;
+        const { error: claimError } = await supabaseAdmin
+            .from("idempotency_keys")
+            .insert({
+                execution_key: executionKey,
+                status: "PROCESSING",
+                response_payload: null,
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            });
+        if (claimError?.code === "23505") {
+            return NextResponse.json({ success: true, duplicate: true, message: "Event already processed" });
+        }
+        if (claimError) {
+            console.error("[internal/billing] Failed to claim webhook event:", claimError.message);
+            return NextResponse.json({ error: "Database idempotency check failed" }, { status: 500 });
+        }
+
         /* 3. Execute state transitions based on subscription event type */
         let newTier: number = 0;
         let actionMessage = "";
@@ -185,6 +206,11 @@ export async function POST(request: Request) {
             actionMessage = "Downgraded merchant to FREE";
         } else {
             /* Ignore unhandled events but return 200 */
+            await supabaseAdmin.from("idempotency_keys").update({
+                status: "COMPLETED",
+                response_payload: { event, ignored: true },
+                updated_at: new Date().toISOString(),
+            }).eq("execution_key", executionKey);
             return NextResponse.json({ success: true, message: `No action taken for event: ${event}` });
         }
 
@@ -198,9 +224,19 @@ export async function POST(request: Request) {
             .eq("wallet_address", subscriber);
 
         if (updateError) {
+            await supabaseAdmin.from("idempotency_keys").delete().eq("execution_key", executionKey);
             console.error(`Failed to update tier for merchant ${subscriber}:`, updateError);
             return NextResponse.json({ error: "Database update failed" }, { status: 500 });
         }
+
+        await supabaseAdmin
+            .from("idempotency_keys")
+            .update({
+                status: "COMPLETED",
+                response_payload: { event, subscriber, tier: newTier },
+                updated_at: new Date().toISOString(),
+            })
+            .eq("execution_key", executionKey);
 
         console.log(`[Billing Webhook] ${actionMessage} for ${subscriber}. Event: ${event}`);
 

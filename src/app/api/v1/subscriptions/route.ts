@@ -6,11 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
-import { buildCheckoutUrl } from "@/lib/checkoutUrl";
+import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { readSubscriptionCheckoutMeta, type SubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
 
 const SUBSCRIPT_ABI = [
     {
@@ -45,15 +46,6 @@ const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     yearly: 31_536_000,
 };
 
-type SubscriptionMeta = {
-    kind: "subscription";
-    intervalSeconds: number;
-    intervalCount: number;
-    interval: string | null;
-    subscriber: string | null;
-    planId: string | null;
-};
-
 /* Accepts a session cookie or a Bearer sk_test_/sk_live_ key. Returns the merchant wallet
    (lowercased) plus whether the request is in test/sandbox mode. */
 async function authenticateMerchant(request: Request): Promise<
@@ -83,11 +75,6 @@ async function authenticateMerchant(request: Request): Promise<
 
 function microsToDecimal(micros: bigint) {
     return formatUnits(micros, 6);
-}
-
-function readSubscriptionMeta(stateSnapshot: unknown): SubscriptionMeta | null {
-    const sub = (stateSnapshot as { subscription?: SubscriptionMeta } | null)?.subscription;
-    return sub && sub.kind === "subscription" ? sub : null;
 }
 
 /* ----------------------------------- GET ----------------------------------- */
@@ -206,7 +193,7 @@ export async function GET(request: Request) {
             take: 100,
         });
         const data = links
-            .map((link: any) => ({ link, meta: readSubscriptionMeta(link.stateSnapshot) }))
+            .map((link: any) => ({ link, meta: readSubscriptionCheckoutMeta(link.stateSnapshot) }))
             .filter((x: any) => x.meta)
             .map(({ link, meta }: any) => ({
                 id: `sub_${link.id}`,
@@ -219,7 +206,7 @@ export async function GET(request: Request) {
                 intervalSeconds: meta.intervalSeconds,
                 intervalCount: meta.intervalCount,
                 interval: meta.interval || null,
-                checkoutUrl: buildCheckoutUrl(link.id),
+                checkoutUrl: buildSubscribeUrl(link.id),
                 createdAt: link.createdAt,
             }));
         return NextResponse.json({ object: "list", data }, { status: 200 });
@@ -294,7 +281,7 @@ export async function POST(request: Request) {
             if (typeof interval === "string" && interval in NAMED_INTERVAL_SECONDS) {
                 periodSeconds = NAMED_INTERVAL_SECONDS[interval];
                 resolvedInterval = interval;
-            } else if (intervalSeconds !== undefined && intervalSeconds !== null && Number.isInteger(Number(intervalSeconds)) && Number(intervalSeconds) > 0) {
+            } else if (intervalSeconds !== undefined && intervalSeconds !== null && Number.isSafeInteger(Number(intervalSeconds)) && Number(intervalSeconds) > 0) {
                 periodSeconds = Number(intervalSeconds);
             } else {
                 return NextResponse.json({ error: "Bad Request: provide interval (daily|weekly|monthly|yearly) or a positive intervalSeconds" }, { status: 400 });
@@ -309,7 +296,7 @@ export async function POST(request: Request) {
 
         let subscriberAddress: string | null = null;
         if (subscriber !== undefined && subscriber !== null && subscriber !== "") {
-            if (typeof subscriber !== "string" || !subscriber.startsWith("0x") || subscriber.length !== 42) {
+            if (typeof subscriber !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(subscriber)) {
                 return NextResponse.json({ error: "Bad Request: invalid subscriber address" }, { status: 400 });
             }
             subscriberAddress = subscriber.toLowerCase();
@@ -324,7 +311,7 @@ export async function POST(request: Request) {
         if (idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim() !== "") {
             const existing = await prisma.paymentLink.findFirst({ where: { idempotencyKey, merchantAddress } });
             if (existing) {
-                const meta = readSubscriptionMeta(existing.stateSnapshot);
+                const meta = readSubscriptionCheckoutMeta(existing.stateSnapshot);
                 /* Reject if the same key was used for a one-time intent (different resource shape). */
                 if (!meta) {
                     return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
@@ -342,7 +329,7 @@ export async function POST(request: Request) {
                         intervalSeconds: meta?.intervalSeconds ?? periodSeconds,
                         intervalCount: meta?.intervalCount ?? count,
                         interval: meta?.interval ?? resolvedInterval,
-                        checkoutUrl: buildCheckoutUrl(existing.id),
+                        checkoutUrl: buildSubscribeUrl(existing.id),
                         createdAt: existing.createdAt,
                     },
                 }, { status: 200 });
@@ -350,7 +337,7 @@ export async function POST(request: Request) {
         }
 
         // 3. Create the subscription checkout session (PaymentLink + subscription metadata).
-        const subMeta: SubscriptionMeta = {
+        const subMeta: SubscriptionCheckoutMeta = {
             kind: "subscription",
             intervalSeconds: periodSeconds,
             intervalCount: count,
@@ -393,7 +380,7 @@ export async function POST(request: Request) {
                 intervalSeconds: periodSeconds,
                 intervalCount: count,
                 interval: resolvedInterval,
-                checkoutUrl: buildCheckoutUrl(link.id),
+                checkoutUrl: buildSubscribeUrl(link.id),
                 createdAt: link.createdAt,
             },
             sandbox: isSandbox,
@@ -431,11 +418,14 @@ export async function DELETE(request: Request) {
 
         // Checkout-session subscription (uuid): cancel it only if it hasn't activated on-chain.
         const link = await prisma.paymentLink.findUnique({ where: { id: idParam } });
-        if (!link || link.merchantAddress.toLowerCase() !== merchantAddress || !readSubscriptionMeta(link.stateSnapshot)) {
+        if (!link || link.merchantAddress.toLowerCase() !== merchantAddress || !readSubscriptionCheckoutMeta(link.stateSnapshot)) {
             return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
         }
-        if (link.status === "PAID") {
-            return NextResponse.json({ error: "Conflict: active subscriptions must be canceled by on-chain subscription id" }, { status: 409 });
+        if (link.status !== "PENDING") {
+            const error = link.status === "PAID"
+                ? "Conflict: active subscriptions must be canceled by on-chain subscription id"
+                : "Conflict: this subscription checkout can no longer be canceled";
+            return NextResponse.json({ error }, { status: 409 });
         }
         await prisma.paymentLink.update({
             where: { id: idParam },

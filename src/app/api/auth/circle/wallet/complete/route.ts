@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
-import { SignJWT } from "jose";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { withPgClient, pgMaybeOne } from "@/lib/serverPg";
 import crypto from "crypto";
+import { createSessionToken } from "@/lib/auth";
 
 async function verifyGoogleIdToken(idToken: string, clientId: string): Promise<{ email: string; sub: string } | null> {
     try {
@@ -83,20 +83,8 @@ export async function POST(request: Request) {
             }
         }
 
-        const secretStr = process.env.JWT_SECRET;
-        if (!secretStr) {
-            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
-        }
-
-        const secret = new TextEncoder().encode(secretStr);
         const sessionDuration = 24 * 60 * 60 * 1000; // 1 day
-        const expiresAt = new Date(Date.now() + sessionDuration);
-
-        // Sign the session token
-        const jwt = await new SignJWT({ address: walletAddress.toLowerCase(), authenticatedAt: Date.now() })
-            .setProtectedHeader({ alg: "HS256" })
-            .setExpirationTime("1d")
-            .sign(secret);
+        const { token: jwt, expiresAt } = await createSessionToken(walletAddress, sessionDuration);
 
         await ensureDefaultAliasFromEmail(walletAddress, emailVal);
 

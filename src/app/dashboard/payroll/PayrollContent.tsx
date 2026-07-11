@@ -27,6 +27,7 @@ import {
     USDC_ERC20_ABI
 } from "@/lib/contracts/abis";
 import { buildPermitSingle } from "@/lib/payroll/permit2";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -416,7 +417,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 throw new Error(nonceData.error || "Failed to fetch nonce");
             }
             const fetchedNonce = nonceData.nonce;
-            const message = `Sign this message to verify ownership of your SubScript Merchant Dashboard.\n\nNonce: ${fetchedNonce}`;
+            const message = buildWalletAuthMessage({ address, nonce: fetchedNonce, domain: window.location.host, uri: window.location.origin });
             const signature = await signMessageAsync({ message });
             
             const res = await fetch("/api/auth/verify-signature", {

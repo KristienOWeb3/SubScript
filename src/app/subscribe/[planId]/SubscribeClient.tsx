@@ -17,6 +17,7 @@ type PlanData = {
     periodSeconds: string;
     minCommitmentSeconds?: string;
     merchantAddress: string;
+    checkoutSessionId?: string;
     merchant?: {
         address: string;
         name: string;
@@ -100,6 +101,7 @@ export default function SubscribeClient({
                         periodSeconds: data.plan.periodSeconds,
                         minCommitmentSeconds: data.plan.minCommitmentSeconds ?? "0",
                         merchantAddress: data.plan.merchantAddress,
+                        checkoutSessionId: data.plan.checkoutSessionId,
                         merchant: data.merchant,
                     });
                     setLoadError(null);
@@ -137,7 +139,9 @@ export default function SubscribeClient({
             const res = await fetch("/api/user/subscription/subscribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId: plan.id }),
+                body: JSON.stringify(plan.checkoutSessionId
+                    ? { checkoutSessionId: plan.checkoutSessionId }
+                    : { planId: plan.id }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to subscribe.");

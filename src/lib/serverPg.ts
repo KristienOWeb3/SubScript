@@ -1,19 +1,31 @@
-const { Client } = require("pg") as any;
+const { Pool } = require("pg") as any;
 import { getDatabaseUrl } from "@/lib/databaseUrl";
 
 type PgClient = any;
 
-export async function withPgClient<T>(callback: (client: PgClient) => Promise<T>) {
-    const client = new Client({
-        connectionString: getDatabaseUrl(),
-        ssl: { rejectUnauthorized: false },
-    });
+const globalForPg = globalThis as typeof globalThis & { __subscriptPgPool?: any };
 
-    await client.connect();
+function getPool() {
+    if (!globalForPg.__subscriptPgPool) {
+        const connectionString = getDatabaseUrl();
+        const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
+        globalForPg.__subscriptPgPool = new Pool({
+            connectionString,
+            max: 10,
+            idleTimeoutMillis: 30_000,
+            connectionTimeoutMillis: 10_000,
+            ...(isLocal ? {} : { ssl: { rejectUnauthorized: true } }),
+        });
+    }
+    return globalForPg.__subscriptPgPool;
+}
+
+export async function withPgClient<T>(callback: (client: PgClient) => Promise<T>) {
+    const client = await getPool().connect();
     try {
         return await callback(client);
     } finally {
-        await client.end();
+        client.release();
     }
 }
 

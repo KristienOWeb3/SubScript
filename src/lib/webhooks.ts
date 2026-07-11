@@ -129,7 +129,7 @@ export async function sendWebhookRequest(
 
     /* Validate + consume the destination rate limit once for the whole delivery (all retries go to
        the same host for the same event — they shouldn't each burn a token). */
-    const urlValidation = validateWebhookUrl(url);
+    const urlValidation = await validateWebhookUrl(url);
     if (!urlValidation.ok) {
         return { status: 400, responseText: urlValidation.error };
     }

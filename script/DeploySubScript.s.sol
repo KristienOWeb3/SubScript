@@ -11,7 +11,7 @@ import "../test/mocks/MockUSDC.sol";
  */
 contract DeploySubScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0x0637528b9afbc627b22542e333971af4dd2f0f48a99f261436cf8f35efa15c8a));
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         
         address owner = vm.envOr("MULTISIG_ADDRESS", address(0x725D56151CeaC9eAd625241D13b8307B22EDDb10));
         address treasury = vm.envOr("TREASURY_ADDRESS", address(0xaFCb6d3e9ebeD1A4BF78384689A1fFf280132295));

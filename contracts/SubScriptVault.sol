@@ -221,12 +221,12 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     /* ──────────────────────────── Draw (cycle settlement) ────────── */
 
     /// @notice Merchant draws this cycle's usage cost from a user's vault.
-    function drawUsage(address user, uint256 amount) external nonReentrant {
+    function drawUsage(address user, uint256 amount) external nonReentrant whenNotPaused {
         _draw(msg.sender, user, amount);
     }
 
     /// @notice SubScript keeper draws on a merchant's behalf at cycle end.
-    function drawUsageFor(address merchant, address user, uint256 amount) external nonReentrant {
+    function drawUsageFor(address merchant, address user, uint256 amount) external nonReentrant whenNotPaused {
         require(authorizedDrawers[msg.sender], "not drawer");
         _draw(merchant, user, amount);
     }
@@ -235,6 +235,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         Vault storage v = vaults[user][merchant];
         require(v.active, "inactive");
         require(v.lockedUntil != 0 && block.timestamp >= v.lockedUntil, "cycle not mature");
+        require(block.timestamp < uint256(v.lockedUntil) + RECLAIM_GRACE, "reclaim window opened");
 
         // Never create debt: the merchant can only draw up to the escrowed balance.
         // Usage is gated off-chain so it should not exceed the commit in the first place.
@@ -258,7 +259,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     /* ──────────────────────────── Merchant settlement ────────────── */
 
-    function merchantClaim() external nonReentrant {
+    function merchantClaim() external nonReentrant whenNotPaused {
         uint256 grossAmount = merchantClaimable[msg.sender];
         require(grossAmount > 0, "nothing to claim");
         require(treasury != address(0), "treasury=0");

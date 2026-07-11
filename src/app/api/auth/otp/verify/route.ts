@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/custody/provision";
-import { SignJWT } from "jose";
 import { sanitizeInput } from "@/utils/security";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
@@ -15,6 +14,7 @@ import {
 } from "@/lib/offlineDb";
 import { setSessionCookie } from "@/lib/authCookies";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
+import { createSessionToken } from "@/lib/auth";
 
 function hashOtp(email: string, code: string) {
     const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         try {
             record = await withPgClient(async (client) => {
                 const result = await client.query(
-                    "select code, expires_at from otp_codes where email = $1 limit 1",
+                    "select code, expires_at from otp_codes where email = $1 and purpose = 'LOGIN' limit 1",
                     [emailVal]
                 );
                 return result.rows[0] || null;
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
             } else {
                 try {
                     await withPgClient(async (client) => {
-                        await client.query("delete from otp_codes where email = $1", [emailVal]);
+                        await client.query("delete from otp_codes where email = $1 and purpose = 'LOGIN'", [emailVal]);
                     });
                 } catch (e) {}
             }
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
             try {
                 consumed = await withPgClient(async (client) => {
                     const del = await client.query(
-                        "delete from otp_codes where email = $1 and code = $2",
+                        "delete from otp_codes where email = $1 and code = $2 and purpose = 'LOGIN'",
                         [emailVal, record.code]
                     );
                     return ((del as { rowCount?: number }).rowCount ?? 0) > 0;
@@ -179,20 +179,8 @@ export async function POST(request: Request) {
             }
         }
 
-        const secretStr = process.env.JWT_SECRET;
-        if (!secretStr) {
-            return NextResponse.json({ error: "Internal Server Error: Secret key configuration missing" }, { status: 500 });
-        }
-
-        const secret = new TextEncoder().encode(secretStr);
         const sessionDuration = rememberMeVal ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-        const expiresAt = new Date(Date.now() + sessionDuration);
-        const sessionDurationStr = rememberMeVal ? "30d" : "1d";
-
-        const jwt = await new SignJWT({ address: walletAddress.toLowerCase(), authenticatedAt: Date.now() })
-            .setProtectedHeader({ alg: "HS256" })
-            .setExpirationTime(sessionDurationStr)
-            .sign(secret);
+        const { token: jwt, expiresAt } = await createSessionToken(walletAddress, sessionDuration);
 
         /* Default the user's .sub username to their email name on first sign-up (changeable later). */
         if (!isOfflineMode) {

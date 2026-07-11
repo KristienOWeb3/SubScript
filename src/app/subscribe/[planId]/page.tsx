@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import SubscribeClient from "./SubscribeClient";
+import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 
 type PageProps = {
     params: Promise<{ planId: string }>;
@@ -26,21 +27,42 @@ async function getPlan(planId: string) {
     if (!supabaseUrl || !supabaseServiceKey) return null;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: plan, error } = await supabase
+    const { data: plan } = await supabase
         .from("merchant_plans")
         .select("id, merchant_address, name, description, details_url, amount_usdc, period_seconds, min_commitment_seconds, active")
         .eq("id", planId)
         .maybeSingle();
 
-    if (error || !plan || !plan.active) return null;
+    let resolvedPlan = plan?.active ? plan : null;
+    if (!resolvedPlan) {
+        const { data: checkout } = await supabase
+            .from("payment_links")
+            .select("id, merchant_address, title, description, amount_usdc, active, status, state_snapshot")
+            .eq("id", planId)
+            .maybeSingle();
+        const meta = readSubscriptionCheckoutMeta(checkout?.state_snapshot);
+        if (!checkout?.active || checkout.status !== "PENDING" || !meta) return null;
+        resolvedPlan = {
+            id: checkout.id,
+            merchant_address: checkout.merchant_address,
+            name: checkout.title,
+            description: checkout.description,
+            details_url: null,
+            amount_usdc: checkout.amount_usdc,
+            period_seconds: subscriptionCheckoutPeriod(meta).toString(),
+            min_commitment_seconds: "0",
+            active: true,
+            checkout_session_id: checkout.id,
+        } as typeof plan & { checkout_session_id: string };
+    }
 
     const { data: alias } = await supabase
         .from("address_aliases")
         .select("alias")
-        .eq("address", String(plan.merchant_address).toLowerCase())
+        .eq("address", String(resolvedPlan.merchant_address).toLowerCase())
         .maybeSingle();
 
-    return { ...plan, merchant_alias: alias?.alias || null };
+    return { ...resolvedPlan, merchant_alias: alias?.alias || null };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -104,6 +126,7 @@ export default async function PublicSubscribePage({ params }: PageProps) {
             periodSeconds: String(plan.period_seconds),
             minCommitmentSeconds: String(plan.min_commitment_seconds ?? 0),
             merchantAddress: String(plan.merchant_address).toLowerCase(),
+            checkoutSessionId: "checkout_session_id" in plan ? String(plan.checkout_session_id) : undefined,
             merchant: {
                 address: String(plan.merchant_address).toLowerCase(),
                 name: plan.merchant_alias

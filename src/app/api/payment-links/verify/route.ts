@@ -4,8 +4,8 @@ import { ethers } from "ethers";
 
 import { ProtocolConfig } from "@/lib/payments/config";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
-import { addressToBuffer } from "@/lib/payments/address";
-import { createPaymentSucceededWebhook, sendWebhookRequest } from "@/lib/webhooks";
+import { createPaymentSucceededWebhook } from "@/lib/webhooks";
+import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
 import { CCTP_CONFIG, ARC_CCTP_DOMAIN_ID, SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS, isProd } from "@/lib/contracts/constants";
 import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
@@ -74,14 +74,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId, payerEmail } = body;
+        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
-        /* Optional email captured at checkout (e.g. the returning-payer prompt). */
-        const normalizedPayerEmail = typeof payerEmail === "string"
-            && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail.trim())
-            && payerEmail.trim().length <= 254
-            ? payerEmail.trim().toLowerCase()
-            : null;
         const isCctp = Number(chainId) in CCTP_CONFIG;
         const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
 
@@ -121,22 +115,8 @@ export async function POST(request: Request) {
         const normalizedPayer = payerAddress.toLowerCase();
         const normalizedTx = txHash.toLowerCase();
 
-        /* Enforce Idempotency */
+        /* The database claim below owns idempotency, request binding, and capacity. */
         executionKey = `verify-payment-link:${normalizedTx}`;
-        const { data: existingKey } = await supabase
-            .from("idempotency_keys")
-            .select("*")
-            .eq("execution_key", executionKey)
-            .maybeSingle();
-
-        if (existingKey) {
-            if (existingKey.status === "PROCESSING") {
-                return NextResponse.json({ error: "Conflict: Verification in progress", status: "VERIFYING" }, { status: 409 });
-            }
-            if (existingKey.status === "COMPLETED") {
-                return NextResponse.json(existingKey.response_payload, { status: 200 });
-            }
-        }
 
         /* Fetch payment link details */
         const { data: paymentLink, error: linkError } = await supabase
@@ -194,91 +174,57 @@ export async function POST(request: Request) {
         }
 
         /* Check circuit breakers */
-        const { data: settings } = await supabase
+        const { data: settings, error: settingsError } = await supabase
             .from("system_settings")
             .select("hosted_payments_enabled")
             .maybeSingle();
+
+        if (settingsError) {
+            console.error("[verify] Failed to read hosted payment settings:", settingsError.message);
+            return NextResponse.json({ error: "Failed to validate payment availability" }, { status: 500 });
+        }
 
         if (settings && settings.hosted_payments_enabled === false) {
             return NextResponse.json({ error: "Service Unavailable: Hosted payments are temporarily disabled." }, { status: 503 });
         }
 
-        /* Verify no duplicate credit exists in payment_link_payments */
-        const { data: priorPayment } = await supabase
-            .from("payment_link_payments")
-            .select("id, payer_address, beneficiary_address")
-            .eq("tx_hash", normalizedTx)
-            .maybeSingle();
-
-        if (priorPayment) {
-            const responsePayload = {
-                success: true,
-                message: "Transaction already processed",
-                paymentId: priorPayment.id,
-                payerAddress: priorPayment.payer_address,
-                beneficiaryAddress: resolveFulfillmentAddress(
-                    priorPayment.beneficiary_address,
-                    priorPayment.payer_address,
-                ),
-            };
-            return NextResponse.json(responsePayload, { status: 200 });
-        }
-
-        /* Enforce the link's usage cap and active/expiry state at settlement, not only on the
-           checkout page-load gate. That GET gate blocks over-cap loads, but this endpoint is
-           directly callable, so without this a deactivated, expired, or already-exhausted link
-           could still mint a fresh settlement, receipt DM, and merchant webhook. A retry of an
-           already-counted tx is handled by the priorPayment idempotent return above, so any tx
-           reaching here is a NEW settlement and must respect the cap. */
-        const linkExpired = paymentLink.expires_at && new Date(paymentLink.expires_at) < new Date();
-        if (paymentLink.active === false || linkExpired) {
-            return NextResponse.json({ error: "Payment link is expired or inactive" }, { status: 410 });
-        }
-        if (
-            paymentLink.max_uses !== null &&
-            paymentLink.max_uses !== undefined &&
-            (paymentLink.use_count || 0) >= paymentLink.max_uses
-        ) {
-            return NextResponse.json({ error: "Payment link has reached its maximum usage limit" }, { status: 409 });
-        }
-
-        /* Create idempotency key in PROCESSING state */
+        /* Atomically claim this exact request and reserve one use. A concurrent loser
+           never proceeds into verification, and a tx hash cannot be rebound to another
+           link, chain, payer, or receipt. */
         const expiresAt = new Date(Date.now() + ProtocolConfig.IDEMPOTENCY_TTL * 1000).toISOString();
-        await supabase
-            .from("idempotency_keys")
-            .insert({
-                execution_key: executionKey,
-                status: "PROCESSING",
-                expires_at: expiresAt,
-                response_payload: null
-            });
+        const { data: claimResult, error: claimError } = await supabase.rpc("claim_payment_link_settlement", {
+            p_execution_key: executionKey,
+            p_tx_hash: normalizedTx,
+            p_chain_id: chainId,
+            p_payment_link_id: paymentLink.id,
+            p_payer_address: normalizedPayer,
+            p_receipt_id: finalReceiptId,
+            p_expires_at: expiresAt,
+            p_create_ledger: !settlesDirectlyToUser,
+        });
 
-        /* Phase 1: Initialize transaction verification in SUBMITTED state */
-        await supabase
-            .from("transaction_verifications")
-            .upsert({
-                tx_hash: normalizedTx,
-                status: "SUBMITTED",
-                reference_type: "PAYMENT_LINK",
-                reference_id: paymentLink.id,
-                confirmations: 0,
-                updated_at: new Date().toISOString()
-            });
-
-        if (!settlesDirectlyToUser) {
-            /* Merchant links credit withdrawable router balances; peer links settle directly on-chain. */
-            const merchantBuf = addressToBuffer(paymentLink.merchant_address);
-            await supabase
-                .from("ledger_entries")
-                .insert({
-                    merchant_address: merchantBuf,
-                    entry_type: "CREDIT_PAYMENT_LINK",
-                    status: "PENDING",
-                    amount_usdc: paymentLink.amount_usdc.toString(),
-                    reference_type: "PAYMENT_LINK",
-                    reference_id: paymentLink.id,
-                    tx_hash: normalizedTx
+        if (claimError) {
+            console.error("[verify] Failed to claim payment settlement:", claimError.message);
+            return NextResponse.json({ error: "Failed to initialize payment verification" }, { status: 500 });
+        }
+        if (claimResult?.outcome === "COMPLETED") {
+            const completedPaymentId = claimResult.responsePayload?.paymentId;
+            if (completedPaymentId) {
+                after(async () => {
+                    await deliverWebhookOutboxEvent(supabase, `evt_payment_${completedPaymentId}`)
+                        .catch((error) => console.error("[verify] Webhook outbox retry failed:", error));
                 });
+            }
+            return NextResponse.json(claimResult.responsePayload, { status: 200 });
+        }
+        if (claimResult?.outcome === "FINGERPRINT_MISMATCH") {
+            return NextResponse.json({ error: "Transaction is already bound to a different payment request" }, { status: 409 });
+        }
+        if (claimResult?.outcome === "LINK_UNAVAILABLE") {
+            return NextResponse.json({ error: "Payment link is inactive, expired, or at its usage limit" }, { status: 409 });
+        }
+        if (claimResult?.outcome !== "CLAIMED") {
+            return NextResponse.json({ error: "Conflict: Verification in progress", status: "VERIFYING" }, { status: 409 });
         }
 
         /* Schedule the async verification job after the submit response. */
@@ -320,21 +266,33 @@ export async function POST(request: Request) {
                         }
 
                         /* Update current confirmations count in DB */
-                        await supabase
+                        const { error: confirmationUpdateError } = await supabase
                             .from("transaction_verifications")
                             .update({
                                 status: "PENDING_CONFIRMATIONS",
                                 confirmations,
                                 updated_at: new Date().toISOString()
                             })
-                            .eq("tx_hash", normalizedTx);
+                            .eq("tx_hash", normalizedTx)
+                            .eq("reference_type", "PAYMENT_LINK")
+                            .eq("reference_id", paymentLink.id)
+                            .neq("status", "CONFIRMED");
+                        if (confirmationUpdateError) {
+                            throw new Error(`Failed to persist transaction confirmations: ${confirmationUpdateError.message}`);
+                        }
 
                         if (confirmations >= ProtocolConfig.MIN_CONFIRMATIONS) {
                             /* Verification phase */
-                            await supabase
+                            const { error: verifyingUpdateError } = await supabase
                                 .from("transaction_verifications")
                                 .update({ status: "VERIFYING", updated_at: new Date().toISOString() })
-                                .eq("tx_hash", normalizedTx);
+                                .eq("tx_hash", normalizedTx)
+                                .eq("reference_type", "PAYMENT_LINK")
+                                .eq("reference_id", paymentLink.id)
+                                .neq("status", "CONFIRMED");
+                            if (verifyingUpdateError) {
+                                throw new Error(`Failed to persist transaction verification state: ${verifyingUpdateError.message}`);
+                            }
 
                             if (!isCctp) {
                                 /* Validate parameters */
@@ -500,13 +458,6 @@ export async function POST(request: Request) {
                                 }
                             }
 
-                            /* Verification successful: Transition to Phase 2 (FINALIZED) */
-                            if (!settlesDirectlyToUser) {
-                                await supabase.rpc("lock_merchant_row", {
-                                    p_wallet_address: paymentLink.merchant_address.toLowerCase()
-                                });
-                            }
-
                             /* Sweep funds if using ephemeral wallet (legacy/unused EOA receiver path retired) */
                             const sweepTxHash: string | null = null;
                             /* Auto-create SubScript account if it does not exist (flowchart requirement) */
@@ -530,81 +481,74 @@ export async function POST(request: Request) {
                                         .from("customers")
                                         .insert({
                                             wallet_address: normalizedPayer,
-                                            ...(normalizedPayerEmail ? { email: normalizedPayerEmail } : {})
                                         });
-                                } else if (normalizedPayerEmail) {
-                                    /* Returning payer who just supplied an email at checkout — backfill it. */
-                                    await supabase
-                                        .from("customers")
-                                        .update({ email: normalizedPayerEmail })
-                                        .eq("wallet_address", normalizedPayer)
-                                        .is("email", null);
+
                                 }
                             } catch (accErr) {
                                 console.error("[verify] Failed to auto-create subscript account for payer:", accErr);
                             }
 
-                            /* Update payment link status, record details, and increment use count */
-                            await supabase
-                                .from("payment_links")
-                                .update({
-                                    use_count: (paymentLink.use_count || 0) + 1,
-                                    status: "PAID",
-                                    paid_at: new Date().toISOString(),
-                                    verified_tx_hash: normalizedTx,
-                                    settlement_reference: settlesDirectlyToUser ? "direct-usdc-transfer" : sweepTxHash
-                                })
-                                .eq("id", paymentLink.id);
+                            const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
+                            const webhookPayload = settlesDirectlyToUser ? null : createPaymentSucceededWebhook({
+                                paymentId: "pending",
+                                checkoutSessionId: paymentLink.id,
+                                merchantReference: paymentLink.external_reference || null,
+                                amountUsdc: paymentLink.amount_usdc,
+                                receiptId: finalReceiptId,
+                                txHash: normalizedTx,
+                                payerAddress: normalizedPayer,
+                                beneficiaryAddress: normalizedBeneficiary,
+                            });
+                            const { data: finalizeResult, error: finalizeError } = await supabase.rpc(
+                                "finalize_payment_link_settlement",
+                                {
+                                    p_execution_key: executionKey,
+                                    p_tx_hash: normalizedTx,
+                                    p_chain_id: chainId,
+                                    p_payment_link_id: paymentLink.id,
+                                    p_payer_address: normalizedPayer,
+                                    p_receipt_id: finalReceiptId,
+                                    p_beneficiary_address: normalizedBeneficiary,
+                                    p_verification_block: receipt.blockNumber,
+                                    p_settlement_reference: settlesDirectlyToUser ? "direct-usdc-transfer" : sweepTxHash,
+                                    p_response_payload: {
+                                        success: true,
+                                        message: "Payment verified and settled",
+                                        payerAddress: normalizedPayer,
+                                        beneficiaryAddress: normalizedBeneficiary,
+                                        receiptId: finalReceiptId,
+                                        shareUrl,
+                                    },
+                                    p_webhook_payload: webhookPayload,
+                                },
+                            );
+
+                            if (finalizeError) {
+                                throw new Error(`Failed to atomically finalize payment settlement: ${finalizeError.message}`);
+                            }
+                            const successPayload = finalizeResult?.responsePayload;
+                            if (!successPayload?.paymentId) {
+                                throw new Error("Atomic payment finalization returned no payment id");
+                            }
+                            const newPayment = { id: successPayload.paymentId };
 
                             /* Resolve the open request DM(s) for this link so the payer no longer sees the
                                merchant "asking" for something they just paid — the DEBIT_SUCCESS receipt DM
                                below is the record of success. Without this the PENDING PAYMENT_REQUEST lingers
                                and reads like a duplicate/looping request. Best-effort, idempotent. */
-                            await supabase
+                            const { error: dmResolveError } = await supabase
                                 .from("subscript_dms")
                                 .update({ status: "APPROVED", updated_at: new Date().toISOString() })
                                 .eq("payment_link_id", paymentLink.id)
                                 .eq("receiver_address", normalizedPayer)
                                 .in("message_type", ["PAYMENT_REQUEST", "PEER_REQUEST"])
                                 .eq("status", "PENDING");
-
-                            /* Create payment_link_payments record */
-                            const { data: newPayment } = await supabase
-                                .from("payment_link_payments")
-                                .insert({
-                                    payment_link_id: paymentLink.id,
-                                    payer_address: normalizedPayer,
-                                    beneficiary_address: normalizedBeneficiary,
-                                    amount_usdc: paymentLink.amount_usdc.toString(),
-                                    tx_hash: normalizedTx,
-                                    merchant_address: paymentLink.merchant_address.toLowerCase(),
-                                    credited: true,
-                                    credited_at: new Date().toISOString(),
-                                    verification_block: receipt.blockNumber.toString(),
-                                    verification_chain_id: chainId.toString()
-                                })
-                                .select()
-                                .single();
-
-                            if (!settlesDirectlyToUser) {
-                                /* Finalize pending merchant ledger entry */
-                                await supabase
-                                    .from("ledger_entries")
-                                    .update({ status: "FINALIZED" })
-                                    .eq("tx_hash", normalizedTx);
+                            if (dmResolveError) {
+                                console.error("[verify] Failed to resolve payment request DM:", dmResolveError.message);
                             }
 
-                            /* Update transaction status */
-                            await supabase
-                                .from("transaction_verifications")
-                                .update({
-                                    status: "CONFIRMED",
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq("tx_hash", normalizedTx);
-
                             /* Write audit event */
-                            await supabase
+                            const { error: auditError } = await supabase
                                 .from("audit_events")
                                 .insert({
                                     actor: normalizedPayer,
@@ -618,17 +562,11 @@ export async function POST(request: Request) {
                                         beneficiary_address: normalizedBeneficiary,
                                     }
                                 });
+                            if (auditError) {
+                                console.error("[verify] Failed to record payment audit event:", auditError.message);
+                            }
 
-                            /* Complete idempotency key */
-                            const successPayload = {
-                                success: true,
-                                message: "Payment verified and settled",
-                                paymentId: newPayment.id,
-                                payerAddress: normalizedPayer,
-                                beneficiaryAddress: normalizedBeneficiary,
-                            };
-                            const shareUrl = receiptUrl(finalReceiptId, requestOrigin);
-                            await supabase
+                            const { error: receiptError } = await supabase
                                 .from("receipts")
                                 .upsert({
                                     receipt_id: finalReceiptId,
@@ -652,8 +590,9 @@ export async function POST(request: Request) {
                                     confirmed_at: new Date().toISOString(),
                                     updated_at: new Date().toISOString()
                                 }, { onConflict: "receipt_id" });
-
-                            Object.assign(successPayload, { receiptId: finalReceiptId, shareUrl });
+                            if (receiptError) {
+                                throw new Error(`Failed to persist payment receipt: ${receiptError.message}`);
+                            }
 
                             const { data: payerSettings } = await supabase
                                 .from("customers")
@@ -705,38 +644,9 @@ export async function POST(request: Request) {
                                 txHash: normalizedTx,
                             });
 
-                            await supabase
-                                .from("idempotency_keys")
-                                .update({
-                                    status: "COMPLETED",
-                                    response_payload: successPayload,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq("execution_key", executionKey);
-
                             if (!settlesDirectlyToUser) {
-                                /* Dispatch merchant webhooks */
-                                const { data: endpoints } = await supabase
-                                    .from("webhook_endpoints")
-                                    .select("*")
-                                    .eq("wallet_address", paymentLink.merchant_address.toLowerCase())
-                                    .eq("active", true);
-
-                                if (endpoints) {
-                                    const webhookPayload = createPaymentSucceededWebhook({
-                                        paymentId: newPayment.id,
-                                        checkoutSessionId: paymentLink.id,
-                                        merchantReference: paymentLink.external_reference || null,
-                                        amountUsdc: paymentLink.amount_usdc,
-                                        receiptId: finalReceiptId,
-                                        txHash: normalizedTx,
-                                        payerAddress: normalizedPayer,
-                                        beneficiaryAddress: normalizedBeneficiary,
-                                    });
-                                    for (const endpoint of endpoints) {
-                                        sendWebhookRequest(endpoint.url, webhookPayload, endpoint.secret).catch(() => {});
-                                    }
-                                }
+                                await deliverWebhookOutboxEvent(supabase, `evt_payment_${newPayment.id}`)
+                                    .catch((error) => console.error("[verify] Webhook outbox delivery failed:", error));
                             }
 
                             return;
@@ -752,24 +662,20 @@ export async function POST(request: Request) {
             } catch (jobErr: any) {
                 console.error(`[verify-worker] Background job encountered terminal error:`, jobErr.message);
 
-                /* Transition ledger entry to FAILED */
-                await supabase
-                    .from("ledger_entries")
-                    .update({ status: "FAILED" })
-                    .eq("tx_hash", normalizedTx);
-
-                /* Update transaction status to FAILED */
-                await supabase
-                    .from("transaction_verifications")
-                    .update({
-                        status: "FAILED",
-                        error_message: jobErr.message,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq("tx_hash", normalizedTx);
-
-                /* Remove or fail idempotency key to allow retries */
-                await supabase.from("idempotency_keys").delete().eq("execution_key", executionKey);
+                /* Release only this exact request's reservation. The RPC refuses to
+                   downgrade a confirmed settlement or a claim with another fingerprint. */
+                const { error: releaseError } = await supabase.rpc("release_payment_link_settlement", {
+                    p_execution_key: executionKey,
+                    p_tx_hash: normalizedTx,
+                    p_chain_id: chainId,
+                    p_payment_link_id: paymentLink.id,
+                    p_payer_address: normalizedPayer,
+                    p_receipt_id: finalReceiptId,
+                    p_error_message: jobErr.message || "Payment verification failed",
+                });
+                if (releaseError) {
+                    console.error("[verify-worker] Failed to release settlement claim:", releaseError.message);
+                }
             }
         });
 
@@ -781,9 +687,6 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("Verification POST error:", error);
-        if (supabase && executionKey) {
-            await supabase.from("idempotency_keys").delete().eq("execution_key", executionKey);
-        }
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
     }
 }

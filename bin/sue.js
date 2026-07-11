@@ -38,15 +38,13 @@ const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const TREASURY_ADDRESS = "0x725D56151CeaC9eAd625241D13b8307B22EDDb10";
 const ERC1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
-/* Standard reference storage layout for SubScriptRouter */
 const REFERENCE_STORAGE_LAYOUT = [
   { label: "paymentToken", slot: 0, offset: 0, typeLabel: "contract IERC20" },
   { label: "treasury", slot: 1, offset: 0, typeLabel: "address" },
   { label: "merchantBalances", slot: 2, offset: 0, typeLabel: "mapping(address => uint256)" },
-  { label: "nullifierHashes", slot: 3, offset: 0, typeLabel: "mapping(bytes32 => bool)" },
-  { label: "commitments", slot: 4, offset: 0, typeLabel: "mapping(bytes32 => bool)" },
-  { label: "merchantTiers", slot: 5, offset: 0, typeLabel: "mapping(address => uint8)" },
-  { label: "merchantPayoutDestination", slot: 6, offset: 0, typeLabel: "mapping(address => address)" }
+  { label: "merchantTiers", slot: 3, offset: 0, typeLabel: "mapping(address => uint8)" },
+  { label: "merchantPayoutDestination", slot: 4, offset: 0, typeLabel: "mapping(address => address)" },
+  { label: "totalMerchantLiabilities", slot: 5, offset: 0, typeLabel: "uint256" }
 ];
 
 /* Helper to output clean status messages */
@@ -596,7 +594,8 @@ async function run() {
 
   const rpcUrl = process.env.RPC_URL || "https://rpc.testnet.arc.network";
   const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const key = process.env.PRIVATE_KEY || "0x0637528b9afbc627b22542e333971af4dd2f0f48a99f261436cf8f35efa15c8a";
+  const key = process.env.PRIVATE_KEY;
+  if (!key) throw new Error("PRIVATE_KEY must be configured");
   const signer = new ethers.Wallet(key, provider);
 
   if (command === "snapshot") {

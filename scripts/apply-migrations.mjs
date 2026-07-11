@@ -15,10 +15,9 @@
  *       supabase/migrations/*.sql  (same convention; *.down.sql rollback files are ignored)
  *   - A `_subscript_migrations` ledger table records what has been applied, keyed by the
  *     repo-relative path (e.g. "supabase/migrations/20260705000000_add_x.sql").
- *   - On first run the BASELINE_FILES below are recorded WITHOUT being executed — they were
- *     applied to production by hand before this runner existed, and several are destructive
- *     data migrations (reset_premium_tier, reset_accounts_to_clean_signup) that must never
- *     re-run.
+ *   - On first run against an existing legacy schema, BASELINE_FILES are adopted only when the
+ *     operator explicitly sets ADOPT_EXISTING_DB_BASELINE=1. An empty database executes every
+ *     migration instead of pretending the schema already exists.
  *   - Everything newer than the baseline is applied in filename order, one transaction per file.
  *
  * Behavior without DATABASE_URL: skips with a note and exits 0, so local `next build` and
@@ -84,9 +83,13 @@ const BASELINE_FILES = [
     "supabase/migrations/20260704000000_add_payment_link_beneficiaries.sql",
 ];
 
-async function listMigrationFiles() {
+async function listMigrationFiles({ freshBootstrap = false } = {}) {
     const files = [];
-    for (const dir of MIGRATION_DIRS) {
+    /* The historical Prisma SQL files reference tables created by the Supabase baseline. Existing
+       deployments keep the established directory order; a genuinely empty database must build the
+       Supabase schema first. */
+    const directories = freshBootstrap ? [...MIGRATION_DIRS].reverse() : MIGRATION_DIRS;
+    for (const dir of directories) {
         let entries = [];
         try {
             entries = await readdir(path.join(REPO_ROOT, dir));
@@ -129,22 +132,43 @@ async function main() {
         return;
     }
 
-    const files = await listMigrationFiles();
-
     const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
     const client = new pg.Client({
         connectionString,
-        ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
+        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true } }),
         statement_timeout: 120_000,
     });
     await client.connect();
 
     try {
+        /* Serialize the full migration session. Concurrent production builds must not calculate and
+           apply the same pending set. Session-level locking is released automatically on disconnect. */
+        await client.query("SELECT pg_advisory_lock(hashtext('subscript:migrations'))");
+
         const ledgerExists = await client.query(
             "SELECT to_regclass('public._subscript_migrations') IS NOT NULL AS exists"
         );
+        let freshBootstrap = false;
         if (!ledgerExists.rows[0].exists) {
-            console.log("[migrations] Creating _subscript_migrations ledger and recording baseline...");
+            const legacySchema = await client.query(`
+                SELECT
+                    to_regclass('public.merchants') IS NOT NULL
+                    AND to_regclass('public.payment_sessions') IS NOT NULL
+                    AS exists
+            `);
+            const adoptingLegacySchema = legacySchema.rows[0].exists;
+            if (adoptingLegacySchema && process.env.ADOPT_EXISTING_DB_BASELINE !== "1") {
+                throw new Error(
+                    "Existing schema has no migration ledger. Set ADOPT_EXISTING_DB_BASELINE=1 for the reviewed one-time baseline adoption."
+                );
+            }
+
+            freshBootstrap = !adoptingLegacySchema;
+            console.log(
+                freshBootstrap
+                    ? "[migrations] Empty database detected — creating ledger and executing the full schema history."
+                    : "[migrations] Adopting reviewed legacy production baseline."
+            );
             await client.query(`
                 CREATE TABLE _subscript_migrations (
                     filename   text PRIMARY KEY,
@@ -152,14 +176,17 @@ async function main() {
                     baseline   boolean NOT NULL DEFAULT false
                 );
             `);
-            for (const f of BASELINE_FILES) {
-                await client.query(
-                    "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
-                    [f]
-                );
+            if (adoptingLegacySchema) {
+                for (const f of BASELINE_FILES) {
+                    await client.query(
+                        "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
+                        [f]
+                    );
+                }
             }
         }
 
+        const files = await listMigrationFiles({ freshBootstrap });
         const appliedRows = await client.query("SELECT filename FROM _subscript_migrations");
         const applied = new Set(appliedRows.rows.map((r) => r.filename));
         const pending = files.filter((f) => !applied.has(f));
@@ -188,6 +215,7 @@ async function main() {
         }
         console.log(`[migrations] Done — applied ${pending.length} migration(s).`);
     } finally {
+        await client.query("SELECT pg_advisory_unlock(hashtext('subscript:migrations'))").catch(() => {});
         await client.end();
     }
 }

@@ -10,6 +10,19 @@ type PageProps = {
     params: Promise<{ id: string }>;
 };
 
+function validateStoredReturnUrl(value: unknown): string | undefined {
+    if (typeof value !== "string" || value.length > 2048) return undefined;
+    try {
+        const url = new URL(value);
+        const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        return url.protocol === "https:" || (isLoopback && url.protocol === "http:")
+            ? url.toString()
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function normalizePublicUrl(value: string | undefined) {
     if (!value) return "";
     try {
@@ -34,7 +47,7 @@ async function getPaymentLink(id: string) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, receiver_address")
+        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, receiver_address, state_snapshot")
         .eq("id", id)
         .maybeSingle();
 
@@ -101,6 +114,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function PublicPayPage({ params }: PageProps) {
     const { id } = await params;
     const link = await getPaymentLink(id);
+    const returnUrls = (link?.state_snapshot as { returnUrls?: Record<string, unknown> } | null)?.returnUrls;
+    const successUrl = validateStoredReturnUrl(returnUrls?.successUrl);
+    const cancelUrl = validateStoredReturnUrl(returnUrls?.cancelUrl);
 
     const headersList = await headers();
     const country = headersList.get("x-user-country") || "US";
@@ -118,6 +134,8 @@ export default async function PublicPayPage({ params }: PageProps) {
             displayCurrency={displayCurrency}
             displayAmount={displayAmount}
             exchangeRate={exchangeRate}
+            successUrl={successUrl}
+            cancelUrl={cancelUrl}
         />
     );
 }

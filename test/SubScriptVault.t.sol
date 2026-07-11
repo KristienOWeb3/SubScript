@@ -197,4 +197,31 @@ contract SubScriptVaultTest is Test {
         vault.drawUsageFor(merchant, user, 30e6);
         assertEq(vault.merchantClaimable(merchant), 30e6);
     }
+
+    /* Once the user-only reclaim window opens, a merchant cannot front-run the reclaim. */
+    function testMerchantCannotDrawAfterReclaimWindowOpens() public {
+        _commit(COMMIT);
+        vm.warp(block.timestamp + 30 days + 7 days);
+
+        vm.prank(merchant);
+        vm.expectRevert(bytes("reclaim window opened"));
+        vault.drawUsage(user, COMMIT);
+
+        uint256 before = usdc.balanceOf(user);
+        vm.prank(user);
+        vault.reclaimAbandonedEscrow(merchant);
+        assertEq(usdc.balanceOf(user), before + COMMIT);
+    }
+
+    /* Emergency pause blocks merchant-side movement but leaves user reclaim available. */
+    function testPauseBlocksMerchantDraw() public {
+        _commit(COMMIT);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(owner);
+        vault.pause();
+
+        vm.prank(merchant);
+        vm.expectRevert();
+        vault.drawUsage(user, 10e6);
+    }
 }

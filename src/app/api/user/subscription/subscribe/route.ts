@@ -11,6 +11,7 @@ import { subscribeFromEmbedded, findActiveOnChainSubscriptionId } from "@/lib/su
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
+import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 
 export const maxDuration = 120;
 
@@ -23,7 +24,10 @@ export async function POST(request: Request) {
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";
-        if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
+        const checkoutSessionId = typeof body.checkoutSessionId === "string" ? body.checkoutSessionId : "";
+        if (!planId && !checkoutSessionId) {
+            return NextResponse.json({ error: "planId or checkoutSessionId is required" }, { status: 400 });
+        }
 
         /* Sponsored subscription ("Pay for Me"): the caller pays, someone else receives the
            service. The beneficiary rides the mirror + merchant webhooks for entitlement mapping;
@@ -37,15 +41,36 @@ export async function POST(request: Request) {
             if (beneficiaryAddress === wallet.toLowerCase()) beneficiaryAddress = null;
         }
 
-        const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
-        if (!plan || !plan.active) {
+        const checkout = checkoutSessionId
+            ? await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } })
+            : null;
+        const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        const merchantPlan = planId
+            ? await prisma.merchantPlan.findUnique({ where: { id: planId } })
+            : null;
+        if (checkoutSessionId && (!checkout || !checkout.active || checkout.status !== "PENDING" || !checkoutMeta)) {
+            return NextResponse.json({ error: "Subscription checkout not found or no longer available" }, { status: 404 });
+        }
+        if (!checkoutSessionId && (!merchantPlan || !merchantPlan.active)) {
             return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
         }
+
+        const plan = checkout && checkoutMeta ? {
+            id: checkout.id,
+            merchantAddress: checkout.merchantAddress,
+            name: checkout.title,
+            amountUsdc: checkout.amountUsdc,
+            periodSeconds: subscriptionCheckoutPeriod(checkoutMeta),
+            minCommitmentSeconds: BigInt(0),
+        } : merchantPlan!;
         if (!ethers.isAddress(plan.merchantAddress)) {
             return NextResponse.json({ error: "Plan has an invalid merchant" }, { status: 400 });
         }
 
         const subscriber = wallet.toLowerCase();
+        if (checkoutMeta?.subscriber && checkoutMeta.subscriber !== subscriber) {
+            return NextResponse.json({ error: "This subscription checkout is assigned to another subscriber" }, { status: 403 });
+        }
         const merchant = plan.merchantAddress.toLowerCase();
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
 
@@ -54,6 +79,8 @@ export async function POST(request: Request) {
            mirrored. The second request waits, then sees the first active subscription. */
         return await withPgClient(async (client) => {
             await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
+            let checkoutClaimed = false;
+            let onChainSubmitted = false;
             try {
                 const existingResult = await client.query(
                     `select subscription_id, amount_cap_usdc, billing_interval_seconds
@@ -92,6 +119,17 @@ export async function POST(request: Request) {
                     }, { status: 409 });
                 }
 
+                if (checkoutSessionId) {
+                    const claim = await prisma.paymentLink.updateMany({
+                        where: { id: checkoutSessionId, active: true, status: "PENDING" },
+                        data: { status: "PROCESSING" },
+                    });
+                    if (claim.count !== 1) {
+                        return NextResponse.json({ error: "Subscription checkout is already being processed or completed" }, { status: 409 });
+                    }
+                    checkoutClaimed = true;
+                }
+
                 await requireGasSponsored(subscriber);
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
@@ -99,6 +137,7 @@ export async function POST(request: Request) {
                     plan.amountUsdc,
                     plan.periodSeconds
                 );
+                onChainSubmitted = true;
 
                 /* Mirror before releasing the advisory lock, so the next request observes this
                    active subscription and cannot create a duplicate. */
@@ -123,12 +162,35 @@ export async function POST(request: Request) {
                     periodSeconds: plan.periodSeconds,
                 }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
+                if (checkoutSessionId) {
+                    await prisma.paymentLink.update({
+                        where: { id: checkoutSessionId },
+                        data: {
+                            active: false,
+                            status: "PAID",
+                            paidAt: new Date(),
+                            verifiedTxHash: txHash.toLowerCase(),
+                        },
+                    });
+                    checkoutClaimed = false;
+                }
+
                 return NextResponse.json({
                     success: true,
                     txHash,
                     subscriptionId: subId,
                     planName: plan.name,
                 }, { status: 200 });
+            } catch (error) {
+                if (checkoutSessionId && checkoutClaimed && !onChainSubmitted) {
+                    await prisma.paymentLink.updateMany({
+                        where: { id: checkoutSessionId, status: "PROCESSING" },
+                        data: { status: "PENDING" },
+                    }).catch((resetError: unknown) =>
+                        console.error("[subscription/subscribe] checkout claim reset failed:", resetError)
+                    );
+                }
+                throw error;
             } finally {
                 await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [lockKey])
                     .catch((unlockError: unknown) =>
