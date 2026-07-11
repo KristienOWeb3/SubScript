@@ -36,6 +36,29 @@ test("wallet sessions are server-revocable and signatures are origin-bound", asy
     assert.match(message, /Chain ID:/);
 });
 
+test("wallet-login nonces are server-issued and atomically single-use", async () => {
+    /* The SIWE nonce used to live only in a client cookie, so verify-signature compared two
+       attacker-controlled values and a captured signature stayed replayable. Nonces must be
+       issued into siwe_nonces and consumed with DELETE ... RETURNING before the signature is
+       even checked, so a signature can be redeemed for a session exactly once. */
+    const [nonceRoute, verify, migration] = await Promise.all([
+        source("src/app/api/auth/nonce/route.ts"),
+        source("src/app/api/auth/verify-signature/route.ts"),
+        source("supabase/migrations/20260711130000_siwe_nonce_single_use.sql"),
+    ]);
+
+    assert.match(nonceRoute, /insert into siwe_nonces \(nonce, expires_at\)/);
+    assert.match(verify, /delete from siwe_nonces where nonce = \$1 and expires_at > now\(\) returning nonce/);
+    assert.match(verify, /if \(!consumedNonce\)/);
+    assert.ok(
+        verify.indexOf("delete from siwe_nonces") < verify.indexOf("verifyMessage({"),
+        "nonce must be consumed before the signature is verified",
+    );
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.siwe_nonces/);
+    assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(migration, /REVOKE ALL ON TABLE public\.siwe_nonces FROM PUBLIC, anon, authenticated/);
+});
+
 test("premium billing leases each on-chain sequence and repairs chain-finalized state", async () => {
     const billing = await source("src/app/api/cron/billing/route.ts");
 

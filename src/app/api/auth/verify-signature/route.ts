@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
 import { sanitizeInput } from "@/utils/security";
 import { createSessionToken, getCookieValue } from "@/lib/auth";
+import { pgMaybeOne } from "@/lib/serverPg";
 import { getAccountRole } from "@/lib/accounts/roles";
 import { verifyCaptchaToken } from "@/lib/captcha";
 import { clearSiweNonceCookie, setSessionCookie } from "@/lib/authCookies";
@@ -30,6 +31,20 @@ export async function POST(request: Request) {
         const storedNonce = getCookieValue(cookieStore, "subscript_siwe_nonce");
 
         if (!storedNonce || storedNonce !== nonce) {
+            return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
+        }
+
+        /* Atomically consume the server-issued nonce (DELETE ... RETURNING, same pattern as the
+           wallet-export OTP). The cookie above only binds the attempt to this browser — both
+           values arrive from the client, so without this record a captured signature could be
+           replayed indefinitely by re-presenting its nonce. Consuming before signature
+           verification means every attempt burns the nonce and concurrent replays have exactly
+           one winner; clients fetch a fresh nonce per attempt. */
+        const consumedNonce = await pgMaybeOne<{ nonce: string }>(
+            "delete from siwe_nonces where nonce = $1 and expires_at > now() returning nonce",
+            [nonce]
+        );
+        if (!consumedNonce) {
             return NextResponse.json({ error: "Authentication session expired or invalid nonce" }, { status: 400 });
         }
 
