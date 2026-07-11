@@ -8,6 +8,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { isReceiptId } from "@/lib/arc/memo";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 
 type RouteContext = {
@@ -120,17 +121,30 @@ export async function POST(request: Request, { params }: RouteContext) {
             }
         }
 
+        /* Deterministic Circle idempotency key scoped to (link, payer). If Circle accepts the tx
+           but the response times out, a retry submits the SAME key and Circle returns the original
+           transaction instead of charging again. This is the real double-charge guard — the DB
+           claim below only serializes concurrent requests within this process. */
+        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}`);
+
         let txHash: string;
         try {
             txHash = settlesDirectlyToUser
-                ? await payPeerLinkFromEmbedded(payer, recipient, amountMicros)
-                : await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, receiptToken);
+                ? await payPeerLinkFromEmbedded(payer, recipient, amountMicros, custodyIdempotencyKey)
+                : await payMerchantLinkFromEmbedded(payer, recipient, amountMicros, receiptToken, custodyIdempotencyKey);
         } catch (err: any) {
-            /* Release the claim so a failed payment can be retried immediately. */
-            await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
             const message = err?.message || "Payment could not be signed from your SubScript wallet.";
             /* getWalletCustody throws for wallets with no server-held key (external/browser wallets). */
-            const status = /no server-held key|connect a browser wallet/i.test(message) ? 400
+            const isPreSubmission = /no server-held key|connect a browser wallet/i.test(message);
+            /* Only release the claim for failures that provably happened BEFORE any transaction was
+               submitted (custody resolution / validation). For a signing or polling-timeout error we
+               cannot be sure Circle didn't accept the tx, so we KEEP the PROCESSING claim: a retry is
+               refused until it expires, and the deterministic idempotency key above guarantees that
+               even a post-expiry retry cannot double-charge. */
+            if (isPreSubmission) {
+                await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
+            }
+            const status = isPreSubmission ? 400
                 : /insufficient|balance|exceeds/i.test(message) ? 402
                 : 502;
             return NextResponse.json({ error: message }, { status });

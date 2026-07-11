@@ -17,12 +17,19 @@ const USDC_TRANSFER_ABI = [
 
 /* Pay a merchant payment link from the user's embedded wallet via the router's depositForMerchant,
    carrying the receipt token as the on-chain memo so the DepositWithMemo event binds merchant,
-   amount, and receipt exactly as the verifier expects. Returns the confirmed tx hash. */
+   amount, and receipt exactly as the verifier expects. Returns the confirmed tx hash.
+
+   The idempotencyKey MUST be supplied and scoped to (link, payer): if Circle accepts the tx but
+   the response times out, the caller retries — without a stable key each retry is a NEW on-chain
+   charge, i.e. a double charge. With it, Circle returns the original transaction. A payment link's
+   own capacity (max_uses / single settlement) makes a genuine second payment a distinct link, so
+   this key never blocks a legitimate later payment. */
 export async function payMerchantLinkFromEmbedded(
     walletAddress: string,
     merchant: string,
     amountMicros: bigint,
     receiptToken: string,
+    idempotencyKey: string,
 ): Promise<string> {
     const custody = await getWalletCustody(walletAddress);
     await ensureUsdcAllowance(custody, SUBSCRIPT_ROUTER_ADDRESS, amountMicros);
@@ -31,17 +38,20 @@ export async function payMerchantLinkFromEmbedded(
         abi: ROUTER_DEPOSIT_ABI,
         functionName: "depositForMerchant",
         args: [merchant.toLowerCase(), amountMicros, receiptToken],
+        idempotencyKey,
     });
     return txHash;
 }
 
 /* Pay a peer (user-to-user) request from the user's embedded wallet via a direct USDC transfer to
    the requester — matching the browser wallet's transfer so verify's settlesDirectlyToUser branch
-   validates it identically. Returns the confirmed tx hash. */
+   validates it identically. Returns the confirmed tx hash. idempotencyKey is required for the same
+   retry/double-charge reason as the merchant path. */
 export async function payPeerLinkFromEmbedded(
     walletAddress: string,
     recipient: string,
     amountMicros: bigint,
+    idempotencyKey: string,
 ): Promise<string> {
     const custody = await getWalletCustody(walletAddress);
     const { txHash } = await custody.executeContract({
@@ -49,6 +59,7 @@ export async function payPeerLinkFromEmbedded(
         abi: USDC_TRANSFER_ABI,
         functionName: "transfer",
         args: [recipient.toLowerCase(), amountMicros],
+        idempotencyKey,
     });
     return txHash;
 }
