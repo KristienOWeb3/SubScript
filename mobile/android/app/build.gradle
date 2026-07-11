@@ -5,6 +5,14 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Release signing: load the keystore from android/key.properties (gitignored) when present.
+// Production/CI must provide it so release builds are NOT signed with the debug key.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.subscriptonarc.subscript_mobile"
     compileSdk = flutter.compileSdkVersion
@@ -30,11 +38,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
+                storePassword = keystoreProperties["storePassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            // Sign with the real release keystore when configured (android/key.properties). Fall back
+            // to debug ONLY for local `flutter run --release`; a real release/CI build must supply
+            // key.properties so a debug-signed APK can never ship to production.
+            signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
 }

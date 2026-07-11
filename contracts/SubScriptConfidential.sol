@@ -7,9 +7,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /*
  * @title SubScriptConfidential
  * @author SubScript Protocol
- * @notice Confidential subscription management contract extending SubScriptPSA.
- *         Integrates Arc Network native privacy pre-compiles and governed access
- *         for shielded batch payouts.
+ * @notice Access-gated batch-payout extension of SubScriptPSA. It adds owner/view-key governed
+ *         READ access over payout data and governed batch settlement.
+ *
+ *         IMPORTANT — this contract does NOT make payments confidential on-chain. Recipient
+ *         addresses and amounts are public in transaction calldata and contract storage, exactly
+ *         like any other EVM transaction; a gated getter cannot hide data that is already on the
+ *         public ledger. Treat "Confidential" here as access-controlled reads, NOT cryptographic
+ *         privacy, and do not represent payments made through it as private or anonymous.
  */
 contract SubScriptConfidential is SubScriptPSA, Ownable {
     using SafeERC20 for IERC20;
