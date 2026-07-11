@@ -71,6 +71,31 @@ test("contract escape windows and payment-token liabilities fail closed", async 
     assert.match(router, /token != address\(paymentToken\), "Payment token rescue disabled"/);
 });
 
+test("public payment-link reads never leak the full row", async () => {
+    /* Anyone holding a link id can GET it (that is the point of a payment link), so the
+       anonymous payload must be a strict whitelist: no payer_email, no state_snapshot
+       (checkout intent internals), no settlement/idempotency bookkeeping, and never the
+       legacy receiver_private_key column — for the owner either. */
+    const [route, payPage] = await Promise.all([
+        source("src/app/api/payment-links/[id]/route.ts"),
+        source("src/app/pay/[id]/page.tsx"),
+    ]);
+
+    assert.doesNotMatch(route, /link:\s*\{\s*\.\.\.link,/);
+    assert.match(route, /receiver_private_key: _receiverKey, \.\.\.ownerLink/);
+    assert.match(route, /receiver_private_key: _receiverKey, \.\.\.safeUpdatedLink/);
+    assert.match(route, /isPeerRequestReference/);
+    for (const field of ["payer_email", "state_snapshot", "idempotency_key", "verified_tx_hash", "settlement_reference", "receiver_address"]) {
+        assert.equal(route.includes(`${field}: link.${field}`), false, `anonymous payload must not include ${field}`);
+    }
+
+    /* The /pay server component serializes initial link data into public HTML: the intent
+       snapshot is consumed for return-URL validation only and stripped before render. */
+    assert.match(payPage, /state_snapshot: _snapshot, external_reference, \.\.\.publicLink/);
+    assert.doesNotMatch(payPage, /initialLinkData=\{fullLink\}/);
+    assert.doesNotMatch(payPage, /select\([^)]*receiver_address/);
+});
+
 test("raw Postgres access uses a bounded verified-TLS pool", async () => {
     const pg = await source("src/lib/serverPg.ts");
     assert.match(pg, /new Pool/);

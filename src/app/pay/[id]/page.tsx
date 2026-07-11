@@ -45,9 +45,13 @@ async function getPaymentLink(id: string) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    /* state_snapshot is fetched ONLY to validate merchant return URLs server-side; it holds
+       checkout-intent internals and must never be forwarded to the browser (see the strip in
+       PublicPayPage). Everything else here is the checkout-facing whitelist, mirroring the
+       anonymous GET /api/payment-links/[id] payload. */
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, receiver_address, state_snapshot")
+        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot")
         .eq("id", id)
         .maybeSingle();
 
@@ -113,10 +117,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 /* Server Component entry point rendering the client component with initial data and localization payload */
 export default async function PublicPayPage({ params }: PageProps) {
     const { id } = await params;
-    const link = await getPaymentLink(id);
-    const returnUrls = (link?.state_snapshot as { returnUrls?: Record<string, unknown> } | null)?.returnUrls;
+    const fullLink = await getPaymentLink(id);
+    const returnUrls = (fullLink?.state_snapshot as { returnUrls?: Record<string, unknown> } | null)?.returnUrls;
     const successUrl = validateStoredReturnUrl(returnUrls?.successUrl);
     const cancelUrl = validateStoredReturnUrl(returnUrls?.cancelUrl);
+    /* The initial link data is serialized into public page HTML — the raw checkout-intent
+       snapshot stays on the server, and merchant external references are exposed only for the
+       system-generated peer-request markers the client keys off (matching the anonymous API). */
+    let link: Record<string, unknown> | null = null;
+    if (fullLink) {
+        const { state_snapshot: _snapshot, external_reference, ...publicLink } = fullLink;
+        const isPeerRequestReference = typeof external_reference === "string" && (
+            external_reference.startsWith("peer-request:")
+            || external_reference.startsWith("dm-peer-request:")
+        );
+        link = { ...publicLink, ...(isPeerRequestReference ? { external_reference } : {}) };
+    }
 
     const headersList = await headers();
     const country = headersList.get("x-user-country") || "US";

@@ -91,24 +91,59 @@ export async function GET(request: Request, { params }: RouteContext) {
         const walletAddress = auth.wallet;
         const isOwner = walletAddress && walletAddress.toLowerCase() === link.merchant_address.toLowerCase();
 
-        if (!isOwner) {
-            const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-            if (!link.active || isExpired) {
-                return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
-            }
-
-            const maxUses = link.max_uses;
-            const useCount = link.use_count || 0;
-            if (maxUses !== null && maxUses !== undefined && useCount >= maxUses) {
-                return NextResponse.json({ error: "Payment Link has reached its maximum usage limit" }, { status: 410 });
-            }
+        if (isOwner) {
+            /* The owning merchant (session or API key) gets the full record, minus the legacy
+               receiver key column — raw key material never leaves the database via this API. */
+            const { receiver_private_key: _receiverKey, ...ownerLink } = link;
+            return NextResponse.json({
+                link: {
+                    ...ownerLink,
+                    merchant_verified: merchantVerified
+                }
+            }, { status: 200 });
         }
 
-        return NextResponse.json({ 
+        const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+        if (!link.active || isExpired) {
+            return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
+        }
+
+        const maxUses = link.max_uses;
+        const useCount = link.use_count || 0;
+        if (maxUses !== null && maxUses !== undefined && useCount >= maxUses) {
+            return NextResponse.json({ error: "Payment Link has reached its maximum usage limit" }, { status: 410 });
+        }
+
+        /* This endpoint is reachable by anyone holding the link id (that is the point of a
+           payment link), so the anonymous payload is a strict whitelist of what the hosted
+           checkout renders. Never spread the row: payer_email, state_snapshot (checkout intent
+           internals), settlement/idempotency bookkeeping and the legacy receiver key columns
+           stay server-side. external_reference is exposed only for the system-generated
+           peer-request markers the checkout uses to detect user-to-user requests — merchant
+           references can carry order/customer details. */
+        const isPeerRequestReference = typeof link.external_reference === "string" && (
+            link.external_reference.startsWith("peer-request:")
+            || link.external_reference.startsWith("dm-peer-request:")
+        );
+        return NextResponse.json({
             link: {
-                ...link,
+                id: link.id,
+                merchant_address: link.merchant_address,
+                title: link.title,
+                description: link.description,
+                amount_usdc: link.amount_usdc,
+                active: link.active,
+                status: link.status,
+                expires_at: link.expires_at,
+                max_uses: link.max_uses,
+                use_count: link.use_count,
+                merchant_name_snapshot: link.merchant_name_snapshot,
+                invoice_number: link.invoice_number,
+                due_date: link.due_date,
+                receipt_token: link.receipt_token,
+                ...(isPeerRequestReference ? { external_reference: link.external_reference } : {}),
                 merchant_verified: merchantVerified
-            } 
+            }
         }, { status: 200 });
 
     } catch (error: any) {
@@ -200,7 +235,8 @@ export async function PATCH(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: updateError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ link: updatedLink }, { status: 200 });
+        const { receiver_private_key: _receiverKey, ...safeUpdatedLink } = updatedLink;
+        return NextResponse.json({ link: safeUpdatedLink }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment link PATCH error:", error);
