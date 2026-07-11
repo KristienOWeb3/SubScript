@@ -8,6 +8,7 @@ import { requireAccountRole, getAccountRole } from "@/lib/accounts/roles";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { prisma } from "@/lib/prisma";
 
@@ -61,7 +62,13 @@ export async function POST(request: Request) {
         /* Pay For Me: SubScript covers gas for the user committing to a merchant vault. */
         await requireGasSponsored(wallet.toLowerCase());
 
-        const txHash = await commitFromEmbedded(wallet, merchantAddress, amount);
+        /* commit escrows funds, so a retried request must reuse the same Circle idempotency key
+           or it escrows twice. Keyed on the client's x-request-id (stable across its retries) —
+           the amount is in the seed so a genuinely new commit for a different amount never
+           collides even if a client re-sends a stale request id. */
+        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+        const txHash = await commitFromEmbedded(wallet, merchantAddress, amount,
+            deterministicIdempotencyKey(`req:${requestId}:vault-commit:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}:${amount.toString()}`));
         const v = await syncVaultMirror(wallet, merchantAddress);
         /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
            alerts against the new balance. */

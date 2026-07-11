@@ -116,8 +116,12 @@ export function getKeeperSigner(): ethers.Wallet {
     return new ethers.Wallet(key, provider);
 }
 
-/** Approve USDC to the vault (if needed) then commit `amount` micros for (user → merchant). */
-export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint) {
+/** Approve USDC to the vault (if needed) then commit `amount` micros for (user → merchant).
+    `commit` moves funds, so the caller passes an attempt-scoped idempotencyKey — a retried
+    request reusing the same key dedupes at Circle instead of escrowing twice. Top-ups to the
+    same vault are legitimately repeatable, so the key must be per-attempt, never derived from
+    just (user, merchant). */
+export async function commitFromEmbedded(walletAddress: string, merchant: string, amount: bigint, idempotencyKey?: string) {
     const custody = await getWalletCustody(walletAddress);
     await ensureUsdcAllowance(custody, SUBSCRIPT_VAULT_ADDRESS, amount);
     const { txHash } = await custody.executeContract({
@@ -125,6 +129,7 @@ export async function commitFromEmbedded(walletAddress: string, merchant: string
         abi: VAULT_ABI,
         functionName: "commit",
         args: [merchant.toLowerCase(), amount],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
     });
     return txHash;
 }

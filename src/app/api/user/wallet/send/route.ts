@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { getWalletCustody } from "@/lib/custody";
+import { getWalletCustody, deterministicIdempotencyKey } from "@/lib/custody";
 import { parseUsdcToMicros } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
@@ -106,6 +106,12 @@ export async function POST(request: Request) {
         const custody = await getWalletCustody(normalizedSender);
         const txs: { receiverAddress: string; amountUsdc: string; txHash: string }[] = [];
 
+        /* Transfers move funds, so each recipient gets a deterministic Circle idempotency key
+           scoped to (request, position, recipient, amount). A client that reuses its
+           x-request-id on retry dedupes at Circle instead of paying the same recipient twice;
+           two identical recipients WITHIN a batch stay distinct via the index. */
+        const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+
         /* Transfers settle one-by-one and are irreversible once mined. If a later one fails we must
            NOT report a blanket failure — that hides the transfers already sent and invites a retry
            that double-pays them. Stop at the first failure and return exactly what settled. */
@@ -118,6 +124,9 @@ export async function POST(request: Request) {
                     abi: USDC_ERC20_ABI,
                     functionName: "transfer",
                     args: [item.receiver, item.amountMicros],
+                    idempotencyKey: deterministicIdempotencyKey(
+                        `wallet-send:${normalizedSender}:${requestId}:${i}:${item.receiver}:${item.amountMicros.toString()}`
+                    ),
                 });
                 txs.push({
                     receiverAddress: item.receiver,

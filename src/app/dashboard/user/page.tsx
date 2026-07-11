@@ -988,11 +988,18 @@ export default function UserDashboard() {
     receiverAddress?: string;
     amountUsdc?: string;
     recipients?: { receiverAddress: string; amountUsdc: string }[];
+    /* Stable per logical send attempt; the server derives each transfer's Circle idempotency
+       key from it, so a retry with the same key cannot pay a recipient twice. */
+    requestKey?: string;
   }) => {
+    const { requestKey, ...body } = payload;
     const res = await fetch("/api/user/wallet/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        ...(requestKey ? { "x-request-id": requestKey } : {}),
+      },
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
@@ -1060,6 +1067,10 @@ export default function UserDashboard() {
     }
   };
 
+  /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
+     dedupes the first charge; cleared on success so the next subscribe is a fresh attempt. */
+  const subscribeRequestKey = useRef<string | null>(null);
+
   const handleSubscribeOrSwitchPlan = async (plan: MerchantPlan) => {
     const activeSub = getActiveSubscriptionForMerchant(plan.merchantAddress);
 
@@ -1103,13 +1114,17 @@ export default function UserDashboard() {
       const body = activeSub
         ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
         : { planId: plan.id };
+      /* Subscribing charges the first payment server-side; a retry with the same x-request-id
+         dedupes at Circle instead of creating (and charging) a second subscription. */
+      subscribeRequestKey.current ||= crypto.randomUUID();
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+      subscribeRequestKey.current = null;
       const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
       setPlanManagerStatus(
         activeSub
@@ -1183,6 +1198,9 @@ export default function UserDashboard() {
         const transfers = await sendFromEmbeddedWallet({
           receiverAddress: requesterAddress,
           amountUsdc: humanAmount,
+          /* A peer request is paid at most once — keying on the DM id makes any retry of
+             this payment dedupe at Circle instead of paying the requester twice. */
+          requestKey: `dm-pay:${dm.id}`,
         });
         txHash = transfers[0]?.txHash;
       } else {
@@ -1395,6 +1413,10 @@ export default function UserDashboard() {
     setVaultActionOpen(true);
   };
 
+  /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
+     server-side Circle idempotency key dedupes instead of escrowing the amount twice. */
+  const vaultCommitRequestKey = useRef<string | null>(null);
+
   const submitVaultAction = async (event?: React.FormEvent, opts?: { acknowledgedUnverified?: boolean }) => {
     event?.preventDefault();
     setVaultActionError(null);
@@ -1432,13 +1454,20 @@ export default function UserDashboard() {
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
+        if (vaultActionMode === "commit") vaultCommitRequestKey.current ||= crypto.randomUUID();
         const res = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(vaultActionMode === "commit" && vaultCommitRequestKey.current
+              ? { "x-request-id": vaultCommitRequestKey.current }
+              : {}),
+          },
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
+        if (vaultActionMode === "commit") vaultCommitRequestKey.current = null;
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
@@ -1695,6 +1724,12 @@ export default function UserDashboard() {
     return () => clearTimeout(timer);
   }, [singleRecipient]);
 
+  /* Idempotency keys for money-moving sends: minted per logical attempt, reused verbatim on a
+     retry after a failure (so the server dedupes at Circle), cleared only on success so an
+     intentional identical follow-up send gets a fresh key. */
+  const singleSendRequestKey = useRef<string | null>(null);
+  const batchSendRequestKey = useRef<string | null>(null);
+
   const handleSingleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setSingleSendStatus(null);
@@ -1714,10 +1749,13 @@ export default function UserDashboard() {
     setSingleSendLoading(true);
     try {
       if (isEmbeddedWalletSession) {
+        singleSendRequestKey.current ||= crypto.randomUUID();
         const transfers = await sendFromEmbeddedWallet({
           receiverAddress: singleResolved.address,
           amountUsdc: singleAmount,
+          requestKey: singleSendRequestKey.current,
         });
+        singleSendRequestKey.current = null;
         const txHash = transfers[0]?.txHash;
         setSingleSendStatus(`Success! Transfer transaction submitted: ${txHash || "confirmed"}`);
         setSingleRecipient("");
@@ -1829,12 +1867,15 @@ export default function UserDashboard() {
       }
 
       if (isEmbeddedWalletSession) {
+        batchSendRequestKey.current ||= crypto.randomUUID();
         const transfers = await sendFromEmbeddedWallet({
           recipients: resolvedRows.map((row) => ({
             receiverAddress: row.address,
             amountUsdc: row.amount,
           })),
+          requestKey: batchSendRequestKey.current,
         });
+        batchSendRequestKey.current = null;
         setBatchSendStatus(`Successfully sent ${transfers.length} transfers!`);
         setBatchRows([{ address: "", amount: "" }]);
         setBatchProgress(null);
@@ -6899,6 +6940,10 @@ function SendFundsModal({
       .finally(() => setResolving(false));
   }, [open, recipient]);
 
+  /* Stable per send attempt: reused on retry so the server's Circle idempotency key dedupes
+     instead of transferring twice; cleared on success. */
+  const sendRequestKey = useRef<string | null>(null);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resolvedAddress) {
@@ -6923,9 +6968,10 @@ function SendFundsModal({
 
     try {
       if (isEmbeddedWalletSession) {
+        sendRequestKey.current ||= crypto.randomUUID();
         const response = await fetch("/api/user/wallet/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-request-id": sendRequestKey.current },
           body: JSON.stringify({
             receiverAddress: resolvedAddress,
             amountUsdc: amount,
@@ -6935,6 +6981,7 @@ function SendFundsModal({
         if (!response.ok || !data.success) {
           throw new Error(data.error || "Transfer execution failed.");
         }
+        sendRequestKey.current = null;
         setStatus("success");
         refetchUsdc();
         setTimeout(() => onClose(), 2000);

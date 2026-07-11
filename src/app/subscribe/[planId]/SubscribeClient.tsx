@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
     Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, RefreshCw, ExternalLink,
@@ -131,20 +131,26 @@ export default function SubscribeClient({
         router.push(`/signin?next=${encodeURIComponent(next)}`);
     };
 
+    /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
+       dedupes the first charge instead of creating a second paid subscription. */
+    const subscribeRequestKey = useRef<string | null>(null);
+
     const handleSubscribe = async () => {
         if (!plan) return;
         setIsSubscribing(true);
         setSubscribeError(null);
         try {
+            subscribeRequestKey.current ||= crypto.randomUUID();
             const res = await fetch("/api/user/subscription/subscribe", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
                 body: JSON.stringify(plan.checkoutSessionId
                     ? { checkoutSessionId: plan.checkoutSessionId }
                     : { planId: plan.id }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to subscribe.");
+            subscribeRequestKey.current = null;
             setResult({ txHash: data.txHash, subscriptionId: data.subscriptionId, planName: data.planName });
         } catch (err: any) {
             setSubscribeError(err.message || "Failed to subscribe.");

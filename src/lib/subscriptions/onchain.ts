@@ -107,7 +107,14 @@ async function fetchReceipt(txHash: string): Promise<ethers.TransactionReceipt |
     return null;
 }
 
-export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint) {
+/* createSubscription takes the first payment immediately, so a retry after a timed-out response
+   must not double-submit. The caller passes an idempotencyKey scoped to the logical attempt (the
+   single-use checkout session, or the client's reusable request id) — NEVER derived from just the
+   subscriber+merchant relationship, since a user who cancels and later re-subscribes is a
+   legitimately distinct create and a relationship key would make Circle return the old
+   (cancelled) transaction. The subscribe route's DB advisory-lock + on-chain active-sub scan
+   guard against duplicate active subs on top of this. */
+export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint, idempotencyKey?: string) {
     const custody = await getWalletCustody(walletAddress);
     await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(amount, period));
     const { txHash } = await custody.executeContract({
@@ -115,10 +122,7 @@ export async function subscribeFromEmbedded(walletAddress: string, merchant: str
         abi: SUB_ABI,
         functionName: "createSubscription",
         args: [merchant.toLowerCase(), amount, period],
-        /* No durable idempotency key here: a user who cancels and later re-subscribes to the same
-           merchant is a legitimately distinct create, and a relationship-derived key would make
-           Circle return the old (cancelled) transaction. The subscribe route's DB advisory-lock +
-           on-chain active-sub scan guard against accidental duplicate active subs instead. */
+        ...(idempotencyKey ? { idempotencyKey } : {}),
     });
 
     /* Recover the new subId from the SubscriptionCreated event in the receipt. */

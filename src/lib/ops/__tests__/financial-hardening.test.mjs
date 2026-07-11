@@ -163,6 +163,44 @@ test("reconciliation migration can reclaim NEEDS_RECONCILIATION sessions", () =>
     assert.match(migration, /candidate\.status = 'NEEDS_RECONCILIATION'/);
 });
 
+test("custody money-moving calls carry attempt-scoped deterministic idempotency keys", () => {
+    /* A Circle contract-execution whose response times out is retried by the caller; with a
+       random idempotencyKey each retry is a NEW transaction, i.e. a duplicate on-chain payment.
+       Every money-moving custody call must derive its key from the logical attempt (single-use
+       checkout id or the client's reusable x-request-id) — never mint a fresh random one. */
+    const send = source("src/app/api/user/wallet/send/route.ts");
+    const subOnchain = source("src/lib/subscriptions/onchain.ts");
+    const subscribeRoute = source("src/app/api/user/subscription/subscribe/route.ts");
+    const vaultOnchain = source("src/lib/vault/onchain.ts");
+    const commitRoute = source("src/app/api/user/vault/commit/route.ts");
+
+    /* Wallet send: per-recipient key bound to (request, position, recipient, amount). */
+    assert.match(send, /x-request-id/);
+    assert.match(send, /deterministicIdempotencyKey\(\s*`wallet-send:\$\{normalizedSender\}:\$\{requestId\}:\$\{i\}:\$\{item\.receiver\}:\$\{item\.amountMicros/);
+
+    /* Subscribe (charges the first payment): key on the single-use checkout session, or the
+       client request id for plan subscribes — never just subscriber+merchant, which would make
+       a legitimate re-subscribe return the old cancelled transaction. */
+    assert.match(subOnchain, /subscribeFromEmbedded\([^)]*idempotencyKey\?: string\)/);
+    assert.match(subscribeRoute, /subscribe-checkout:\$\{checkoutSessionId\}/);
+    assert.match(subscribeRoute, /req:\$\{requestId\}:subscribe:/);
+
+    /* Vault commit (escrows funds): attempt-scoped key including wallet, merchant and amount. */
+    assert.match(vaultOnchain, /commitFromEmbedded\([^)]*idempotencyKey\?: string\)/);
+    assert.match(commitRoute, /x-request-id/);
+    assert.match(commitRoute, /req:\$\{requestId\}:vault-commit:/);
+
+    /* Client flows reuse a stable request key across retries and clear it only on success. */
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const subscribeClient = source("src/app/subscribe/[planId]/SubscribeClient.tsx");
+    assert.match(dashboard, /requestKey: `dm-pay:\$\{dm\.id\}`/);
+    assert.match(dashboard, /singleSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    assert.match(dashboard, /batchSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    assert.match(dashboard, /vaultCommitRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    assert.match(dashboard, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+});
+
 test("premium verification accepts custody SCA submissions via the SubscriptionCreated event", () => {
     const verifier = source("src/lib/payments/verifyTransaction.ts");
     /* Circle embedded wallets are ERC-4337 smart accounts: tx.to is the EntryPoint, not the

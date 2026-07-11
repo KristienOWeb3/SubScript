@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { subscribeFromEmbedded, findActiveOnChainSubscriptionId } from "@/lib/subscriptions/onchain";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
@@ -131,11 +132,20 @@ export async function POST(request: Request) {
                 }
 
                 await requireGasSponsored(subscriber);
+                /* createSubscription charges the first payment, so a retry after a timed-out
+                   response must reuse the SAME Circle idempotency key or it double-charges.
+                   Checkout sessions are single-use → durable key on the session id. Plan
+                   subscribes key on the client's x-request-id (reused across its retries);
+                   without one, each request is its own attempt. */
+                const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
                     merchant,
                     plan.amountUsdc,
-                    plan.periodSeconds
+                    plan.periodSeconds,
+                    checkoutSessionId
+                        ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
+                        : deterministicIdempotencyKey(`req:${requestId}:subscribe:${subscriber}:${planId}`)
                 );
                 onChainSubmitted = true;
 
