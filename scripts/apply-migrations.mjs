@@ -28,11 +28,22 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/* Supabase database hosts present a chain rooted at the Supabase Root 2021 CA, which is NOT in
+   Node's default trust store — so `rejectUnauthorized: true` fails with "self-signed certificate
+   in certificate chain" unless the root is supplied as the CA. This is exactly what took the
+   current-main production build down. Read the checked-in PEM (operator env override wins).
+   NEVER disable certificate verification instead — that would accept a MITM certificate. */
+function supabaseDbCa() {
+    if (process.env.SUPABASE_DB_SSL_CA) return process.env.SUPABASE_DB_SSL_CA;
+    return readFileSync(path.join(REPO_ROOT, "config", "supabase-db-ca.crt"), "utf8");
+}
 const MIGRATION_DIRS = ["prisma/migrations", "supabase/migrations"];
 
 /* Files that were already applied to production by hand (or restored directly against the DB)
@@ -135,7 +146,7 @@ async function main() {
     const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
     const client = new pg.Client({
         connectionString,
-        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true } }),
+        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ca: supabaseDbCa() } }),
         statement_timeout: 120_000,
     });
     await client.connect();

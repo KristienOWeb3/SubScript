@@ -1,5 +1,6 @@
 const { Pool } = require("pg") as any;
 import { getDatabaseUrl } from "@/lib/databaseUrl";
+import { supabaseDbCa } from "@/lib/supabaseCa";
 
 type PgClient = any;
 
@@ -14,7 +15,9 @@ function getPool() {
             max: 10,
             idleTimeoutMillis: 30_000,
             connectionTimeoutMillis: 10_000,
-            ...(isLocal ? {} : { ssl: { rejectUnauthorized: true } }),
+            /* Verified TLS with the Supabase root supplied explicitly — Node's trust store does
+               not include it, and disabling verification instead would accept a MITM. */
+            ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ca: supabaseDbCa() } }),
         });
     }
     return globalForPg.__subscriptPgPool;

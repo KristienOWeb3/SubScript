@@ -105,6 +105,32 @@ test("migration runner distinguishes fresh bootstrap and serializes deploys", as
     assert.match(runner, /rejectUnauthorized: true/);
 });
 
+test("Supabase TLS is verified against the supplied root CA, never disabled", async () => {
+    /* The current-main production build failed with "self-signed certificate in certificate
+       chain" because rejectUnauthorized:true was set without supplying the Supabase root, which
+       is not in Node's default trust store. Every DB client must pass ca:, and no client
+       anywhere may fall back to rejectUnauthorized:false (which accepts a MITM cert). */
+    const [caModule, serverPg, runner, walletSweep] = await Promise.all([
+        source("src/lib/supabaseCa.ts"),
+        source("src/lib/serverPg.ts"),
+        source("scripts/apply-migrations.mjs"),
+        source("src/lib/ops/migrateWallets.ts"),
+    ]);
+    const caFile = await source("config/supabase-db-ca.crt");
+
+    assert.match(caModule, /Supabase Root 2021 CA/);
+    assert.match(caModule, /BEGIN CERTIFICATE/);
+    /* The embedded PEM and the checked-in file must be byte-identical (build scripts read the
+       file, serverless bundles the module). */
+    const embedded = caModule.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)[0].trim();
+    assert.equal(embedded, caFile.trim(), "embedded CA PEM must match config/supabase-db-ca.crt");
+
+    for (const [name, src] of [["serverPg", serverPg], ["apply-migrations", runner], ["migrateWallets", walletSweep]]) {
+        assert.match(src, /rejectUnauthorized: true, ca:/, `${name} must supply the CA with verification on`);
+        assert.doesNotMatch(src, /rejectUnauthorized:\s*false/, `${name} must never disable TLS verification`);
+    }
+});
+
 test("contract escape windows and payment-token liabilities fail closed", async () => {
     const [vault, router] = await Promise.all([
         source("contracts/SubScriptVault.sol"),

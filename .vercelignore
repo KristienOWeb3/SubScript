@@ -1,3 +1,17 @@
+# SECURITY: when a .vercelignore exists, Vercel CLI uploads do NOT fall back to .gitignore,
+# so every secret-bearing local file must be excluded here explicitly. A `vercel deploy` from
+# this workspace would otherwise ship .env (all backend credentials) into the deployment
+# source, readable by anyone with Vercel project access.
+.env
+.env.*
+*.env
+.circle-provision.json
+*.pem
+*.key
+*.keystore
+*.jks
+**/key.properties
+
 **/node_modules
 **/.next
 out

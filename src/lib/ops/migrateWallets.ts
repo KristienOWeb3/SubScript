@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 // @ts-ignore
 import pg from "pg";
 import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
+import { supabaseDbCa } from "@/lib/supabaseCa";
 
 const { Client } = pg;
 const ALGORITHM = "aes-256-gcm";
@@ -65,9 +66,12 @@ export async function runLegacyWalletMigration(opts: MigrationOptions): Promise<
     log(`=== SubScript Legacy Wallet Sweep Migration ===`);
     log(`Mode: ${isDryRun ? "DRY-RUN (Simulating changes)" : "LIVE (Performing database & on-chain changes)"}`);
 
+    const isLocal = /localhost|127\.0\.0\.1/.test(dbUrl);
     const client = new Client({
         connectionString: dbUrl,
-        ssl: { rejectUnauthorized: false },
+        /* Verified TLS with the Supabase root CA — never disable verification, which would
+           accept a MITM cert and expose the legacy private keys this sweep decrypts. */
+        ...(isLocal ? {} : { ssl: { rejectUnauthorized: true, ca: supabaseDbCa() } }),
     });
     await client.connect();
 
