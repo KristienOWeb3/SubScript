@@ -35,11 +35,11 @@ PRIVATE_KEY=0x<secure> RPC_URL=<arc> npx hardhat run scripts/deploy-mock-stablef
 
 ### 1b. Router (UUPS proxy)
 ```bash
-PRIVATE_KEY=0x<secure> MULTISIG_ADDRESS=<SECURE_OWNER> TREASURY_ADDRESS=<treasury> \
-  forge script script/DeploySubScript.s.sol --rpc-url <arc> --broadcast
-# -> note the ERC1967 proxy address as NEW_ROUTER
+npx hardhat run scripts/deploy-router.js --network arcTestnet
+# -> note the printed "SubScriptRouter proxy:" address as NEW_ROUTER
 ```
-`MULTISIG_ADDRESS` (owner) is REQUIRED and may not be the exposed key — the script hard-fails otherwise.
+Reads `MULTISIG_ADDRESS` (owner, required — hard-fails on the exposed key) + `TREASURY_ADDRESS` from
+`.env`. (Foundry alternative if you have `forge`: `forge script script/DeploySubScript.s.sol --rpc-url <arc> --broadcast`.)
 
 ### 1c. Confidential / subscription contract (constructor)
 ```bash
@@ -51,13 +51,12 @@ PRIVATE_KEY=0x<secure> CONTRACT_OWNER_ADDRESS=<SECURE_OWNER> \
 
 ### 1d. Vault (UUPS proxy)
 ```bash
-PRIVATE_KEY=0x<secure> VAULT_OWNER_ADDRESS=<SECURE_OWNER> TREASURY_ADDRESS=<treasury> \
-  KEEPER_ADDRESS=<your rotated keeper addr> \
-  forge script script/DeployVault.s.sol --rpc-url <arc> --broadcast
-# -> note the proxy address as NEW_VAULT
+npx hardhat run scripts/deploy-vault.js --network arcTestnet
+# -> note the printed "SubScriptVault proxy:" address as NEW_VAULT
 ```
-The deployer must equal `VAULT_OWNER_ADDRESS` (owner-only setup — `initializeV2`, `setAuthorizedDrawer` —
-runs in the same broadcast). `KEEPER_ADDRESS` is the cycle-end drawer; omit to whitelist it later.
+Reads `VAULT_OWNER_ADDRESS` / `TREASURY_ADDRESS` / `KEEPER_ADDRESS` from `.env`. The deployer must
+equal `VAULT_OWNER_ADDRESS` (owner-only setup — `initializeV2`, `setAuthorizedDrawer` — runs here).
+(Foundry alternative: `forge script script/DeployVault.s.sol --rpc-url <arc> --broadcast`.)
 
 ## 2. Point the app at the new contracts
 
