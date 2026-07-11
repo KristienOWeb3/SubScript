@@ -11,6 +11,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
+import dotenv from "dotenv";
+
+/* Load configured addresses the way the app does (.env.local first, then .env) so this check runs
+   against the CONFIGURED contracts, not just the constants.ts fallbacks. */
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const constantsSrc = readFileSync(join(__dirname, "..", "src", "lib", "contracts", "constants.ts"), "utf8");
