@@ -67,7 +67,8 @@ async function runVaultDraw(request: Request) {
                         const receipt = await tx.wait();
                         await prisma.meteredVault.update({
                             where: { id: row.id },
-                            data: { accruedUsageUsdc: BigInt(0) },
+                            /* New cycle: clear accrued usage and re-arm the 50%/80% usage alerts. */
+                            data: { accruedUsageUsdc: BigInt(0), usageNotifiedBps: 0 },
                         });
                         await syncVaultMirror(row.userAddress, row.merchantAddress);
                         results.push({ id: row.id, txHash: receipt?.hash || tx.hash });

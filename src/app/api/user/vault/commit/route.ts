@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         }
 
         const body = sanitizeInput(await request.json().catch(() => null));
-        const { merchantAddress, amountUsdc } = body || {};
+        const { merchantAddress, amountUsdc, acknowledgeUnverified } = body || {};
         if (typeof merchantAddress !== "string" || !ethers.isAddress(merchantAddress)) {
             return NextResponse.json({ error: "Invalid merchant address" }, { status: 400 });
         }
@@ -35,10 +35,23 @@ export async function POST(request: Request) {
         }
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: merchantAddress.toLowerCase() },
-            select: { tier: true }
+            select: { tier: true, verified: true }
         });
         if (!merchant || merchant.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Forbidden: Vault commits are only available for Premium (Tier 3) merchants." }, { status: 403 });
+        }
+
+        /* Informed consent for unverified merchants: metered vaults let the merchant draw reported
+           usage up to the committed balance, so committing to a merchant SubScript hasn't verified
+           carries real loss-of-funds risk. Require an explicit acknowledgment (client shows the
+           warning) before escrowing, rather than silently proceeding. */
+        if (!merchant.verified && acknowledgeUnverified !== true) {
+            return NextResponse.json({
+                error: "This merchant is not verified by SubScript.",
+                code: "UNVERIFIED_MERCHANT",
+                merchantVerified: false,
+                warning: "This merchant has not been verified by SubScript. Committing funds lets them bill metered usage against your escrowed balance. Only commit to merchants you trust and have independently verified — funds lost to a fraudulent merchant may not be recoverable. Re-submit with acknowledgeUnverified: true to proceed.",
+            }, { status: 409 });
         }
         const amount = parseUsdcToMicros(amountUsdc);
         if (amount <= BigInt(0)) {
@@ -50,6 +63,12 @@ export async function POST(request: Request) {
 
         const txHash = await commitFromEmbedded(wallet, merchantAddress, amount);
         const v = await syncVaultMirror(wallet, merchantAddress);
+        /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
+           alerts against the new balance. */
+        await prisma.meteredVault.updateMany({
+            where: { userAddress: wallet.toLowerCase(), merchantAddress: merchantAddress.toLowerCase() },
+            data: { usageNotifiedBps: 0 },
+        }).catch(() => {});
         if (v.active) {
             await prisma.subscriptDm.updateMany({
                 where: {

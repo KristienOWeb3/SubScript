@@ -598,6 +598,8 @@ model MeteredVault {
   commitUsdc        BigInt   @default(0) @map("commit_usdc")
   owedUsdc          BigInt   @default(0) @map("owed_usdc")
   accruedUsageUsdc  BigInt   @default(0) @map("accrued_usage_usdc")
+  // Highest balance-usage threshold (bps) already DM'd this cycle; re-arms when the cycle resets.
+  usageNotifiedBps  Int      @default(0) @map("usage_notified_bps")
   cycleStart        DateTime? @map("cycle_start")
   lockedUntil       DateTime? @map("locked_until")
   active            Boolean  @default(false)
@@ -609,11 +611,50 @@ model MeteredVault {
 
   merchant          Merchant @relation(fields: [merchantAddress], references: [walletAddress], onDelete: Cascade)
   customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
+  usageReports      MeteredUsageReport[]
 
   @@unique([userAddress, merchantAddress])
   @@index([userAddress])
   @@index([merchantAddress])
   @@map("metered_vaults")
+}
+
+// Append-only ledger of metered usage the merchant reports against a vault. User-visible so the
+// running cost is transparent anytime (DigitalOcean-style), and the evidence base for reports.
+model MeteredUsageReport {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vaultId          String   @map("vault_id") @db.Uuid
+  userAddress      String   @map("user_address")
+  merchantAddress  String   @map("merchant_address")
+  amountUsdc       BigInt   @map("amount_usdc")
+  accruedAfterUsdc BigInt   @map("accrued_after_usdc")
+  balanceUsdc      BigInt   @map("balance_usdc")
+  note             String?
+  requestId        String?  @map("request_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  vault            MeteredVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+
+  @@index([userAddress, createdAt])
+  @@index([merchantAddress, createdAt])
+  @@index([vaultId, createdAt])
+  @@map("metered_usage_reports")
+}
+
+// User-filed scam reports against a commit (metered-vault) merchant. Surfaced for SubScript ops
+// review; never affects the keeper draw. One open report per (merchant, reporter).
+model MerchantReport {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress String   @map("merchant_address")
+  reporterAddress String   @map("reporter_address")
+  reason          String
+  detail          String?
+  status          String   @default("OPEN")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([merchantAddress, reporterAddress])
+  @@index([merchantAddress, status])
+  @@map("merchant_reports")
 }
 
 model TestClock {
