@@ -105,6 +105,30 @@ test("migration runner distinguishes fresh bootstrap and serializes deploys", as
     assert.match(runner, /rejectUnauthorized: true/);
 });
 
+test("CLI config trust anchor is the protocol owner, not the retired admin key", async () => {
+    /* The CLI pinned expectedAdminAddress to a third key (0x49315D…) while the server signed
+       with PRIVATE_KEY, so verification failed and owner-only actions couldn't run. Both sides
+       now key off the protocol owner: the server signs with CLI_CONFIG_SIGNING_KEY||PRIVATE_KEY
+       and self-reports that address; the CLI pins the owner (env-overridable). */
+    const [route, cliSrc] = await Promise.all([
+        source("src/app/api/cli/config/route.ts"),
+        source("packages/cli/src/utils/api.ts"),
+    ]);
+
+    /* The retired admin key must be gone from both surfaces (dist is a build artifact,
+       regenerated from src by the CLI's prepublish build). */
+    for (const [name, src] of [["route", route], ["cli-src", cliSrc]]) {
+        assert.doesNotMatch(src, /0x49315D8b3282812B92f454d45Cf041920a403492/i, `${name} still references the retired admin key`);
+    }
+
+    /* Server derives adminAddress from the actual signer (no hardcoded value to drift). */
+    assert.match(route, /CLI_CONFIG_SIGNING_KEY \|\| process\.env\.PRIVATE_KEY/);
+    assert.match(route, /adminAddress: wallet\.address/);
+
+    /* CLI pins the owner address, overridable via env for a future rotation. */
+    assert.match(cliSrc, /SUBSCRIPT_CLI_ADMIN_ADDRESS \|\| "0x59e6970Eac4c9A44247adf975c462d17c94135ee"/);
+});
+
 test("Supabase TLS is verified against the supplied root CA, never disabled", async () => {
     /* The current-main production build failed with "self-signed certificate in certificate
        chain" because rejectUnauthorized:true was set without supplying the Supabase root, which
