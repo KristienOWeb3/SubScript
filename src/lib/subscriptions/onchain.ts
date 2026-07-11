@@ -178,14 +178,17 @@ export async function modifyFromEmbedded(
 }
 
 /** Direct USDC transfer from the embedded wallet to a recipient — used to charge the
-    prorated difference when a user upgrades immediately. */
-export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint) {
+    prorated difference when a user upgrades immediately. Pass a deterministic idempotencyKey
+    to make the charge safe against retries/concurrent requests: the custody provider returns the
+    original transaction instead of moving funds a second time. */
+export async function transferUsdcFromEmbedded(walletAddress: string, to: string, amountMicros: bigint, idempotencyKey?: string) {
     const custody = await getWalletCustody(walletAddress);
     const { txHash } = await custody.executeContract({
         contractAddress: USDC_NATIVE_GAS_ADDRESS,
         abi: USDC_ABI,
         functionName: "transfer",
         args: [to.toLowerCase(), amountMicros],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
     });
     return txHash;
 }

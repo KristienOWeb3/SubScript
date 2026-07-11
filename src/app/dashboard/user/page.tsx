@@ -1381,6 +1381,7 @@ export default function UserDashboard() {
     setVaultActionMerchantLocked(Boolean(merchant));
     setVaultActionAmount("");
     setVaultActionError(null);
+    setVaultUnverifiedWarning(false);
     setVaultActionOpen(true);
   };
 

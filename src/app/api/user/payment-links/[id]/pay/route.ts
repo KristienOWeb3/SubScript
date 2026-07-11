@@ -86,9 +86,10 @@ export async function POST(request: Request, { params }: RouteContext) {
            claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
            and an already-completed one returns the original tx hash instead of paying again. */
         const claimKey = `embedded-pay:${id}:${payer}`;
+        const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
         try {
             await prisma.idempotencyKey.create({
-                data: { executionKey: claimKey, status: "PROCESSING", expiresAt: new Date(Date.now() + 5 * 60 * 1000) },
+                data: { executionKey: claimKey, status: "PROCESSING", expiresAt: claimExpiry() },
             });
         } catch (e: any) {
             if (e?.code === "P2002") {
@@ -97,9 +98,26 @@ export async function POST(request: Request, { params }: RouteContext) {
                 if (existing?.status === "COMPLETED" && priorTx) {
                     return NextResponse.json({ success: true, txHash: priorTx, receiptId: receiptToken, settlesDirectlyToUser }, { status: 200 });
                 }
-                return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+                /* A PROCESSING claim whose expiry has passed is an abandoned lock — a previous request
+                   crashed or timed out after create() but before completing. Atomically re-claim it
+                   (guarded on the still-expired state so it can't steal a live claim) and continue;
+                   otherwise a genuine in-flight request is holding it. */
+                const isReclaimable = existing?.status === "PROCESSING" && existing?.expiresAt && new Date(existing.expiresAt) < new Date();
+                if (isReclaimable) {
+                    const reclaimed = await prisma.idempotencyKey.updateMany({
+                        where: { executionKey: claimKey, status: "PROCESSING", expiresAt: { lt: new Date() } },
+                        data: { expiresAt: claimExpiry(), responsePayload: undefined },
+                    });
+                    if (reclaimed.count === 0) {
+                        /* Another request re-claimed it first. */
+                        return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+                    }
+                } else {
+                    return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+                }
+            } else {
+                throw e;
             }
-            throw e;
         }
 
         let txHash: string;

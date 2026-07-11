@@ -84,7 +84,7 @@ model PaymentLink {
   expiresAt            DateTime?            @map("expires_at")
   externalReference    String?              @map("external_reference")
   receiptToken         String?              @unique @map("receipt_token")
-  idempotencyKey       String?              @unique @map("idempotency_key")
+  idempotencyKey       String?              @map("idempotency_key")
   merchantNameSnapshot String?              @map("merchant_name_snapshot")
   maxUses              Int?                 @map("max_uses")
   useCount             Int                  @default(0) @map("use_count")
@@ -104,6 +104,7 @@ model PaymentLink {
   updatedAt            DateTime             @default(now()) @map("updated_at")
   payments             PaymentLinkPayment[]
 
+  @@unique([merchantAddress, idempotencyKey], map: "payment_links_merchant_idempotency_key")
   @@index([merchantAddress], map: "payment_links_merchant_idx")
   @@index([active], map: "payment_links_active_idx")
   @@index([beneficiaryAddress], map: "payment_links_beneficiary_address_idx")

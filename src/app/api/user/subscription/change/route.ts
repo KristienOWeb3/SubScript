@@ -23,10 +23,12 @@ import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { deterministicIdempotencyKey } from "@/lib/custody";
 
 export const maxDuration = 150;
 
 export async function POST(request: Request) {
+    let changeClaimKey: string | null = null;
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -82,6 +84,42 @@ export async function POST(request: Request) {
 
         const isUpgrade = rateComparison > 0;
 
+        /* Single-flight guard: a double-submit or retry must not charge the prorated difference or
+           apply the modify twice. Claim (subscription, plan, subscriber) atomically — a concurrent
+           attempt gets 409, a completed one replays the stored result, and an abandoned (expired)
+           PROCESSING claim is reclaimed. */
+        changeClaimKey = `subscription-change:${fromSubscriptionId}:${planId}:${subscriber}`;
+        const changeClaimExpiry = () => new Date(Date.now() + 3 * 60 * 1000);
+        try {
+            await prisma.idempotencyKey.create({
+                data: { executionKey: changeClaimKey, status: "PROCESSING", expiresAt: changeClaimExpiry() },
+            });
+        } catch (e: any) {
+            if (e?.code === "P2002") {
+                const existing = await prisma.idempotencyKey.findUnique({ where: { executionKey: changeClaimKey } }).catch(() => null);
+                if (existing?.status === "COMPLETED" && existing.responsePayload) {
+                    changeClaimKey = null; /* don't release a completed claim in the catch */
+                    return NextResponse.json(existing.responsePayload as any, { status: 200 });
+                }
+                const reclaimable = existing?.status === "PROCESSING" && existing?.expiresAt && new Date(existing.expiresAt) < new Date();
+                if (reclaimable) {
+                    const reclaimed = await prisma.idempotencyKey.updateMany({
+                        where: { executionKey: changeClaimKey, status: "PROCESSING", expiresAt: { lt: new Date() } },
+                        data: { expiresAt: changeClaimExpiry() },
+                    });
+                    if (reclaimed.count === 0) {
+                        changeClaimKey = null;
+                        return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
+                    }
+                } else {
+                    changeClaimKey = null;
+                    return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
+                }
+            } else {
+                throw e;
+            }
+        }
+
         /* Immediate upgrade: charge only the prorated difference for the rest of the current
            period now. */
         let proratedChargeMicros = BigInt(0);
@@ -96,7 +134,14 @@ export async function POST(request: Request) {
                 nowSeconds,
             );
             if (proratedChargeMicros > BigInt(0)) {
-                proratedTxHash = await transferUsdcFromEmbedded(subscriber, plan.merchantAddress, proratedChargeMicros);
+                /* Deterministic key so a retry/concurrent request re-uses the SAME on-chain transfer
+                   at the custody layer instead of charging the prorated amount twice. */
+                proratedTxHash = await transferUsdcFromEmbedded(
+                    subscriber,
+                    plan.merchantAddress,
+                    proratedChargeMicros,
+                    deterministicIdempotencyKey(`sub-upgrade-proration:${fromSubscriptionId}:${planId}`),
+                );
             }
         }
 
@@ -161,7 +206,7 @@ export async function POST(request: Request) {
             console.error("[subscription/change] merchant webhook dispatch failed:", err);
         }
 
-        return NextResponse.json({
+        const responsePayload = {
             success: true,
             txHash,
             subscriptionId: fromSubscriptionId,
@@ -172,9 +217,22 @@ export async function POST(request: Request) {
             effective: mode === "immediate" && isUpgrade
                 ? "Upgrade applied now; the new rate bills from the next renewal."
                 : "Your current period continues; the new rate starts at the next renewal.",
-        }, { status: 200 });
+        };
+        /* Mark the claim COMPLETED so a later retry replays this exact result instead of re-charging. */
+        if (changeClaimKey) {
+            await prisma.idempotencyKey.update({
+                where: { executionKey: changeClaimKey },
+                data: { status: "COMPLETED", responsePayload: responsePayload as any },
+            }).catch(() => {});
+        }
+        return NextResponse.json(responsePayload, { status: 200 });
     } catch (error: any) {
         console.error("Change plan failed:", error);
+        /* Release the claim so the user can retry. The prorated charge is idempotency-keyed at the
+           custody layer, so a retry re-uses the same on-chain transfer rather than double-charging. */
+        if (changeClaimKey) {
+            await prisma.idempotencyKey.delete({ where: { executionKey: changeClaimKey } }).catch(() => {});
+        }
         return NextResponse.json({ error: error.message || "Failed to change plan" }, { status: 500 });
     }
 }
