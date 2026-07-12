@@ -53,7 +53,9 @@ export async function POST(request: Request, { params }: RouteContext) {
 
         /* Settlement-parity guards with the hosted verifier: never let an inactive, expired, or
            exhausted link mint a fresh on-chain charge. */
-        if (link.active === false || link.status === "PAID") {
+        /* PAID is aggregate history, not exhaustion: reusable links stay payable until maxUses.
+           active/expiry/use-count are the actual availability guards. */
+        if (link.active === false) {
             return NextResponse.json({ error: "This payment link is no longer active." }, { status: 410 });
         }
         if (link.expiresAt && new Date(link.expiresAt) < new Date()) {

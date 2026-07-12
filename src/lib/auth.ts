@@ -39,11 +39,11 @@ export async function createSessionToken(address: string, durationMs: number) {
 }
 
 export async function revokeSessionToken(headers: Headers) {
-    const token = getCookieValue(headers.get("cookie") || "", "subscript_session_token");
-    if (!token) return;
+    const tokens = getCookieValues(headers.get("cookie") || "", "subscript_session_token");
+    if (tokens.length === 0) return;
     await withPgClient((client) => client.query(
-        "delete from sessions where token = $1",
-        [sessionTokenHash(token)]
+        "delete from sessions where token = any($1::text[])",
+        [tokens.map(sessionTokenHash)]
     ));
 }
 
@@ -52,14 +52,34 @@ export async function revokeSessionToken(headers: Headers) {
  * and return the cleaned value (trimmed and stripped of surrounding quotes).
  */
 export function getCookieValue(cookieHeader: string, name: string): string | null {
+    return getCookieValues(cookieHeader, name)[0] ?? null;
+}
+
+/**
+ * Return every cookie value with this name. Browsers may send both a legacy host-only
+ * cookie and the current domain-wide cookie in the same header; cookie ordering is not
+ * a reliable way to decide which session is current.
+ */
+export function getCookieValues(cookieHeader: string, name: string): string[] {
     const pattern = new RegExp(`(?:^|;\\s*)${name}\\s*=\\s*([^;]*)`);
-    const match = cookieHeader.match(pattern);
-    if (!match) return null;
-    let value = match[1].trim();
-    if (value.startsWith('"') && value.endsWith('"')) {
-        value = value.slice(1, -1);
+    const values: string[] = [];
+    let remaining = cookieHeader;
+
+    while (remaining) {
+        const match = remaining.match(pattern);
+        if (!match || match.index === undefined) break;
+
+        let value = match[1].trim();
+        if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.slice(1, -1);
+        }
+        if (value && !values.includes(value)) values.push(value);
+
+        const consumed = match.index + match[0].length;
+        remaining = remaining.slice(consumed);
     }
-    return value;
+
+    return values;
 }
 
 export type VerifiedSessionToken = {
@@ -75,41 +95,50 @@ export type VerifiedSessionToken = {
  */
 export async function getVerifiedSessionToken(headers: Headers): Promise<VerifiedSessionToken | null> {
     const cookieStore = headers.get("cookie") || "";
-    const token = getCookieValue(cookieStore, "subscript_session_token");
+    const tokens = getCookieValues(cookieStore, "subscript_session_token");
 
-    if (!token) return null;
+    if (tokens.length === 0) return null;
 
-    try {
-        const { payload } = await jwtVerify(token, jwtSecret(), {
-            issuer: SESSION_ISSUER,
-            audience: SESSION_AUDIENCE,
-        });
+    let newestSession: (VerifiedSessionToken & { issuedAt: number }) | null = null;
+    for (const token of tokens) {
+        try {
+            const { payload } = await jwtVerify(token, jwtSecret(), {
+                issuer: SESSION_ISSUER,
+                audience: SESSION_AUDIENCE,
+            });
 
-        if (payload && typeof payload.address === "string" && typeof payload.jti === "string") {
-            const address = payload.address.toLowerCase();
-            /* Revocation check (finding 21): the token must still have a live row in `sessions`,
-               so logout can invalidate a copied token. */
-            const session = await pgMaybeOne<{ wallet: string }>(
-                `select wallet from sessions
-                  where token = $1
-                    and lower(wallet) = $2
-                    and expires_at > now()
-                  limit 1`,
-                [sessionTokenHash(token), address]
-            );
-            if (!session) return null;
-            /* Return the object shape callers use to re-issue the SAME cookie (session healing). */
-            return {
-                token,
-                wallet: address,
-                expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
-            };
+            if (payload && typeof payload.address === "string" && typeof payload.jti === "string") {
+                const address = payload.address.toLowerCase();
+                /* Revocation check (finding 21): the token must still have a live row in `sessions`,
+                   so logout can invalidate a copied token. */
+                const session = await pgMaybeOne<{ wallet: string }>(
+                    `select wallet from sessions
+                      where token = $1
+                        and lower(wallet) = $2
+                        and expires_at > now()
+                      limit 1`,
+                    [sessionTokenHash(token), address]
+                );
+                if (!session) continue;
+                const candidate = {
+                    token,
+                    wallet: address,
+                    expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
+                    issuedAt: typeof payload.iat === "number" ? payload.iat : 0,
+                };
+                if (!newestSession || candidate.issuedAt > newestSession.issuedAt) {
+                    newestSession = candidate;
+                }
+            }
+        } catch {
+            /* A duplicate legacy cookie may be expired or signed by a rotated secret.
+               Keep checking the remaining same-name cookies before rejecting the request. */
         }
-        return null;
-    } catch (err) {
-        console.error("JWT verification failed:", err);
-        return null;
     }
+
+    if (!newestSession) return null;
+    const { issuedAt: _issuedAt, ...verifiedSession } = newestSession;
+    return verifiedSession;
 }
 
 /**

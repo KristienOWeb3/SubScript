@@ -840,24 +840,38 @@ export default function UserDashboard() {
     }
   }, []);
 
-  /* Live inbox: poll DMs while the tab is visible (and refresh immediately on focus) so messages
-     from the other end and settled requests appear without a manual reload — which also keeps the
-     notification badge honest, since it's derived from this same data. */
+  /* Live inbox: poll DMs while visible. On focus/visibility or a checkout completion from another
+     tab, refresh every payment-backed surface so balances, receipts, subscriptions and DMs agree. */
   useEffect(() => {
     if (!userWallet) return;
-    const refresh = () => {
+    const refreshAll = () => {
       if (typeof document === "undefined" || document.visibilityState === "visible") {
-        loadDms();
+        void Promise.all([
+          loadDms(),
+          loadSubscriptions(),
+          loadUserSettings(),
+          refetchUsdc().catch(console.error),
+        ]);
       }
     };
-    const interval = window.setInterval(refresh, 8000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "subscript_payment_settled") refreshAll();
+    };
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadDms();
+    }, 8000);
+    window.addEventListener("focus", refreshAll);
+    window.addEventListener("storage", handleStorage);
+    document.addEventListener("visibilitychange", refreshAll);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refreshAll);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", refreshAll);
     };
+    // loadSubscriptions/loadUserSettings are page-local fetchers; this effect is re-established
+    // whenever the authenticated wallet changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userWallet, loadDms]);
 
   const loadRegisteredDns = async (walletAddress: string) => {
@@ -1176,10 +1190,14 @@ export default function UserDashboard() {
     /* Merchant subscription requests settle through the sponsored hosted checkout. */
     if (dm.messageType !== "PEER_REQUEST") {
       if (!dm.paymentLinkId) return;
-      await runAction(`pay-${dm.id}`, async () => {
-        await handleUpdateDmStatus(dm.id, "APPROVED");
-        router.push(`/pay/${dm.paymentLinkId}?direct=true`);
-      });
+      const checkoutUrl = `/pay/${dm.paymentLinkId}`;
+      const opened = window.open("about:blank", "_blank");
+      if (opened) {
+        opened.opener = null;
+        opened.location.href = checkoutUrl;
+      } else {
+        router.push(checkoutUrl);
+      }
       return;
     }
 
@@ -2684,7 +2702,9 @@ export default function UserDashboard() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-black text-white">{tx.name}</p>
-                              <p className="truncate text-[10px] font-bold text-white/40">{tx.detail}</p>
+                              <p className="truncate text-[10px] font-bold text-white/40">
+                                {tx.detail} • {new Date(tx.time).toLocaleString()}
+                              </p>
                             </div>
                             <div className="text-right shrink-0">
                               <span className={`block text-xs font-black ${tx.incoming ? "text-[#ccff00]" : "text-white"}`}>
@@ -3081,7 +3101,7 @@ export default function UserDashboard() {
                         <div className="rounded-3xl bg-white p-4">
                           <QRCode
                             value={linkResultUrl}
-                            size={196}
+                            size={isMobile ? 196 : 280}
                             ecLevel="H"
                             bgColor="#ffffff"
                             fgColor="#000000"
@@ -3924,7 +3944,7 @@ export default function UserDashboard() {
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-bold text-white">{tx.name}</p>
                                   <p className="truncate text-[10px] text-white/40">
-                                    {tx.detail} • {new Date(tx.time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                    {tx.detail} • {new Date(tx.time).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
                                   </p>
                                 </div>
                                 <div className="text-right shrink-0">
@@ -4031,7 +4051,7 @@ export default function UserDashboard() {
                           <thead>
                             <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
                               <th className="pb-3">Receipt ID</th>
-                              <th className="pb-3">Date</th>
+                              <th className="pb-3">Date &amp; Time</th>
                               <th className="pb-3">Amount</th>
                               <th className="pb-3">Status</th>
                               <th className="pb-3 text-right">Action</th>
@@ -4048,7 +4068,7 @@ export default function UserDashboard() {
                               settingsTransactions.map((tx) => (
                                 <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
                                   <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                                  <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                  <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
                                   <td className="py-4 font-mono font-bold text-white">
                                     ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                   </td>

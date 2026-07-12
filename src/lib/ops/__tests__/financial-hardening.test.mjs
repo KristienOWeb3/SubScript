@@ -16,6 +16,24 @@ test("Google/Circle completion cannot mint sessions from client-asserted identit
     assert.doesNotMatch(auth, /payload\.provider\s*===\s*"google"/);
 });
 
+test("session verification survives duplicate legacy and domain cookies", () => {
+    const auth = source("src/lib/auth.ts");
+
+    assert.match(auth, /getCookieValues\(cookieStore, "subscript_session_token"\)/);
+    assert.match(auth, /for \(const token of tokens\)/);
+    assert.match(auth, /if \(!session\) continue/);
+    assert.match(auth, /candidate\.issuedAt > newestSession\.issuedAt/);
+    assert.match(auth, /delete from sessions where token = any\(\$1::text\[\]\)/);
+});
+
+test("receipt access lets a connected wallet replace a mismatched browser session", () => {
+    const client = source("src/app/receipt/[receiptId]/ReceiptClient.tsx");
+
+    assert.match(client, /connectedWalletDiffersFromSession/);
+    assert.match(client, /onClick=\{handleAuthenticate\}/);
+    assert.match(client, /This browser is signed in as/);
+});
+
 test("batch payouts fail closed until reservation is atomic", () => {
     const route = source("src/app/api/premium/withdraw/batch/route.ts");
 
