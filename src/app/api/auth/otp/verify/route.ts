@@ -7,7 +7,7 @@ import { withPgClient } from "@/lib/serverPg";
 import crypto from "crypto";
 import { 
     isConnectionError, 
-    getOfflineOtpCode, 
+    retrieveLocalOtpCode,
     deleteOfflineOtpCode, 
     getOfflineUserEmbeddedWallet, 
     saveOfflineUserEmbeddedWallet
@@ -29,7 +29,7 @@ function safeHashMatch(expected: string, actual: string) {
 }
 
 function allowOfflineAuth() {
-    return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+    return process.env.NODE_ENV !== "production" && process.env.ENABLE_LOCAL_OFFLINE_AUTH === "true";
 }
 
 /* A 6-digit code with a 10-minute TTL is brute-forceable without a per-code guess budget
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
 
         if (isOfflineMode) {
             console.warn("⚠️ Supabase is offline. Verifying OTP via offlineDb.");
-            const record = getOfflineOtpCode(emailVal);
+            const record = retrieveLocalOtpCode(emailVal);
             if (record) {
                 verified = new Date() <= new Date(record.expires_at)
                     && safeHashMatch(record.code, hashOtp(emailVal, codeTrimmed));

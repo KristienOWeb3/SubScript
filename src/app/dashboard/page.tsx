@@ -1543,7 +1543,7 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setOtpSent(true);
-                console.log("Sandbox OTP Code:", data.sandboxCode);
+                console.log("Development OTP Code:", data.devOtpCode);
             } else {
                 setOtpError(data.error || "Failed to send verification code.");
             }

@@ -4674,7 +4674,6 @@ export default function UserDashboard() {
         chainId={chainId}
         switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
-        triggerToast={triggerToast}
         refetchBalances={() => {
           refetchUsdc().catch(console.error);
           refetchSepolia().catch(console.error);
@@ -6011,42 +6010,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-type FiatFundingMode = "loading" | "disabled" | "sandbox" | "live";
-
-type FiatFundingIntentView = {
-  id: string;
-  status: string;
-  fiatCurrency: string;
-  fiatAmountMinor: string;
-  quoteRateNgnPerUsdcMinor: string;
-  grossUsdcMicros: string;
-  feeFiatMinor: string;
-  netUsdcMicros: string;
-  bankName: string;
-  accountName: string;
-  accountNumber: string;
-  transferReference: string;
-  destinationWallet: string;
-  destinationChainId: number;
-  expiresAt: string;
-  settledAt: string | null;
-  settlementTxHash: string | null;
-  createdAt: string;
-};
-
-const formatNgnMinor = (minor: string) =>
-  new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 2,
-  }).format(Number(minor) / 100);
-
-const formatUsdcMicros = (micros: string) =>
-  `${(Number(micros) / 1_000_000).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  })} USDC`;
-
 function DepositModal({
   open,
   userWallet,
@@ -6060,7 +6023,6 @@ function DepositModal({
   switchChainAsync,
   writeContractAsync,
   refetchBalances,
-  triggerToast,
 }: {
   open: boolean;
   userWallet: string | null;
@@ -6074,9 +6036,8 @@ function DepositModal({
   switchChainAsync: any;
   writeContractAsync: any;
   refetchBalances: () => void;
-  triggerToast: (message: string) => void;
 }) {
-  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp" | "fiat">("menu");
+  const [activeSubMode, setActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
 
   // Reset sub-mode when modal opens
   useEffect(() => {
@@ -6094,15 +6055,6 @@ function DepositModal({
   const [cctpStatus, setCctpStatus] = useState<"idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "success" | "error">("idle");
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
-
-  // Bank-transfer funding state. The backend owns quote math, wallet identity, and mode gates.
-  const [fiatAmount, setFiatAmount] = useState("10000");
-  const [fiatMode, setFiatMode] = useState<FiatFundingMode>("loading");
-  const [fiatIntent, setFiatIntent] = useState<FiatFundingIntentView | null>(null);
-  const [fiatStatus, setFiatStatus] = useState<"idle" | "loading" | "creating" | "awaiting_transfer" | "settling" | "success" | "error">("idle");
-  const [fiatMessage, setFiatMessage] = useState<string | null>(null);
-  const [fiatError, setFiatError] = useState<string | null>(null);
-  const fiatIdempotencyKey = useRef<string | null>(null);
 
   const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
 
@@ -6278,148 +6230,21 @@ function DepositModal({
     }
   };
 
-  useEffect(() => {
-    if (!open || activeSubMode !== "fiat") return;
-
-    let cancelled = false;
-    const loadFundingState = async () => {
-      setFiatStatus("loading");
-      setFiatError(null);
-      try {
-        const response = await fetch("/api/user/funding-intents", { cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || "Could not load bank-transfer funding.");
-        }
-        if (cancelled) return;
-
-        const mode = (payload.mode || "disabled") as FiatFundingMode;
-        const latest = Array.isArray(payload.intents) ? payload.intents[0] as FiatFundingIntentView | undefined : undefined;
-        setFiatMode(mode);
-        if (latest?.status === "SIMULATED_SETTLED") {
-          setFiatIntent(latest);
-          setFiatStatus("success");
-          setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-        } else if (latest?.status === "AWAITING_TRANSFER") {
-          setFiatIntent(latest);
-          setFiatStatus("awaiting_transfer");
-          setFiatMessage("Use the one-time sandbox instructions below.");
-        } else {
-          setFiatIntent(null);
-          fiatIdempotencyKey.current = null;
-          setFiatStatus("idle");
-          setFiatMessage(latest
-            ? `Your previous bank-transfer quote is ${latest.status.toLowerCase().replaceAll("_", " ")}. Create a new quote.`
-            : typeof payload.unavailableReason === "string"
-              ? payload.unavailableReason
-              : null);
-        }
-      } catch {
-        if (cancelled) return;
-        /* The funding rail returns 503 until it goes live at mainnet. That is not an error state
-           for the user — present it as "coming at mainnet" (handled in the render), never as a
-           failure or a disabled feature. */
-        setFiatMode("disabled");
-        setFiatStatus("idle");
-        setFiatError(null);
-        setFiatMessage(null);
-      }
-    };
-
-    void loadFundingState();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSubMode, open]);
-
-  const handleStartFiatOnramp = async () => {
-    setFiatError(null);
-    if (!fiatAmount || !/^\d+(?:\.\d{1,2})?$/.test(fiatAmount) || Number(fiatAmount) <= 0) {
-      setFiatError("Enter a valid NGN amount with no more than two decimal places.");
-      return;
-    }
-
-    setFiatStatus("creating");
-    setFiatMessage("Creating a time-limited bank-transfer quote...");
-    fiatIdempotencyKey.current ||= crypto.randomUUID();
-
-    try {
-      const response = await fetch("/api/user/funding-intents", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": fiatIdempotencyKey.current,
-        },
-        body: JSON.stringify({ amountNgn: fiatAmount }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not create bank-transfer instructions.");
-      }
-
-      setFiatMode((payload.mode || "sandbox") as FiatFundingMode);
-      if (payload.intent?.status === "SIMULATED_SETTLED") {
-        setFiatIntent(payload.intent as FiatFundingIntentView);
-        setFiatStatus("success");
-        setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-      } else if (payload.intent?.status === "AWAITING_TRANSFER") {
-        setFiatIntent(payload.intent as FiatFundingIntentView);
-        setFiatStatus("awaiting_transfer");
-        setFiatMessage("Use the one-time sandbox instructions below.");
-      } else {
-        setFiatIntent(null);
-        fiatIdempotencyKey.current = null;
-        setFiatStatus("idle");
-        setFiatMessage("The quote is no longer active. Create a new quote.");
-      }
-    } catch (error) {
-      setFiatStatus("error");
-      setFiatError(error instanceof Error ? error.message : "Could not create bank-transfer instructions.");
-    }
-  };
-
-  const handleSimulateBankTransfer = async () => {
-    if (!fiatIntent) return;
-    setFiatStatus("settling");
-    setFiatError(null);
-    setFiatMessage("Simulating provider confirmation and test settlement...");
-
-    try {
-      const response = await fetch(`/api/user/funding-intents/${encodeURIComponent(fiatIntent.id)}/simulate`, {
-        method: "POST",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not simulate the bank transfer.");
-      }
-      setFiatIntent(payload.intent as FiatFundingIntentView);
-      setFiatStatus("success");
-      setFiatMessage("Sandbox flow completed. No real NGN or USDC moved.");
-      if (payload.intent?.settlementTxHash) {
-        refetchBalances();
-      }
-    } catch (error) {
-      setFiatStatus("error");
-      setFiatError(error instanceof Error ? error.message : "Could not simulate the bank transfer.");
-    }
-  };
-
-  /* Mobile thumb-swipe across the Direct / Bank / Bridge deposit modes. Off on the chooser menu. */
+  /* Mobile thumb-swipe across the Direct / Bridge deposit modes. Off on the chooser menu. */
   const depositSwipe = useSwipeTabs(
-    ["direct", "fiat", "cctp"] as const,
-    activeSubMode as "direct" | "fiat" | "cctp",
+    ["direct", "cctp"] as const,
+    activeSubMode as "direct" | "cctp",
     (mode) => {
       setActiveSubMode(mode);
       setCctpStatus("idle");
-      setFiatStatus("idle");
     },
     { enabled: activeSubMode !== "menu" },
   );
-  const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "fiat" | "cctp">("menu");
+  const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
   if (activeSubMode !== prevActiveSubMode) {
     setPrevActiveSubMode(activeSubMode);
   }
-  const subModes = ["menu", "direct", "fiat", "cctp"] as const;
+  const subModes = ["menu", "direct", "cctp"] as const;
   const subIndex = subModes.indexOf(activeSubMode);
   const prevSubIndex = subModes.indexOf(prevActiveSubMode);
   const subDirection = subIndex >= prevSubIndex ? 1 : -1;
@@ -6431,7 +6256,7 @@ function DepositModal({
           <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : activeSubMode === "fiat" ? "Bank Transfer" : "Circle CCTP Bridge"}
+                {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
               </h3>
               <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
             </div>
@@ -6439,7 +6264,7 @@ function DepositModal({
             {/* Tabs for non-menu active modes */}
             {activeSubMode !== "menu" && (
               <div className="relative mb-6 flex gap-1 rounded-2xl bg-black/40 p-1 border border-white/5">
-                {(["direct", "fiat", "cctp"] as const).map((tab) => {
+                {(["direct", "cctp"] as const).map((tab) => {
                   const isActive = activeSubMode === tab;
                   return (
                     <button
@@ -6448,7 +6273,6 @@ function DepositModal({
                       onClick={() => {
                         setActiveSubMode(tab);
                         setCctpStatus("idle");
-                        setFiatStatus("idle");
                       }}
                       className={`relative flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-xl z-10 transition-colors duration-200 ${
                         isActive ? "text-black" : "text-white/50 hover:text-white/85"
@@ -6462,7 +6286,7 @@ function DepositModal({
                         />
                       )}
                       <span className="relative z-20">
-                        {tab === "direct" ? "Direct" : tab === "fiat" ? "Bank" : "Bridge"}
+                        {tab === "direct" ? "Direct" : "Bridge"}
                       </span>
                     </button>
                   );
@@ -6525,21 +6349,6 @@ function DepositModal({
 
                   <button
                     type="button"
-                    onClick={() => setActiveSubMode("fiat")}
-                    className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
-                  >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/80 group-hover:scale-105 transition-all shrink-0">
-                      <Download className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-white">Bank Transfer</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Fund with NGN. No card required. Arriving at mainnet.</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => setActiveSubMode("direct")}
                     className="flex w-full items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left hover:bg-white/[0.06] transition-all group"
                   >
@@ -6583,192 +6392,6 @@ function DepositModal({
                 <button type="button" onClick={onCopy} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black text-white/80">
                   <Copy className="h-4 w-4" /> {copied ? "Copied" : formatAddress(userWallet)}
                 </button>
-              </div>
-            )}
-
-            {activeSubMode === "fiat" && (
-              <div className="space-y-4 text-left">
-                <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Bank transfer only</p>
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
-                    Fund with NGN without a bank card. Settlement gas is paid separately, so it is never deducted from the quoted USDC principal.
-                  </p>
-                </div>
-
-                {fiatMode === "sandbox" && (
-                  <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-4">
-                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Arc testnet sandbox</p>
-                    <p className="mt-1.5 text-[10px] leading-relaxed text-white/55">
-                      Do not send real NGN. The account details are deliberately fake and the final balance is simulated.
-                    </p>
-                  </div>
-                )}
-
-                {(fiatStatus === "loading" || fiatStatus === "creating" || fiatStatus === "settling") ? (
-                  <div className="flex flex-col items-center gap-4 py-8 text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#ccff00]" />
-                    <p className="text-xs leading-normal text-white/70">{fiatMessage || "Loading bank-transfer funding..."}</p>
-                  </div>
-                ) : (fiatMode !== "sandbox" && fiatMode !== "live") ? (
-                  <div className="space-y-4 py-6 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 text-[#ccff00]">
-                      <Download className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Bank transfer — arriving at mainnet</h4>
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/50">
-                        Fund your wallet by NGN bank transfer, no card needed. This goes live when SubScript
-                        launches on Arc mainnet with a licensed funding partner. Until then, use Direct Deposit
-                        or bridge in USDC from another chain.
-                      </p>
-                    </div>
-                  </div>
-                ) : fiatStatus === "success" && fiatIntent ? (
-                  <div className="space-y-4 py-3 text-center">
-                    <CheckCircle2 className="mx-auto h-12 w-12 text-[#ccff00]" />
-                    <div>
-                      <h4 className="text-sm font-black uppercase tracking-wider text-white">Sandbox flow complete</h4>
-                      <p className="mt-2 text-xs leading-normal text-white/50">{fiatMessage}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
-                      <p className="text-[9px] uppercase tracking-wider text-white/35">Simulated wallet credit</p>
-                      <p className="mt-1 text-base font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
-                    </div>
-                    <p className="text-[10px] leading-relaxed text-amber-200/70">
-                      No real NGN was received and no real or testnet USDC was transferred.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        fiatIdempotencyKey.current = null;
-                        setFiatIntent(null);
-                        setFiatStatus("idle");
-                        setFiatMessage(null);
-                        setFiatError(null);
-                      }}
-                      className="rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
-                    >
-                      Create another quote
-                    </button>
-                  </div>
-                ) : fiatIntent?.status === "AWAITING_TRANSFER" ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-[9px] uppercase tracking-wider text-white/35">Transfer exactly</p>
-                          <p className="mt-1 text-sm font-black text-white">{formatNgnMinor(fiatIntent.fiatAmountMinor)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9px] uppercase tracking-wider text-white/35">You receive</p>
-                          <p className="mt-1 text-sm font-black text-[#ccff00]">{formatUsdcMicros(fiatIntent.netUsdcMicros)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div>
-                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Sandbox bank</p>
-                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.bankName}</p>
-                      </div>
-                      <div>
-                        <p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Account name</p>
-                        <p className="mt-1 text-xs font-bold text-white/80">{fiatIntent.accountName}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(fiatIntent.accountNumber);
-                          triggerToast("Account number copied!");
-                        }}
-                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
-                      >
-                        <span>
-                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Fake account number</span>
-                          <span className="mt-0.5 block font-mono text-sm font-black text-white">{fiatIntent.accountNumber}</span>
-                        </span>
-                        <Copy className="h-4 w-4 text-white/40" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(fiatIntent.transferReference);
-                          triggerToast("Reference code copied!");
-                        }}
-                        className="flex w-full items-center justify-between rounded-xl bg-black/35 px-3 py-2.5 text-left"
-                      >
-                        <span>
-                          <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Transfer reference</span>
-                          <span className="mt-0.5 block font-mono text-xs font-black text-[#ccff00]">{fiatIntent.transferReference}</span>
-                        </span>
-                        <Copy className="h-4 w-4 text-white/40" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 rounded-2xl border border-white/5 bg-black/30 p-4 text-[10px] text-white/50">
-                      <div className="flex justify-between gap-3">
-                        <span>Quote rate</span>
-                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.quoteRateNgnPerUsdcMinor)} / USDC</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Sandbox funding fee</span>
-                        <span className="font-bold text-white/75">{formatNgnMinor(fiatIntent.feeFiatMinor)}</span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Destination</span>
-                        <Identity address={fiatIntent.destinationWallet} className="text-white/75" />
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Expires</span>
-                        <span className="font-bold text-white/75">{new Date(fiatIntent.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                      </div>
-                    </div>
-
-                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
-                    <button
-                      type="button"
-                      onClick={handleSimulateBankTransfer}
-                      disabled={fiatMode !== "sandbox"}
-                      className="subscript-primary-button"
-                    >
-                      Simulate bank transfer received
-                    </button>
-                    <p className="text-center text-[9px] leading-relaxed text-white/35">
-                      Production will replace this simulation with a signed event from a licensed bank/VASP partner.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount (NGN)</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={fiatAmount}
-                        onChange={(e) => {
-                          setFiatAmount(e.target.value);
-                          fiatIdempotencyKey.current = null;
-                        }}
-                        className="subscript-input"
-                        placeholder="10000"
-                      />
-                    </div>
-                    <div className="rounded-2xl border border-white/5 bg-black/45 p-4 flex justify-between items-center text-xs">
-                      <span className="text-white/40">Quote includes</span>
-                      <span className="font-black text-[#ccff00]">Quoted USDC + zero gas deduction</span>
-                    </div>
-                    {fiatMessage && <p className="text-center text-[10px] text-amber-200/70">{fiatMessage}</p>}
-                    {fiatError && <p className="text-center text-[10px] text-red-300">{fiatError}</p>}
-                    <button
-                      type="button"
-                      onClick={handleStartFiatOnramp}
-                      disabled={fiatMode !== "sandbox"}
-                      className="subscript-primary-button mt-2"
-                    >
-                      Get bank details
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
