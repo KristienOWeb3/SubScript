@@ -77,7 +77,7 @@ jobs:
         env:
           PLAYWRIGHT_TEST_TIMEOUT: 120000
           NODE_OPTIONS: "--max-old-space-size=4096"
-        run: npx playwright test --workers=2
+        run: npx playwright test --workers=1 --timeout=120000
 
       - uses: actions/upload-artifact@v4
         if: always()

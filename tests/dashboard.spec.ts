@@ -156,8 +156,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
       await page.click('button:has-text("Checkout Setup"):visible');
       
-      // Fill custom subscription name
-      await page.fill('input[value="AI Agent Compute Limit"]', "Custom DeepSeek Rate");
+      await page.fill('label:has-text("Subscription/Plan Name") + input', "Custom DeepSeek Rate");
       
       // Check if generated code updates dynamically
       const codeBlock = page.locator("pre code");
