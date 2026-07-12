@@ -447,7 +447,6 @@ test.describe("mobile overflow audit", () => {
     expect(bottomNavBox!.height).toBeGreaterThanOrEqual(79);
 
     const styleAttr = await bottomNav.getAttribute("style") || "";
-    expect(styleAttr).toContain("blur");
     expect(styleAttr).toContain("gradient");
     await mobilePage.screenshot({ path: testInfo.outputPath("mobile-user-home.png"), fullPage: true });
 

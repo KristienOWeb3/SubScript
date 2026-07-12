@@ -305,3 +305,13 @@ test("stale webhook and billing workers cannot finalize a replacement claim", ()
     assert.match(migration, /processing_claim_id UUID/);
     assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_subscription_billing/);
 });
+
+test("fresh beta databases preserve server CRUD and receipt delegation schema", () => {
+    const runner = source("scripts/apply-migrations.mjs");
+    const alignment = source("supabase/migrations/20260712150654_align_e2e_runtime_schema.sql");
+
+    assert.match(runner, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role/);
+    assert.match(runner, /GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role/);
+    assert.match(runner, /ALTER DEFAULT PRIVILEGES[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role/);
+    assert.match(alignment, /ALTER TABLE public\.receipts[\s\S]*ADD COLUMN IF NOT EXISTS invited_addresses TEXT NOT NULL DEFAULT ''/);
+});

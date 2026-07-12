@@ -192,12 +192,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should configure off-ramp settlement split", async ({ page }) => {
-      await page.click('button:has-text("Off-Ramp"):visible');
-      await page.waitForLoadState('networkidle');
+      await page.goto("/dashboard?tab=offramp");
+      await expect(page.getByRole("heading", { name: /Fiat Escape Hatch \(Off-Ramp\)/ })).toBeVisible();
       
       // Get offramp slider
       const slider = page.locator('input[type="range"]');
-      await slider.waitFor({ state: 'attached', timeout: 15000 });
       await expect(slider).toBeVisible();
       
       // Move slider

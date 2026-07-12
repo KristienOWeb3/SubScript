@@ -249,13 +249,14 @@ async function main() {
         }
         console.log(`[migrations] Done — applied ${pending.length} migration(s).`);
 
-        // Grant SELECT and USAGE on all tables and sequences to service_role
+        // The service role backs trusted server APIs. RLS bypass alone is insufficient when a
+        // table lacks SQL privileges, so preserve the CRUD access those APIs require.
         console.log("[migrations] Granting public schema privileges to service_role...");
         try {
-            await client.query("GRANT SELECT ON ALL TABLES IN SCHEMA public TO service_role;");
-            await client.query("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO service_role;");
-            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO service_role;");
-            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO service_role;");
+            await client.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;");
+            await client.query("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role;");
+            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;");
+            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO service_role;");
             console.log("[migrations] Successfully granted public schema privileges to service_role.");
         } catch (grantErr) {
             console.warn(`[migrations] Warning: failed to grant privileges to service_role: ${grantErr.message}`);
