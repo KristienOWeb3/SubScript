@@ -53,6 +53,9 @@ export async function GET(request: Request, { params }: RouteContext) {
         if (!id) {
             return NextResponse.json({ error: "Bad Request: Missing ID parameter" }, { status: 400 });
         }
+        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -156,6 +159,9 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -247,6 +253,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });

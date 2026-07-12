@@ -38,6 +38,9 @@ function normalizePublicUrl(value: string | undefined) {
 
 /* Helper function to query payment link directly from database on the server */
 async function getPaymentLink(id: string) {
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+        return null;
+    }
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
     if (!supabaseUrl || !supabaseServiceKey) {
