@@ -241,7 +241,6 @@ export default function PublicPayClient({
         });
     })();
     const hasInjectedProvider = typeof window !== "undefined" && Boolean((window as any).ethereum);
-    const noWalletDetected = typeof window !== "undefined" && !hasInjectedProvider && walletConnectors.length <= 1;
 
     /* Pre-payment only: files this request into the signed-in payer's inbox as a pending
        payment-request DM so they can pay from their dashboard wallet. Never call this after
@@ -831,17 +830,17 @@ export default function PublicPayClient({
                             Mobile keeps the inline "Pay on Mobile (Scan QR)" toggle further down — this
                             panel is hidden below lg so mobile is unchanged. */}
                         {checkoutUrl && (
-                            <aside className="hidden lg:flex lg:w-[360px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
+                            <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white uppercase tracking-wider">Pay on mobile</p>
-                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[240px]">
+                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
                                         Scan with your phone's wallet browser to complete this payment on mobile.
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-5 w-full flex items-center justify-center">
+                                <div className="bg-white rounded-2xl p-6 w-full flex items-center justify-center">
                                     <QRCode
                                         value={checkoutUrl}
-                                        size={300}
+                                        size={360}
                                         ecLevel="H"
                                         bgColor="#ffffff"
                                         fgColor="#000000"
@@ -852,8 +851,8 @@ export default function PublicPayClient({
                                             [8, 0, 8, 8]
                                         ]}
                                         logoImage="/logo-colored.png"
-                                        logoWidth={52}
-                                        logoHeight={52}
+                                        logoWidth={64}
+                                        logoHeight={64}
                                         removeQrCodeBehindLogo={true}
                                         logoPadding={2}
                                     />
@@ -1028,22 +1027,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {noWalletDetected ? (
-                                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5 space-y-3 text-center">
-                                        <AlertCircle className="mx-auto h-6 w-6 text-amber-400" />
-                                        <p className="text-[11px] leading-relaxed text-white/70">
-                                            No browser wallet detected. Install MetaMask, Rabby, or another wallet extension, then refresh this page.
-                                        </p>
-                                        <a
-                                            href="https://metamask.io/download/"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 hover:text-white transition"
-                                        >
-                                            Get a wallet <ExternalLink className="h-3 w-3" />
-                                        </a>
-                                    </div>
-                                ) : walletConnectors.length > 1 ? (
+                                {walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one

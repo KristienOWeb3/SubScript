@@ -330,7 +330,7 @@ export default function UserTransactionsPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
-                      <p className="mt-1 text-[10px] text-white/45">{tx.detail} • {new Date(tx.time).toLocaleDateString()}</p>
+                      <p className="mt-1 text-[10px] text-white/45">{tx.detail} • {new Date(tx.time).toLocaleString()}</p>
                     </div>
                   </div>
                   <div className="text-right">
