@@ -209,6 +209,9 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     const payer = receipt?.payer_address?.toLowerCase();
     const merchant = receipt?.merchant_address?.toLowerCase();
     const isOwner = sessionWallet && (sessionWallet === payer || sessionWallet === merchant);
+    const connectedWalletDiffersFromSession = Boolean(
+        connectedAddress && sessionWallet && connectedAddress.toLowerCase() !== sessionWallet
+    );
 
     // 1. Access Denied State (Not Logged In / Non-Authorized Wallet)
     if (authRequired || error) {
@@ -252,21 +255,30 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             )}
                         </div>
                     ) : (
-                        <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10">
+                        <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10 space-y-3">
                             <p className="text-xs text-red-300">
-                                {connectedAddress 
-                                    ? `Wallet ${formatAddress(connectedAddress)} is not authorized to view this receipt.` 
+                                {connectedWalletDiffersFromSession
+                                    ? `This browser is signed in as ${formatAddress(sessionWallet || "")}, but ${formatAddress(connectedAddress || "")} is connected.`
+                                    : connectedAddress
+                                    ? `Wallet ${formatAddress(connectedAddress)} is not authorized to view this receipt.`
                                     : "Unauthorized to view receipt details."}
                             </p>
-                            <button
-                                onClick={() => {
-                                    // Reset and retry
-                                    fetchReceiptDetails();
-                                }}
-                                className="mt-3 text-xs font-bold text-white underline hover:text-white/80"
-                            >
-                                Try checking session again
-                            </button>
+                            {connectedWalletDiffersFromSession ? (
+                                <button
+                                    onClick={handleAuthenticate}
+                                    className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition"
+                                >
+                                    Verify {formatAddress(connectedAddress || "")}
+                                    <Key className="h-4 w-4" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={fetchReceiptDetails}
+                                    className="text-xs font-bold text-white underline hover:text-white/80"
+                                >
+                                    Try checking session again
+                                </button>
+                            )}
                         </div>
                     )}
                 </section>

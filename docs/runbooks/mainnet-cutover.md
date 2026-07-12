@@ -1,4 +1,4 @@
-# SubScript — Launch / Mainnet Cutover Runbook
+# SubScript — Mainnet Cutover Runbook
 
 The single source of truth for taking SubScript from Arc **testnet** to **mainnet** and going live.
 The code is network-agnostic: everything below is **configuration**, not code changes. Defaults are

@@ -8,14 +8,30 @@ import path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+import * as crypto from "crypto";
+
+const prisma = new PrismaClient();
+
 async function createAuthCookie(address: string): Promise<string> {
   const secretStr = process.env.JWT_SECRET || "mock_jwt_secret_for_testing_32_characters";
   const secret = new TextEncoder().encode(secretStr);
   const now = Date.now();
-  return await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
+  const jti = crypto.randomUUID();
+  const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
+
+  const token = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("30d")
+    .setIssuer("subscriptonarc.com")
+    .setAudience("subscript-app")
+    .setJti(jti)
+    .setIssuedAt(Math.floor(now / 1000))
+    .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(secret);
+
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+  await prisma.$executeRaw`insert into sessions (wallet, token, expires_at) values (${address.toLowerCase()}, ${hash}, ${expiresAt}) on conflict do nothing`;
+
+  return token;
 }
 
 test.describe("SubScript B2B SaaS E2E Flows", () => {
@@ -94,21 +110,19 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
   });
 
   test.describe("Authenticated Dashboard Tests", () => {
-    test.beforeEach(async ({ page, context }) => {
+    test.beforeEach(async ({ page, context, baseURL }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
       const token = await createAuthCookie("0x835A9aEd7287068778e11df9D922B3FfaC7cFc29");
       await context.addCookies([
         {
           name: "subscript_e2e_test",
           value: "true",
-          domain: "localhost",
-          path: "/",
+          url: baseURL,
         },
         {
           name: "subscript_session_token",
           value: token,
-          domain: "localhost",
-          path: "/",
+          url: baseURL,
         },
       ]);
       await page.goto("/dashboard");
@@ -131,17 +145,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should roll API credentials", async ({ page }) => {
-      await page.click('button:has-text("API Keys"):visible');
+      await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
       await page.locator('button').filter({ hasText: /^Roll$/ }).click();
       await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 10000 });
     });
 
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
-      await page.click('button:has-text("Checkout Setup"):visible');
-      
-      // Fill custom subscription name
-      await page.fill('input[value="AI Agent Compute Limit"]', "Custom DeepSeek Rate");
+      await page.goto("/dashboard?tab=checkout");
+      await page.getByRole("textbox", { name: "Subscription/Plan Name" }).fill("Custom DeepSeek Rate");
       
       // Check if generated code updates dynamically
       const codeBlock = page.locator("pre code");
@@ -163,6 +175,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
 
       await page.click('button:has-text("Webhooks"):visible');
+      await page.waitForLoadState('networkidle');
       await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
       
       // Select payment failed event via its unique ID
@@ -178,7 +191,8 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should configure off-ramp settlement split", async ({ page }) => {
-      await page.click('button:has-text("Off-Ramp"):visible');
+      await page.goto("/dashboard?tab=offramp");
+      await expect(page.getByRole("heading", { name: /Fiat Escape Hatch \(Off-Ramp\)/ })).toBeVisible();
       
       // Get offramp slider
       const slider = page.locator('input[type="range"]');

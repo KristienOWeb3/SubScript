@@ -133,8 +133,8 @@ function SignInContent() {
       const data = await res.json();
       if (data.success) {
         setOtpSent(true);
-        if (data.sandboxCode) {
-          setSandboxOtp(data.sandboxCode);
+        if (data.devOtpCode) {
+          setSandboxOtp(data.devOtpCode);
         }
       } else {
         setOtpError(data.error || "Failed to send verification code.");
@@ -510,7 +510,7 @@ function SignInContent() {
                   {sandboxOtp && (
                     <div className="bg-[#00d2b4]/10 border border-[#00d2b4]/20 rounded-2xl p-4 text-xs text-[#00d2b4] flex items-center gap-3 shadow-[0_0_15px_rgba(0,210,180,0.1)]">
                       <MailCheck className="w-5 h-5 shrink-0" />
-                      <span className="font-mono">Sandbox Test OTP: {sandboxOtp}</span>
+                      <span className="font-mono">Development Code: {sandboxOtp}</span>
                     </div>
                   )}
 

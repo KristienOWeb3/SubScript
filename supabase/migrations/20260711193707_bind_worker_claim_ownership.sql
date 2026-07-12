@@ -23,7 +23,7 @@ DROP FUNCTION IF EXISTS public.claim_subscription_billing(BIGINT, BIGINT, INTEGE
 DROP FUNCTION IF EXISTS public.complete_subscription_billing(BIGINT, BIGINT, TEXT);
 DROP FUNCTION IF EXISTS public.release_subscription_billing(BIGINT, BIGINT);
 
-CREATE FUNCTION public.claim_subscription_billing(
+CREATE OR REPLACE FUNCTION public.claim_subscription_billing(
     p_subscription_id BIGINT,
     p_sequence_id BIGINT,
     p_claim_id UUID,
@@ -72,7 +72,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.complete_subscription_billing(
+CREATE OR REPLACE FUNCTION public.complete_subscription_billing(
     p_subscription_id BIGINT,
     p_sequence_id BIGINT,
     p_claim_id UUID,
@@ -98,7 +98,7 @@ AS $$
     SELECT EXISTS (SELECT 1 FROM completed);
 $$;
 
-CREATE FUNCTION public.renew_subscription_billing(
+CREATE OR REPLACE FUNCTION public.renew_subscription_billing(
     p_subscription_id BIGINT,
     p_sequence_id BIGINT,
     p_claim_id UUID,
@@ -130,7 +130,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.release_subscription_billing(
+CREATE OR REPLACE FUNCTION public.release_subscription_billing(
     p_subscription_id BIGINT,
     p_sequence_id BIGINT,
     p_claim_id UUID

@@ -10,15 +10,29 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const prisma = new PrismaClient();
 
+import * as crypto from "crypto";
+
 // Helper to generate a valid subscript_session_token JWT signed with JWT_SECRET
 async function createAuthCookie(address: string): Promise<string> {
   const secretStr = process.env.JWT_SECRET || "mock_jwt_secret_for_testing_32_characters";
   const secret = new TextEncoder().encode(secretStr);
   const now = Date.now();
-  return await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
+  const jti = crypto.randomUUID();
+  const expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000);
+
+  const token = await new SignJWT({ address: address.toLowerCase(), authenticatedAt: now })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("30d")
+    .setIssuer("subscriptonarc.com")
+    .setAudience("subscript-app")
+    .setJti(jti)
+    .setIssuedAt(Math.floor(now / 1000))
+    .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(secret);
+
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+  await prisma.$executeRaw`insert into sessions (wallet, token, expires_at) values (${address.toLowerCase()}, ${hash}, ${expiresAt}) on conflict do nothing`;
+
+  return token;
 }
 
 // Generate random mock addresses for the test

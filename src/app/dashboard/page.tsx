@@ -1543,7 +1543,7 @@ export default function DashboardPage() {
             const data = await res.json();
             if (data.success) {
                 setOtpSent(true);
-                console.log("Sandbox OTP Code:", data.sandboxCode);
+                console.log("Development OTP Code:", data.devOtpCode);
             } else {
                 setOtpError(data.error || "Failed to send verification code.");
             }
@@ -3652,7 +3652,7 @@ Please complete the following implementation tasks:
                             <thead>
                                 <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
                                     <th className="pb-3">Receipt ID</th>
-                                    <th className="pb-3">Date</th>
+                                    <th className="pb-3">Date &amp; Time</th>
                                     <th className="pb-3">Type</th>
                                     <th className="pb-3">Amount</th>
                                     <th className="pb-3">Status</th>
@@ -3672,7 +3672,7 @@ Please complete the following implementation tasks:
                                         return (
                                             <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
                                                 <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
-                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
                                                 <td className="py-4">
                                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${isOutgoing ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
                                                         {isOutgoing ? "Debit" : "Credit"}
@@ -5191,6 +5191,7 @@ Please complete the following implementation tasks:
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
+                                                aria-label="Subscription/Plan Name"
                                                 value={subName} 
                                                 onChange={(e) => setSubName(e.target.value)}
                                                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"

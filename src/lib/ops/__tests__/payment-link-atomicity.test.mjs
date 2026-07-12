@@ -13,8 +13,8 @@ test("embedded checkout cannot double-charge after a Circle polling timeout", ()
     /* If Circle accepts the tx but the response times out, the caller retries. Without a stable
        idempotency key each retry is a fresh on-chain charge, and deleting the claim on every
        error opened that retry immediately. The helpers must take a required idempotency key, the
-       route must derive a deterministic one, and the claim must only be released for failures
-       that provably preceded submission. */
+       route must derive a deterministic one from the page's persisted attempt id, and the claim
+       must only be released for failures that provably preceded submission. */
     const payRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
     const helpers = source("src/lib/paymentLinks/embeddedPay.ts");
 
@@ -22,7 +22,7 @@ test("embedded checkout cannot double-charge after a Circle polling timeout", ()
     assert.match(helpers, /payPeerLinkFromEmbedded\([^)]*idempotencyKey: string,\s*\)/s);
     assert.match(helpers, /idempotencyKey,\s*\}\);/);
 
-    assert.match(payRoute, /deterministicIdempotencyKey\(`embedded-pay:\$\{id\}:\$\{payer\}`\)/);
+    assert.match(payRoute, /deterministicIdempotencyKey\(`embedded-pay:\$\{id\}:\$\{payer\}\$\{intentSuffix\}`\)/);
     assert.match(payRoute, /const isPreSubmission = /);
     assert.match(payRoute, /if \(isPreSubmission\) \{\s*await prisma\.idempotencyKey\.delete/);
     /* The unconditional delete-on-every-error is gone. */
@@ -42,6 +42,8 @@ test("payment-link verification has one database-backed claim winner", () => {
 });
 
 test("payment-link capacity and settlement credit are atomic", () => {
+    const embeddedPayRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
+
     assert.match(migration, /SET use_count = use_count \+ 1[\s\S]*use_count < max_uses/i);
     assert.match(migration, /reservation_active = true/i);
     assert.match(migration, /SET use_count = greatest\(use_count - 1, 0\)/i);
@@ -51,6 +53,8 @@ test("payment-link capacity and settlement credit are atomic", () => {
     assert.match(route, /rpc\(\s*"finalize_payment_link_settlement"/);
     assert.doesNotMatch(route, /from\("payment_link_payments"\)\s*\.insert/);
     assert.doesNotMatch(route, /from\("ledger_entries"\)\s*\.update/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*increment:/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*decrement:/);
 });
 
 test("terminal failures cannot downgrade another or completed settlement", () => {

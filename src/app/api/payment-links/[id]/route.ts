@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -52,6 +53,9 @@ export async function GET(request: Request, { params }: RouteContext) {
         const { id } = await params;
         if (!id) {
             return NextResponse.json({ error: "Bad Request: Missing ID parameter" }, { status: 400 });
+        }
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -104,7 +108,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         }
 
         const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-        if (!link.active || isExpired) {
+        if ((!link.active && link.status !== "PAID") || isExpired) {
             return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
         }
 
@@ -156,6 +160,9 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -247,6 +254,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
+        if (!isValidPaymentLinkId(id)) {
+            return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
+        }
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });

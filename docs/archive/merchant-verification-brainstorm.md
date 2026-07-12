@@ -1,8 +1,11 @@
+# Merchant Verification and Payment-DM Brainstorm (Archived)
+
 > **Status note (2026-07-08):** Historical brainstorm — kept for context, do not treat as current
 > spec. Since written: the user-vs-enterprise signup role picker, subscription DMs with renewal
 > receipts and resubscribe/cancel actions, and one-click cancellation are all live. Merchant
 > "verified checkmark" verification remains an open idea (KYC/business verification plumbing exists
-> — see `docs/kyc-verification.md`). `followxxx.txt` is an identical copy of this file.
+> — see [`../kyc-verification.md`](../kyc-verification.md)). The byte-for-byte duplicate
+> `followxxx.txt` was removed during repository organization.
 
 JUST MAKE AN IMPLEMENTATION PLAN!
 

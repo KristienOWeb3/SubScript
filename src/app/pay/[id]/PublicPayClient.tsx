@@ -32,6 +32,7 @@ export interface PublicPayClientProps {
        same-origin/https only, no javascript:/data: — the redirect-safety boundary. */
     successUrl?: string | null;
     cancelUrl?: string | null;
+    initialSettlementVersion?: string | null;
 }
 
 export default function PublicPayClient({
@@ -41,10 +42,12 @@ export default function PublicPayClient({
     displayAmount,
     exchangeRate = 1.0,
     successUrl = null,
-    cancelUrl = null
+    cancelUrl = null,
+    initialSettlementVersion = null,
 }: PublicPayClientProps) {
     const router = useRouter();
     const routedIntentRef = useRef<string | null>(null);
+    const paymentControlsRef = useRef<HTMLDivElement | null>(null);
     const getFiatSymbol = (currency: string) => {
         switch (currency.toUpperCase()) {
             case "EUR": return "€";
@@ -99,6 +102,9 @@ export default function PublicPayClient({
     const [isLoading, setIsLoading] = useState(!initialLinkData);
     const [error, setError] = useState<string | null>(null);
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
+    const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
+    const isLinkInactive = linkData?.active === false || isLinkExpired;
+    const cannotPayLink = isLinkInactive || isLinkExhausted;
 
     /* Derived variables — same peer/user-request predicate as the server (isPeerRequestLink). */
     const isUserRequest = Boolean(
@@ -129,6 +135,7 @@ export default function PublicPayClient({
     const [shareableReceiptUrl, setShareableReceiptUrl] = useState<string | null>(null);
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
+    const settlementNotifiedRef = useRef(false);
 
     /* Inbox DM creation states */
     const [isCreatingDm, setIsCreatingDm] = useState(false);
@@ -138,6 +145,14 @@ export default function PublicPayClient({
        forcing a fresh wallet connection. */
     const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null } | null>(null);
     const [isEmbeddedPaying, setIsEmbeddedPaying] = useState(false);
+    const [clientIntentId, setClientIntentId] = useState("");
+    useEffect(() => {
+        const storageKey = `subscript_checkout_attempt:${id}`;
+        const stored = sessionStorage.getItem(storageKey);
+        const attemptId = stored || crypto.randomUUID();
+        if (!stored) sessionStorage.setItem(storageKey, attemptId);
+        setClientIntentId(attemptId);
+    }, [id]);
     useEffect(() => {
         let cancelled = false;
         fetch("/api/auth/session")
@@ -241,7 +256,6 @@ export default function PublicPayClient({
         });
     })();
     const hasInjectedProvider = typeof window !== "undefined" && Boolean((window as any).ethereum);
-    const noWalletDetected = typeof window !== "undefined" && !hasInjectedProvider && walletConnectors.length <= 1;
 
     /* Pre-payment only: files this request into the signed-in payer's inbox as a pending
        payment-request DM so they can pay from their dashboard wallet. Never call this after
@@ -288,6 +302,66 @@ export default function PublicPayClient({
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isPaymentSettled, merchantSuccessUrl, receiptId, successTxHash]);
+
+    /* Wake a same-origin dashboard tab as soon as settlement is final. The storage event fires in
+       other tabs; focus/visibility refresh remains the fallback when browsers throttle it. */
+    useEffect(() => {
+        if (!isPaymentSettled || settlementNotifiedRef.current) return;
+        settlementNotifiedRef.current = true;
+        try {
+            sessionStorage.removeItem(`subscript_checkout_attempt:${id}`);
+            localStorage.setItem("subscript_payment_settled", JSON.stringify({
+                checkoutId: String(linkData?.id || id),
+                receiptId,
+                settledAt: new Date().toISOString(),
+            }));
+        } catch {
+            /* Private browsing/storage denial must not affect the completed payment. */
+        }
+    }, [id, isPaymentSettled, linkData?.id, receiptId]);
+
+    const baselineSettlementVersionRef = useRef(initialSettlementVersion);
+    const baselineUseCountRef = useRef(Number(initialLinkData?.use_count || 0));
+
+    /* Poll for a NEW finalized settlement (e.g. a phone pays while the PC displays the QR).
+       Link.status is aggregate historical state and stays PAID on reusable links, so treating it as
+       proof for this page visit would show success without a new transaction. */
+    useEffect(() => {
+        if (isPaymentSettled || !linkData?.id) return;
+        
+        let cancelled = false;
+        const poll = async () => {
+            try {
+                const res = await fetch(`/api/payment-links/${linkData.id}/status`, { cache: "no-store" });
+                const data = await res.json();
+                const settlementVersion = typeof data?.settlementVersion === "string"
+                    ? data.settlementVersion
+                    : null;
+                const useCount = Number(data?.useCount || 0);
+                const hasNewSettlement = Boolean(
+                    settlementVersion
+                    && settlementVersion !== baselineSettlementVersionRef.current
+                    && useCount > baselineUseCountRef.current
+                );
+                if (!cancelled && hasNewSettlement) {
+                    baselineSettlementVersionRef.current = settlementVersion;
+                    baselineUseCountRef.current = useCount;
+                    setVerificationStatus("Payment confirmed and settled successfully!");
+                    if (data.receiptId) {
+                        setReceiptId(data.receiptId);
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
+        };
+
+        const interval = setInterval(poll, 3000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [isPaymentSettled, linkData?.id]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -420,6 +494,13 @@ export default function PublicPayClient({
         setVerificationError(null);
         setVerificationStatus(null);
         setPayerEmailError(null);
+
+        if (cannotPayLink) {
+            setVerificationError(isLinkExhausted
+                ? "This payment link has reached its usage limit."
+                : "This payment link is inactive or expired.");
+            return;
+        }
 
         /* Returning payer must verify an email before paying. */
         if (payerNeedsEmail) {
@@ -702,10 +783,24 @@ export default function PublicPayClient({
         if (!linkData) return;
         setVerificationError(null);
         setVerificationStatus(null);
+        if (cannotPayLink) {
+            setVerificationError(isLinkExhausted
+                ? "This payment link has reached its usage limit."
+                : "This payment link is inactive or expired.");
+            return;
+        }
+        if (!clientIntentId) {
+            setVerificationError("Preparing a secure payment attempt. Please try again.");
+            return;
+        }
         setIsEmbeddedPaying(true);
         setVerificationStatus("Paying from your SubScript wallet...");
         try {
-            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { method: "POST" });
+            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { 
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clientIntentId })
+            });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success || !data.txHash) {
                 throw new Error(data.error || "Payment could not be completed.");
@@ -831,17 +926,17 @@ export default function PublicPayClient({
                             Mobile keeps the inline "Pay on Mobile (Scan QR)" toggle further down — this
                             panel is hidden below lg so mobile is unchanged. */}
                         {checkoutUrl && (
-                            <aside className="hidden lg:flex lg:w-[360px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
+                            <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white uppercase tracking-wider">Pay on mobile</p>
-                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[240px]">
+                                    <p className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
                                         Scan with your phone's wallet browser to complete this payment on mobile.
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-5 w-full flex items-center justify-center">
+                                <div className="bg-white rounded-2xl p-4 w-full flex items-center justify-center overflow-hidden">
                                     <QRCode
                                         value={checkoutUrl}
-                                        size={300}
+                                        size={320}
                                         ecLevel="H"
                                         bgColor="#ffffff"
                                         fgColor="#000000"
@@ -852,12 +947,19 @@ export default function PublicPayClient({
                                             [8, 0, 8, 8]
                                         ]}
                                         logoImage="/logo-colored.png"
-                                        logoWidth={52}
-                                        logoHeight={52}
+                                        logoWidth={56}
+                                        logoHeight={56}
                                         removeQrCodeBehindLogo={true}
                                         logoPadding={2}
                                     />
                                 </div>
+                                <button
+                                    type="button"
+                                    onClick={() => paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                                    className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                                >
+                                    Pay in this browser
+                                </button>
                             </aside>
                         )}
 
@@ -963,6 +1065,7 @@ export default function PublicPayClient({
                         </div>
 
 
+                        <div ref={paymentControlsRef}>
                         {!isConnected ? (
                             <div className="space-y-4">
                               {(embeddedPaySession && verificationStatus) ? verificationPanel : (
@@ -977,7 +1080,7 @@ export default function PublicPayClient({
                                         </p>
                                         <button
                                             onClick={handleEmbeddedPay}
-                                            disabled={isEmbeddedPaying}
+                                            disabled={isEmbeddedPaying || !clientIntentId || cannotPayLink}
                                             className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                         >
                                             {isEmbeddedPaying ? (
@@ -1028,22 +1131,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {noWalletDetected ? (
-                                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5 space-y-3 text-center">
-                                        <AlertCircle className="mx-auto h-6 w-6 text-amber-400" />
-                                        <p className="text-[11px] leading-relaxed text-white/70">
-                                            No browser wallet detected. Install MetaMask, Rabby, or another wallet extension, then refresh this page.
-                                        </p>
-                                        <a
-                                            href="https://metamask.io/download/"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 hover:text-white transition"
-                                        >
-                                            Get a wallet <ExternalLink className="h-3 w-3" />
-                                        </a>
-                                    </div>
-                                ) : walletConnectors.length > 1 ? (
+                                {walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -1199,13 +1287,13 @@ export default function PublicPayClient({
                                              >
                                                  Role Mismatch: Merchant Wallet
                                              </button>
-                                         ) : isLinkExhausted ? (
+                                        ) : cannotPayLink ? (
                                             <button
                                                 type="button"
                                                 disabled={true}
                                                 className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                             >
-                                                Payment Link Exhausted
+                                                {isLinkExhausted ? "Payment Link Exhausted" : "Payment Link Inactive"}
                                             </button>
                                         ) : (merchantVerified === false && !unverifiedAccepted && !isUserRequest) ? (
                                             <button
@@ -1250,6 +1338,7 @@ export default function PublicPayClient({
                                 )}
                             </div>
                         )}
+                        </div>
 
                         {/* Inline QR toggle for mobile/tablet. On desktop (lg+) the large QR shows in the
                             left panel beside the checkout, so this redundant toggle is hidden there. */}

@@ -191,7 +191,7 @@ describe("SubScriptConfidential", function () {
       expect(countArg).to.equal(2n);
 
       /* Retrieve plaintext history using view key */
-      const history = await confidentialContract.getDecryptedBatchHistory(rawKey);
+      const history = await confidentialContract.connect(merchant).getDecryptedBatchHistory(rawKey);
       expect(history.length).to.equal(1);
       expect(history[0].isShielded).to.be.true;
       expect(history[0].recipients[0]).to.equal(recipient1.address);
@@ -201,7 +201,7 @@ describe("SubScriptConfidential", function () {
 
       /* Verify invalid view key access is rejected */
       const wrongKey = ethers.randomBytes(32);
-      await expect(confidentialContract.getDecryptedBatchHistory(wrongKey))
+      await expect(confidentialContract.connect(merchant).getDecryptedBatchHistory(wrongKey))
         .to.be.revertedWith("Unauthorized: Invalid View Key");
     });
   });

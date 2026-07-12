@@ -16,6 +16,26 @@ test("Google/Circle completion cannot mint sessions from client-asserted identit
     assert.doesNotMatch(auth, /payload\.provider\s*===\s*"google"/);
 });
 
+test("session verification survives duplicate legacy and domain cookies", () => {
+    const auth = source("src/lib/auth.ts");
+
+    assert.match(auth, /getCookieValues\(cookieStore, "subscript_session_token"\)/);
+    assert.match(auth, /for \(const token of tokens\)/);
+    assert.match(auth, /select token from sessions where token = ANY\(\$1\)/);
+    assert.match(auth, /const liveHashes = new Set/);
+    assert.match(auth, /liveHashes\.has\(candidate\.hash\)/);
+    assert.match(auth, /candidate\.issuedAt > newestSession\.issuedAt/);
+    assert.match(auth, /delete from sessions where token = any\(\$1::text\[\]\)/);
+});
+
+test("receipt access lets a connected wallet replace a mismatched browser session", () => {
+    const client = source("src/app/receipt/[receiptId]/ReceiptClient.tsx");
+
+    assert.match(client, /connectedWalletDiffersFromSession/);
+    assert.match(client, /onClick=\{handleAuthenticate\}/);
+    assert.match(client, /This browser is signed in as/);
+});
+
 test("batch payouts fail closed until reservation is atomic", () => {
     const route = source("src/app/api/premium/withdraw/batch/route.ts");
 
@@ -304,4 +324,28 @@ test("stale webhook and billing workers cannot finalize a replacement claim", ()
     assert.match(migration, /claim_id = p_claim_id[\s\S]{0,120}status = 'PROCESSING'/);
     assert.match(migration, /processing_claim_id UUID/);
     assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_subscription_billing/);
+});
+
+test("fresh beta databases preserve server CRUD and receipt delegation schema", () => {
+    const runner = source("scripts/apply-migrations.mjs");
+    const alignment = source("supabase/migrations/20260712150654_align_e2e_runtime_schema.sql");
+
+    assert.match(runner, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role/);
+    assert.match(runner, /GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role/);
+    assert.match(runner, /ALTER DEFAULT PRIVILEGES[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role/);
+    assert.match(alignment, /ALTER TABLE public\.receipts[\s\S]*ADD COLUMN IF NOT EXISTS invited_addresses TEXT NOT NULL DEFAULT ''/);
+});
+
+test("production-mode E2E bypass is runner-bound and absent unless explicitly configured", () => {
+    const middleware = source("src/middleware.ts");
+    const playwright = source("playwright.config.ts");
+    const workflow = source(".github/workflows/e2e.yml");
+
+    assert.match(middleware, /process\.env\.E2E_RATE_LIMIT_BYPASS_TOKEN/);
+    assert.match(middleware, /request\.cookies\.get\("subscript_e2e_token"\)/);
+    assert.match(middleware, /configuredE2eToken\.length > 0/);
+    assert.match(middleware, /hasCiE2eBypass \|\| \([\s\S]*process\.env\.NODE_ENV !== "production"/);
+    assert.match(playwright, /name: "subscript_e2e_token"[\s\S]*value: e2eBypassToken/);
+    assert.doesNotMatch(playwright, /extraHTTPHeaders/);
+    assert.match(workflow, /E2E_RATE_LIMIT_BYPASS_TOKEN: subscript-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
 });

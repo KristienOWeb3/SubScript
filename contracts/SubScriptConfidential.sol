@@ -167,6 +167,7 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
         bytes32 keyHash = keccak256(abi.encodePacked(viewKey));
         address merchant = viewKeyHashes[keyHash];
         require(merchant != address(0), "Unauthorized: Invalid View Key");
+        require(msg.sender == merchant, "Unauthorized: Caller is not the registered merchant");
         return batchHistory[merchant];
     }
 }

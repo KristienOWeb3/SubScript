@@ -1,4 +1,4 @@
-# SubScript Protocol - Strategic Architectural Suggestions
+# SubScript Protocol - Strategic Architecture Suggestions
 
 This document details suggestions and security improvements for the next phase of the SubScript Protocol.
 

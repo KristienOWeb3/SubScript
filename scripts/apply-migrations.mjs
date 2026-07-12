@@ -58,12 +58,12 @@ const BASELINE_FILES = [
     "supabase/migrations/20260603000000_private_withdrawals.sql",
     "supabase/migrations/20260603020000_mainnet_hardening.sql",
     "supabase/migrations/20260603030000_operational_hardening.sql",
-    "supabase/migrations/20260603040000_applied_migrations.up.sql",
+    "supabase/migrations/20260603040000_applied_migrations.sql",
     "supabase/migrations/20260604000000_production_hardening.sql",
     "supabase/migrations/20260604010000_cli_sessions.sql",
-    "supabase/migrations/20260604020000_billing_interval.up.sql",
-    "supabase/migrations/20260605000000_graceful_cancellation.up.sql",
-    "supabase/migrations/20260605010000_past_due_status.up.sql",
+    "supabase/migrations/20260604020000_billing_interval.sql",
+    "supabase/migrations/20260605000000_graceful_cancellation.sql",
+    "supabase/migrations/20260605010000_past_due_status.sql",
     "supabase/migrations/20260607000000_payment_links.sql",
     "supabase/migrations/20260607010000_sbt_mint_claim.sql",
     "supabase/migrations/20260607030000_event_sourced_ledger.sql",
@@ -92,6 +92,20 @@ const BASELINE_FILES = [
     "supabase/migrations/20260702000000_add_plan_description.sql",
     "supabase/migrations/20260703000000_create_fiat_funding_intents.sql",
     "supabase/migrations/20260704000000_add_payment_link_beneficiaries.sql",
+    "supabase/migrations/20260705000000_add_referrals.sql",
+    "supabase/migrations/20260706000000_add_merchant_churn_survey_question.sql",
+    "supabase/migrations/20260706010000_financial_safety_repairs.sql",
+    "supabase/migrations/20260707000000_deny_all_rls_server_tables.sql",
+    "supabase/migrations/20260708000000_circle_wallet_provisioning.sql",
+    "supabase/migrations/20260709000000_add_kyc_verification.sql",
+    "supabase/migrations/20260709000001_close_deployment_scoped_gaps.sql",
+    "supabase/migrations/20260711003440_atomic_payment_link_settlement.sql",
+    "supabase/migrations/20260711003637_premium_upgrade_claim_ownership.sql",
+    "supabase/migrations/20260711004047_bind_otp_purpose_and_billing_claims.sql",
+    "supabase/migrations/20260711120000_scope_idempotency_key_per_merchant.sql",
+    "supabase/migrations/20260711130000_siwe_nonce_single_use.sql",
+    "supabase/migrations/20260711131500_otp_failed_attempt_counter.sql",
+    "supabase/migrations/20260711193707_bind_worker_claim_ownership.sql",
 ];
 
 async function listMigrationFiles({ freshBootstrap = false } = {}) {
@@ -195,6 +209,15 @@ async function main() {
                     );
                 }
             }
+        } else {
+            // Ledger exists. Reconcile any newly added BASELINE_FILES into the ledger 
+            // so they aren't double-applied.
+            for (const f of BASELINE_FILES) {
+                await client.query(
+                    "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
+                    [f]
+                );
+            }
         }
 
         const files = await listMigrationFiles({ freshBootstrap });
@@ -225,6 +248,19 @@ async function main() {
             }
         }
         console.log(`[migrations] Done — applied ${pending.length} migration(s).`);
+
+        // The service role backs trusted server APIs. RLS bypass alone is insufficient when a
+        // table lacks SQL privileges, so preserve the CRUD access those APIs require.
+        console.log("[migrations] Granting public schema privileges to service_role...");
+        try {
+            await client.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;");
+            await client.query("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role;");
+            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;");
+            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO service_role;");
+            console.log("[migrations] Successfully granted public schema privileges to service_role.");
+        } catch (grantErr) {
+            console.warn(`[migrations] Warning: failed to grant privileges to service_role: ${grantErr.message}`);
+        }
     } finally {
         await client.query("SELECT pg_advisory_unlock(hashtext('subscript:migrations'))").catch(() => {});
         await client.end();

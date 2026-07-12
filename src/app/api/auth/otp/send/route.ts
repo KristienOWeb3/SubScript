@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import crypto from "crypto";
 import { sanitizeInput } from "@/utils/security";
-import { isConnectionError, saveOfflineOtpCode } from "@/lib/offlineDb";
+import { isConnectionError, storeLocalOtpCode } from "@/lib/offlineDb";
 import { sendAuthenticationCodeEmail } from "@/lib/email/transactional";
 import { findAccountEmailBinding, isWalletOnlyEmailBinding } from "@/lib/auth/accountEmail";
 import { withPgClient } from "@/lib/serverPg";
@@ -25,7 +25,7 @@ function hashOtp(email: string, code: string) {
 }
 
 function allowOfflineAuth() {
-    return process.env.NODE_ENV !== "production" && process.env.ALLOW_INSECURE_OFFLINE_AUTH === "true";
+    return process.env.NODE_ENV !== "production" && process.env.ENABLE_LOCAL_OFFLINE_AUTH === "true";
 }
 
 function allowDevOtpFallback() {
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
         }
 
-        /* Non-production keeps the synchronous path so local sandboxes can expose sandboxCode. */
+        /* Non-production keeps the synchronous path so local sandboxes can expose devOtpCode. */
         if (isSignInRequest && !emailLoginAllowed) {
             return NextResponse.json({ success: true, message: GENERIC_OTP_MESSAGE, email: emailLower });
         }
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
                 if (!allowOfflineAuth()) {
                     return NextResponse.json({ error: "Authentication service is temporarily unavailable." }, { status: 503 });
                 }
-                saveOfflineOtpCode(emailLower, codeHash, expiresAt);
+                storeLocalOtpCode(emailLower, codeHash, expiresAt);
             } else {
                 console.error("Failed to store OTP code in database:", err);
                 return NextResponse.json({
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
                     success: true,
                     message: GENERIC_OTP_MESSAGE,
                     email: emailLower,
-                    sandboxCode: code,
+                    devOtpCode: code,
                 });
             }
             return NextResponse.json({ error: "We could not send a verification email. Please try again." }, { status: 502 });

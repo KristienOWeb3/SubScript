@@ -36,6 +36,16 @@ export async function POST(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Missing payment link id" }, { status: 400 });
         }
 
+        let clientIntentId = "";
+        try {
+            const body = await request.json();
+            if (body && typeof body.clientIntentId === "string") {
+                clientIntentId = body.clientIntentId;
+            }
+        } catch (e) {
+            // Ignore parsing errors, default to empty
+        }
+
         const link = await prisma.paymentLink.findUnique({ where: { id } });
         if (!link) {
             return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
@@ -43,12 +53,17 @@ export async function POST(request: Request, { params }: RouteContext) {
 
         /* Settlement-parity guards with the hosted verifier: never let an inactive, expired, or
            exhausted link mint a fresh on-chain charge. */
-        if (link.active === false || link.status === "PAID") {
+        /* PAID is aggregate history, not exhaustion: reusable links stay payable until maxUses.
+           active/expiry/use-count are the actual availability guards. */
+        if (link.active === false) {
             return NextResponse.json({ error: "This payment link is no longer active." }, { status: 410 });
         }
         if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
             return NextResponse.json({ error: "This payment link has expired." }, { status: 410 });
         }
+        /* This is an early UX guard. The verifier owns the atomic capacity reservation after it
+           receives the real transaction hash; reserving useCount here would make verification
+           increment the same payment twice. */
         if (link.maxUses !== null && link.maxUses !== undefined && (link.useCount || 0) >= link.maxUses) {
             return NextResponse.json({ error: "This payment link has reached its usage limit." }, { status: 409 });
         }
@@ -81,7 +96,8 @@ export async function POST(request: Request, { params }: RouteContext) {
            the read-only guards above and sign SEPARATE custody transfers — a double charge. Atomically
            claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
            and an already-completed one returns the original tx hash instead of paying again. */
-        const claimKey = `embedded-pay:${id}:${payer}`;
+        const intentSuffix = clientIntentId ? `:${clientIntentId}` : "";
+        const claimKey = `embedded-pay:${id}:${payer}${intentSuffix}`;
         const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
         try {
             await prisma.idempotencyKey.create({
@@ -120,7 +136,7 @@ export async function POST(request: Request, { params }: RouteContext) {
            but the response times out, a retry submits the SAME key and Circle returns the original
            transaction instead of charging again. This is the real double-charge guard — the DB
            claim below only serializes concurrent requests within this process. */
-        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}`);
+        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}${intentSuffix}`);
 
         let txHash: string;
         try {
