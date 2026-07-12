@@ -67,6 +67,11 @@ jobs:
             echo "JWT_SECRET=mock_jwt_secret_for_testing_32_characters"
           } >> "$GITHUB_ENV"
 
+      - name: Build Next.js app
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: npm run build
+
       - name: Run Playwright tests
         env:
           PLAYWRIGHT_TEST_TIMEOUT: 120000
