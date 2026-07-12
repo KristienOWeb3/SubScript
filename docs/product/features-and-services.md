@@ -1,5 +1,8 @@
 # SubScript Protocol - Features & Services Catalog
 
+Current product-facing catalog. For implementation-level coverage, see
+[`../platform-feature-coverage.md`](../platform-feature-coverage.md).
+
 SubScript is a programmable stablecoin commerce layer built on Arc. It supports one-time payments, recurring billing, usage-based charging, invoice-like collection, AI-native transactions, payment links, and signed webhook fulfillment through a Unified Payment Authorization (UPA) framework.
 
 ## 1. Core Smart Contract Architecture

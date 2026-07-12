@@ -1,4 +1,4 @@
-# SubScript — Handover
+# SubScript — Archived Handover (July 2026)
 
 _Last updated: 2026-07-08 (end of beta-readiness sessions). Older reference material is preserved below the session sections._
 
@@ -49,7 +49,8 @@ pause/upgrade, AML/KYC posture, licensed fiat onramp (mainnet-scoped), status pa
 > totalMerchantLiabilities + surplus-only rescueERC20 + merchant-keyed Withdraw/PayoutDelivered
 > events, Confidential executeBatchPayout(viewKeyHash) + registerViewKey overwrite guard.
 > Deployed addresses and env override names are in src/lib/contracts/constants.ts; deploy scripts
-> and network config are in script/, scripts/, hardhat.config.js, and foundry.toml. LAUNCH.md §1
+> and network config are in script/, scripts/, hardhat.config.js, and foundry.toml. See
+> `docs/runbooks/mainnet-cutover.md` §1.
 > has a warning block describing exactly this task.
 >
 > Steps, in order:
@@ -76,11 +77,11 @@ pause/upgrade, AML/KYC posture, licensed fiat onramp (mainnet-scoped), status pa
 >    one manual subscribe → keeper renewal (customer-billing cron) → cancel cycle on the new
 >    contract, confirm the drift healer reports 0 errors, and confirm executePayment on a lapsed
 >    sequence now reverts PaymentWindowExpired.
-> 7. Update LAUNCH.md (remove/mark the §1 warning), docs/platform-feature-coverage.md
+> 7. Update `docs/runbooks/mainnet-cutover.md` (remove/mark the §1 warning), `docs/platform-feature-coverage.md`
 >    ("On-chain billing safety" row → fully live), and llms-full.txt if it mentions pending
->    contract enforcement. Commit and push to main. Record the old addresses in handover.md
+>    contract enforcement. Commit and push to main. Record the old addresses in this archive
 >    for reference. Treat this as the mainnet cutover rehearsal: note every manual step you had
->    to take so LAUNCH.md can be corrected accordingly.
+>    to take so `docs/runbooks/mainnet-cutover.md` can be corrected accordingly.
 
 # Status update — 2026-07-08 (beta-readiness session)
 
@@ -94,7 +95,7 @@ Everything below shipped to `main` (`2756dd0`, `8e0b3ed`, `5ff8db3`) after a ful
 - **Contract hardening (source-only until redeploy/upgrade at cutover):** PSA billing-window expiry
   (`PaymentWindowExpired`), Router `totalMerchantLiabilities` + surplus-only `rescueERC20` +
   merchant-keyed events, Confidential view-key-hash payouts + `registerViewKey` hijack guard, Vault
-  dead-branch cleanup. See the warning block in `LAUNCH.md` §1.
+  dead-branch cleanup. See the warning block in `docs/runbooks/mainnet-cutover.md` §1.
 - **Public-beta legal set (live):** `/terms` (16 sections: testnet program, merchant-of-record,
   custody disclosure, warranty, liability cap, indemnification), `/refunds`, `/fulfillment`,
   updated `/privacy`; all footers/sitemap/llms.txt/mirrors wired. Published contact:
@@ -176,7 +177,7 @@ Paste this to resume:
 ```
 Continue the SubScript (KristienOWeb3/SubScript) launch-readiness work. Read your memory files
 first — phase1-launch-readiness.md, aplus-roadmap-status.md, prod-db-and-migrations.md — and
-handover.md at the repo root (the "Session handover — Circle custody cutover" section is current).
+this archived handover (the "Session handover — Circle custody cutover" section was current at the time).
 
 CONTEXT
 - Custodial fintech on Arc (Circle's L1); USDC-native. Prod DB = Supabase jkrlsjpsytzffwjpixue.
@@ -186,7 +187,7 @@ CONTEXT
   WALLET_PROVIDER=circle is ON in Vercel Preview, OFF in prod. Legacy AES path still exists —
   do NOT delete it yet.
 - 5 legacy-key wallets in prod (only 0xcff4c08bb22d770c9bc37e6d67215847f2d0183d has on-chain
-  state: 1 active sub + 1 vault row). Sweep design notes are in handover.md.
+  state: 1 active sub + 1 vault row). Sweep design notes are in this archived handover.
 
 WORKFLOW (do this exactly)
 - Branch off origin/main per unit of work; commit; `npx tsc --noEmit` and
@@ -203,7 +204,7 @@ PRIORITIES
    with server-side Circle identity validation + a single-use login challenge; wallet via
    provisionEmbeddedWallet(). Don't trust client-asserted identity (see financial-hardening test).
 3. Build the legacy-wallet sweep (KEEPER_SECRET-protected admin route, dry-run mode first) per
-   the design notes in handover.md. AES-path deletion only after the sweep runs and E2E is green.
+   the design notes in this archived handover. AES-path deletion only after the sweep runs and E2E is green.
 4. Then: A6 docs, #3 DNS-first display rollout, #1 friendly notifications, #2 onboarding tour,
    #4 monthly merchant analytics email.
 
@@ -226,7 +227,7 @@ Hobby caps crons at **2 daily jobs**, so `vercel.json` holds only `customer-bill
 and `vault-draw`. Every other keeper (`cron/reconcile`,
 `cron/billing`, `internal/payroll`, `internal/billing`) is driven by an **external
 scheduler** hitting the route with `Authorization: Bearer <KEEPER_SECRET>`. Full table,
-cadences, and gotchas: **[docs/external-crons.md](docs/external-crons.md)**. Do not add
+cadences, and gotchas: **[docs/external-crons.md](../external-crons.md)**. Do not add
 these to `vercel.json` unless the project moves to Vercel Pro.
 
 ## Deployed contracts (Arc testnet, chain 5042002)

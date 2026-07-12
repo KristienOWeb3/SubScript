@@ -1,6 +1,6 @@
-# SubScript Protocol - Deployment-Scoped Features
+# SubScript Protocol - Deployment-Scoped Features and Backlog
 
-Source of truth: `docs/subscript-protocol-features-and-problems-solved.md`
+Source of truth: [`../subscript-protocol-features-and-problems-solved.md`](../subscript-protocol-features-and-problems-solved.md)
 
 This document tracks items from the June 2026 product brief that should not be described as fully live until the code, database schema, smart contracts, production environment, and external provider configuration prove them.
 

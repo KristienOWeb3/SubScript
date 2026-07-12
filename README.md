@@ -142,6 +142,7 @@ curl -X POST https://www.subscriptonarc.com/api/intent \
 - Agent skill: [`/skills/subscript-integration/SKILL.md`](https://subscriptonarc.com/skills/subscript-integration/SKILL.md)
 - Product overview: [`docs/subscript-protocol-features-and-problems-solved.md`](docs/subscript-protocol-features-and-problems-solved.md)
 - Feature coverage: [`docs/platform-feature-coverage.md`](docs/platform-feature-coverage.md)
+- Repository documentation index: [`docs/README.md`](docs/README.md)
 
 ## On the roadmap
 
