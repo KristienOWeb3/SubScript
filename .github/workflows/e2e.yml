@@ -70,6 +70,7 @@ jobs:
       - name: Build Next.js app
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
+          ADOPT_EXISTING_DB_BASELINE: 1
         run: npm run build
 
       - name: Run Playwright tests
