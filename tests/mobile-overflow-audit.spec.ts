@@ -236,12 +236,22 @@ async function newAuditContext(
 }
 
 async function visitAndAudit(page: Page, route: string, label: string) {
-  await page.goto(`${baseURL}${route}`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  try {
+    await page.goto(`${baseURL}${route}`, { 
+      waitUntil: "domcontentloaded", 
+      timeout: 120_000 
+    });
+  } catch (error) {
+    console.log(`Retry navigating to ${route}`);
+    await page.goto(`${baseURL}${route}`, { 
+      waitUntil: "domcontentloaded", 
+      timeout: 120_000 
+    });
+  }
   await page.waitForLoadState("networkidle", { timeout: 1_500 }).catch(() => {});
   await page.waitForTimeout(250);
   return auditOverflow(page, label);
 }
-
 async function auditOverflow(page: Page, label: string) {
   return page.evaluate((routeLabel) => {
     const viewportWidth = window.innerWidth;

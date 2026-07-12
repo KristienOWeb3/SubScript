@@ -4527,7 +4527,7 @@ export default function UserDashboard() {
           <nav
             aria-label="Primary navigation"
             className="liquid-glass flex flex-1 items-center justify-around rounded-full backdrop-blur-lg px-3 py-[1.1rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
-            style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))" }}
+            style={{ backgroundImage: "linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2))", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}
           >
             <LiquidGlassEffect />
             {userBottomTabs.map((tab) => (

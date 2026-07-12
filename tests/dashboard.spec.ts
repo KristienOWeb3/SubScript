@@ -182,6 +182,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       
       // Get offramp slider
       const slider = page.locator('input[type="range"]');
+      await slider.waitFor({ state: 'attached', timeout: 10000 });
       await expect(slider).toBeVisible();
       
       // Move slider

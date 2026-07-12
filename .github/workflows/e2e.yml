@@ -68,7 +68,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Run Playwright tests
-        run: npx playwright test
+        env:
+          PLAYWRIGHT_TEST_TIMEOUT: 120000
+          NODE_OPTIONS: "--max-old-space-size=4096"
+        run: npx playwright test --workers=2
 
       - uses: actions/upload-artifact@v4
         if: always()
