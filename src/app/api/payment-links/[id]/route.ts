@@ -107,7 +107,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         }
 
         const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-        if (!link.active || isExpired) {
+        if ((!link.active && link.status !== "PAID") || isExpired) {
             return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
         }
 

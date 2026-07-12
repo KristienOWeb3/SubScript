@@ -138,6 +138,7 @@ export default function PublicPayClient({
        forcing a fresh wallet connection. */
     const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null } | null>(null);
     const [isEmbeddedPaying, setIsEmbeddedPaying] = useState(false);
+    const [clientIntentId] = useState(() => crypto.randomUUID());
     useEffect(() => {
         let cancelled = false;
         fetch("/api/auth/session")
@@ -287,6 +288,33 @@ export default function PublicPayClient({
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isPaymentSettled, merchantSuccessUrl, receiptId, successTxHash]);
+
+    /* Poll for status updates (e.g., if paid via mobile device while PC displays QR code) */
+    useEffect(() => {
+        if (isPaymentSettled || !linkData?.id) return;
+        
+        let cancelled = false;
+        const poll = async () => {
+            try {
+                const res = await fetch(`/api/payment-links/${linkData.id}`);
+                const data = await res.json();
+                if (!cancelled && data?.link?.status === "PAID") {
+                    setVerificationStatus("Payment confirmed and settled successfully!");
+                    if (data.link.receipt_token) {
+                        setReceiptId(data.link.receipt_token);
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
+        };
+
+        const interval = setInterval(poll, 3000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [isPaymentSettled, linkData?.id]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -704,7 +732,11 @@ export default function PublicPayClient({
         setIsEmbeddedPaying(true);
         setVerificationStatus("Paying from your SubScript wallet...");
         try {
-            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { method: "POST" });
+            const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { 
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clientIntentId })
+            });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success || !data.txHash) {
                 throw new Error(data.error || "Payment could not be completed.");

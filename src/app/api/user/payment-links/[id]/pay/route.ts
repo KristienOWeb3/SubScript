@@ -36,6 +36,16 @@ export async function POST(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Missing payment link id" }, { status: 400 });
         }
 
+        let clientIntentId = "";
+        try {
+            const body = await request.json();
+            if (body && typeof body.clientIntentId === "string") {
+                clientIntentId = body.clientIntentId;
+            }
+        } catch (e) {
+            // Ignore parsing errors, default to empty
+        }
+
         const link = await prisma.paymentLink.findUnique({ where: { id } });
         if (!link) {
             return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
@@ -81,7 +91,8 @@ export async function POST(request: Request, { params }: RouteContext) {
            the read-only guards above and sign SEPARATE custody transfers — a double charge. Atomically
            claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
            and an already-completed one returns the original tx hash instead of paying again. */
-        const claimKey = `embedded-pay:${id}:${payer}`;
+        const intentSuffix = clientIntentId ? `:${clientIntentId}` : "";
+        const claimKey = `embedded-pay:${id}:${payer}${intentSuffix}`;
         const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
         try {
             await prisma.idempotencyKey.create({
@@ -120,7 +131,7 @@ export async function POST(request: Request, { params }: RouteContext) {
            but the response times out, a retry submits the SAME key and Circle returns the original
            transaction instead of charging again. This is the real double-charge guard — the DB
            claim below only serializes concurrent requests within this process. */
-        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}`);
+        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}${intentSuffix}`);
 
         let txHash: string;
         try {

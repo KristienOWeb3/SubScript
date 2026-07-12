@@ -211,7 +211,10 @@ export default function UserTransactionsPage() {
       incoming: false,
     })),
     ...dms
-      .filter((m) => m.messageType === "PAYMENT" && m.status === "PAID" && m.amountUsdc)
+      .filter((m) => m.amountUsdc && (
+        ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(m.messageType) || 
+        m.status === "PAID"
+      ))
       .map((m) => ({
         id: `dm-${m.id}`,
         kind: "one-time" as const,
