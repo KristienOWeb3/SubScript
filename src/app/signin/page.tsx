@@ -14,11 +14,12 @@ import {
   MailCheck,
   LogOut
 } from "@/components/icons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { CIRCLE_GOOGLE_ENABLED } from "@/lib/featureFlags";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import Script from "next/script";
 
 function SignInContent() {
   const router = useRouter();
@@ -26,8 +27,7 @@ function SignInContent() {
   const initialEmail = searchParams.get("email") || "";
   /* Optional post-login destination (e.g. a /subscribe/[planId] link). Only safe
      same-origin relative paths are honored, to avoid open-redirects. */
-  const rawNext = searchParams.get("next") || "";
-  const safeNext = /^\/(?!\/)[^\s]*$/.test(rawNext) ? rawNext : "";
+  const safeNext = getSafeRelativePath(searchParams.get("next"));
 
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
@@ -48,6 +48,24 @@ function SignInContent() {
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
+  useEffect(() => {
+    if (!turnstileLoaded || authMethod !== "email" || otpSent || !window.turnstile) return;
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    const container = document.getElementById("turnstile-email-signin");
+    if (!siteKey || !container || container.innerHTML !== "") return;
+
+    window.turnstile.render(container, {
+      sitekey: siteKey,
+      theme: "dark",
+      callback: (token: string) => setCaptchaToken(token),
+      "expired-callback": () => setCaptchaToken(""),
+      "error-callback": () => setCaptchaToken(""),
+    });
+  }, [turnstileLoaded, authMethod, otpSent]);
 
   useEffect(() => {
     if (initialEmail) {
@@ -107,28 +125,10 @@ function SignInContent() {
     setSandboxOtp(null);
 
     try {
-      // Check if email has an account
-      const checkRes = await fetch("/api/auth/check-account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const checkData = await checkRes.json();
-      if (!checkData.exists) {
-        setOtpError("No completed account exists for this email yet. Use Sign Up below to create one.");
-        return;
-      }
-
-      if (checkData.authMethod === "wallet") {
-        setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; email recovery is not available for linked notification emails.");
-        return;
-      }
-
-      // Send OTP
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, authFlow: "signin", captchaToken }),
       });
       const data = await res.json();
       if (data.success) {
@@ -449,6 +449,14 @@ function SignInContent() {
                       />
                       <Mail className="absolute right-3.5 top-3.5 w-4 h-4 text-white/30" />
                     </div>
+                    {isTurnstileConfigured && (
+                      <div className="space-y-2 pt-2 flex flex-col items-center">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 self-start">
+                          Security Verification
+                        </label>
+                        <div id="turnstile-email-signin" className="my-2"></div>
+                      </div>
+                    )}
                     {otpError && (
                       <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-xs text-red-400 flex items-start gap-3 mt-2">
                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -467,7 +475,7 @@ function SignInContent() {
                     </button>
                     <button
                       type="submit"
-                      disabled={otpLoading}
+                      disabled={otpLoading || (isTurnstileConfigured && !captchaToken)}
                       className="flex-1 py-3.5 bg-[#00d2b4] text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition hover:bg-[#00d2b4]/95"
                     >
                       {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Code"}
@@ -540,6 +548,11 @@ function SignInContent() {
           </div>
 
         </div>
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+          strategy="afterInteractive"
+          onLoad={() => setTurnstileLoaded(true)}
+        />
       </div>
     </div>
   );

@@ -9,14 +9,13 @@ import {
   UserPlus,
   LogOut
 } from "@/components/icons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 function LoginChoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next") || "";
-  const safeNext = /^\/(?!\/)[^\s]*$/.test(rawNext) ? rawNext : "";
+  const safeNext = getSafeRelativePath(searchParams.get("next"));
   const [checkingSession, setCheckingSession] = useState(true);
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);

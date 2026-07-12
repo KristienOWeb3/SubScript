@@ -366,6 +366,7 @@ model WebhookDelivery {
   payload           Json
   signatureVersion  String   @default("v1") @map("signature_version")
   attempts          Int      @default(0)
+  processingClaimId String?  @map("processing_claim_id") @db.Uuid
   lastError         String?  @map("last_error")
   responseBody      String?  @map("response_body")
   createdAt         DateTime @default(now()) @map("created_at")

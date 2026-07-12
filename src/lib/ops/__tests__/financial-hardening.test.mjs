@@ -243,3 +243,65 @@ test("premium verification accepts custody SCA submissions via the SubscriptionC
     assert.match(verifier, /!options\.allowAgedBlock &&/);
     assert.match(processor, /allowAgedBlock:\s*isReconciler/);
 });
+
+test("login OTP verification serializes the entire guess budget decision", () => {
+    const route = source("src/app/api/auth/otp/verify/route.ts");
+    const lockedSection = route.slice(route.indexOf('await client.query("BEGIN")'), route.indexOf("let walletAddress"));
+
+    assert.match(lockedSection, /select code, expires_at, failed_attempts[\s\S]*for update/i);
+    assert.ok(
+        lockedSection.indexOf("for update") < lockedSection.indexOf("safeHashMatch"),
+        "the row must be locked before comparing a guess",
+    );
+    assert.match(lockedSection, /failed_attempts = \$2/);
+    assert.match(lockedSection, /delete from otp_codes/);
+    assert.match(lockedSection, /COMMIT/);
+    assert.match(lockedSection, /ROLLBACK/);
+    assert.doesNotMatch(route, /Too many incorrect attempts|expired or not found|already used/);
+});
+
+test("anonymous email login does not expose account existence", () => {
+    const send = source("src/app/api/auth/otp/send/route.ts");
+    const check = source("src/app/api/auth/check-account/route.ts");
+    const signin = source("src/app/signin/page.tsx");
+    const signup = source("src/app/signup/page.tsx");
+
+    assert.match(send, /if \(!isEmailBindingRequest\)[\s\S]{0,200}verifyCaptchaToken/);
+    assert.match(send, /GENERIC_OTP_MESSAGE/);
+    assert.match(send, /after\(async \(\) =>/);
+    assert.doesNotMatch(send, /status:\s*409/);
+    assert.match(check, /if \(email\)[\s\S]{0,500}accepted:\s*true/);
+    assert.doesNotMatch(check, /authMethod:/);
+    assert.doesNotMatch(signin, /api\/auth\/check-account[\s\S]{0,500}JSON\.stringify\(\{ email \}\)/);
+    assert.doesNotMatch(signup, /api\/auth\/check-account[\s\S]{0,500}JSON\.stringify\(\{ email \}\)/);
+});
+
+test("post-auth redirects reject browser-normalized backslashes", () => {
+    const navigation = source("src/utils/navigation.ts");
+
+    assert.match(navigation, /value\.includes\("\\\\"\)/);
+    assert.match(navigation, /\\u0000-\\u0020\\u007f/);
+    for (const page of ["login", "signin", "signup"]) {
+        const pageSource = source(`src/app/${page}/page.tsx`);
+        assert.match(pageSource, /getSafeRelativePath/);
+        assert.doesNotMatch(pageSource, /\^\\\/\(\?!\\\/\)/);
+    }
+});
+
+test("stale webhook and billing workers cannot finalize a replacement claim", () => {
+    const outbox = source("src/lib/webhookOutbox.ts");
+    const billing = source("src/app/api/cron/billing/route.ts");
+    const migration = source("supabase/migrations/20260711193707_bind_worker_claim_ownership.sql");
+
+    assert.match(outbox, /processing_claim_id:\s*claimId/);
+    assert.match(outbox, /\.lt\("updated_at",\s*staleCutoff\)/);
+    assert.match(outbox, /\.eq\("status",\s*"PROCESSING"\)[\s\S]{0,160}\.eq\("processing_claim_id",\s*claimId\)/);
+    assert.match(billing, /p_claim_id:\s*requestedClaimId/);
+    assert.match(billing, /complete_subscription_billing[\s\S]{0,180}p_claim_id:\s*billingClaimId/);
+    assert.match(billing, /release_subscription_billing[\s\S]{0,180}p_claim_id:\s*billingClaimId/);
+    assert.match(billing, /renew_subscription_billing/);
+    assert.match(billing, /if \(!await renewBillingClaim\(\)\) continue/);
+    assert.match(migration, /claim_id = p_claim_id[\s\S]{0,120}status = 'PROCESSING'/);
+    assert.match(migration, /processing_claim_id UUID/);
+    assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_subscription_billing/);
+});

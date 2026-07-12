@@ -63,16 +63,64 @@ export async function POST(request: Request) {
         const emailLower = emailVal;
         const rememberMeVal = rememberMeBool;
 
-        let record = null;
         let isOfflineMode = false;
+        let verified = false;
 
         try {
-            record = await withPgClient(async (client) => {
-                const result = await client.query(
-                    "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' limit 1",
-                    [emailVal]
-                );
-                return result.rows[0] || null;
+            verified = await withPgClient(async (client) => {
+                await client.query("BEGIN");
+                try {
+                    /* Serialize verification for this code. The hash comparison, failed-attempt
+                       charge, budget invalidation, and successful consume all happen while the row
+                       lock is held, so parallel guesses cannot outrun the five-attempt budget. */
+                    const result = await client.query(
+                        "select code, expires_at, failed_attempts from otp_codes where email = $1 and purpose = 'LOGIN' limit 1 for update",
+                        [emailVal]
+                    );
+                    const locked = result.rows[0] || null;
+                    if (!locked) {
+                        await client.query("COMMIT");
+                        return false;
+                    }
+
+                    const expired = new Date() > new Date(locked.expires_at);
+                    const spent = Number(locked.failed_attempts || 0) >= MAX_OTP_FAILED_ATTEMPTS;
+                    if (expired || spent) {
+                        await client.query(
+                            "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
+                            [emailVal]
+                        );
+                        await client.query("COMMIT");
+                        return false;
+                    }
+
+                    if (!safeHashMatch(locked.code, hashOtp(emailVal, codeTrimmed))) {
+                        const nextAttempts = Number(locked.failed_attempts || 0) + 1;
+                        if (nextAttempts >= MAX_OTP_FAILED_ATTEMPTS) {
+                            await client.query(
+                                "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
+                                [emailVal]
+                            );
+                        } else {
+                            await client.query(
+                                "update otp_codes set failed_attempts = $2 where email = $1 and purpose = 'LOGIN'",
+                                [emailVal, nextAttempts]
+                            );
+                        }
+                        await client.query("COMMIT");
+                        return false;
+                    }
+
+                    await client.query(
+                        "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
+                        [emailVal]
+                    );
+                    await client.query("COMMIT");
+                    return true;
+                } catch (error) {
+                    await client.query("ROLLBACK").catch(() => undefined);
+                    throw error;
+                }
             });
         } catch (err: any) {
             console.error("OTP verify query error:", err);
@@ -82,88 +130,22 @@ export async function POST(request: Request) {
                 }
                 isOfflineMode = true;
             } else {
-                return NextResponse.json({ error: err.message || "Failed to query verification code." }, { status: 500 });
+                return NextResponse.json({ error: "Failed to verify code. Please try again." }, { status: 500 });
             }
         }
 
         if (isOfflineMode) {
             console.warn("⚠️ Supabase is offline. Verifying OTP via offlineDb.");
-            record = getOfflineOtpCode(emailVal);
-        }
-
-        if (!record) {
-            return NextResponse.json({ error: "Verification code expired or not found. Please request a new one." }, { status: 400 });
-        }
-
-        /* Belt-and-suspenders: a row that somehow survived past its guess budget (e.g. the
-           invalidating delete below failed) is dead, not guessable. */
-        if (typeof record.failed_attempts === "number" && record.failed_attempts >= MAX_OTP_FAILED_ATTEMPTS) {
-            return NextResponse.json({ error: "Too many incorrect attempts. Please request a new verification code." }, { status: 429 });
-        }
-
-        if (!safeHashMatch(record.code, hashOtp(emailVal, codeTrimmed))) {
-            /* Charge the wrong guess against this code's budget and invalidate it once spent.
-               The increment is atomic, so concurrent wrong guesses each consume budget and
-               cannot race past the limit. Counting failures must fail closed: if the counter
-               cannot be recorded, the guess is rejected without revealing anything. */
-            if (!isOfflineMode) {
-                try {
-                    await withPgClient(async (client) => {
-                        const bump = await client.query(
-                            "update otp_codes set failed_attempts = failed_attempts + 1 where email = $1 and purpose = 'LOGIN' returning failed_attempts",
-                            [emailVal]
-                        );
-                        const failedAttempts = Number(bump.rows[0]?.failed_attempts ?? 0);
-                        if (failedAttempts >= MAX_OTP_FAILED_ATTEMPTS) {
-                            await client.query(
-                                "delete from otp_codes where email = $1 and purpose = 'LOGIN'",
-                                [emailVal]
-                            );
-                        }
-                    });
-                } catch (countErr) {
-                    console.error("OTP failed-attempt accounting error:", countErr);
-                }
-            }
-            return NextResponse.json({ error: "Invalid verification code. Please check and try again." }, { status: 400 });
-        }
-
-        if (new Date() > new Date(record.expires_at)) {
-            if (isOfflineMode) {
+            const record = getOfflineOtpCode(emailVal);
+            if (record) {
+                verified = new Date() <= new Date(record.expires_at)
+                    && safeHashMatch(record.code, hashOtp(emailVal, codeTrimmed));
                 deleteOfflineOtpCode(emailVal);
-            } else {
-                try {
-                    await withPgClient(async (client) => {
-                        await client.query("delete from otp_codes where email = $1 and purpose = 'LOGIN'", [emailVal]);
-                    });
-                } catch (e) {}
             }
-            return NextResponse.json({ error: "Verification code has expired. Please request a new one." }, { status: 400 });
         }
 
-        /* Consume the code atomically. The delete is scoped to the exact stored hash so a single
-           winner deletes the row; a concurrent second request that also passed the hash/expiry
-           checks above sees rowCount 0 and is rejected, preventing double-redemption. A failed
-           delete must NOT silently issue a session, so errors here fail the request. */
-        if (isOfflineMode) {
-            deleteOfflineOtpCode(emailVal);
-        } else {
-            let consumed = false;
-            try {
-                consumed = await withPgClient(async (client) => {
-                    const del = await client.query(
-                        "delete from otp_codes where email = $1 and code = $2 and purpose = 'LOGIN'",
-                        [emailVal, record.code]
-                    );
-                    return ((del as { rowCount?: number }).rowCount ?? 0) > 0;
-                });
-            } catch (e) {
-                console.error("OTP consume error:", e);
-                return NextResponse.json({ error: "Failed to verify code. Please try again." }, { status: 500 });
-            }
-            if (!consumed) {
-                return NextResponse.json({ error: "Verification code already used. Please request a new one." }, { status: 400 });
-            }
+        if (!verified) {
+            return NextResponse.json({ error: "Invalid or expired verification code." }, { status: 400 });
         }
 
         let walletAddress = "";

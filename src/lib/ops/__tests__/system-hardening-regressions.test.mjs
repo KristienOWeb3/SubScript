@@ -49,10 +49,12 @@ test("login OTPs have a per-code guess budget", async () => {
 
     assert.match(verify, /MAX_OTP_FAILED_ATTEMPTS = 5/);
     assert.match(verify, /select code, expires_at, failed_attempts from otp_codes/);
-    assert.match(verify, /record\.failed_attempts >= MAX_OTP_FAILED_ATTEMPTS/);
-    assert.match(verify, /set failed_attempts = failed_attempts \+ 1[\s\S]{0,80}returning failed_attempts/);
-    assert.match(verify, /failedAttempts >= MAX_OTP_FAILED_ATTEMPTS/);
-    assert.match(verify, /status: 429/);
+    assert.match(verify, /for update/);
+    const transaction = verify.slice(verify.indexOf('await client.query("BEGIN")'));
+    assert.ok(transaction.indexOf("for update") < transaction.indexOf("safeHashMatch"));
+    assert.match(verify, /nextAttempts >= MAX_OTP_FAILED_ATTEMPTS/);
+    assert.match(verify, /set failed_attempts = \$2/);
+    assert.match(verify, /Invalid or expired verification code/);
     assert.match(send, /failed_attempts = 0/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFAULT 0/);
 });
@@ -88,6 +90,8 @@ test("premium billing leases each on-chain sequence and repairs chain-finalized 
     assert.match(billing, /isSequenceExecuted\(subId, claimedSequenceId\)/);
     assert.match(billing, /PAYMENT_EXECUTED_STATE_REPAIRED/);
     assert.match(billing, /complete_subscription_billing/);
+    assert.match(billing, /renew_subscription_billing/);
+    assert.match(billing, /if \(!await renewBillingClaim\(\)\) continue/);
 });
 
 test("internal billing rejects an identical signed event replay", async () => {

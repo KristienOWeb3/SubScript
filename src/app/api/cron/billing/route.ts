@@ -491,6 +491,49 @@ export async function POST(request: Request) {
             };
 
             let claimedSequenceId: number | null = null;
+            let billingClaimId: string | null = null;
+            const renewBillingClaim = async () => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("renew_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                    p_lease_seconds: 600,
+                });
+                if (error) throw new Error(`Failed to renew billing claim: ${error.message}`);
+                return data === true;
+            };
+            const releaseBillingClaim = async () => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("release_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                });
+                if (error) throw new Error(`Failed to release billing claim: ${error.message}`);
+                if (data === true) {
+                    claimedSequenceId = null;
+                    billingClaimId = null;
+                    return true;
+                }
+                return false;
+            };
+            const completeBillingClaim = async (txHash: string | null) => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("complete_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                    p_tx_hash: txHash,
+                });
+                if (error) throw new Error(`Failed to complete billing claim: ${error.message}`);
+                if (data === true) {
+                    claimedSequenceId = null;
+                    billingClaimId = null;
+                    return true;
+                }
+                return false;
+            };
             try {
                 /* Fetch subscription state on-chain */
                 const subOnChain = await standardContract.subscriptions(subId);
@@ -585,9 +628,11 @@ export async function POST(request: Request) {
                     continue;
                 }
                 const sequenceId = Number((nowSeconds - nextPaymentTs) / periodSeconds) + 1;
+                const requestedClaimId = crypto.randomUUID();
                 const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
                     p_subscription_id: subId,
                     p_sequence_id: sequenceId,
+                    p_claim_id: requestedClaimId,
                     p_lease_seconds: 600,
                 });
                 if (claimError) {
@@ -603,11 +648,13 @@ export async function POST(request: Request) {
                     continue;
                 }
                 claimedSequenceId = sequenceId;
+                billingClaimId = requestedClaimId;
 
                 if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
                     /* A prior worker reached chain finality but died before mirroring state. Repair
                        the database instead of misclassifying the contract's duplicate guard as a
                        failed renewal. */
+                    if (!await renewBillingClaim()) continue;
                     await supabase.from("subscriptions").update({
                         status: "ACTIVE",
                         tier: 1,
@@ -619,12 +666,7 @@ export async function POST(request: Request) {
                         tier: "PREMIUM",
                         updated_at: new Date().toISOString(),
                     }).eq("wallet_address", subscriber.toLowerCase());
-                    await supabase.rpc("complete_subscription_billing", {
-                        p_subscription_id: subId,
-                        p_sequence_id: sequenceId,
-                        p_tx_hash: null,
-                    });
-                    claimedSequenceId = null;
+                    if (!await completeBillingClaim(null)) continue;
                     results.push({
                         subId,
                         subscriber,
@@ -639,23 +681,16 @@ export async function POST(request: Request) {
                 const balance = await usdcContract.balanceOf(subscriber);
                 const allowance = await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS);
                 if (balance < requiredAmount || allowance < requiredAmount) {
+                    if (!await renewBillingClaim()) continue;
                     await handlePaymentFailure(subscriber, "Insufficient balance or allowance");
-                    await supabase.rpc("release_subscription_billing", {
-                        p_subscription_id: subId,
-                        p_sequence_id: sequenceId,
-                    });
-                    claimedSequenceId = null;
+                    await releaseBillingClaim();
                     continue;
                 }
 
                 /* Check if payment is due on-chain (authoritative clock) */
                 const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
                 if (!isDueOnChain) {
-                    await supabase.rpc("release_subscription_billing", {
-                        p_subscription_id: subId,
-                        p_sequence_id: sequenceId,
-                    });
-                    claimedSequenceId = null;
+                    await releaseBillingClaim();
                     results.push({
                         subId,
                         subscriber,
@@ -684,6 +719,10 @@ export async function POST(request: Request) {
                     }
                     upgradeTxHash = txUpgrade.hash;
                 }
+
+                /* From this point onward every effect is off-chain and must belong to the active
+                   worker. A reclaimed/stale worker leaves reconciliation to its successor. */
+                if (!await renewBillingClaim()) continue;
 
                 if (sub.status === "PAST_DUE") {
                     console.log(`[Premium Past Due Recovery] requestId: ${requestId}, merchantAddress: ${subscriber}, subscriptionId: ${subId}, txHash: ${tx.hash}`);
@@ -733,12 +772,7 @@ export async function POST(request: Request) {
                     txHash: tx.hash,
                 })).catch(() => { /* delivery is best-effort */ });
 
-                await supabase.rpc("complete_subscription_billing", {
-                    p_subscription_id: subId,
-                    p_sequence_id: sequenceId,
-                    p_tx_hash: tx.hash,
-                });
-                claimedSequenceId = null;
+                if (!await completeBillingClaim(tx.hash)) continue;
 
                 results.push({
                     subId,
@@ -755,6 +789,7 @@ export async function POST(request: Request) {
                     const subOnChain = await standardContract.subscriptions(subId);
                     const subscriber = subOnChain[0];
                     if (claimedSequenceId !== null && await standardContract.isSequenceExecuted(subId, claimedSequenceId)) {
+                        if (!await renewBillingClaim()) continue;
                         await supabase.from("subscriptions").update({
                             status: "ACTIVE",
                             tier: 1,
@@ -766,11 +801,7 @@ export async function POST(request: Request) {
                             tier: "PREMIUM",
                             updated_at: new Date().toISOString(),
                         }).eq("wallet_address", subscriber.toLowerCase());
-                        await supabase.rpc("complete_subscription_billing", {
-                            p_subscription_id: subId,
-                            p_sequence_id: claimedSequenceId,
-                            p_tx_hash: null,
-                        });
+                        if (!await completeBillingClaim(null)) continue;
                         results.push({
                             subId,
                             subscriber,
@@ -779,12 +810,10 @@ export async function POST(request: Request) {
                         });
                     } else {
                         if (claimedSequenceId !== null) {
-                            await supabase.rpc("release_subscription_billing", {
-                                p_subscription_id: subId,
-                                p_sequence_id: claimedSequenceId,
-                            });
+                            if (!await renewBillingClaim()) continue;
                         }
                         await handlePaymentFailure(subscriber, err.message || "Unknown error");
+                        if (claimedSequenceId !== null) await releaseBillingClaim();
                     }
                 } catch (fallbackErr: any) {
                     console.error(`Fallback check failed for sub ${subId}:`, fallbackErr);

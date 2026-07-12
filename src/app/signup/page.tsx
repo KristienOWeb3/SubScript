@@ -18,7 +18,7 @@ import {
   RefreshCw,
   LogOut
 } from "@/components/icons";
-import { getDashboardUrl } from "@/utils/navigation";
+import { getDashboardUrl, getSafeRelativePath } from "@/utils/navigation";
 import CircleGoogleWalletButton from "@/components/CircleGoogleWalletButton";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import Script from "next/script";
@@ -38,8 +38,7 @@ export default function SignupPage() {
      user followed). Only safe same-origin relative paths are honored. */
   const getSafeNext = () => {
     if (typeof window === "undefined") return "";
-    const raw = new URLSearchParams(window.location.search).get("next") || "";
-    return /^\/(?!\/)[^\s]*$/.test(raw) ? raw : "";
+    return getSafeRelativePath(new URLSearchParams(window.location.search).get("next"));
   };
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();
@@ -257,31 +256,10 @@ export default function SignupPage() {
     setSandboxOtp(null);
 
     try {
-      // 1. Check if email already has an account
-      const checkRes = await fetch("/api/auth/check-account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const checkData = await checkRes.json();
-      if (checkData.exists) {
-        if (checkData.authMethod === "wallet") {
-          setOtpError("This email is linked to a wallet-only account. Connect that wallet to sign in; this email cannot create another account.");
-          return;
-        }
-        if (checkData.onboardingComplete === false) {
-          setOtpError("This email already started signup but has not chosen an account type yet. Sending a verification code so you can finish setup.");
-        } else {
-          setOtpError("An account with this email already exists. Use Sign In below to access it.");
-          return;
-        }
-      }
-
-      // 2. Send OTP
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, captchaCode: "", captchaToken, isSignup: true }),
+        body: JSON.stringify({ email, captchaCode: "", captchaToken, isSignup: true, authFlow: "signup" }),
       });
       const data = await res.json();
       if (data.success) {

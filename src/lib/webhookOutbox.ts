@@ -1,4 +1,5 @@
 import { sendWebhookRequest } from "@/lib/webhooks";
+import crypto from "crypto";
 
 type SupabaseLike = any;
 
@@ -21,26 +22,38 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
         if (endpointError || !endpoint?.active) continue;
 
         const attempts = Number(delivery.attempts || 0) + 1;
+        const claimId = crypto.randomUUID();
+        const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
         const staleProcessing = delivery.status === "PROCESSING"
-            && Date.now() - new Date(delivery.updated_at).getTime() > 15 * 60 * 1000;
-        const claimableStatuses = staleProcessing ? ["PENDING", "FAILED", "PROCESSING"] : ["PENDING", "FAILED"];
-        const { data: claimed, error: claimError } = await supabase.from("webhook_deliveries").update({
+            && new Date(delivery.updated_at).toISOString() < staleCutoff;
+        let claimQuery = supabase.from("webhook_deliveries").update({
             status: "PROCESSING",
             attempts,
+            processing_claim_id: claimId,
             updated_at: new Date().toISOString(),
-        }).eq("id", delivery.id).in("status", claimableStatuses).select("id").maybeSingle();
+        }).eq("id", delivery.id);
+        claimQuery = staleProcessing
+            ? claimQuery.eq("status", "PROCESSING").lt("updated_at", staleCutoff)
+            : claimQuery.in("status", ["PENDING", "FAILED"]);
+        const { data: claimed, error: claimError } = await claimQuery.select("id").maybeSingle();
         if (claimError) throw new Error(`Failed to claim webhook outbox row: ${claimError.message}`);
         if (!claimed) continue;
 
         const result = await sendWebhookRequest(endpoint.url, delivery.payload, endpoint.secret);
         const success = result.status >= 200 && result.status < 300;
-        const { error: updateError } = await supabase.from("webhook_deliveries").update({
+        const { data: finalized, error: updateError } = await supabase.from("webhook_deliveries").update({
             status: success ? "SUCCESS" : "FAILED",
             last_error: success ? null : result.responseText,
             response_body: result.responseText,
             updated_at: new Date().toISOString(),
-        }).eq("id", delivery.id);
+        })
+            .eq("id", delivery.id)
+            .eq("status", "PROCESSING")
+            .eq("processing_claim_id", claimId)
+            .select("id")
+            .maybeSingle();
         if (updateError) throw new Error(`Failed to update webhook outbox: ${updateError.message}`);
+        if (!finalized) continue;
 
         await supabase.from("webhook_events").insert({
             webhook_endpoint_id: delivery.webhook_endpoint_id,
