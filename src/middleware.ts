@@ -346,12 +346,19 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    /* The E2E test cookie disables rate limiting for Playwright runs, but it is a plain,
-       client-settable cookie — honoring it in production would let anyone bypass the auth
-       brute-force limiter, burst protection, and IP bans by sending the cookie. Gate it on a
-       non-production build so it can never weaken production defenses. */
-    const isE2e = process.env.NODE_ENV !== "production"
-        && request.cookies.get("subscript_e2e_test")?.value === "true";
+    /* Local development may use the E2E cookie. Production-mode CI uses an ephemeral token that
+       exists only in that runner's environment and is attached by Playwright to every request.
+       Deployed production has no token configured, so neither client-set cookies nor headers can
+       bypass its rate limits. */
+    const configuredE2eToken = process.env.E2E_RATE_LIMIT_BYPASS_TOKEN || "";
+    const suppliedE2eToken = request.headers.get("x-subscript-e2e-token") || "";
+    const hasCiE2eBypass = configuredE2eToken.length > 0
+        && configuredE2eToken.length === suppliedE2eToken.length
+        && configuredE2eToken === suppliedE2eToken;
+    const isE2e = hasCiE2eBypass || (
+        process.env.NODE_ENV !== "production"
+        && request.cookies.get("subscript_e2e_test")?.value === "true"
+    );
     /* Apply rate limiting only to API endpoints */
     if (pathname.startsWith("/api") && !isE2e) {
         /* Read user's IP address */

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const e2eBypassToken = process.env.E2E_RATE_LIMIT_BYPASS_TOKEN;
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 90000,
@@ -19,6 +21,9 @@ export default defineConfig({
   },
   use: {
     baseURL: "http://127.0.0.1:3000",
+    extraHTTPHeaders: e2eBypassToken
+      ? { "x-subscript-e2e-token": e2eBypassToken }
+      : undefined,
     trace: "on-first-retry",
   },
   projects: [

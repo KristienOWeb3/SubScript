@@ -28,6 +28,8 @@ jobs:
   e2e:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    env:
+      E2E_RATE_LIMIT_BYPASS_TOKEN: subscript-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

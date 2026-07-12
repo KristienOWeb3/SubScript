@@ -315,3 +315,16 @@ test("fresh beta databases preserve server CRUD and receipt delegation schema", 
     assert.match(runner, /ALTER DEFAULT PRIVILEGES[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role/);
     assert.match(alignment, /ALTER TABLE public\.receipts[\s\S]*ADD COLUMN IF NOT EXISTS invited_addresses TEXT NOT NULL DEFAULT ''/);
 });
+
+test("production-mode E2E bypass is runner-bound and absent unless explicitly configured", () => {
+    const middleware = source("src/middleware.ts");
+    const playwright = source("playwright.config.ts");
+    const workflow = source(".github/workflows/e2e.yml");
+
+    assert.match(middleware, /process\.env\.E2E_RATE_LIMIT_BYPASS_TOKEN/);
+    assert.match(middleware, /request\.headers\.get\("x-subscript-e2e-token"\)/);
+    assert.match(middleware, /configuredE2eToken\.length > 0/);
+    assert.match(middleware, /hasCiE2eBypass \|\| \([\s\S]*process\.env\.NODE_ENV !== "production"/);
+    assert.match(playwright, /"x-subscript-e2e-token": e2eBypassToken/);
+    assert.match(workflow, /E2E_RATE_LIMIT_BYPASS_TOKEN: subscript-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
+});
