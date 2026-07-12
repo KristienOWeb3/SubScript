@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
-import { pgMaybeOne, pgQuery, withPgClient } from "@/lib/serverPg";
+import { pgQuery, withPgClient } from "@/lib/serverPg";
 
 const SESSION_ISSUER = "subscriptonarc.com";
 const SESSION_AUDIENCE = "subscript-app";

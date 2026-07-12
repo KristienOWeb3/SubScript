@@ -21,7 +21,9 @@ test("session verification survives duplicate legacy and domain cookies", () => 
 
     assert.match(auth, /getCookieValues\(cookieStore, "subscript_session_token"\)/);
     assert.match(auth, /for \(const token of tokens\)/);
-    assert.match(auth, /if \(!session\) continue/);
+    assert.match(auth, /select token from sessions where token = ANY\(\$1\)/);
+    assert.match(auth, /const liveHashes = new Set/);
+    assert.match(auth, /liveHashes\.has\(candidate\.hash\)/);
     assert.match(auth, /candidate\.issuedAt > newestSession\.issuedAt/);
     assert.match(auth, /delete from sessions where token = any\(\$1::text\[\]\)/);
 });

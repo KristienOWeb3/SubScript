@@ -42,6 +42,8 @@ test("payment-link verification has one database-backed claim winner", () => {
 });
 
 test("payment-link capacity and settlement credit are atomic", () => {
+    const embeddedPayRoute = source("src/app/api/user/payment-links/[id]/pay/route.ts");
+
     assert.match(migration, /SET use_count = use_count \+ 1[\s\S]*use_count < max_uses/i);
     assert.match(migration, /reservation_active = true/i);
     assert.match(migration, /SET use_count = greatest\(use_count - 1, 0\)/i);
@@ -51,6 +53,8 @@ test("payment-link capacity and settlement credit are atomic", () => {
     assert.match(route, /rpc\(\s*"finalize_payment_link_settlement"/);
     assert.doesNotMatch(route, /from\("payment_link_payments"\)\s*\.insert/);
     assert.doesNotMatch(route, /from\("ledger_entries"\)\s*\.update/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*increment:/);
+    assert.doesNotMatch(embeddedPayRoute, /useCount:\s*\{\s*decrement:/);
 });
 
 test("terminal failures cannot downgrade another or completed settlement", () => {

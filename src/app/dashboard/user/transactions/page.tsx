@@ -155,18 +155,18 @@ export default function UserTransactionsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [subRes, dmRes, userRes] = await Promise.all([
+      const [subRes, dmRes, sessionRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
-        fetch("/api/user")
+        fetch("/api/auth/session")
       ]);
       const subData = await subRes.json();
       const dmData = await dmRes.json();
-      const userData = await userRes.json();
+      const sessionData = await sessionRes.json();
 
       if (subData.success) setSubscriptions(subData.subscriptions);
       if (dmData.success) setDms(dmData.dms);
-      if (userData.success) setUserWallet(userData.wallet);
+      if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
     } catch (err) {
       console.error("Failed to load transactions data:", err);
     } finally {
