@@ -5,7 +5,7 @@ test.describe("Waitlist Form Tests", () => {
     // Open console logger
     page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
     page.on("pageerror", err => console.log(`[BROWSER ERROR] ${err.message}`));
-    await page.goto("/");
+    await page.goto("/waitlist");
   });
 
   test("should submit merchant waitlist successfully", async ({ page }) => {
