@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -53,7 +54,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         if (!id) {
             return NextResponse.json({ error: "Bad Request: Missing ID parameter" }, { status: 400 });
         }
-        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+        if (!isValidPaymentLinkId(id)) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
 
@@ -159,7 +160,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 export async function PATCH(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
-        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+        if (!isValidPaymentLinkId(id)) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
         const auth = await authenticateRequest(request);
@@ -253,7 +254,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 export async function DELETE(request: Request, { params }: RouteContext) {
     try {
         const { id } = await params;
-        if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+        if (!isValidPaymentLinkId(id)) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
         const auth = await authenticateRequest(request);

@@ -58,6 +58,7 @@ export default function UserTransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [userWallet, setUserWallet] = useState<string | null>(null);
 
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [detectedCurrency, setDetectedCurrency] = useState({ code: "USD", symbol: "$" });
@@ -154,15 +155,18 @@ export default function UserTransactionsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [subRes, dmRes] = await Promise.all([
+      const [subRes, dmRes, userRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
-        fetch("/api/user/dms")
+        fetch("/api/user/dms"),
+        fetch("/api/user")
       ]);
       const subData = await subRes.json();
       const dmData = await dmRes.json();
+      const userData = await userRes.json();
 
       if (subData.success) setSubscriptions(subData.subscriptions);
       if (dmData.success) setDms(dmData.dms);
+      if (userData.success) setUserWallet(userData.wallet);
     } catch (err) {
       console.error("Failed to load transactions data:", err);
     } finally {
@@ -215,18 +219,22 @@ export default function UserTransactionsPage() {
         ["DEBIT_SUCCESS", "PAYMENT", "PEER_PAYMENT", "PAYMENT_SUCCESS", "PEER_TRANSFER"].includes(m.messageType) || 
         m.status === "PAID"
       ))
-      .map((m) => ({
-        id: `dm-${m.id}`,
-        kind: "one-time" as const,
-        name: m.senderName || m.receiverName,
-        pic: m.senderProfilePic || m.receiverProfilePic,
-        detail: m.title || m.description || "Direct Payment",
-        amountUsdc: m.amountUsdc,
-        amountLabel: `-$${formatUsdc(m.amountUsdc)}`,
-        localAmountLabel: `-${getLocalValueLabel(m.amountUsdc)}`,
-        time: new Date(m.createdAt).getTime(),
-        incoming: false,
-      }))
+      .map((m) => {
+        const incoming = m.receiverAddress.toLowerCase() === userWallet?.toLowerCase();
+        const sign = incoming ? "+" : "-";
+        return {
+          id: `dm-${m.id}`,
+          kind: "one-time" as const,
+          name: m.senderName || m.receiverName,
+          pic: m.senderProfilePic || m.receiverProfilePic,
+          detail: m.title || m.description || "Direct Payment",
+          amountUsdc: m.amountUsdc,
+          amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
+          localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
+          time: new Date(m.createdAt).getTime(),
+          incoming,
+        };
+      })
   ].sort((a, b) => b.time - a.time);
 
   const filteredTransactions = allTransactions.filter((tx) => {

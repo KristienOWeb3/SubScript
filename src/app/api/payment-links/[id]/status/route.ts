@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { paymentLinkSettlementVersion } from "@/lib/paymentLinks/settlementVersion";
+import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -8,7 +9,7 @@ type RouteContext = {
 
 export async function GET(_request: Request, { params }: RouteContext) {
     const { id } = await params;
-    if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+    if (!isValidPaymentLinkId(id)) {
         return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
     }
 

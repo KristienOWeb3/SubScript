@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
-import { pgMaybeOne, withPgClient } from "@/lib/serverPg";
+import { pgMaybeOne, pgQuery, withPgClient } from "@/lib/serverPg";
 
 const SESSION_ISSUER = "subscriptonarc.com";
 const SESSION_AUDIENCE = "subscript-app";
@@ -99,7 +99,9 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
 
     if (tokens.length === 0) return null;
 
-    let newestSession: (VerifiedSessionToken & { issuedAt: number }) | null = null;
+    type Candidate = VerifiedSessionToken & { issuedAt: number; hash: string };
+    const candidates: Candidate[] = [];
+
     for (const token of tokens) {
         try {
             const { payload } = await jwtVerify(token, jwtSecret(), {
@@ -108,36 +110,39 @@ export async function getVerifiedSessionToken(headers: Headers): Promise<Verifie
             });
 
             if (payload && typeof payload.address === "string" && typeof payload.jti === "string") {
-                const address = payload.address.toLowerCase();
-                /* Revocation check (finding 21): the token must still have a live row in `sessions`,
-                   so logout can invalidate a copied token. */
-                const session = await pgMaybeOne<{ wallet: string }>(
-                    `select wallet from sessions
-                      where token = $1
-                        and lower(wallet) = $2
-                        and expires_at > now()
-                      limit 1`,
-                    [sessionTokenHash(token), address]
-                );
-                if (!session) continue;
-                const candidate = {
+                candidates.push({
                     token,
-                    wallet: address,
+                    wallet: payload.address.toLowerCase(),
                     expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
                     issuedAt: typeof payload.iat === "number" ? payload.iat : 0,
-                };
-                if (!newestSession || candidate.issuedAt > newestSession.issuedAt) {
-                    newestSession = candidate;
-                }
+                    hash: sessionTokenHash(token),
+                });
             }
-        } catch {
-            /* A duplicate legacy cookie may be expired or signed by a rotated secret.
-               Keep checking the remaining same-name cookies before rejecting the request. */
+        } catch (e: any) {
+            console.debug(`Session token verification failed: ${e.message}`);
+        }
+    }
+
+    if (candidates.length === 0) return null;
+
+    const hashes = candidates.map(c => c.hash);
+    const liveSessions = await pgQuery<{ token: string }>(
+        `select token from sessions where token = ANY($1) and expires_at > now()`,
+        [hashes]
+    );
+    const liveHashes = new Set(liveSessions.map(s => s.token));
+
+    let newestSession: Candidate | null = null;
+    for (const candidate of candidates) {
+        if (liveHashes.has(candidate.hash)) {
+            if (!newestSession || candidate.issuedAt > newestSession.issuedAt) {
+                newestSession = candidate;
+            }
         }
     }
 
     if (!newestSession) return null;
-    const { issuedAt: _issuedAt, ...verifiedSession } = newestSession;
+    const { issuedAt: _issuedAt, hash: _hash, ...verifiedSession } = newestSession;
     return verifiedSession;
 }
 

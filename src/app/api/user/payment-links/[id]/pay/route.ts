@@ -61,6 +61,7 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
             return NextResponse.json({ error: "This payment link has expired." }, { status: 410 });
         }
+        /* We perform a preliminary read check here, but the strict atomic check happens below. */
         if (link.maxUses !== null && link.maxUses !== undefined && (link.useCount || 0) >= link.maxUses) {
             return NextResponse.json({ error: "This payment link has reached its usage limit." }, { status: 409 });
         }
@@ -97,8 +98,19 @@ export async function POST(request: Request, { params }: RouteContext) {
         const claimKey = `embedded-pay:${id}:${payer}${intentSuffix}`;
         const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
         try {
-            await prisma.idempotencyKey.create({
-                data: { executionKey: claimKey, status: "PROCESSING", expiresAt: claimExpiry() },
+            await prisma.$transaction(async (tx) => {
+                if (link.maxUses !== null && link.maxUses !== undefined) {
+                    const updated = await tx.paymentLink.updateMany({
+                        where: { id, useCount: { lt: link.maxUses } },
+                        data: { useCount: { increment: 1 } },
+                    });
+                    if (updated.count === 0) {
+                        throw new Error("EXHAUSTED");
+                    }
+                }
+                await tx.idempotencyKey.create({
+                    data: { executionKey: claimKey, status: "PROCESSING", expiresAt: claimExpiry() },
+                });
             });
         } catch (e: any) {
             if (e?.code === "P2002") {
@@ -121,9 +133,12 @@ export async function POST(request: Request, { params }: RouteContext) {
                         /* Another request re-claimed it first. */
                         return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
                     }
+                    /* Reclaimed successfully. We don't increment useCount again because it was incremented on initial creation. */
                 } else {
                     return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
                 }
+            } else if (e?.message === "EXHAUSTED") {
+                return NextResponse.json({ error: "This payment link has reached its usage limit." }, { status: 409 });
             } else {
                 throw e;
             }
@@ -150,7 +165,15 @@ export async function POST(request: Request, { params }: RouteContext) {
                refused until it expires, and the deterministic idempotency key above guarantees that
                even a post-expiry retry cannot double-charge. */
             if (isPreSubmission) {
-                await prisma.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
+                await prisma.$transaction(async (tx) => {
+                    await tx.idempotencyKey.delete({ where: { executionKey: claimKey } }).catch(() => {});
+                    if (link.maxUses !== null && link.maxUses !== undefined) {
+                        await tx.paymentLink.update({
+                            where: { id },
+                            data: { useCount: { decrement: 1 } },
+                        }).catch(() => {});
+                    }
+                }).catch(() => {});
             }
             const status = isPreSubmission ? 400
                 : /insufficient|balance|exceeds/i.test(message) ? 402
