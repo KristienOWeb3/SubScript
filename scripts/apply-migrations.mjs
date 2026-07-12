@@ -92,6 +92,20 @@ const BASELINE_FILES = [
     "supabase/migrations/20260702000000_add_plan_description.sql",
     "supabase/migrations/20260703000000_create_fiat_funding_intents.sql",
     "supabase/migrations/20260704000000_add_payment_link_beneficiaries.sql",
+    "supabase/migrations/20260705000000_add_referrals.sql",
+    "supabase/migrations/20260706000000_add_merchant_churn_survey_question.sql",
+    "supabase/migrations/20260706010000_financial_safety_repairs.sql",
+    "supabase/migrations/20260707000000_deny_all_rls_server_tables.sql",
+    "supabase/migrations/20260708000000_circle_wallet_provisioning.sql",
+    "supabase/migrations/20260709000000_add_kyc_verification.sql",
+    "supabase/migrations/20260709000001_close_deployment_scoped_gaps.sql",
+    "supabase/migrations/20260711003440_atomic_payment_link_settlement.sql",
+    "supabase/migrations/20260711003637_premium_upgrade_claim_ownership.sql",
+    "supabase/migrations/20260711004047_bind_otp_purpose_and_billing_claims.sql",
+    "supabase/migrations/20260711120000_scope_idempotency_key_per_merchant.sql",
+    "supabase/migrations/20260711130000_siwe_nonce_single_use.sql",
+    "supabase/migrations/20260711131500_otp_failed_attempt_counter.sql",
+    "supabase/migrations/20260711193707_bind_worker_claim_ownership.sql",
 ];
 
 async function listMigrationFiles({ freshBootstrap = false } = {}) {
@@ -194,6 +208,15 @@ async function main() {
                         [f]
                     );
                 }
+            }
+        } else {
+            // Ledger exists. Reconcile any newly added BASELINE_FILES into the ledger 
+            // so they aren't double-applied.
+            for (const f of BASELINE_FILES) {
+                await client.query(
+                    "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
+                    [f]
+                );
             }
         }
 
