@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { getCurrencyForCountry } from "@/lib/currencyMap";
 import { fetchExchangeRate } from "@/lib/fx";
 import { paymentLinkSettlementVersion } from "@/lib/paymentLinks/settlementVersion";
+import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
 import PublicPayClient from "./PublicPayClient";
 
 /* Define parameters type according to Next.js App Router specs */
@@ -39,7 +40,7 @@ function normalizePublicUrl(value: string | undefined) {
 
 /* Helper function to query payment link directly from database on the server */
 async function getPaymentLink(id: string) {
-    if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+    if (!isValidPaymentLinkId(id)) {
         return null;
     }
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";

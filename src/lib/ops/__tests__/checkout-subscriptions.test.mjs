@@ -51,6 +51,8 @@ test("hosted checkout only redirects to validated URLs stored on the payment lin
 test("checkout success polling is bound to a settlement newer than the page baseline", () => {
     const client = source("src/app/pay/[id]/PublicPayClient.tsx");
     const statusRoute = source("src/app/api/payment-links/[id]/status/route.ts");
+    const page = source("src/app/pay/[id]/page.tsx");
+    const settlementVersion = source("src/lib/paymentLinks/settlementVersion.ts");
 
     /* A link-level PAID flag is historical aggregate state. Reopening a paid/reusable link must
        never turn the current checkout green until a newer finalized settlement is observed. */
@@ -61,6 +63,9 @@ test("checkout success polling is bound to a settlement newer than the page base
     assert.match(statusRoute, /settlementVersion/);
     assert.match(statusRoute, /verified_tx_hash/);
     assert.match(statusRoute, /paid_at/);
+    assert.match(page, /isValidPaymentLinkId\(id\)/);
+    assert.doesNotMatch(page, /\[0-9a-fA-F-\]\{36\}/);
+    assert.match(settlementVersion, /Number\.isNaN\(parsed\.getTime\(\)\)/);
 });
 
 test("checkout keeps every success path behind an actual on-chain transaction", () => {

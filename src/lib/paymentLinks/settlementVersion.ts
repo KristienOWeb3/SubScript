@@ -7,7 +7,9 @@ export function paymentLinkSettlementVersion(
     verifiedTxHash: string | null | undefined,
 ): string | null {
     if (!paidAt || !verifiedTxHash) return null;
-    const timestamp = paidAt instanceof Date ? paidAt.toISOString() : new Date(paidAt).toISOString();
+    const parsed = paidAt instanceof Date ? paidAt : new Date(paidAt);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const timestamp = parsed.toISOString();
     return createHash("sha256")
         .update(`${timestamp}:${verifiedTxHash.toLowerCase()}`)
         .digest("hex");
