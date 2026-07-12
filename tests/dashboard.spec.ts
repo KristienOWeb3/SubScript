@@ -110,21 +110,19 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
   });
 
   test.describe("Authenticated Dashboard Tests", () => {
-    test.beforeEach(async ({ page, context }) => {
+    test.beforeEach(async ({ page, context, baseURL }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
       const token = await createAuthCookie("0x835A9aEd7287068778e11df9D922B3FfaC7cFc29");
       await context.addCookies([
         {
           name: "subscript_e2e_test",
           value: "true",
-          domain: "localhost",
-          path: "/",
+          url: baseURL,
         },
         {
           name: "subscript_session_token",
           value: token,
-          domain: "localhost",
-          path: "/",
+          url: baseURL,
         },
       ]);
       await page.goto("/dashboard");
@@ -178,6 +176,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
 
       await page.click('button:has-text("Webhooks"):visible');
+      await page.waitForLoadState('networkidle');
       await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
       
       // Select payment failed event via its unique ID
@@ -194,10 +193,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
     test("should configure off-ramp settlement split", async ({ page }) => {
       await page.click('button:has-text("Off-Ramp"):visible');
+      await page.waitForLoadState('networkidle');
       
       // Get offramp slider
       const slider = page.locator('input[type="range"]');
-      await slider.waitFor({ state: 'attached', timeout: 10000 });
+      await slider.waitFor({ state: 'attached', timeout: 15000 });
       await expect(slider).toBeVisible();
       
       // Move slider

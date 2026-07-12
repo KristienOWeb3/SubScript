@@ -13,9 +13,9 @@ const plan = {
 };
 
 test.describe("merchant subscription UX", () => {
-  test.beforeEach(async ({ page, context }) => {
+  test.beforeEach(async ({ page, context, baseURL }) => {
     await context.addCookies([
-      { name: "subscript_e2e_test", value: "true", domain: "localhost", path: "/" },
+      { name: "subscript_e2e_test", value: "true", url: baseURL },
     ]);
 
     await page.route("**/api/merchant/plans", async (route) => {
