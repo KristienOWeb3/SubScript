@@ -346,12 +346,12 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    /* Local development may use the E2E cookie. Production-mode CI uses an ephemeral token that
-       exists only in that runner's environment and is attached by Playwright to every request.
-       Deployed production has no token configured, so neither client-set cookies nor headers can
-       bypass its rate limits. */
+    /* Local development may use the E2E cookie. Production-mode CI uses a separate, ephemeral
+       HttpOnly cookie whose value exists only in that runner's environment. Scoping the credential
+       to the app origin also prevents it from leaking into browser requests to external services.
+       Deployed production has no token configured, so client-set cookies cannot bypass its limits. */
     const configuredE2eToken = process.env.E2E_RATE_LIMIT_BYPASS_TOKEN || "";
-    const suppliedE2eToken = request.headers.get("x-subscript-e2e-token") || "";
+    const suppliedE2eToken = request.cookies.get("subscript_e2e_token")?.value || "";
     const hasCiE2eBypass = configuredE2eToken.length > 0
         && configuredE2eToken.length === suppliedE2eToken.length
         && configuredE2eToken === suppliedE2eToken;

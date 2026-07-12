@@ -5191,6 +5191,7 @@ Please complete the following implementation tasks:
                                             <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest block mb-2">Subscription/Plan Name</label>
                                             <input 
                                                 type="text" 
+                                                aria-label="Subscription/Plan Name"
                                                 value={subName} 
                                                 onChange={(e) => setSubName(e.target.value)}
                                                 className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00d2b4] transition-colors"

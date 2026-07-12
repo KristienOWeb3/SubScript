@@ -21,8 +21,20 @@ export default defineConfig({
   },
   use: {
     baseURL: "http://127.0.0.1:3000",
-    extraHTTPHeaders: e2eBypassToken
-      ? { "x-subscript-e2e-token": e2eBypassToken }
+    storageState: e2eBypassToken
+      ? {
+          cookies: [{
+            name: "subscript_e2e_token",
+            value: e2eBypassToken,
+            domain: "127.0.0.1",
+            path: "/",
+            expires: -1,
+            httpOnly: true,
+            secure: false,
+            sameSite: "Lax",
+          }],
+          origins: [],
+        }
       : undefined,
     trace: "on-first-retry",
   },

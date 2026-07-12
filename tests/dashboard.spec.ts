@@ -145,16 +145,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should roll API credentials", async ({ page }) => {
-      await page.click('button:has-text("API Keys"):visible');
+      await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
       await page.locator('button').filter({ hasText: /^Roll$/ }).click();
       await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 10000 });
     });
 
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
-      await page.click('button:has-text("Checkout Setup"):visible');
-      
-      await page.fill('label:has-text("Subscription/Plan Name") + input', "Custom DeepSeek Rate");
+      await page.goto("/dashboard?tab=checkout");
+      await page.getByRole("textbox", { name: "Subscription/Plan Name" }).fill("Custom DeepSeek Rate");
       
       // Check if generated code updates dynamically
       const codeBlock = page.locator("pre code");

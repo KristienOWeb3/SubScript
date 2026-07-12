@@ -322,9 +322,10 @@ test("production-mode E2E bypass is runner-bound and absent unless explicitly co
     const workflow = source(".github/workflows/e2e.yml");
 
     assert.match(middleware, /process\.env\.E2E_RATE_LIMIT_BYPASS_TOKEN/);
-    assert.match(middleware, /request\.headers\.get\("x-subscript-e2e-token"\)/);
+    assert.match(middleware, /request\.cookies\.get\("subscript_e2e_token"\)/);
     assert.match(middleware, /configuredE2eToken\.length > 0/);
     assert.match(middleware, /hasCiE2eBypass \|\| \([\s\S]*process\.env\.NODE_ENV !== "production"/);
-    assert.match(playwright, /"x-subscript-e2e-token": e2eBypassToken/);
+    assert.match(playwright, /name: "subscript_e2e_token"[\s\S]*value: e2eBypassToken/);
+    assert.doesNotMatch(playwright, /extraHTTPHeaders/);
     assert.match(workflow, /E2E_RATE_LIMIT_BYPASS_TOKEN: subscript-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
 });
