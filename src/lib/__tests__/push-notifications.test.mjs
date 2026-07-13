@@ -110,7 +110,7 @@ test("all current DM producers call the shared notification boundary", () => {
         "src/app/api/cron/billing/route.ts",
         "src/app/api/cron/customer-billing/route.ts",
         "src/lib/payments/email.ts",
-        "src/app/api/payment-links/verify/route.ts",
+        "src/lib/payments/paymentLinkVerificationWorker.ts",
         "src/app/api/user/vault/report-usage/route.ts",
         "src/lib/userPaymentRequests.ts",
     ];
