@@ -316,6 +316,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   .subscript-skeleton {
     animation: pulse 2s ease-in-out infinite;
   }

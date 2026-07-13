@@ -29,6 +29,7 @@ type VaultUsageRow = {
 
 type UsageResult =
     | { kind: "missing" }
+    | { kind: "idempotency_conflict" }
     | { kind: "inactive"; vault: VaultUsageRow }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
     | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
@@ -114,6 +115,19 @@ async function accrueUsageAtomically(
             const balance = BigInt(vault.balance_usdc);
             const accrued = BigInt(vault.accrued_usage_usdc);
             const commit = BigInt(vault.commit_usdc);
+
+            const existingReport = await client.query(
+                `select amount_usdc
+                   from metered_usage_reports
+                  where request_id = $1 and merchant_address = $2 and user_address = $3
+                  limit 1`,
+                [requestId, merchantAddress, userAddress],
+            );
+            if (existingReport.rowCount > 0) {
+                await client.query("commit");
+                if (BigInt(existingReport.rows[0].amount_usdc) !== amountMicros) return { kind: "idempotency_conflict" } as const;
+                return { kind: "accrued", vault, exhausted: accrued >= balance, notification: null, thresholdNotification: null } as const;
+            }
 
             if (!vault.active) {
                 await client.query("commit");
@@ -256,7 +270,11 @@ export async function POST(request: Request) {
         }
 
         const normalizedUser = userAddress.toLowerCase();
-        const requestId = crypto.randomUUID();
+        const requestIdHeader = request.headers.get("x-request-id")?.trim();
+        if (requestIdHeader && !/^[A-Za-z0-9._:-]{8,128}$/.test(requestIdHeader)) {
+            return NextResponse.json({ error: "Invalid x-request-id" }, { status: 400 });
+        }
+        const requestId = requestIdHeader || crypto.randomUUID();
 
         const result = await accrueUsageAtomically(normalizedUser, merchantAddress, amountMicros, cleanNote, requestId);
 
@@ -265,6 +283,10 @@ export async function POST(request: Request) {
                 error: "No vault for this user. Ask them to commit to your service before reporting usage.",
                 code: "NO_VAULT",
             }, { status: 404 });
+        }
+
+        if (result.kind === "idempotency_conflict") {
+            return NextResponse.json({ error: "This request id was already used for a different usage charge." }, { status: 409 });
         }
 
         if (result.kind === "inactive") {

@@ -61,8 +61,9 @@ test("checkout success polling is bound to a settlement newer than the page base
     assert.match(client, /settlementVersion !== baselineSettlementVersionRef\.current/);
     assert.match(client, /\/api\/payment-links\/\$\{linkData\.id\}\/status/);
     assert.match(statusRoute, /settlementVersion/);
-    assert.match(statusRoute, /verified_tx_hash/);
-    assert.match(statusRoute, /paid_at/);
+    assert.match(statusRoute, /attempt_payment\.tx_hash as attempt_tx_hash/);
+    assert.match(statusRoute, /attempt_payment\.created_at as attempt_created_at/);
+    assert.doesNotMatch(statusRoute, /pl\.verified_tx_hash|pl\.paid_at/);
     assert.match(page, /isValidPaymentLinkId\(id\)/);
     assert.doesNotMatch(page, /\[0-9a-fA-F-\]\{36\}/);
     assert.match(settlementVersion, /Number\.isNaN\(parsed\.getTime\(\)\)/);
@@ -87,6 +88,80 @@ test("desktop checkout exposes contained QR and browser-payment controls", () =>
     assert.match(client, /paymentControlsRef/);
     assert.match(client, /size=\{320\}/);
     assert.doesNotMatch(client, /size=\{360\}/);
+});
+
+test("checkout requires a wallet-owned session and OTP-verified email before payment", () => {
+    const client = source("src/app/pay/[id]/PublicPayClient.tsx");
+    const embeddedPay = source("src/app/api/user/payment-links/[id]/pay/route.ts");
+    const subscribe = source("src/app/api/user/subscription/subscribe/route.ts");
+    const verify = source("src/app/api/payment-links/verify/route.ts");
+    const provenance = source("src/lib/auth/verifiedEmail.ts");
+
+    assert.match(client, /handleAuthenticateConnectedWallet/);
+    assert.match(client, /buildWalletAuthMessage/);
+    assert.match(client, /Verify connected wallet/);
+    assert.match(client, /A verified email and OTP confirmation are mandatory before payment/);
+    assert.match(client, /payerNeedsEmail = Boolean\(canBindPayerEmail && !sessionInfo\?\.email\)/);
+    assert.match(embeddedPay, /Verify an email address with OTP before paying/);
+    assert.match(subscribe, /Verify an email address with OTP before subscribing/);
+    assert.match(verify, /authenticated wallet does not match the payer/);
+    assert.match(verify, /getVerifiedAccountEmail\(sessionWallet\)/);
+    assert.match(provenance, /email_verified_at is not null/);
+});
+
+test("a payment completed from the desktop QR updates the anonymous checkout", () => {
+    const client = source("src/app/pay/[id]/PublicPayClient.tsx");
+    const status = source("src/app/api/payment-links/[id]/status/route.ts");
+
+    assert.match(client, /\(verificationStatus && !verificationError\) \? verificationPanel/);
+    assert.doesNotMatch(client, /embeddedPaySession && verificationStatus && !verificationError/);
+    assert.match(client, /void poll\(\)/);
+    assert.match(client, /data\.verifiedTxHash/);
+    assert.match(client, /checkoutAttemptId: clientIntentId/);
+    assert.match(status, /checkout_attempt_id/);
+    assert.match(status, /verifiedTxHash: result\.attempt_tx_hash/);
+});
+
+test("money movement requires review and never exposes a cancel result after broadcast", () => {
+    const checkout = source("src/app/pay/[id]/PublicPayClient.tsx");
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const withdrawal = source("src/components/WithdrawModal.tsx");
+
+    assert.match(checkout, /Confirm your payment/);
+    assert.match(checkout, /reviewPaymentMode/);
+    assert.match(checkout, /!\(pendingVerification \|\| txHash \|\| successTxHash \|\| verificationStatus \|\| isPaying \|\| isEmbeddedPaying \|\| isVerifying\)/);
+    assert.match(checkout, /This checkout is locked to the transaction above until settlement is confirmed/);
+    assert.match(checkout, /verificationStatus && !verificationError/);
+
+    assert.match(dashboard, /Review transfer/);
+    assert.match(dashboard, /waitForTransactionReceipt\(\{ hash \}\)/);
+    assert.match(dashboard, /Number\(amount\) > walletBalance/);
+    assert.doesNotMatch(dashboard, /will automatically bridge the remaining/);
+
+    assert.match(withdrawal, /Review withdrawal/);
+    assert.match(withdrawal, /on-chain transfer cannot be reversed/i);
+    assert.match(withdrawal, /Batch payouts unavailable/);
+});
+
+test("a completed CCTP burn is resumable and cannot be presented as a fresh bridge", () => {
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+
+    assert.match(dashboard, /subscript:cctp-recovery/);
+    assert.match(dashboard, /localStorage\.setItem\(cctpRecoveryKey/);
+    assert.match(dashboard, /Resume existing bridge/);
+    assert.match(dashboard, /do not burn again/);
+    assert.match(dashboard, /const bridgeableUsdc = sepoliaUsdc/);
+});
+
+test("live usage accrual is idempotent across retries", () => {
+    const dashboard = source("src/app/dashboard/page.tsx");
+    const route = source("src/app/api/user/vault/report-usage/route.ts");
+
+    assert.match(dashboard, /usageInFlight\.current/);
+    assert.match(dashboard, /"x-request-id": usageRequestKey\.current/);
+    assert.match(route, /request\.headers\.get\("x-request-id"\)/);
+    assert.match(route, /where request_id = \$1 and merchant_address = \$2 and user_address = \$3/);
+    assert.match(route, /idempotency_conflict/);
 });
 
 test("dashboard checkout launches do not approve before settlement and open a new tab", () => {
@@ -132,4 +207,35 @@ test("metadata-backed subscription sessions execute createSubscription and canno
     assert.match(subscribeRoute, /status:\s*"PAID"/);
     assert.match(onchain, /functionName:\s*"createSubscription"/);
     assert.doesNotMatch(subscribeRoute, /depositForMerchant/);
+});
+
+test("subscription checkout binds OTP correctly and cannot false-succeed after broadcast", () => {
+    const client = source("src/app/subscribe/[planId]/SubscribeClient.tsx");
+    const dashboard = source("src/app/dashboard/user/page.tsx");
+    const route = source("src/app/api/user/subscription/subscribe/route.ts");
+    const onchain = source("src/lib/subscriptions/onchain.ts");
+    const mirror = source("src/lib/subscriptions/mirror.ts");
+
+    assert.match(client, /purpose: "bind_wallet_email"/);
+    assert.match(dashboard, /purpose: "bind_wallet_email"/);
+    assert.match(route, /EMBEDDED_WALLET_REQUIRED/);
+    assert.match(route, /RECONCILIATION_PENDING/);
+    assert.match(route, /if \(!subId\)/);
+    assert.match(route, /status: "active"/);
+    assert.match(onchain, /findActiveOnChainSubscriptionId\(walletAddress, merchant\)/);
+    assert.doesNotMatch(mirror, /subscription create failed/);
+});
+
+test("subscription checkout preserves merchant terms and return flow", () => {
+    const api = source("src/app/api/v1/subscriptions/route.ts");
+    const meta = source("src/lib/subscriptionCheckout.ts");
+    const client = source("src/app/subscribe/[planId]/SubscribeClient.tsx");
+
+    assert.match(api, /minCommitmentSeconds = Number\(plan\.minCommitmentSeconds/);
+    assert.match(api, /successUrlResult/);
+    assert.match(api, /beneficiary: beneficiaryAddress/);
+    assert.match(meta, /minCommitmentSeconds/);
+    assert.match(meta, /successUrl/);
+    assert.match(client, /window\.location\.assign\(plan\.successUrl\)/);
+    assert.match(client, /subscript_subscription_attempt/);
 });

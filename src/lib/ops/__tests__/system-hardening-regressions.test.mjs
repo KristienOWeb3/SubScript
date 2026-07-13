@@ -28,7 +28,7 @@ test("wallet sessions are server-revocable and signatures are origin-bound", asy
         source("src/lib/walletAuthMessage.ts"),
     ]);
     assert.match(auth, /insert into sessions \(wallet, token, expires_at\)/);
-    assert.match(auth, /select wallet from sessions/);
+    assert.match(auth, /select token from sessions where token = ANY\(\$1\)/);
     assert.match(auth, /issuer: SESSION_ISSUER/);
     assert.match(logout, /revokeSessionToken/);
     assert.match(verifier, /walletAuthRequestContext\(request\)/);
@@ -189,7 +189,7 @@ test("public payment-link reads never leak the full row", async () => {
 
     /* The /pay server component serializes initial link data into public HTML: the intent
        snapshot is consumed for return-URL validation only and stripped before render. */
-    assert.match(payPage, /state_snapshot: _snapshot, external_reference, \.\.\.publicLink/);
+    assert.match(payPage, /state_snapshot: _snapshot,[\s\S]*external_reference,[\s\S]*\.\.\.publicLink/);
     assert.doesNotMatch(payPage, /initialLinkData=\{fullLink\}/);
     assert.doesNotMatch(payPage, /select\([^)]*receiver_address/);
 });

@@ -8,6 +8,7 @@ import { CheckCircle2, Lock, Eye, EyeOff, UserPlus, Loader2, ExternalLink, Shiel
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { Identity } from "@/components/Identity";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import FinancialStatusBadge, { financialStatusMeta } from "@/components/FinancialStatusBadge";
 
 interface ReceiptClientProps {
     receiptId: string;
@@ -238,12 +239,15 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             </p>
                             
                             {!connectedAddress ? (
-                                <button
-                                    onClick={() => connect({ connector: injected() })}
-                                    className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-white/90 transition"
-                                >
-                                    Connect Wallet
-                                </button>
+                                <div className="grid gap-3">
+                                    <Link href={`/signin?next=${encodeURIComponent(`/receipt/${receiptId}`)}`} className="w-full rounded-xl bg-[#00d2b4] px-4 py-3 text-sm font-bold text-black flex items-center justify-center gap-2 hover:bg-[#00d2b4]/90 transition">Sign in with email or Google</Link>
+                                    <button
+                                        onClick={() => connect({ connector: injected() })}
+                                        className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:bg-white/10 transition"
+                                    >
+                                        Use browser wallet
+                                    </button>
+                                </div>
                             ) : (
                                 <button
                                     onClick={handleAuthenticate}
@@ -289,6 +293,8 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
     // 2. Receipt Details State (Authorized)
     const paidAt = receipt.confirmed_at || receipt.created_at;
     const claimHref = `/signup?next=/user&claimReceipt=${encodeURIComponent(receiptId)}`;
+    const receiptStatus = financialStatusMeta(receipt.status);
+    const receiptConfirmed = receiptStatus.tone === "success";
 
     return (
         <main className="min-h-screen bg-[#060608] text-white px-4 py-8 sm:px-6 sm:py-10 flex items-center justify-center">
@@ -304,15 +310,16 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             </div>
                             <h1 className="mt-2 text-2xl font-bold tracking-tight break-words">{receipt.receipt_id}</h1>
                         </div>
-                        <div className="rounded-2xl bg-emerald-400/10 border border-emerald-400/20 p-3 text-emerald-300">
-                            <CheckCircle2 className="h-6 w-6" />
+                        <div className={`rounded-2xl border p-3 ${receiptConfirmed ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : receiptStatus.tone === "failure" ? "border-red-400/20 bg-red-400/10 text-red-300" : "border-amber-400/20 bg-amber-400/10 text-amber-200"}`}>
+                            {receiptConfirmed ? <CheckCircle2 className="h-6 w-6" /> : receiptStatus.tone === "failure" ? <ShieldAlert className="h-6 w-6" /> : receiptStatus.tone === "pending" ? <Loader2 className="h-6 w-6 animate-spin" /> : <Lock className="h-6 w-6" />}
                         </div>
                     </div>
 
                     <div className="grid gap-4">
                         <div className="border border-white/10 rounded-2xl p-5 bg-black/20">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Amount</p>
-                            <p className="mt-1 text-4xl font-bold text-[#00d2b4]">${formatUsdc(receipt.amount_usdc)} USDC</p>
+                            <p className="mt-1 text-4xl font-bold text-[#00d2b4]">{formatUsdc(receipt.amount_usdc)} USDC</p>
+                            <div className="mt-3"><FinancialStatusBadge status={receipt.status} /></div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -331,13 +338,20 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             <Identity address={receipt.merchant_address} className="mt-1 block text-white/85 text-xs" />
                         </div>
 
+                        {receipt.tx_hash && (
+                            <a href={`https://explorer.testnet.arc.network/tx/${receipt.tx_hash}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/70 hover:border-[#00d2b4]/30 hover:text-white">
+                                <span>{receiptConfirmed ? "View on-chain proof" : "View transaction status"}</span>
+                                <ExternalLink className="h-4 w-4" />
+                            </a>
+                        )}
+
                         <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Memo note</p>
                             <p className="mt-1 text-white/85 break-words text-xs">{receipt.memo_note || receipt.receipt_id}</p>
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/10 p-5 space-y-4">
+                    {!sessionWallet && <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/10 p-5 space-y-4">
                         <p className="text-sm leading-relaxed text-white/85">
                             Claim your permanent SubScript account to manage this subscription and lock in spending limits.
                         </p>
@@ -348,7 +362,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             Continue with Google
                             <ExternalLink className="h-4 w-4" />
                         </Link>
-                    </div>
+                    </div>}
                 </section>
 
                 {/* 3. Owner Access: Invite Address Form */}
@@ -401,6 +415,7 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                         )}
                     </section>
                 )}
+                <Link href="/dashboard-router" className="block w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center text-xs font-bold text-white/70 hover:text-white">Back to dashboard</Link>
             </div>
         </main>
     );

@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
             : null;
         const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
         if ((!merchantPlan || !merchantPlan.active)
-            && (!checkout || !checkout.active || checkout.status !== "PENDING" || !checkoutMeta)) {
+            && (!checkout || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status) || !checkoutMeta)) {
             return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
         }
         const plan = merchantPlan?.active ? merchantPlan : {
@@ -33,9 +33,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
             detailsUrl: null,
             amountUsdc: checkout!.amountUsdc,
             periodSeconds: subscriptionCheckoutPeriod(checkoutMeta!),
-            minCommitmentSeconds: BigInt(0),
+            minCommitmentSeconds: BigInt(checkoutMeta!.minCommitmentSeconds || 0),
             merchantAddress: checkout!.merchantAddress,
             checkoutSessionId: checkout!.id,
+            successUrl: checkoutMeta!.successUrl,
+            cancelUrl: checkoutMeta!.cancelUrl,
         };
 
         const merchantAddress = plan.merchantAddress.toLowerCase();
@@ -63,6 +65,8 @@ export async function GET(_request: Request, { params }: RouteContext) {
                 minCommitmentSeconds: (plan.minCommitmentSeconds ?? BigInt(0)).toString(),
                 merchantAddress,
                 checkoutSessionId: "checkoutSessionId" in plan ? plan.checkoutSessionId : undefined,
+                successUrl: "successUrl" in plan ? plan.successUrl : undefined,
+                cancelUrl: "cancelUrl" in plan ? plan.cancelUrl : undefined,
             },
             merchant: {
                 address: merchantAddress,

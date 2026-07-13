@@ -99,7 +99,7 @@ function horizonAllowance(amount: bigint, period: bigint): bigint {
    is normally available on the first read — the retries only cover read-endpoint lag. */
 async function fetchReceipt(txHash: string): Promise<ethers.TransactionReceipt | null> {
     const provider = readProvider();
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 30; attempt++) {
         const receipt = await provider.getTransactionReceipt(txHash).catch(() => null);
         if (receipt) return receipt;
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -138,6 +138,15 @@ export async function subscribeFromEmbedded(walletAddress: string, merchant: str
             }
         } catch {
             /* not our event */
+        }
+    }
+    if (!subId) {
+        /* Some RPC providers lag on receipt logs even after Circle reports confirmation. Recover
+           from the indexed on-chain event before returning; a missing id must never be presented
+           as a completed subscription because the mirror and merchant fulfillment need it. */
+        for (let attempt = 0; attempt < 5 && !subId; attempt++) {
+            subId = await findActiveOnChainSubscriptionId(walletAddress, merchant);
+            if (!subId) await new Promise((resolve) => setTimeout(resolve, 2000));
         }
     }
     return { txHash, subId };

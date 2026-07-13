@@ -31,6 +31,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
+import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import {
@@ -78,6 +79,7 @@ import {
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
+import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -286,6 +288,16 @@ export default function UserDashboard() {
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    variant: "danger" | "warning" | "default";
+    onConfirm: () => void;
+    onCancel?: () => void;
+  } | null>(null);
 
   const triggerToast = (message: string) => {
     setToastMessage(message);
@@ -1090,9 +1102,8 @@ export default function UserDashboard() {
 
     /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
        longer billing period cannot disguise a cheaper tier as an upgrade. */
-    let mode: "scheduled" | "immediate" = "scheduled";
+    let isUpgrade = false;
     if (activeSub) {
-      let isUpgrade = false;
       try {
         const comparison = compareRecurringRates(
           BigInt(plan.amountUsdc),
@@ -1110,46 +1121,62 @@ export default function UserDashboard() {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
       }
-      if (isUpgrade) {
-        const now = window.confirm(
-          `Upgrade to ${plan.name}?\n\n`
-          + `OK — upgrade now: you'll pay a prorated amount for the rest of the current period, and the new rate bills from the next renewal.\n\n`
-          + `Cancel — switch at renewal: keep your current plan until it renews, then the new rate starts automatically (no charge today).`
-        );
-        mode = now ? "immediate" : "scheduled";
-      }
     }
 
-    const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
-    await runAction(actionKey, async () => {
-      setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
-      setPlanManagerError(null);
-      const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
-      const body = activeSub
-        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-        : { planId: plan.id };
-      /* Subscribing charges the first payment server-side; a retry with the same x-request-id
-         dedupes at Circle instead of creating (and charging) a second subscription. */
-      subscribeRequestKey.current ||= crypto.randomUUID();
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
-        body: JSON.stringify(body),
+    const applyPlanChange = async (mode: "scheduled" | "immediate") => {
+      const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+      await runAction(actionKey, async () => {
+        setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
+        setPlanManagerError(null);
+        const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
+        const body = activeSub
+          ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
+          : { planId: plan.id };
+        /* Subscribing charges the first payment server-side; a retry with the same x-request-id
+           dedupes at Circle instead of creating (and charging) a second subscription. */
+        subscribeRequestKey.current ||= crypto.randomUUID();
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+        subscribeRequestKey.current = null;
+        const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
+        setPlanManagerStatus(
+          activeSub
+            ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
+            : `Subscribed to ${data.planName || plan.name}.`
+        );
+        triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
+        await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+      }).catch((err: any) => {
+        setPlanManagerError(err.message || "Subscription transaction failed.");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-      subscribeRequestKey.current = null;
-      const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
-      setPlanManagerStatus(
-        activeSub
-          ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
-          : `Subscribed to ${data.planName || plan.name}.`
-      );
-      triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Subscription transaction failed.");
-    });
+    };
+
+    if (isUpgrade) {
+      setConfirmModal({
+        open: true,
+        title: `Upgrade to ${plan.name}`,
+        description: "Upgrade now to pay the prorated amount for the rest of this period, or switch at renewal with no charge today.",
+        confirmLabel: "Upgrade Now",
+        cancelLabel: "At Renewal",
+        variant: "default",
+        onConfirm: () => {
+          setConfirmModal(null);
+          void applyPlanChange("immediate");
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          void applyPlanChange("scheduled");
+        },
+      });
+      return;
+    }
+
+    await applyPlanChange("scheduled");
   };
 
   const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
@@ -1158,31 +1185,47 @@ export default function UserDashboard() {
       setPlanManagerError("No active subscription found for this merchant.");
       return;
     }
-    if (!window.confirm("Cancel this subscription on-chain now? Access may stop immediately.")) return;
-    await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
-      setPlanManagerStatus("Cancelling subscription...");
-      setPlanManagerError(null);
-      const res = await fetch("/api/user/subscription/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+    await new Promise<void>((resolve) => {
+      setConfirmModal({
+        open: true,
+        title: "Cancel Subscription",
+        description: "This will cancel the subscription on-chain. Access may stop immediately, and the cancellation cannot be undone.",
+        confirmLabel: "Cancel Plan",
+        variant: "warning",
+        onConfirm: async () => {
+          setConfirmModal(null);
+          await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
+            setPlanManagerStatus("Cancelling subscription...");
+            setPlanManagerError(null);
+            const res = await fetch("/api/user/subscription/cancel", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
+            if (data.message) {
+              setPlanManagerStatus(data.message);
+              triggerToast("Subscription cancelled");
+            } else if (data.cancelAtPeriodEnd && data.accessUntil) {
+              const until = new Date(data.accessUntil).toLocaleDateString();
+              setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
+              triggerToast(`Cancelled — access until ${until}`);
+            } else {
+              setPlanManagerStatus("Subscription cancelled on-chain.");
+              triggerToast("Subscription cancelled on-chain");
+            }
+            await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+          }).catch((err: any) => {
+            setPlanManagerError(err.message || "Cancel transaction failed.");
+          });
+          resolve();
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          resolve();
+        },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      if (data.message) {
-        setPlanManagerStatus(data.message);
-        triggerToast("Subscription cancelled");
-      } else if (data.cancelAtPeriodEnd && data.accessUntil) {
-        const until = new Date(data.accessUntil).toLocaleDateString();
-        setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
-        triggerToast(`Cancelled — access until ${until}`);
-      } else {
-        setPlanManagerStatus("Subscription cancelled on-chain.");
-        triggerToast("Subscription cancelled on-chain");
-      }
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Cancel transaction failed.");
     });
   };
 
@@ -1369,7 +1412,7 @@ export default function UserDashboard() {
       const res = await fetch("/api/auth/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: value }),
+        body: JSON.stringify({ email: value, purpose: "bind_wallet_email" }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Could not send a verification code.");
@@ -1438,6 +1481,12 @@ export default function UserDashboard() {
   const submitVaultAction = async (event?: React.FormEvent, opts?: { acknowledgedUnverified?: boolean }) => {
     event?.preventDefault();
     setVaultActionError(null);
+    /* /api/auth/session only exposes emails returned by getVerifiedAccountEmail, so userEmail is
+       the client-side source of truth for the same OTP/trusted-provider check enforced server-side. */
+    if (vaultActionMode === "commit" && !userEmail) {
+      setVaultActionError("Verify your email before committing.");
+      return;
+    }
     if (!vaultActionAmount || isNaN(Number(vaultActionAmount)) || Number(vaultActionAmount) <= 0) {
       setVaultActionError("Enter a valid amount.");
       return;
@@ -1598,33 +1647,36 @@ export default function UserDashboard() {
     const domainName = dnsDomain.endsWith(".sub") ? dnsDomain : `${dnsDomain}.sub`;
 
     /* Make sure the user understands the once-a-year limit before they commit. */
-    if (!window.confirm(
-      `Set your DNS name to "${domainName}"?\n\n`
-      + `You can only change your .sub name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
-    )) {
-      return;
-    }
+    setConfirmModal({
+      open: true,
+      title: "Confirm DNS Name",
+      description: `Set your DNS name to "${domainName}"? You can only change your .sub name once every 365 days, so make sure it is correct.`,
+      confirmLabel: "Set Name",
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDnsLoading(true);
+        setDnsError(null);
+        setDnsSuccess(null);
 
-    setDnsLoading(true);
-    setDnsError(null);
-    setDnsSuccess(null);
-
-    try {
-      const res = await fetch("/api/merchant/alias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alias: domainName }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to register domain.");
-      setDnsSuccess(`Successfully registered ${domainName}.`);
-      setRegisteredDomain(domainName);
-      setDnsDomain("");
-    } catch (err: any) {
-      setDnsError(err.message || "Network error registering DNS domain.");
-    } finally {
-      setDnsLoading(false);
-    }
+        try {
+          const res = await fetch("/api/merchant/alias", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ alias: domainName }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed to register domain.");
+          setDnsSuccess(`Successfully registered ${domainName}.`);
+          setRegisteredDomain(domainName);
+          setDnsDomain("");
+        } catch (err: any) {
+          setDnsError(err.message || "Network error registering DNS domain.");
+        } finally {
+          setDnsLoading(false);
+        }
+      },
+    });
   };
 
   const handleProfilePicUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -4074,7 +4126,7 @@ export default function UserDashboard() {
                                   </td>
                                   <td className="py-4">
                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                      {tx.status}
+                                      {humanStatus(tx.status)}
                                     </span>
                                   </td>
                                   <td className="py-4 text-right">
@@ -4478,7 +4530,7 @@ export default function UserDashboard() {
                   </div>
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
                     <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Program Status</span>
-                    <span className="mt-2 font-mono text-base font-black text-emerald-400">ACTIVE</span>
+                    <span className="mt-2 font-mono text-base font-black text-emerald-400">Active</span>
                   </div>
                 </div>
 
@@ -4519,7 +4571,7 @@ export default function UserDashboard() {
                               <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
-                                  {ref.status}
+                                  {humanStatus(ref.status)}
                                 </span>
                               </td>
                             </tr>
@@ -4863,6 +4915,19 @@ export default function UserDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmModal && (
+        <ConfirmModal
+          open={confirmModal.open}
+          title={confirmModal.title}
+          description={confirmModal.description}
+          confirmLabel={confirmModal.confirmLabel}
+          cancelLabel={confirmModal.cancelLabel}
+          variant={confirmModal.variant}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+        />
+      )}
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
@@ -5267,7 +5332,7 @@ function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subsc
         <p className="text-xs font-black text-[#ccff00]">
           {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
         </p>
-        <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
+        <p className="text-[9px] uppercase text-white/35">{humanSubscriptionStatus(subscription.status)}</p>
       </div>
     </div>
   );
@@ -5505,7 +5570,7 @@ function DmBubble({
               incoming ? "text-[#ccff00]" : "text-white/70"
             }`}
           >
-            {dm.messageType.replace(/_/g, " ")}
+            {humanStatus(dm.messageType)}
           </p>
           
           {isRequest ? (
@@ -5664,7 +5729,7 @@ function DmBubble({
 
           {dm.messageType === "CHURN_SURVEY" && !isPending && (
             <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
-              Response: {dm.status.replace(/_/g, " ")}
+              Response: {humanStatus(dm.status)}
             </span>
           )}
         </div>
@@ -6075,8 +6140,76 @@ function DepositModal({
   const [cctpStatus, setCctpStatus] = useState<"idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "success" | "error">("idle");
   const [cctpMessage, setCctpMessage] = useState<string | null>(null);
   const [cctpError, setCctpError] = useState<string | null>(null);
+  const [cctpReviewOpen, setCctpReviewOpen] = useState(false);
+  const [cctpRecovery, setCctpRecovery] = useState<{ burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string } | null>(null);
 
-  const totalExternalUsdc = sepoliaUsdc + mainnetUsdc;
+  const bridgeableUsdc = sepoliaUsdc;
+  const cctpInProgress = !["idle", "success", "error"].includes(cctpStatus);
+  const cctpRecoveryKey = userWallet ? `subscript:cctp-recovery:${userWallet.toLowerCase()}` : null;
+
+  useEffect(() => {
+    if (!open || !cctpRecoveryKey) return;
+    try {
+      const stored = window.localStorage.getItem(cctpRecoveryKey);
+      setCctpRecovery(stored ? JSON.parse(stored) : null);
+    } catch {
+      setCctpRecovery(null);
+    }
+  }, [open, cctpRecoveryKey]);
+
+  const completeCctpBridge = async (recovery: { burnHash: `0x${string}`; messageBytes: `0x${string}`; messageHash: `0x${string}`; amount: string }) => {
+    setCctpStatus("attesting");
+    setCctpError(null);
+    setCctpMessage("Circle attestation in progress. Fetching signature...");
+    let attestation: `0x${string}` | null = null;
+    let attempts = 0;
+    while (attempts < 60) {
+      attempts++;
+      try {
+        const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${recovery.messageHash}`);
+        const data = await res.json();
+        if (data.status === "complete") {
+          const rawHex = data.attestation;
+          attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
+          break;
+        }
+      } catch (error) {
+        console.warn("Attestation fetch retry:", error);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    if (!attestation) throw new Error("Circle attestation is not ready yet. Resume this bridge later; do not burn again.");
+
+    setCctpStatus("claiming");
+    setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
+    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+    const mintHash = await writeContractAsync({
+      address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
+      abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],
+      functionName: "receiveMessage",
+      args: [recovery.messageBytes, attestation],
+    });
+    setCctpMessage("Waiting for Arc mint confirmation...");
+    const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash, timeout: 120_000 });
+    if (mintReceipt.status !== "success") throw new Error("Arc mint failed. Resume this bridge later; do not burn again.");
+
+    if (cctpRecoveryKey) window.localStorage.removeItem(cctpRecoveryKey);
+    setCctpRecovery(null);
+    setCctpStatus("success");
+    setCctpMessage("USDC successfully bridged to your Arc wallet!");
+    setCctpReviewOpen(false);
+    refetchBalances();
+  };
+
+  const handleResumeCctp = async () => {
+    if (!cctpRecovery) return;
+    try {
+      await completeCctpBridge(cctpRecovery);
+    } catch (error: any) {
+      setCctpStatus("error");
+      setCctpError(error.message || "Could not resume the existing bridge.");
+    }
+  };
 
   const handleStartCctp = async (bridgeAmountStr: string) => {
     setCctpError(null);
@@ -6084,8 +6217,13 @@ function DepositModal({
       setCctpError("Please enter a valid amount to bridge.");
       return;
     }
-    if (Number(bridgeAmountStr) > totalExternalUsdc) {
-      setCctpError("Insufficient external USDC balance.");
+    if (Number(bridgeAmountStr) > bridgeableUsdc) {
+      setCctpError("Insufficient Sepolia USDC. Mainnet bridging is not available in this flow.");
+      return;
+    }
+
+    if (!cctpReviewOpen) {
+      setCctpReviewOpen(true);
       return;
     }
 
@@ -6167,9 +6305,7 @@ function DepositModal({
         throw new Error("Sepolia CCTP burn failed.");
       }
 
-      // Step 4: Fetch Attestation from Circle
-      setCctpStatus("attesting");
-      setCctpMessage("Circle attestation in progress. Fetching signature...");
+      // Persist the irreversible burn before attestation so reloads resume instead of burning twice.
       const logs = parseEventLogs({
         abi: [{ type: "event", name: "MessageSent", inputs: [{ type: "bytes", name: "message", indexed: false }] }],
         logs: burnReceipt.logs,
@@ -6177,68 +6313,12 @@ function DepositModal({
       if (logs.length === 0) {
         throw new Error("MessageSent event not found.");
       }
-      const messageBytes = (logs[0].args as any).message;
+      const messageBytes = (logs[0].args as any).message as `0x${string}`;
       const messageHash = keccak256(messageBytes);
-
-      let attestation: `0x${string}` | null = null;
-      let attempts = 0;
-      while (attempts < 60) {
-        attempts++;
-        try {
-          const res = await fetch(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`);
-          const data = await res.json();
-          if (data.status === "complete") {
-            const rawHex = data.attestation;
-            attestation = (rawHex.startsWith("0x") ? rawHex : `0x${rawHex}`) as `0x${string}`;
-            break;
-          }
-        } catch (e) {
-          console.warn("Attestation fetch retry:", e);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-
-      if (!attestation) {
-        throw new Error("Timeout waiting for attestation signature.");
-      }
-
-      // Step 5: Switch back to Arc Testnet
-      setCctpStatus("claiming");
-      setCctpMessage("Switching back to Arc Testnet...");
-      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
-
-      // Step 6: Mint USDC on Arc
-      setCctpMessage("Minting USDC on Arc Network...");
-      const mintHash = await writeContractAsync({
-        address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
-        abi: [
-          {
-            type: "function",
-            name: "receiveMessage",
-            stateMutability: "nonpayable",
-            inputs: [
-              { name: "message", type: "bytes" },
-              { name: "attestation", type: "bytes" },
-            ],
-            outputs: [{ name: "success", type: "bool" }],
-          },
-        ],
-        functionName: "receiveMessage",
-        args: [messageBytes, attestation],
-      });
-
-      setCctpMessage("Waiting for Arc mint confirmation...");
-      const mintReceipt = await publicClient.waitForTransactionReceipt({
-        hash: mintHash,
-        timeout: 120_000,
-      });
-      if (mintReceipt.status !== "success") {
-        throw new Error("USDC minting transaction failed on Arc.");
-      }
-
-      setCctpStatus("success");
-      setCctpMessage("USDC successfully bridged to your Arc wallet!");
-      refetchBalances();
+      const recovery = { burnHash, messageBytes, messageHash, amount: bridgeAmountStr };
+      if (cctpRecoveryKey) window.localStorage.setItem(cctpRecoveryKey, JSON.stringify(recovery));
+      setCctpRecovery(recovery);
+      await completeCctpBridge(recovery);
     } catch (err: any) {
       console.error(err);
       setCctpStatus("error");
@@ -6250,6 +6330,21 @@ function DepositModal({
     }
   };
 
+  useEffect(() => {
+    if (!cctpInProgress) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [cctpInProgress]);
+
+  const closeDepositModal = () => {
+    if (cctpInProgress) return;
+    onClose();
+  };
+
   /* Mobile thumb-swipe across the Direct / Bridge deposit modes. Off on the chooser menu. */
   const depositSwipe = useSwipeTabs(
     ["direct", "cctp"] as const,
@@ -6258,7 +6353,7 @@ function DepositModal({
       setActiveSubMode(mode);
       setCctpStatus("idle");
     },
-    { enabled: activeSubMode !== "menu" },
+    { enabled: activeSubMode !== "menu" && !cctpInProgress },
   );
   const [prevActiveSubMode, setPrevActiveSubMode] = useState<"menu" | "direct" | "cctp">("menu");
   if (activeSubMode !== prevActiveSubMode) {
@@ -6273,12 +6368,12 @@ function DepositModal({
     <AnimatePresence>
       {open && userWallet && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="deposit-dialog-title" className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-black/50 p-6 shadow-2xl backdrop-blur-xl liquid-glass" {...depositSwipe}>
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">
+              <h3 id="deposit-dialog-title" className="text-sm font-black uppercase tracking-wider text-white">
                 {activeSubMode === "menu" ? "Deposit USDC" : activeSubMode === "direct" ? "Direct Deposit" : "Circle CCTP Bridge"}
               </h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={closeDepositModal} disabled={cctpInProgress} aria-label="Close deposit dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
             
             {/* Tabs for non-menu active modes */}
@@ -6290,6 +6385,7 @@ function DepositModal({
                     <button
                       key={tab}
                       type="button"
+                      disabled={cctpInProgress}
                       onClick={() => {
                         setActiveSubMode(tab);
                         setCctpStatus("idle");
@@ -6348,13 +6444,14 @@ function DepositModal({
                 <div className="rounded-3xl border border-yellow-500/25 bg-yellow-500/5 p-4 text-left">
                   <p className="text-[9px] font-black uppercase tracking-[0.16em] text-yellow-400">External USDC Detected</p>
                   <p className="mt-1.5 text-[11px] text-white/70 leading-relaxed">
-                    We found <strong>{(sepoliaUsdc || mainnetUsdc).toFixed(2)} USDC</strong> on Sepolia/Mainnet. How would you like to proceed?
+                    We found <strong>{(sepoliaUsdc + mainnetUsdc).toFixed(2)} USDC</strong> outside Arc. Sepolia USDC can be bridged here; Mainnet bridging is not yet available.
                   </p>
                 </div>
                 <div className="space-y-3 pt-2">
                   <button
                     type="button"
                     onClick={() => setActiveSubMode("cctp")}
+                    disabled={sepoliaUsdc <= 0}
                     className="flex w-full items-center gap-4 rounded-3xl border border-[#ccff00]/20 bg-[#ccff00]/5 p-5 text-left hover:bg-[#ccff00]/10 transition-all group"
                   >
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ccff00] text-black group-hover:scale-105 transition-all shrink-0">
@@ -6362,7 +6459,7 @@ function DepositModal({
                     </div>
                     <div className="flex-1">
                       <h4 className="text-xs font-black uppercase tracking-wider text-white">Circle CCTP Bridge</h4>
-                      <p className="mt-1 text-[9px] text-white/45 leading-normal">Import your Sepolia USDC directly to Arc.</p>
+                      <p className="mt-1 text-[9px] text-white/45 leading-normal">{sepoliaUsdc > 0 ? `Bridge up to ${sepoliaUsdc.toFixed(2)} USDC from Sepolia to Arc.` : "No bridgeable Sepolia USDC detected."}</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-white/35 group-hover:translate-x-1 transition-all shrink-0" />
                   </button>
@@ -6388,7 +6485,8 @@ function DepositModal({
             {activeSubMode === "direct" && (
               <div className="text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ccff00] text-lg font-black text-black">S</div>
-                <p className="mt-2 text-xs text-white/45">Send funds to your connected SubScript wallet address.</p>
+                <p className="mt-2 text-xs text-white/45">Send native USDC on Arc Testnet to your SubScript wallet address.</p>
+                <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-[10px] leading-relaxed text-amber-200/75">Arc Testnet only. Sending another token or using another network will not credit this balance.</p>
                 <div className="mx-auto my-6 w-fit rounded-3xl bg-white p-4">
                   <QRCode
                     value={userWallet}
@@ -6419,40 +6517,59 @@ function DepositModal({
               <div className="space-y-4 text-left">
                 <div className="flex justify-between items-center">
                   <span className="rounded-full bg-[#ccff00]/10 px-3 py-1 text-[9px] font-bold text-[#ccff00]">
-                    Sepolia: {totalExternalUsdc.toFixed(2)} USDC
+                    Sepolia available: {bridgeableUsdc.toFixed(2)} USDC
                   </span>
                 </div>
                 
                 {cctpStatus === "idle" ? (
                   <div className="space-y-4">
-                    <div className="space-y-1.5">
+                    {cctpRecovery && (
+                      <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-[10px] leading-relaxed text-amber-100/80">
+                        <p className="font-bold uppercase tracking-wider text-amber-200">Bridge recovery found</p>
+                        <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting—do not start another burn.</p>
+                        <a href={`https://sepolia.etherscan.io/tx/${cctpRecovery.burnHash}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-bold underline">View burn transaction</a>
+                      </div>
+                    )}
+                    {!cctpRecovery && <div className="space-y-1.5">
                       <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Amount to Bridge (USDC)</span>
                       <div className="relative">
                         <input
                           type="number"
                           value={cctpAmount}
-                          onChange={(e) => setCctpAmount(e.target.value)}
+                          onChange={(e) => { setCctpAmount(e.target.value); setCctpReviewOpen(false); setCctpError(null); }}
                           className="subscript-input pr-16"
                           placeholder="0.00"
                         />
                         <button
                           type="button"
-                          onClick={() => setCctpAmount(totalExternalUsdc.toString())}
+                          onClick={() => { setCctpAmount(bridgeableUsdc.toString()); setCctpReviewOpen(false); }}
                           className="absolute right-3 top-2.5 px-2 py-1 rounded bg-white/10 text-[9px] font-black uppercase tracking-wider text-[#ccff00] hover:bg-white/20 transition-all"
                         >
                           Max
                         </button>
                       </div>
-                    </div>
+                    </div>}
 
                     {cctpError && <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{cctpError}</p>}
 
+                    {mainnetUsdc > 0 && <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/55">{mainnetUsdc.toFixed(2)} USDC was detected on Ethereum Mainnet but is excluded from this Sepolia-only bridge.</p>}
+
+                    {cctpReviewOpen && !cctpRecovery && (
+                      <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                        <div className="flex justify-between"><span className="text-white/45">From</span><span className="font-bold">Ethereum Sepolia</span></div>
+                        <div className="flex justify-between"><span className="text-white/45">To</span><span className="font-bold">Arc Testnet</span></div>
+                        <div className="flex justify-between"><span className="text-white/45">Amount</span><span className="font-bold">{Number(cctpAmount).toFixed(2)} USDC</span></div>
+                        <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">This starts an approval and burn on Sepolia, followed by Circle attestation and minting on Arc. Keep this page open until completion.</p>
+                        <button type="button" onClick={() => setCctpReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-white/55">Back to edit</button>
+                      </div>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => handleStartCctp(cctpAmount)}
+                      onClick={() => cctpRecovery ? handleResumeCctp() : handleStartCctp(cctpAmount)}
                       className="subscript-primary-button mt-2"
                     >
-                      Bridge USDC
+                      {cctpRecovery ? "Resume existing bridge" : cctpReviewOpen ? "Confirm bridge" : "Review bridge"}
                     </button>
                   </div>
                 ) : (
@@ -6464,7 +6581,7 @@ function DepositModal({
                         <p className="text-xs text-white/50 leading-normal">{cctpMessage}</p>
                         <button
                           type="button"
-                          onClick={() => setCctpStatus("idle")}
+                          onClick={() => cctpRecovery ? handleResumeCctp() : setCctpStatus("idle")}
                           className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
                         >
                           Done
@@ -6480,7 +6597,7 @@ function DepositModal({
                           onClick={() => setCctpStatus("idle")}
                           className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white/75"
                         >
-                          Try Again
+                          {cctpRecovery ? "Resume existing bridge" : "Try Again"}
                         </button>
                       </div>
                     ) : (
@@ -6557,6 +6674,8 @@ function SendFundsModal({
   const [resolving, setResolving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const isSelfSend = Boolean(resolvedAddress && userWallet && resolvedAddress.toLowerCase() === userWallet.toLowerCase());
 
   useEffect(() => {
@@ -6564,6 +6683,8 @@ function SendFundsModal({
     setStatus(null);
     setAmount("");
     setResolvedAddress(null);
+    setReviewOpen(false);
+    setTransactionHash(null);
 
     const trimmed = recipient.trim().toLowerCase();
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
@@ -6601,13 +6722,19 @@ function SendFundsModal({
       setStatus("Please enter a valid amount.");
       return;
     }
-    if (Number(amount) > walletBalance + sepoliaUsdc) {
-      setStatus("Insufficient combined USDC balance.");
+    if (Number(amount) > walletBalance) {
+      setStatus(`Insufficient Arc balance. Bridge or deposit ${(Number(amount) - walletBalance).toFixed(2)} more USDC before sending.`);
+      return;
+    }
+
+    if (!reviewOpen) {
+      setStatus(null);
+      setReviewOpen(true);
       return;
     }
 
     setLoading(true);
-    setStatus(null);
+    setStatus(isEmbeddedWalletSession ? "Submitting transfer securely…" : "Waiting for wallet signature…");
 
     try {
       if (isEmbeddedWalletSession) {
@@ -6624,10 +6751,10 @@ function SendFundsModal({
         if (!response.ok || !data.success) {
           throw new Error(data.error || "Transfer execution failed.");
         }
+        if (data.transfers?.[0]?.txHash) setTransactionHash(data.transfers[0].txHash);
         sendRequestKey.current = null;
         setStatus("success");
         refetchUsdc();
-        setTimeout(() => onClose(), 2000);
         return;
       }
 
@@ -6644,16 +6771,20 @@ function SendFundsModal({
         },
       ] as const;
 
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,
         functionName: "transfer",
         args: [resolvedAddress as `0x${string}`, parseUnits(limitDecimals(amount, 6), 6)],
       });
 
+      setTransactionHash(hash);
+      setStatus("Transaction submitted. Waiting for Arc confirmation…");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The Arc transaction failed before confirmation.");
+
       setStatus("success");
       refetchUsdc();
-      setTimeout(() => onClose(), 2000);
     } catch (err: any) {
       if (err.message?.includes("User rejected the request")) {
         setStatus("Transaction signature was rejected by user.");
@@ -6669,10 +6800,10 @@ function SendFundsModal({
     <AnimatePresence>
       {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 backdrop-blur-xl">
-          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
+          <motion.div initial={{ scale: 0.92, y: 18 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 18 }} role="dialog" aria-modal="true" aria-labelledby="send-funds-title" className="w-full max-w-sm liquid-glass border border-white/10 rounded-3xl p-6 shadow-2xl bg-black/50 backdrop-blur-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black uppercase tracking-wider text-white">Send Funds</h3>
-              <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 transition-all"><X className="h-4 w-4" /></button>
+              <h3 id="send-funds-title" className="text-sm font-black uppercase tracking-wider text-white">Send USDC</h3>
+              <button type="button" onClick={onClose} disabled={loading} aria-label="Close send dialog" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 transition-all"><X className="h-4 w-4" /></button>
             </div>
 
             <form onSubmit={handleSend} className="space-y-4 text-left">
@@ -6698,7 +6829,7 @@ function SendFundsModal({
                   type="number"
                   step="any"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => { setAmount(e.target.value); setReviewOpen(false); setStatus(null); setTransactionHash(null); }}
                   className="subscript-input"
                   placeholder="0.00"
                   required
@@ -6711,24 +6842,36 @@ function SendFundsModal({
                 sepoliaUsdc={sepoliaUsdc}
               />
 
+              {reviewOpen && status !== "success" && (
+                <div className="space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                  <div className="flex justify-between gap-3"><span className="text-white/45">You send</span><span className="font-bold text-white">{Number(amount).toFixed(2)} USDC</span></div>
+                  <div className="space-y-1"><span className="text-white/45">Recipient</span><p className="break-all font-mono text-[10px] text-white/80">{resolvedAddress}</p></div>
+                  <div className="flex justify-between gap-3"><span className="text-white/45">Network</span><span className="font-bold text-white">Arc</span></div>
+                  <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">On-chain transfers cannot be reversed. Verify the recipient and amount before confirming.</p>
+                  <button type="button" onClick={() => setReviewOpen(false)} disabled={loading} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">Back to edit</button>
+                </div>
+              )}
+
               {status && status !== "success" && (
-                <p className="text-[11px] text-red-300 bg-red-950/15 border border-red-500/20 rounded-xl p-3">{status}</p>
+                <p className={`text-[11px] rounded-xl border p-3 ${loading ? "border-amber-400/20 bg-amber-400/[0.06] text-amber-200" : "border-red-500/20 bg-red-950/15 text-red-300"}`} aria-live="polite">{status}</p>
               )}
 
               {status === "success" && (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
                   <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
-                  <p className="text-xs text-white/80 font-bold">USDC Transferred successfully!</p>
+                  <p className="text-xs text-white/80 font-bold">Transfer confirmed on Arc</p>
+                  {transactionHash && <a href={`https://explorer.testnet.arc.network/tx/${transactionHash}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-[#ccff00] underline">View transaction</a>}
+                  <button type="button" onClick={onClose} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-white">Done</button>
                 </div>
               )}
 
-              <button
+              {status !== "success" && <button
                 type="submit"
-                disabled={loading || !resolvedAddress || isSelfSend || status === "success"}
+                disabled={loading || !resolvedAddress || isSelfSend}
                 className="subscript-primary-button w-full mt-2"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send USDC"}
-              </button>
+                {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Confirming…</> : reviewOpen ? "Confirm and send" : "Review transfer"}
+              </button>}
             </form>
           </motion.div>
         </motion.div>
@@ -6923,7 +7066,7 @@ function BalanceRoutingNotice({
           <span className="h-1.5 w-1.5 rounded-full bg-[#ccff00] animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          This transaction will execute directly and instantly on Arc Testnet using your native Arc USDC.
+          This transfer will be submitted on Arc Testnet using your native Arc USDC, then shown as complete after confirmation.
         </p>
       </div>
     );
@@ -6937,9 +7080,7 @@ function BalanceRoutingNotice({
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
         </p>
         <p className="text-[11px] leading-relaxed text-white/60">
-          Your Arc balance (${walletBalance.toFixed(2)} USDC) is insufficient, but your combined balance is enough.
-          The protocol will automatically bridge the remaining ${(numericAmount - walletBalance).toFixed(2)} USDC from Sepolia to Arc using Circle CCTP.
-          Note: bridging will take a few minutes to finalize.
+          Your Arc balance ({walletBalance.toFixed(2)} USDC) is insufficient. Bridge {(numericAmount - walletBalance).toFixed(2)} USDC from Sepolia in Deposit first, wait for the Arc balance to update, then return to send.
         </p>
       </div>
     );
@@ -6952,8 +7093,8 @@ function BalanceRoutingNotice({
         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
       </p>
       <p className="text-[11px] leading-relaxed text-white/60">
-        You need ${numericAmount.toFixed(2)} USDC. Your combined balance is ${combinedBalance.toFixed(2)} USDC
-        (${walletBalance.toFixed(2)} USDC on Arc, ${sepoliaUsdc.toFixed(2)} USDC on Sepolia). This transaction will fail.
+        You need {numericAmount.toFixed(2)} USDC. You have {combinedBalance.toFixed(2)} USDC total
+        ({walletBalance.toFixed(2)} USDC on Arc, {sepoliaUsdc.toFixed(2)} USDC on Sepolia). Deposit or bridge more before sending.
       </p>
     </div>
   );

@@ -11,6 +11,7 @@ import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
 import { prisma } from "@/lib/prisma";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 
 export const maxDuration = 120;
 
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        }
+        const verifiedEmail = await getVerifiedAccountEmail(wallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json(
+                { error: "Verify an email address with OTP before committing funds." },
+                { status: 403 },
+            );
         }
 
         const body = sanitizeInput(await request.json().catch(() => null));

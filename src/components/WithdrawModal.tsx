@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Wallet, ShieldCheck, ArrowRight, Loader2, Upload, FileText, CheckCircle2, Lock } from "@/components/icons";
 import { ethers } from "ethers";
@@ -32,6 +32,8 @@ export default function WithdrawModal({
     const [customAddress, setCustomAddress] = useState("");
     const [confirmCustomAddress, setConfirmCustomAddress] = useState("");
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [singleReviewTarget, setSingleReviewTarget] = useState<string | null>(null);
+    const [batchReviewOpen, setBatchReviewOpen] = useState(false);
 
     /* Manual entry state for batch mode */
     const [batchInputMode, setBatchInputMode] = useState<'csv' | 'manual'>('csv');
@@ -46,6 +48,7 @@ export default function WithdrawModal({
     const [combinedRows, setCombinedRows] = useState(0);
     const [isBatchExecuting, setIsBatchExecuting] = useState(false);
     const [batchSuccessResult, setBatchSuccessResult] = useState<any | null>(null);
+    const batchRequestKey = useRef<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,6 +56,7 @@ export default function WithdrawModal({
     const processBatchText = (text: string) => {
         setErrorMsg(null);
         setBatchSuccessResult(null);
+        setBatchReviewOpen(false);
         const lines = text.split(/\r?\n/);
         const recipientsMap = new Map<string, bigint>();
         let invalidCount = 0;
@@ -136,7 +140,7 @@ export default function WithdrawModal({
         fileInputRef.current?.click();
     };
 
-    const handleSingleConfirm = async () => {
+    const reviewSingleWithdrawal = () => {
         setErrorMsg(null);
         let target = "";
 
@@ -165,10 +169,17 @@ export default function WithdrawModal({
             return;
         }
 
+        setSingleReviewTarget(target);
+    };
+
+    const handleSingleConfirm = async () => {
+        if (!singleReviewTarget) return;
+        setErrorMsg(null);
         try {
-            await onConfirmWithdraw(target);
+            await onConfirmWithdraw(singleReviewTarget);
         } catch (err: any) {
             setErrorMsg(err.message || "Withdrawal execution failed.");
+            setSingleReviewTarget(null);
         }
     };
 
@@ -186,10 +197,15 @@ export default function WithdrawModal({
             return;
         }
 
+        if (!batchReviewOpen) {
+            setBatchReviewOpen(true);
+            return;
+        }
+
         setIsBatchExecuting(true);
 
         try {
-            const idempotencyKey = `batch-payout-ui-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            batchRequestKey.current ||= crypto.randomUUID();
             const response = await fetch("/api/premium/withdraw/batch", {
                 method: "POST",
                 headers: {
@@ -197,7 +213,7 @@ export default function WithdrawModal({
                 },
                 body: JSON.stringify({
                     recipients: batchRecipients,
-                    idempotencyKey
+                    idempotencyKey: batchRequestKey.current,
                 })
             });
 
@@ -207,6 +223,8 @@ export default function WithdrawModal({
             }
 
             setBatchSuccessResult(data);
+            batchRequestKey.current = null;
+            setBatchReviewOpen(false);
             setBatchText("");
             setBatchRecipients([]);
             setBatchTotalMicro(BigInt(0));
@@ -221,7 +239,8 @@ export default function WithdrawModal({
         }
     };
 
-    const resetStates = () => {
+    const resetStates = useCallback(() => {
+        if (isWithdrawing || isBatchExecuting) return;
         setErrorMsg(null);
         setDestinationType("connected");
         setCustomAddress("");
@@ -233,9 +252,20 @@ export default function WithdrawModal({
         setCombinedRows(0);
         setInvalidRows(0);
         setBatchSuccessResult(null);
+        setSingleReviewTarget(null);
+        setBatchReviewOpen(false);
         setPayoutMode("single");
         onClose();
-    };
+    }, [isWithdrawing, isBatchExecuting, onClose]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") resetStates();
+        };
+        window.addEventListener("keydown", handleEscape);
+        return () => window.removeEventListener("keydown", handleEscape);
+    }, [isOpen, resetStates]);
 
     const hasConfiguredPayout = !!payoutDestination && payoutDestination !== "0x0000000000000000000000000000000000000000";
 
@@ -258,7 +288,10 @@ export default function WithdrawModal({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ type: "spring", duration: 0.5 }}
-                        className="relative w-full max-w-lg bg-[#0a0a0c] border border-white/5 rounded-[32px] p-6 sm:p-8 shadow-2xl overflow-hidden z-10 text-white"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="withdraw-dialog-title"
+                        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain bg-[#0a0a0c] border border-white/5 rounded-[32px] p-6 sm:p-8 shadow-2xl z-10 text-white"
                     >
                         {/* Background glowing glow */}
                         <div className="absolute -top-24 -right-24 w-48 h-48 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
@@ -270,12 +303,14 @@ export default function WithdrawModal({
                                     <Wallet className="w-4 h-4 text-red-400" />
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider">Settlement Portal</h3>
-                                    <p className="text-[10px] text-white/40 font-mono mt-0.5">Private Payout Routing</p>
+                                    <h3 id="withdraw-dialog-title" className="text-sm font-bold uppercase tracking-wider">Withdraw settlement</h3>
+                                    <p className="text-[10px] text-white/40 font-mono mt-0.5">On-chain USDC payout · Arc Network</p>
                                 </div>
                             </div>
                             <button
                                 onClick={resetStates}
+                                disabled={isWithdrawing || isBatchExecuting}
+                                aria-label="Close withdrawal dialog"
                                 className="p-1.5 hover:bg-white/5 border border-transparent hover:border-white/10 rounded-xl transition-all text-white/50 hover:text-white"
                             >
                                 <X className="w-4.5 h-4.5" />
@@ -286,7 +321,7 @@ export default function WithdrawModal({
                         <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 mb-5 text-center">
                             <p className="text-[10px] text-white/35 uppercase font-bold tracking-widest leading-none mb-1.5">Claimable Balance</p>
                             <p className="text-2xl font-black text-white leading-none">
-                                ${vaultBalance.toFixed(2)}
+                                {vaultBalance.toFixed(2)}
                                 <span className="text-[10px] text-white/40 font-normal ml-1">USDC</span>
                             </p>
                         </div>
@@ -306,14 +341,15 @@ export default function WithdrawModal({
                             </button>
                             <button
                                 type="button"
-                                onClick={() => { setPayoutMode("batch"); setErrorMsg(null); setBatchSuccessResult(null); }}
+                                disabled
+                                aria-disabled="true"
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
                                     payoutMode === "batch"
                                         ? "bg-white/5 border border-white/10 text-white shadow-sm"
                                         : "text-white/40 hover:text-white/70"
                                 }`}
                             >
-                                Batch Payouts (CSV)
+                                Batch payouts unavailable
                             </button>
                         </div>
 
@@ -326,7 +362,7 @@ export default function WithdrawModal({
                                     
                                     <button
                                         type="button"
-                                        onClick={() => { setDestinationType("connected"); setErrorMsg(null); }}
+                                        onClick={() => { setDestinationType("connected"); setErrorMsg(null); setSingleReviewTarget(null); }}
                                         className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                             destinationType === "connected"
                                                 ? "border-[#00d2b4]/30 bg-[#00d2b4]/5 text-white"
@@ -342,7 +378,7 @@ export default function WithdrawModal({
 
                                     <button
                                         type="button"
-                                        onClick={() => { setDestinationType("configured"); setErrorMsg(null); }}
+                                        onClick={() => { setDestinationType("configured"); setErrorMsg(null); setSingleReviewTarget(null); }}
                                         disabled={!hasConfiguredPayout}
                                         className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                             !hasConfiguredPayout
@@ -353,9 +389,9 @@ export default function WithdrawModal({
                                         }`}
                                     >
                                         <div>
-                                            <p className="font-semibold mb-0.5">On-chain Payout Destination</p>
+                                            <p className="font-semibold mb-0.5">Saved Payout Destination</p>
                                             <p className="text-[10px] font-mono opacity-50">
-                                                {hasConfiguredPayout 
+                                                {hasConfiguredPayout
                                                     ? `${payoutDestination!.slice(0, 10)}...${payoutDestination!.slice(-8)}` 
                                                     : "No payout destination configured"
                                                 }
@@ -366,7 +402,7 @@ export default function WithdrawModal({
 
                                     <button
                                         type="button"
-                                        onClick={() => { setDestinationType("custom"); setErrorMsg(null); }}
+                                        onClick={() => { setDestinationType("custom"); setErrorMsg(null); setSingleReviewTarget(null); }}
                                         className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between ${
                                             destinationType === "custom"
                                                 ? "border-[#00d2b4]/30 bg-[#00d2b4]/5 text-white"
@@ -375,7 +411,7 @@ export default function WithdrawModal({
                                     >
                                         <div>
                                             <p className="font-semibold mb-0.5">Custom Payout Wallet Address</p>
-                                            <p className="text-[10px] opacity-50">Send your settlement privately to any external wallet</p>
+                                            <p className="text-[10px] opacity-50">Send the full claimable balance to an external wallet</p>
                                         </div>
                                         <ShieldCheck className={`w-4 h-4 ${destinationType === "custom" ? "text-[#00d2b4]" : "opacity-0"}`} />
                                     </button>
@@ -392,14 +428,14 @@ export default function WithdrawModal({
                                                     type="text"
                                                     placeholder="Enter target wallet address (0x...)"
                                                     value={customAddress}
-                                                    onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); }}
+                                                    onChange={(e) => { setCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
                                                     className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
                                                 />
                                                 <input
                                                     type="text"
                                                     placeholder="Confirm target wallet address (0x...)"
                                                     value={confirmCustomAddress}
-                                                    onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); }}
+                                                    onChange={(e) => { setConfirmCustomAddress(e.target.value); setErrorMsg(null); setSingleReviewTarget(null); }}
                                                     className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-white/20 focus:outline-none focus:border-[#00d2b4] transition-colors font-mono"
                                                 />
                                             </motion.div>
@@ -414,19 +450,38 @@ export default function WithdrawModal({
                                     <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
                                 )}
 
+                                {singleReviewTarget && (
+                                    <div className="mb-4 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-white/45">Amount</span>
+                                            <span className="font-bold text-white">{vaultBalance.toFixed(2)} USDC</span>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <span className="text-white/45">Destination</span>
+                                            <p className="break-all font-mono text-[10px] text-white/80">{singleReviewTarget}</p>
+                                        </div>
+                                        <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
+                                            This on-chain transfer cannot be reversed. Verify the full destination before confirming.
+                                        </p>
+                                        <button type="button" onClick={() => setSingleReviewTarget(null)} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">
+                                            Back to edit
+                                        </button>
+                                    </div>
+                                )}
+
                                 <button
                                     type="button"
-                                    onClick={handleSingleConfirm}
+                                    onClick={singleReviewTarget ? handleSingleConfirm : reviewSingleWithdrawal}
                                     disabled={isWithdrawing || vaultBalance < 1.0}
                                     className="w-full py-3.5 bg-gradient-to-r from-red-500 to-pink-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)]"
                                 >
                                     {isWithdrawing ? (
                                         <>
-                                            Executing Private Withdrawal...
+                                            Waiting for on-chain confirmation...
                                         </>
                                     ) : (
                                         <>
-                                            Confirm Private Payout <ArrowRight className="w-4 h-4" />
+                                            {singleReviewTarget ? "Withdraw USDC now" : "Review withdrawal"} <ArrowRight className="w-4 h-4" />
                                         </>
                                     )}
                                 </button>
@@ -596,13 +651,14 @@ export default function WithdrawModal({
                                         {/* Success Receipt */}
                                         {batchSuccessResult && (
                                             <div className="bg-[#10b981]/5 border border-[#10b981]/15 rounded-2xl p-4 mb-5 text-xs text-white/80 space-y-2 flex flex-col items-center">
-                                                <CheckCircle2 className="w-8 h-8 text-[#10b981] mb-1" />
-                                                <p className="font-bold text-[#10b981] text-sm text-center">Batch Payout Executed!</p>
+                                                <CheckCircle2 className={`w-8 h-8 mb-1 ${batchSuccessResult.failedCount > 0 ? "text-amber-300" : "text-[#10b981]"}`} />
+                                                <p className={`font-bold text-sm text-center ${batchSuccessResult.failedCount > 0 ? "text-amber-300" : "text-[#10b981]"}`}>{batchSuccessResult.failedCount > 0 ? "Batch completed with failures" : "Batch payout confirmed"}</p>
                                                 <div className="w-full space-y-1.5 pt-2 border-t border-[#10b981]/10">
                                                     <div className="flex justify-between">
                                                         <span className="text-white/40">Batch Status:</span>
                                                         <span className="font-bold uppercase text-[#10b981]">{batchSuccessResult.status}</span>
                                                     </div>
+                                                    {batchSuccessResult.failedCount > 0 && <p className="pt-2 text-[10px] leading-relaxed text-amber-200/80">Review the failed transfers in payout history and retry only those recipients. Successful transfers must not be submitted again.</p>}
                                                     <div className="flex justify-between">
                                                         <span className="text-white/40">Sent:</span>
                                                         <span>{batchSuccessResult.successfulCount} transfers</span>
@@ -619,6 +675,20 @@ export default function WithdrawModal({
                                             <p className="text-red-400 text-[10px] mb-4 font-mono font-semibold">{errorMsg}</p>
                                         )}
 
+                                        {batchReviewOpen && (
+                                            <div className="mb-4 space-y-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs">
+                                                <div className="flex justify-between gap-3"><span className="text-white/45">Recipients</span><span className="font-bold">{batchRecipients.length}</span></div>
+                                                <div className="flex justify-between gap-3"><span className="text-white/45">Total</span><span className="font-bold">{batchTotalUsdc.toFixed(2)} USDC</span></div>
+                                                <div className="max-h-32 space-y-1 overflow-y-auto border-y border-white/10 py-2">
+                                                    {batchRecipients.map((recipient) => <div key={recipient.address} className="flex justify-between gap-3 font-mono text-[9px]"><span className="truncate text-white/55">{recipient.address}</span><span className="shrink-0 text-white/80">{(Number(recipient.amount) / 1_000_000).toFixed(2)} USDC</span></div>)}
+                                                </div>
+                                                <p className="border-t border-white/10 pt-3 text-[10px] leading-relaxed text-amber-200/80">
+                                                    These on-chain transfers cannot be reversed. Invalid rows are excluded; review the recipient count and total before sending.
+                                                </p>
+                                                <button type="button" onClick={() => setBatchReviewOpen(false)} className="text-[10px] font-bold uppercase tracking-wider text-white/55 hover:text-white">Back to edit</button>
+                                            </div>
+                                        )}
+
                                         <button
                                             type="button"
                                             onClick={handleBatchConfirm}
@@ -631,7 +701,7 @@ export default function WithdrawModal({
                                                 </>
                                             ) : (
                                                 <>
-                                                    Confirm Batch Payout <ArrowRight className="w-4 h-4" />
+                                                    {batchReviewOpen ? "Send batch now" : "Review batch payout"} <ArrowRight className="w-4 h-4" />
                                                 </>
                                             )}
                                         </button>

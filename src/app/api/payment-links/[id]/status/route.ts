@@ -1,44 +1,142 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { rateLimitKeyDigest } from "@/lib/distributedRateLimit";
 import { paymentLinkSettlementVersion } from "@/lib/paymentLinks/settlementVersion";
 import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
+import { pgMaybeOne } from "@/lib/serverPg";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
 };
 
-export async function GET(_request: Request, { params }: RouteContext) {
+type PaymentLinkStatusRow = {
+    allowed: boolean;
+    retry_after_seconds: number;
+    remaining: number;
+    link_id: string | null;
+    use_count: number | string | null;
+    receipt_token: string | null;
+    attempt_tx_hash: string | null;
+    attempt_created_at: Date | string | null;
+};
+
+const STATUS_RATE_LIMIT = 60;
+const STATUS_RATE_WINDOW_SECONDS = 60;
+
+export async function GET(request: Request, { params }: RouteContext) {
     const { id } = await params;
     if (!isValidPaymentLinkId(id)) {
         return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-    if (!supabaseUrl || !serviceKey) {
-        return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
+    const attempt = new URL(request.url).searchParams.get("attempt");
+    if (typeof attempt !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attempt)) {
+        return NextResponse.json({ error: "Invalid checkout attempt" }, { status: 400 });
     }
 
-    const supabase = createClient(supabaseUrl, serviceKey);
-    const { data: link, error } = await supabase
-        .from("payment_links")
-        .select("use_count, paid_at, verified_tx_hash, receipt_token")
-        .eq("id", id)
-        .maybeSingle();
+    const requesterIp = (request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "")
+        .split(",")[0]
+        .trim() || "unknown";
 
-    if (error) {
-        console.error("Payment-link status lookup failed:", error.message);
+    let result: PaymentLinkStatusRow | null;
+    try {
+        /* The limiter consumption and attempt-scoped status lookup intentionally share one
+           statement/round trip. A denied request cannot reach the payment tables, and a normal
+           3-second client poll remains well under the 60 requests/minute per-IP allowance. */
+        result = await pgMaybeOne<PaymentLinkStatusRow>(
+            `with params as (
+                select to_timestamp(
+                    floor(extract(epoch from statement_timestamp()) / $4::integer) * $4::integer
+                ) as window_start
+            ), cleanup as (
+                delete from public.api_rate_limit_windows
+                where expires_at < statement_timestamp() - interval '5 minutes'
+            ), consumed as (
+                insert into public.api_rate_limit_windows (
+                    scope,
+                    key_hash,
+                    window_started_at,
+                    request_count,
+                    expires_at
+                )
+                select $1, $2, window_start, 1, window_start + make_interval(secs => $4::integer)
+                from params
+                on conflict (scope, key_hash, window_started_at)
+                do update set
+                    request_count = public.api_rate_limit_windows.request_count + 1,
+                    expires_at = excluded.expires_at
+                returning request_count, expires_at
+            ), link_status as (
+                select
+                    pl.id as link_id,
+                    pl.use_count,
+                    pl.receipt_token,
+                    attempt_payment.tx_hash as attempt_tx_hash,
+                    attempt_payment.created_at as attempt_created_at
+                from consumed c
+                join public.payment_links pl on pl.id = $5::uuid
+                left join lateral (
+                    select payment.tx_hash, payment.created_at
+                    from public.payment_link_payments payment
+                    where payment.payment_link_id = pl.id
+                      and payment.checkout_attempt_id = $6::uuid
+                    order by payment.created_at desc
+                    limit 1
+                ) attempt_payment on true
+                where c.request_count <= $3::integer
+            )
+            select
+                c.request_count <= $3::integer as allowed,
+                case
+                    when c.request_count <= $3::integer then 0
+                    else greatest(1, ceil(extract(epoch from (c.expires_at - clock_timestamp())))::integer)
+                end as retry_after_seconds,
+                greatest(0, $3::integer - c.request_count) as remaining,
+                ls.link_id,
+                ls.use_count,
+                ls.receipt_token,
+                ls.attempt_tx_hash,
+                ls.attempt_created_at
+            from consumed c
+            left join link_status ls on true`,
+            [
+                "payment-link-checkout-status",
+                rateLimitKeyDigest(requesterIp),
+                STATUS_RATE_LIMIT,
+                STATUS_RATE_WINDOW_SECONDS,
+                id,
+                attempt,
+            ],
+        );
+    } catch (error) {
+        console.error("Payment-link status lookup failed:", error);
+        return NextResponse.json(
+            { error: "Payment status is temporarily unavailable" },
+            { status: 503, headers: { "Retry-After": "5" } },
+        );
+    }
+
+    if (!result) {
         return NextResponse.json({ error: "Unable to read payment status" }, { status: 500 });
     }
-    if (!link) {
+    if (!result.allowed) {
+        return NextResponse.json(
+            { error: "Too many payment-status requests" },
+            { status: 429, headers: { "Retry-After": String(result.retry_after_seconds) } },
+        );
+    }
+    if (!result.link_id) {
         return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
     }
 
     return NextResponse.json({
-        useCount: Number(link.use_count || 0),
-        receiptId: link.receipt_token || null,
-        settlementVersion: paymentLinkSettlementVersion(link.paid_at, link.verified_tx_hash),
+        useCount: Number(result.use_count || 0),
+        receiptId: result.receipt_token || null,
+        verifiedTxHash: result.attempt_tx_hash || null,
+        settlementVersion: paymentLinkSettlementVersion(result.attempt_created_at, result.attempt_tx_hash),
     }, {
-        headers: { "Cache-Control": "no-store, max-age=0" },
+        headers: {
+            "Cache-Control": "no-store, max-age=0",
+            "X-RateLimit-Remaining": String(result.remaining),
+        },
     });
 }

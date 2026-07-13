@@ -76,7 +76,8 @@ test("reconciliation reports aggregate failures through HTTP status", () => {
     const route = source("src/app/api/cron/reconcile/route.ts");
     const worker = source("src/lib/payments/reconciliationWorker.ts");
 
-    assert.match(route, /result\.success\s*\?\s*200\s*:\s*500/);
+    assert.match(route, /const workerHealthy = "error" in paymentLinkVerification[\s\S]*paymentLinkVerification\.success/);
+    assert.match(route, /result\.success && workerHealthy \? 200 : 500/);
     assert.match(worker, /results\.every\(\(result\)\s*=>\s*result\.success\)/);
 });
 
