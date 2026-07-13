@@ -236,7 +236,7 @@ export async function POST(request: Request) {
         const {
             amountUsdc, amountUsdcMicros, planId,
             interval, intervalSeconds, intervalCount,
-            subscriber, title, externalReference, idempotencyKey, sandbox,
+            subscriber, beneficiary, title, externalReference, idempotencyKey, sandbox, successUrl, cancelUrl,
         } = body;
         const isSandbox = sandbox === true || auth.mode === "test";
 
@@ -244,12 +244,14 @@ export async function POST(request: Request) {
         let amountMicros: bigint | null = null;
         let periodSeconds: number | null = null;
         let resolvedInterval: string | null = null;
+        let minCommitmentSeconds = 0;
 
         if (planId) {
             const plan = await prisma.merchantPlan.findFirst({ where: { id: String(planId), merchantAddress, active: true } });
             if (!plan) return NextResponse.json({ error: "Bad Request: plan not found for this merchant" }, { status: 404 });
             amountMicros = plan.amountUsdc;
             periodSeconds = Number(plan.periodSeconds);
+            minCommitmentSeconds = Number(plan.minCommitmentSeconds || 0);
         }
 
         if (amountMicros === null) {
@@ -301,6 +303,30 @@ export async function POST(request: Request) {
             }
             subscriberAddress = subscriber.toLowerCase();
         }
+        let beneficiaryAddress: string | null = null;
+        if (beneficiary !== undefined && beneficiary !== null && beneficiary !== "") {
+            if (typeof beneficiary !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(beneficiary)) {
+                return NextResponse.json({ error: "Bad Request: invalid beneficiary address" }, { status: 400 });
+            }
+            beneficiaryAddress = beneficiary.toLowerCase();
+        }
+
+        const validateReturnUrl = (label: string, value: unknown) => {
+            if (value === undefined || value === null || value === "") return { ok: true as const, value: null };
+            if (typeof value !== "string" || value.length > 2048) return { ok: false as const, error: `${label} must be a URL up to 2048 characters` };
+            try {
+                const parsed = new URL(value);
+                const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+                if (parsed.protocol !== "https:" && !(loopback && parsed.protocol === "http:")) throw new Error("unsafe protocol");
+                return { ok: true as const, value: parsed.toString() };
+            } catch {
+                return { ok: false as const, error: `${label} must be a valid https URL` };
+            }
+        };
+        const successUrlResult = validateReturnUrl("successUrl", successUrl);
+        if (!successUrlResult.ok) return NextResponse.json({ error: `Bad Request: ${successUrlResult.error}` }, { status: 400 });
+        const cancelUrlResult = validateReturnUrl("cancelUrl", cancelUrl);
+        if (!cancelUrlResult.ok) return NextResponse.json({ error: `Bad Request: ${cancelUrlResult.error}` }, { status: 400 });
 
         if (externalReference !== undefined && externalReference !== null &&
             (typeof externalReference !== "string" || externalReference.length > 256)) {
@@ -343,7 +369,11 @@ export async function POST(request: Request) {
             intervalCount: count,
             interval: resolvedInterval,
             subscriber: subscriberAddress,
+            beneficiary: beneficiaryAddress,
             planId: planId ? String(planId) : null,
+            minCommitmentSeconds,
+            successUrl: successUrlResult.value,
+            cancelUrl: cancelUrlResult.value,
         };
         const link = await prisma.paymentLink.create({
             data: {

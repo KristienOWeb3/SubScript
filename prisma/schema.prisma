@@ -124,6 +124,7 @@ model PaymentLinkPayment {
   creditedAt          DateTime?   @map("credited_at")
   verificationBlock   BigInt?     @map("verification_block")
   verificationChainId BigInt?     @map("verification_chain_id")
+  checkoutAttemptId   String?     @map("checkout_attempt_id") @db.Uuid
   createdAt           DateTime    @default(now()) @map("created_at")
   updatedAt           DateTime    @default(now()) @map("updated_at")
 
@@ -418,6 +419,7 @@ model UserEmbeddedWallet {
   walletAddress       String    @unique @map("wallet_address")
   encryptedPrivateKey String?   @map("encrypted_private_key")
   provider            String    @default("circle_google")
+  emailVerifiedAt     DateTime? @map("email_verified_at")
   circleWalletId      String?   @unique @map("circle_wallet_id")
   circleUserId        String?   @map("circle_user_id")
   circleBlockchain    String?   @map("circle_blockchain")

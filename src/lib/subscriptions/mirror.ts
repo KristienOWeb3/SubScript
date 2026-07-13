@@ -1,8 +1,7 @@
 /* Write-through mirror for customer (non-Premium) subscriptions.
    Customer subs live on-chain (created/modified/cancelled via the embedded-wallet routes and
-   billed by on-chain Chainlink Automation). We mirror our own actions into the `subscriptions`
-   table — kind "CUSTOMER" — so the dashboard can list them and detect an active plan for the
-   switch UI. All functions are best-effort and never throw (callers already committed on-chain). */
+   billed by on-chain Chainlink Automation). Creation is authoritative for fulfillment and throws
+   when persistence fails; callers retain their post-broadcast reconciliation state and retry. */
 import { prisma } from "@/lib/prisma";
 
 export async function mirrorSubscriptionCreated({
@@ -25,8 +24,7 @@ export async function mirrorSubscriptionCreated({
     /* Plan commitment window snapshot (<= one period). NULL/0 = no commitment. */
     minCommitmentSeconds?: bigint | null;
 }) {
-    try {
-        const merchant = merchantAddress.toLowerCase();
+    const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
         const id = BigInt(subscriptionId);
         const period = BigInt(periodSeconds);
@@ -44,7 +42,7 @@ export async function mirrorSubscriptionCreated({
             create: { walletAddress: merchant },
         });
 
-        await prisma.subscription.upsert({
+    await prisma.subscription.upsert({
             where: { subscriptionId: id },
             update: {
                 merchantAddress: merchant,
@@ -74,10 +72,7 @@ export async function mirrorSubscriptionCreated({
                 beneficiaryAddress: beneficiary,
                 minCommitmentUntil: commitmentUntil,
             },
-        });
-    } catch (err) {
-        console.error("[mirror] subscription create failed:", err instanceof Error ? err.message : err);
-    }
+    });
 }
 
 export async function mirrorSubscriptionModified({

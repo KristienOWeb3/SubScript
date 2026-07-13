@@ -15,6 +15,7 @@ import {
   Lock
 } from "lucide-react";
 import AnimatedGradientBg from "@/components/DashboardSkeleton"; // Using layout background
+import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 
 interface Subscription {
   subscriptionId: string;
@@ -56,6 +57,7 @@ export default function UserTransactionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [dms, setDms] = useState<DmMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [userWallet, setUserWallet] = useState<string | null>(null);
@@ -154,21 +156,25 @@ export default function UserTransactionsPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [subRes, dmRes, sessionRes] = await Promise.all([
         fetch("/api/user/subscriptions"),
         fetch("/api/user/dms"),
         fetch("/api/auth/session")
       ]);
-      const subData = await subRes.json();
-      const dmData = await dmRes.json();
-      const sessionData = await sessionRes.json();
+      const subData = await subRes.json().catch(() => ({}));
+      const dmData = await dmRes.json().catch(() => ({}));
+      const sessionData = await sessionRes.json().catch(() => ({}));
+
+      if (!subRes.ok || !dmRes.ok || !sessionRes.ok) throw new Error("Transaction history is temporarily unavailable.");
 
       if (subData.success) setSubscriptions(subData.subscriptions);
       if (dmData.success) setDms(dmData.dms);
       if (sessionData.loggedIn && sessionData.wallet) setUserWallet(sessionData.wallet);
     } catch (err) {
       console.error("Failed to load transactions data:", err);
+      setLoadError(err instanceof Error ? err.message : "Transaction history is temporarily unavailable.");
     } finally {
       setLoading(false);
     }
@@ -207,12 +213,14 @@ export default function UserTransactionsPage() {
       kind: "recurring" as const,
       name: s.merchantName,
       pic: s.merchantProfilePic,
-      detail: `Subscription Stream • ${s.status}`,
+      detail: "Subscription authorization cap",
       amountUsdc: s.amountCapUsdc,
-      amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
-      localAmountLabel: `-${getLocalValueLabel(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
+      amountLabel: `${formatUsdc(s.amountCapUsdc)} USDC cap/${formatPlanPeriod(s.billingIntervalSeconds)}`,
+      localAmountLabel: `≈ ${getLocalValueLabel(s.amountCapUsdc)}`,
       time: s.lastSettlementTimestamp ? new Date(s.lastSettlementTimestamp).getTime() : new Date(s.createdAt).getTime(),
       incoming: false,
+      status: s.status,
+      txHash: null as string | null,
     })),
     ...dms
       .filter((m) => m.amountUsdc && (
@@ -225,14 +233,16 @@ export default function UserTransactionsPage() {
         return {
           id: `dm-${m.id}`,
           kind: "one-time" as const,
-          name: m.senderName || m.receiverName,
-          pic: m.senderProfilePic || m.receiverProfilePic,
+          name: incoming ? (m.senderName || "Sender") : (m.receiverName || "Recipient"),
+          pic: incoming ? m.senderProfilePic : m.receiverProfilePic,
           detail: m.title || m.description || "Direct Payment",
           amountUsdc: m.amountUsdc,
           amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
           localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,
           time: new Date(m.createdAt).getTime(),
           incoming,
+          status: m.status,
+          txHash: m.txHash,
         };
       })
   ].sort((a, b) => b.time - a.time);
@@ -320,6 +330,13 @@ export default function UserTransactionsPage() {
               <Loader2 className="h-8 w-8 animate-spin text-[#ccff00]" />
               <p className="mt-3 text-xs text-white/40 font-bold uppercase tracking-wider">Loading history...</p>
             </div>
+          ) : loadError ? (
+            <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-red-400/20 bg-red-400/[0.04] px-6 text-center" role="alert">
+              <CreditCard className="mb-3 h-8 w-8 text-red-300/70" />
+              <p className="text-sm font-bold text-white">History could not be loaded</p>
+              <p className="mt-2 max-w-sm text-xs leading-relaxed text-white/50">{loadError} This does not mean your transaction history is empty.</p>
+              <button type="button" onClick={loadData} className="mt-4 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-black">Retry</button>
+            </div>
           ) : filteredTransactions.length === 0 ? (
             <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-center">
               <CreditCard className="mb-3 h-8 w-8 text-white/20" />
@@ -341,7 +358,11 @@ export default function UserTransactionsPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-xs font-black uppercase tracking-[0.1em] text-white">{tx.name}</p>
-                      <p className="mt-1 text-[10px] text-white/45">{tx.detail} • {new Date(tx.time).toLocaleString()}</p>
+                      <p className="mt-1 text-[10px] text-white/55">{tx.detail} • {new Date(tx.time).toLocaleString()}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <FinancialStatusBadge status={tx.status} />
+                        {tx.txHash && <a href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-[#ccff00] underline">Proof</a>}
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -356,6 +377,7 @@ export default function UserTransactionsPage() {
               ))}
             </div>
           )}
+          {!loading && !loadError && <p className="mt-6 border-t border-white/[0.06] pt-4 text-[10px] leading-relaxed text-white/40">Local-currency values are estimates based on the latest available exchange rate. Subscription caps are authorizations, not completed debits.</p>}
         </div>
 
       </div>

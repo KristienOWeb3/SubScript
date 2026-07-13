@@ -7,7 +7,7 @@ type RouteContext = {
     params: Promise<{ id: string }>;
 };
 
-export async function GET(_request: Request, { params }: RouteContext) {
+export async function GET(request: Request, { params }: RouteContext) {
     const { id } = await params;
     if (!isValidPaymentLinkId(id)) {
         return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
@@ -20,6 +20,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
+    const attempt = new URL(request.url).searchParams.get("attempt");
+    if (typeof attempt !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attempt)) {
+        return NextResponse.json({ error: "Invalid checkout attempt" }, { status: 400 });
+    }
     const { data: link, error } = await supabase
         .from("payment_links")
         .select("use_count, paid_at, verified_tx_hash, receipt_token")
@@ -33,11 +37,24 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (!link) {
         return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
     }
+    const { data: attemptPayment, error: attemptError } = await supabase
+        .from("payment_link_payments")
+        .select("tx_hash, created_at")
+        .eq("payment_link_id", id)
+        .eq("checkout_attempt_id", attempt)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (attemptError) {
+        console.error("Checkout-attempt status lookup failed:", attemptError.message);
+        return NextResponse.json({ error: "Unable to read checkout attempt" }, { status: 500 });
+    }
 
     return NextResponse.json({
         useCount: Number(link.use_count || 0),
         receiptId: link.receipt_token || null,
-        settlementVersion: paymentLinkSettlementVersion(link.paid_at, link.verified_tx_hash),
+        verifiedTxHash: attemptPayment?.tx_hash || null,
+        settlementVersion: paymentLinkSettlementVersion(attemptPayment?.created_at, attemptPayment?.tx_hash),
     }, {
         headers: { "Cache-Control": "no-store, max-age=0" },
     });

@@ -11,6 +11,7 @@ import { isReceiptId } from "@/lib/arc/memo";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -29,6 +30,10 @@ export async function POST(request: Request, { params }: RouteContext) {
                     ? "Merchant accounts can't pay checkout links."
                     : "Unable to verify your account. Please try again.",
             }, { status: role === "ENTERPRISE" ? 403 : 500 });
+        }
+        const verifiedEmail = await getVerifiedAccountEmail(wallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
         }
 
         const { id } = await params;

@@ -46,6 +46,19 @@ export async function POST(request: Request) {
                     };
                 }
 
+                /* Never trust an email copied from the role-selection form. Email ownership is
+                   established only by the OTP/OAuth routes, which persist email_verified_at. */
+                const verifiedEmailResult = await client.query(
+                    `select email
+                       from user_embedded_wallets
+                      where wallet_address = $1
+                        and email is not null
+                        and email_verified_at is not null
+                      limit 1`,
+                    [normalizedWallet],
+                );
+                const verifiedEmailVal = normalizeAccountEmail(verifiedEmailResult.rows[0]?.email);
+
                 if (role === "ENTERPRISE") {
                     /* Self-serve merchant signup is open by default. Set ALLOW_PUBLIC_MERCHANT_SIGNUP
                        ="false" to re-gate it behind a MERCHANT_SIGNUP_CODE invite. Either way, merchant
@@ -83,15 +96,8 @@ export async function POST(request: Request) {
                     }
                 }
 
-                if (emailVal) {
-                    await assertAccountEmailAvailable(client, emailVal, normalizedWallet);
-
-                    await client.query(
-                        `insert into user_embedded_wallets (wallet_address, email, provider)
-                         values ($1, $2, 'external_wallet')
-                         on conflict (wallet_address) do update set email = excluded.email, updated_at = now()`,
-                        [normalizedWallet, emailVal]
-                    );
+                if (verifiedEmailVal) {
+                    await assertAccountEmailAvailable(client, verifiedEmailVal, normalizedWallet);
                 }
 
                 const createdRoleResult = await client.query(
@@ -114,12 +120,12 @@ export async function POST(request: Request) {
                     );
                 } else {
                     await client.query("delete from merchants where wallet_address = $1", [normalizedWallet]);
-                    if (emailVal) {
+                    if (verifiedEmailVal) {
                         await client.query(
                             `insert into customers (wallet_address, email)
                             values ($1, $2)
                             on conflict (wallet_address) do update set email = excluded.email`,
-                            [normalizedWallet, emailVal]
+                            [normalizedWallet, verifiedEmailVal]
                         );
                     } else {
                         await client.query(
@@ -172,7 +178,7 @@ export async function POST(request: Request) {
 
         const emailRecord = await withPgClient(async (client) => {
             const result = await client.query(
-                "select email from user_embedded_wallets where wallet_address = $1 limit 1",
+                "select email from user_embedded_wallets where wallet_address = $1 and email_verified_at is not null limit 1",
                 [normalizedWallet]
             );
             return result.rows[0] || null;

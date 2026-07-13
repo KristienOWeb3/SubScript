@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { ethers } from "ethers";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -50,6 +50,7 @@ import {
 } from "@/lib/contracts/constants";
 import { STANDARD_SUBSCRIPT_ABI, SUBSCRIPT_ROUTER_ABI, USDC_ERC20_ABI, CONFIDENTIAL_CONTRACT_ABI } from "@/lib/contracts/abis";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
@@ -814,6 +815,13 @@ export default function DashboardPage() {
     const [uploadingPic, setUploadingPic] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [savingSettingsField, setSavingSettingsField] = useState<string | null>(null);
+    const [payoutDestinationDraft, setPayoutDestinationDraft] = useState("");
+    const [payoutDestinationError, setPayoutDestinationError] = useState<string | null>(null);
+    const savedPayoutDestination = userSettings?.payoutDestination || "";
+
+    useEffect(() => {
+        if (userSettings) setPayoutDestinationDraft(savedPayoutDestination);
+    }, [savedPayoutDestination, userSettings]);
     const [churnQuestionDraft, setChurnQuestionDraft] = useState("");
     const [merchantWalletBackupLoading, setMerchantWalletBackupLoading] = useState(false);
     const [merchantWalletBackupError, setMerchantWalletBackupError] = useState<string | null>(null);
@@ -975,22 +983,32 @@ export default function DashboardPage() {
     };
 
     const handleUpdatePayoutDestination = async (destination: string) => {
+        const normalized = destination.trim();
+        if (normalized && !ethers.isAddress(normalized)) {
+            setPayoutDestinationError("Enter a valid EVM wallet address before saving.");
+            return;
+        }
+        if (!window.confirm(`Save ${normalized || "no address"} as the default payout destination? This changes the saved destination but does not move funds now.`)) return;
         setSavingSettingsField("payoutDestination");
+        setPayoutDestinationError(null);
         try {
             const res = await fetch("/api/user/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ payoutDestination: destination })
+                body: JSON.stringify({ payoutDestination: normalized })
             });
             const data = await res.json();
             if (data.success) {
-                setUserSettings((prev: any) => ({ ...prev, payoutDestination: destination }));
+                setUserSettings((prev: any) => ({ ...prev, payoutDestination: normalized }));
                 setToastMessage("Payout destination updated");
                 setShowToast(true);
                 setTimeout(() => setShowToast(false), 3000);
+            } else {
+                setPayoutDestinationError(data.error || "Could not save the payout destination.");
             }
         } catch (err) {
             console.error("Error updating payout destination:", err);
+            setPayoutDestinationError("Network error. Your previous payout destination is still saved.");
         } finally {
             setSavingSettingsField(null);
         }
@@ -1904,6 +1922,7 @@ export default function DashboardPage() {
     };
 
     const handleRollKeys = async () => {
+        if (!window.confirm("Rotate the production API key? The current key will stop working immediately and existing integrations may fail until updated.")) return;
         setIsRolling(true);
         try {
             const res = await fetch("/api/keys", { method: "POST" });
@@ -2009,6 +2028,17 @@ export default function DashboardPage() {
         if (vaultBalance <= 0) return;
         setIsWithdrawing(true);
         try {
+            const liveBalanceRaw = await publicClient.readContract({
+                address: SUBSCRIPT_ROUTER_ADDRESS,
+                abi: ROUTER_ABI,
+                functionName: "merchantBalances",
+                args: [address as `0x${string}`],
+            });
+            const liveBalance = Number(formatUnits(liveBalanceRaw, 6));
+            if (Math.abs(liveBalance - vaultBalance) > 0.000001) {
+                setVaultBalance(liveBalance);
+                throw new Error(`Claimable balance changed to ${liveBalance.toFixed(2)} USDC. Review the updated amount before confirming again.`);
+            }
             const hasTarget = targetAddress && targetAddress.toLowerCase() !== address?.toLowerCase();
             const txHash = await executeContractWrite({
                 address: SUBSCRIPT_ROUTER_ADDRESS,
@@ -2017,8 +2047,11 @@ export default function DashboardPage() {
                 args: hasTarget ? [targetAddress as `0x${string}`] : [],
             });
 
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+            if (receipt.status !== "success") throw new Error("The withdrawal failed before on-chain confirmation.");
+
             setWithdrawSuccess(true);
-            setToastMessage("Withdrawal transaction submitted");
+            setToastMessage("Withdrawal confirmed on Arc");
             setShowToast(true);
             setTimeout(() => setShowToast(false), 4000);
             setTimeout(() => setWithdrawSuccess(false), 4000);
@@ -3470,7 +3503,7 @@ Please complete the following implementation tasks:
                             Payout Destination
                         </h2>
                         <p className="text-[11px] text-white/40 font-sans">
-                            Set up the target wallet where settled funds will be automatically swept.
+                            Save the default wallet offered during settlement withdrawals. Changing this setting does not move funds.
                         </p>
                     </div>
 
@@ -3480,19 +3513,17 @@ Please complete the following implementation tasks:
                             <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    defaultValue={userSettings.payoutDestination || ""}
+                                    value={payoutDestinationDraft}
                                     placeholder="0x..."
-                                    onBlur={(e) => {
-                                        if (e.target.value !== (userSettings.payoutDestination || "")) {
-                                            handleUpdatePayoutDestination(e.target.value);
-                                        }
-                                    }}
+                                    onChange={(e) => { setPayoutDestinationDraft(e.target.value); setPayoutDestinationError(null); }}
                                     className="flex-1 bg-white/[0.02] border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-[#00d2b4]/40 font-mono"
                                 />
+                                <button type="button" onClick={() => handleUpdatePayoutDestination(payoutDestinationDraft)} disabled={savingSettingsField === "payoutDestination" || payoutDestinationDraft.trim() === (userSettings.payoutDestination || "")} className="rounded-xl bg-[#00d2b4] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:cursor-not-allowed disabled:opacity-40">{savingSettingsField === "payoutDestination" ? "Saving…" : "Review & save"}</button>
                             </div>
-                            <p className="text-[9px] text-white/35">
-                                Enter a valid EVM address. This is the address that receives all direct payments and payroll settlements.
+                            <p className="text-[9px] text-white/45">
+                                Enter a valid EVM address. You will still review the destination before each withdrawal.
                             </p>
+                            {payoutDestinationError && <p className="text-[10px] text-red-300" role="alert">{payoutDestinationError}</p>}
                         </div>
                     </div>
                 </div>
@@ -3679,12 +3710,10 @@ Please complete the following implementation tasks:
                                                     </span>
                                                 </td>
                                                 <td className="py-4 font-mono font-bold text-white">
-                                                    ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
+                                                    {(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
                                                 </td>
                                                 <td className="py-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                                        {tx.status}
-                                                    </span>
+                                                    <FinancialStatusBadge status={tx.status} />
                                                 </td>
                                                 <td className="py-4 text-right">
                                                     <div className="inline-flex items-center gap-3">
@@ -3970,60 +3999,24 @@ Please complete the following implementation tasks:
         switch (activeTab) {
             case "offramp":
                 return (
-                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
-                        <div>
+                    <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+                        <div className="space-y-2">
                             <h2 className="text-lg font-bold text-white uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <ArrowRightLeft className={`w-5 h-5 ${primaryColorText}`} />
-                                Fiat Escape Hatch (Off-Ramp)
+                                Fiat off-ramp
                             </h2>
                             <p className="text-xs text-white/50 font-sans leading-relaxed">
-                                Avoid liquidity crunches. Route a percentage of incoming USDC subscription revenue directly to your corporate USD bank account.
+                                Bank settlement routing is not yet available. No bank account is connected and changing controls here will never move or allocate funds.
                             </p>
                         </div>
-
-                        {/* Settlement Slider */}
-                        <div className="space-y-6 bg-black/40 border border-white/5 rounded-2xl p-6">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Bank Allocation</span>
-                                    <p className="text-lg font-bold text-white font-mono mt-1">{fiatSplit}% <span className="text-xs text-white/40 font-normal">to Chase (...4829)</span></p>
-                                </div>
-                                <div className="text-right">
-                                    <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest font-mono">Treasury Wallet</span>
-                                    <p className="text-lg font-bold text-white font-mono mt-1">{100 - fiatSplit}% <span className="text-xs text-white/40 font-normal">to Arc wallet</span></p>
-                                </div>
-                            </div>
-                            
-                            {/* Interactive Slider Input */}
-                            <div className="relative pt-4">
-                                <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="100" 
-                                    value={fiatSplit}
-                                    onChange={(e) => setFiatSplit(Number(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#00d2b4]"
-                                    style={{
-                                        accentColor: '#00d2b4'
-                                    }}
-                                />
-                                <div className="flex justify-between text-3xs text-white/30 font-mono mt-2 uppercase">
-                                    <span>0% (All Crypto)</span>
-                                    <span>50% Split</span>
-                                    <span>100% (All Fiat)</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Guarantee Block */}
-                        <div className="p-5 bg-white/[0.01] border border-white/5 rounded-2xl flex items-start gap-4">
-                            <div className="p-2 rounded-xl flex-shrink-0 border bg-[#00d2b4]/10 border-[#00d2b4]/20 text-[#00d2b4]">
-                                <Check className="w-5 h-5" />
+                        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-5 flex items-start gap-4">
+                            <div className="p-2 rounded-xl flex-shrink-0 border bg-amber-400/10 border-amber-400/20 text-amber-300">
+                                <AlertTriangle className="w-5 h-5" />
                             </div>
                             <div className="space-y-1">
-                                <p className="text-xs font-bold text-white uppercase tracking-wider">Settlement Guarantee</p>
-                                <p className="text-[10px] text-white/40 leading-relaxed font-sans">
-                                    All conversion trades are executed atomically on-chain. US dollar settlements are dispatched instantly and guaranteed to clear in your corporate checking account within 24 hours of deposit. Off-ramp processing incurs a flat 0.5% conversion fee.
+                                <p className="text-xs font-bold text-white uppercase tracking-wider">Coming soon</p>
+                                <p className="text-[10px] text-white/50 leading-relaxed font-sans">
+                                    When this launches, you will review the verified bank destination, conversion quote, fees, settlement timing, and allocation before explicitly confirming any change.
                                 </p>
                             </div>
                         </div>
@@ -4140,7 +4133,7 @@ Please complete the following implementation tasks:
                                     <div className="flex items-center justify-between">
                                         <p className="text-[10px] text-white/30">USDC ready for merchant payout</p>
                                         <button
-                                            onClick={() => handleWithdraw()}
+                                            onClick={() => setIsWithdrawOpen(true)}
                                             disabled={vaultBalance <= 0 || isWithdrawing}
                                             className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
                                                 vaultBalance > 0 
@@ -4149,7 +4142,7 @@ Please complete the following implementation tasks:
                                             }`}
                                         >
                                             <ArrowDownToLine className="w-2.5 h-2.5" />
-                                            {isWithdrawing ? "Withdrawing..." : "Withdraw"}
+                                            Withdraw
                                         </button>
                                     </div>
                                     {withdrawSuccess && (
@@ -4398,7 +4391,7 @@ Please complete the following implementation tasks:
                                             </p>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                                    {vaultBalance > 0 ? `+${Math.min(((vaultBalance / 100) * 0.8), 99.9).toFixed(1)}%` : '—'}
+                                                    {vaultBalance > 0 ? "Available" : "—"}
                                                 </span>
                                                 <span className="text-xs font-semibold text-white/40 font-mono">
                                                     {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
@@ -5892,7 +5885,7 @@ Please complete the following implementation tasks:
                 onClose={() => setIsWithdrawOpen(false)}
                 vaultBalance={vaultBalance}
                 connectedAddress={address || ""}
-                payoutDestination={payoutDestination}
+                payoutDestination={userSettings?.payoutDestination || payoutDestination}
                 onConfirmWithdraw={async (targetAddress) => {
                     await handleWithdraw(targetAddress);
                     setIsWithdrawOpen(false);
@@ -6143,18 +6136,31 @@ function LocalCustomerVaultRow({
 }) {
     const [chargeAmount, setChargeAmount] = useState("1.50");
     const [loading, setLoading] = useState(false);
+    const [reviewingCharge, setReviewingCharge] = useState(false);
+    const usageRequestKey = useRef<string | null>(null);
+    const usageInFlight = useRef(false);
     const [status, setStatus] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
     const handleReportUsage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!apiKey) {
-            setStatus({ text: "A newly revealed secret key is required to test usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
+            setStatus({ text: "A newly revealed secret key is required for live usage reporting. Roll or create an API key and copy it while it is shown.", type: "error" });
+            return;
+        }
+
+        if (!reviewingCharge) {
+            setStatus(null);
+            setReviewingCharge(true);
             return;
         }
         if (!chargeAmount || isNaN(Number(chargeAmount)) || Number(chargeAmount) <= 0) {
             setStatus({ text: "Invalid usage amount.", type: "error" });
             return;
         }
+
+        if (usageInFlight.current) return;
+        usageInFlight.current = true;
+        usageRequestKey.current ||= crypto.randomUUID();
 
         setLoading(true);
         setStatus(null);
@@ -6164,7 +6170,8 @@ function LocalCustomerVaultRow({
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
+                    "Authorization": `Bearer ${apiKey}`,
+                    "x-request-id": usageRequestKey.current,
                 },
                 body: JSON.stringify({
                     userAddress: vault.userAddress,
@@ -6175,9 +6182,11 @@ function LocalCustomerVaultRow({
             const data = await res.json();
             if (res.ok && data.success) {
                 setStatus({
-                    text: `Usage accrued. Cycle total: $${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
+                    text: `Usage charge accrued. Cycle total: ${formatUsdcMicros(data.accruedUsageUsdc)} USDC.`,
                     type: "success"
                 });
+                setReviewingCharge(false);
+                usageRequestKey.current = null;
                 onRefresh();
             } else {
                 setStatus({ text: data.error || "Usage report failed.", type: "error" });
@@ -6185,6 +6194,7 @@ function LocalCustomerVaultRow({
         } catch (err: any) {
             setStatus({ text: err.message || "Failed to report usage.", type: "error" });
         } finally {
+            usageInFlight.current = false;
             setLoading(false);
         }
     };
@@ -6230,17 +6240,17 @@ function LocalCustomerVaultRow({
                 </div>
             </div>
 
-            {/* Test report usage tool */}
+            {/* Live usage accrual tool */}
             <form onSubmit={handleReportUsage} className="flex flex-col sm:flex-row gap-3 sm:items-end border-t border-white/5 pt-3">
                 <label className="flex-1 space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">Test Report Usage (USDC)</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/50">Accrue live usage charge (USDC)</span>
                     <input
                         type="number"
                         min="0.01"
                         step="0.01"
                         disabled={loading}
                         value={chargeAmount}
-                        onChange={(e) => setChargeAmount(e.target.value)}
+                        onChange={(e) => { setChargeAmount(e.target.value); setReviewingCharge(false); setStatus(null); usageRequestKey.current = null; }}
                         className="w-full max-w-xs bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-[#00d2b4] transition text-xs font-mono disabled:opacity-50"
                         placeholder="1.50"
                     />
@@ -6251,9 +6261,16 @@ function LocalCustomerVaultRow({
                     className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50 text-[9px] font-bold uppercase tracking-wider text-white rounded-xl flex items-center justify-center gap-1.5 transition-all"
                 >
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-[#ccff00]" />}
-                    Report Charge
+                    {reviewingCharge ? "Confirm live charge" : "Review charge"}
                 </button>
             </form>
+
+            {reviewingCharge && (
+                <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">
+                    This will add <strong>{Number(chargeAmount).toFixed(2)} USDC</strong> to the customer&apos;s live accrued usage for this billing cycle. It is not a test. Review the customer address above before confirming.
+                    <button type="button" onClick={() => setReviewingCharge(false)} className="mt-2 block font-bold uppercase tracking-wider text-white/60 hover:text-white">Back to edit</button>
+                </div>
+            )}
 
             {status && (
                 <p className={`text-[9px] font-bold tracking-wide ${

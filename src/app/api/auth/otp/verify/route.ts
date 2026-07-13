@@ -179,12 +179,13 @@ export async function POST(request: Request) {
             try {
                 await withPgClient(async (client) => {
                     await client.query(
-                        `insert into user_embedded_wallets (email, wallet_address, circle_wallet_id, provider, updated_at)
-                         values ($1, $2, $3, 'email_otp', now())
+                        `insert into user_embedded_wallets (email, wallet_address, circle_wallet_id, provider, email_verified_at, updated_at)
+                         values ($1, $2, $3, 'email_otp', now(), now())
                          on conflict (email) do update set
                             wallet_address = excluded.wallet_address,
                             circle_wallet_id = excluded.circle_wallet_id,
                             provider = excluded.provider,
+                            email_verified_at = now(),
                             updated_at = now()`,
                         [emailVal, walletAddress.toLowerCase(), provisioned.circleWalletId]
                     );

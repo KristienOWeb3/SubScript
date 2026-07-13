@@ -18,6 +18,8 @@ type PlanData = {
     minCommitmentSeconds?: string;
     merchantAddress: string;
     checkoutSessionId?: string;
+    successUrl?: string;
+    cancelUrl?: string;
     merchant?: {
         address: string;
         name: string;
@@ -28,7 +30,7 @@ type PlanData = {
     };
 };
 
-type SessionInfo = { loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null };
+type SessionInfo = { loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null };
 
 function formatPeriod(seconds: string) {
     const value = Number(seconds);
@@ -75,6 +77,12 @@ export default function SubscribeClient({
 
     /* Interstitial before following the merchant-supplied "view more" link off-platform. */
     const [showLeaveModal, setShowLeaveModal] = useState(false);
+    const [showSubscribeReview, setShowSubscribeReview] = useState(false);
+    const [emailInput, setEmailInput] = useState("");
+    const [emailCode, setEmailCode] = useState("");
+    const [emailStep, setEmailStep] = useState<"email" | "code">("email");
+    const [emailBusy, setEmailBusy] = useState(false);
+    const [emailError, setEmailError] = useState<string | null>(null);
 
     const handleConfirmLeave = () => {
         if (plan?.detailsUrl) {
@@ -102,6 +110,8 @@ export default function SubscribeClient({
                         minCommitmentSeconds: data.plan.minCommitmentSeconds ?? "0",
                         merchantAddress: data.plan.merchantAddress,
                         checkoutSessionId: data.plan.checkoutSessionId,
+                        successUrl: data.plan.successUrl,
+                        cancelUrl: data.plan.cancelUrl,
                         merchant: data.merchant,
                     });
                     setLoadError(null);
@@ -131,6 +141,59 @@ export default function SubscribeClient({
         router.push(`/signin?next=${encodeURIComponent(next)}`);
     };
 
+    const refreshSession = async () => {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const data = await response.json().catch(() => ({ loggedIn: false }));
+        setSession(data);
+        return data;
+    };
+
+    const sendEmailCode = async () => {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim())) {
+            setEmailError("Enter a valid email address.");
+            return;
+        }
+        setEmailBusy(true);
+        setEmailError(null);
+        try {
+            const response = await fetch("/api/auth/otp/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: emailInput.trim(), purpose: "bind_wallet_email" }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Could not send the verification code.");
+            setEmailStep("code");
+        } catch (error: any) {
+            setEmailError(error.message || "Could not send the verification code.");
+        } finally {
+            setEmailBusy(false);
+        }
+    };
+
+    const verifyEmailCode = async () => {
+        if (!/^\d{6}$/.test(emailCode)) {
+            setEmailError("Enter the 6-digit code we emailed you.");
+            return;
+        }
+        setEmailBusy(true);
+        setEmailError(null);
+        try {
+            const response = await fetch("/api/user/email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: emailInput.trim(), code: emailCode }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || "Email verification failed.");
+            await refreshSession();
+        } catch (error: any) {
+            setEmailError(error.message || "Email verification failed.");
+        } finally {
+            setEmailBusy(false);
+        }
+    };
+
     /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
        dedupes the first charge instead of creating a second paid subscription. */
     const subscribeRequestKey = useRef<string | null>(null);
@@ -141,6 +204,9 @@ export default function SubscribeClient({
         setSubscribeError(null);
         try {
             subscribeRequestKey.current ||= crypto.randomUUID();
+            const requestStorageKey = `subscript_subscription_attempt:${session?.wallet || "anonymous"}:${plan.checkoutSessionId || plan.id}`;
+            subscribeRequestKey.current = localStorage.getItem(requestStorageKey) || subscribeRequestKey.current;
+            localStorage.setItem(requestStorageKey, subscribeRequestKey.current);
             const res = await fetch("/api/user/subscription/subscribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
@@ -151,6 +217,7 @@ export default function SubscribeClient({
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to subscribe.");
             subscribeRequestKey.current = null;
+            localStorage.removeItem(requestStorageKey);
             setResult({ txHash: data.txHash, subscriptionId: data.subscriptionId, planName: data.planName });
         } catch (err: any) {
             setSubscribeError(err.message || "Failed to subscribe.");
@@ -161,6 +228,7 @@ export default function SubscribeClient({
 
     const merchant = plan?.merchant;
     const isEnterpriseViewer = session?.role === "ENTERPRISE";
+    const isExternalWalletViewer = Boolean(session?.loggedIn && !session?.isEmbedded);
 
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
@@ -246,7 +314,7 @@ export default function SubscribeClient({
                             </span>
                             <div className="text-right">
                                 <p className="text-2xl font-extrabold text-[#00d2b4] tracking-tight">
-                                    ${formatAmount(plan.amountUsdc)}
+                                    {formatAmount(plan.amountUsdc)}
                                 </p>
                                 <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">
                                     USDC / {formatPeriod(plan.periodSeconds)}
@@ -255,7 +323,7 @@ export default function SubscribeClient({
                         </div>
 
                         <p className="text-[10px] text-white/45 leading-relaxed">
-                            You&apos;ll be charged <span className="text-white/70 font-bold">${formatAmount(plan.amountUsdc)} USDC</span> now and then
+                            You&apos;ll be charged <span className="text-white/70 font-bold">{formatAmount(plan.amountUsdc)} USDC</span> now and then
                             automatically every <span className="text-white/70 font-bold">{formatPeriod(plan.periodSeconds)}</span>. You can cancel
                             anytime from your SubScript dashboard.
                         </p>
@@ -287,10 +355,10 @@ export default function SubscribeClient({
                                 )}
                                 <button
                                     type="button"
-                                    onClick={() => router.push("/user?tab=inbox")}
+                                    onClick={() => plan.successUrl ? window.location.assign(plan.successUrl) : router.push("/user?tab=inbox")}
                                     className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                 >
-                                    Go to my dashboard <ArrowRight className="w-4 h-4" />
+                                    {plan.successUrl ? `Return to ${getHostname(plan.successUrl)}` : "Go to my dashboard"} <ArrowRight className="w-4 h-4" />
                                 </button>
                             </div>
                         ) : !sessionLoaded ? (
@@ -314,15 +382,34 @@ export default function SubscribeClient({
                                     </div>
                                 )}
 
-                                {session?.loggedIn ? (
+                                {session?.loggedIn && !session.email ? (
+                                    <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-4 text-left">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Verified email required</p>
+                                        <p className="text-[10px] leading-relaxed text-white/55">Confirm an email with the emailed OTP before authorizing a recurring payment.</p>
+                                        {emailStep === "email" ? <>
+                                            <input type="email" value={emailInput} onChange={(event) => { setEmailInput(event.target.value); setEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-xs text-white focus:border-[#00d2b4]/50 focus:outline-none" />
+                                            <button type="button" onClick={sendEmailCode} disabled={emailBusy} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:opacity-50">{emailBusy ? "Sending…" : "Send email code"}</button>
+                                        </> : <>
+                                            <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => { setEmailCode(event.target.value.replace(/\D/g, "")); setEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white focus:border-[#00d2b4]/50 focus:outline-none" />
+                                            <button type="button" onClick={verifyEmailCode} disabled={emailBusy} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:opacity-50">{emailBusy ? "Verifying…" : "Verify email"}</button>
+                                        </>}
+                                        {emailError && <p className="text-[10px] text-red-300" role="alert">{emailError}</p>}
+                                    </div>
+                                ) : isExternalWalletViewer ? (
+                                    <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-4 text-left">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">SubScript wallet required</p>
+                                        <p className="text-[10px] leading-relaxed text-white/55">Recurring billing is gas-sponsored from a SubScript email or Google wallet. Browser wallets can pay one-time checkouts, but cannot safely authorize this recurring plan yet.</p>
+                                        <button type="button" onClick={handleSignIn} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black">Sign in with email or Google</button>
+                                    </div>
+                                ) : session?.loggedIn ? (
                                     <button
                                         type="button"
-                                        onClick={handleSubscribe}
+                                        onClick={() => setShowSubscribeReview(true)}
                                         disabled={isSubscribing}
                                         className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                     >
                                         {isSubscribing ? <><Loader2 className="w-4 h-4 animate-spin" /> Subscribing...</>
-                                            : <>Subscribe — ${formatAmount(plan.amountUsdc)} USDC <ArrowRight className="w-4 h-4" /></>}
+                                            : <>Review subscription <ArrowRight className="w-4 h-4" /></>}
                                     </button>
                                 ) : (
                                     <>
@@ -347,6 +434,32 @@ export default function SubscribeClient({
                     </div>
                 )}
             </div>
+
+            {showSubscribeReview && plan && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+                    <div role="dialog" aria-modal="true" aria-labelledby="subscription-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-[#09090b] p-6 shadow-2xl">
+                        <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4]">Recurring authorization</p>
+                            <h3 id="subscription-review-title" className="mt-1 text-xl font-black text-white">Review subscription</h3>
+                        </div>
+                        {plan.cancelUrl && !result && (
+                            <a href={plan.cancelUrl} className="block text-center text-[10px] text-white/40 underline hover:text-white/70">Cancel and return to {getHostname(plan.cancelUrl)}</a>
+                        )}
+                        <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs">
+                            <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold">{merchant?.name || "Merchant"}</span></div>
+                            <div className="flex justify-between gap-4"><span className="text-white/45">Charge today</span><span className="font-bold">{formatAmount(plan.amountUsdc)} USDC</span></div>
+                            <div className="flex justify-between gap-4"><span className="text-white/45">Renews</span><span className="font-bold">Every {formatPeriod(plan.periodSeconds)}</span></div>
+                            <div className="flex justify-between gap-4"><span className="text-white/45">Estimated next charge</span><span className="text-right font-bold">{new Date(Date.now() + Number(plan.periodSeconds) * 1000).toLocaleDateString()}</span></div>
+                            <div className="space-y-1"><span className="text-white/45">Merchant wallet</span><p className="break-all font-mono text-[10px] text-white/75">{plan.merchantAddress}</p></div>
+                        </div>
+                        <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">Confirming authorizes recurring USDC charges under these terms. You can manage or cancel the subscription from your dashboard; any minimum commitment shown above still applies.</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button type="button" onClick={() => setShowSubscribeReview(false)} disabled={isSubscribing} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>
+                            <button type="button" onClick={() => { setShowSubscribeReview(false); void handleSubscribe(); }} disabled={isSubscribing} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black">Confirm subscription</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showLeaveModal && plan?.detailsUrl && (
                 <div

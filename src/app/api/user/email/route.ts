@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { ensureDefaultAliasFromEmail } from "@/lib/auth/defaultAlias";
 import { withPgClient } from "@/lib/serverPg";
@@ -67,14 +66,39 @@ export async function POST(request: Request) {
         }
 
         try {
-            await prisma.customer.upsert({
-                where: { walletAddress: wallet.toLowerCase() },
-                update: { email },
-                create: { walletAddress: wallet.toLowerCase(), email },
+            await withPgClient(async (client) => {
+                await client.query("begin");
+                try {
+                    await client.query(
+                        `insert into customers (wallet_address, email)
+                         values ($1, $2)
+                         on conflict (wallet_address) do update set email = excluded.email`,
+                        [wallet.toLowerCase(), email],
+                    );
+                    await client.query(
+                        `insert into user_embedded_wallets
+                            (wallet_address, email, provider, email_verified_at, updated_at)
+                         values ($1, $2, 'external_wallet_email_otp', now(), now())
+                         on conflict (wallet_address) do update set
+                            email = excluded.email,
+                            provider = case
+                                when user_embedded_wallets.provider = 'external_wallet'
+                                    then excluded.provider
+                                else user_embedded_wallets.provider
+                            end,
+                            email_verified_at = now(),
+                            updated_at = now()`,
+                        [wallet.toLowerCase(), email],
+                    );
+                    await client.query("commit");
+                } catch (error) {
+                    await client.query("rollback").catch(() => undefined);
+                    throw error;
+                }
             });
         } catch (e: any) {
             /* A DB trigger enforces one email per account — surface that as a clean conflict. */
-            if (e?.code === "P2002" || /already associated|23505/i.test(String(e?.message || ""))) {
+            if (e?.code === "23505" || /already associated|23505/i.test(String(e?.message || ""))) {
                 return NextResponse.json({ error: "That email is already linked to another SubScript account." }, { status: 409 });
             }
             throw e;

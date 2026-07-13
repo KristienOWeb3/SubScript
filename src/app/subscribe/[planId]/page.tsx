@@ -41,7 +41,7 @@ async function getPlan(planId: string) {
             .eq("id", planId)
             .maybeSingle();
         const meta = readSubscriptionCheckoutMeta(checkout?.state_snapshot);
-        if (!checkout?.active || checkout.status !== "PENDING" || !meta) return null;
+        if (!checkout?.active || !["PENDING", "PROCESSING"].includes(checkout.status) || !meta) return null;
         resolvedPlan = {
             id: checkout.id,
             merchant_address: checkout.merchant_address,
@@ -50,7 +50,9 @@ async function getPlan(planId: string) {
             details_url: null,
             amount_usdc: checkout.amount_usdc,
             period_seconds: subscriptionCheckoutPeriod(meta).toString(),
-            min_commitment_seconds: "0",
+            min_commitment_seconds: String(meta.minCommitmentSeconds || 0),
+            success_url: meta.successUrl,
+            cancel_url: meta.cancelUrl,
             active: true,
             checkout_session_id: checkout.id,
         } as typeof plan & { checkout_session_id: string };
@@ -127,6 +129,8 @@ export default async function PublicSubscribePage({ params }: PageProps) {
             minCommitmentSeconds: String(plan.min_commitment_seconds ?? 0),
             merchantAddress: String(plan.merchant_address).toLowerCase(),
             checkoutSessionId: "checkout_session_id" in plan ? String(plan.checkout_session_id) : undefined,
+            successUrl: "success_url" in plan && plan.success_url ? String(plan.success_url) : undefined,
+            cancelUrl: "cancel_url" in plan && plan.cancel_url ? String(plan.cancel_url) : undefined,
             merchant: {
                 address: String(plan.merchant_address).toLowerCase(),
                 name: plan.merchant_alias

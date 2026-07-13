@@ -15,6 +15,8 @@ import {
     validateBeneficiaryAddress,
 } from "@/lib/paymentLinks/beneficiary";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
+import { getSessionWallet } from "@/lib/auth";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 
 export const maxDuration = 120;
 
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Invalid JSON body" }, { status: 400 });
         }
 
-        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId } = body;
+        const { txHash, paymentLinkId, payerAddress, receiptId, chainId: bodyChainId, checkoutAttemptId } = body;
         const chainId = bodyChainId ? Number(bodyChainId) : ProtocolConfig.CHAIN_ID;
         const isCctp = Number(chainId) in CCTP_CONFIG;
         const submittedReceiptId = isReceiptId(receiptId) ? receiptId : null;
@@ -114,6 +116,25 @@ export async function POST(request: Request) {
         /* Normalize address */
         const normalizedPayer = payerAddress.toLowerCase();
         const normalizedTx = txHash.toLowerCase();
+
+        /* A hosted checkout settlement is accepted only for the wallet that authenticated this
+           browser and proved mailbox ownership. Someone can always call a public contract
+           directly, but an unauthenticated transfer is not a completed SubScript order and must
+           never produce fulfillment, receipts, webhooks, or a paid checkout state. */
+        const sessionWallet = await getSessionWallet(request.headers);
+        if (!sessionWallet) {
+            return NextResponse.json({ error: "Sign in with the paying wallet before verification." }, { status: 401 });
+        }
+        if (typeof checkoutAttemptId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(checkoutAttemptId)) {
+            return NextResponse.json({ error: "Bad Request: Missing or invalid checkout attempt" }, { status: 400 });
+        }
+        if (sessionWallet.toLowerCase() !== normalizedPayer) {
+            return NextResponse.json({ error: "The authenticated wallet does not match the payer." }, { status: 403 });
+        }
+        const verifiedEmail = await getVerifiedAccountEmail(sessionWallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json({ error: "Verify an email address with OTP before paying." }, { status: 403 });
+        }
 
         /* The database claim below owns idempotency, request binding, and capacity. */
         executionKey = `verify-payment-link:${normalizedTx}`;
@@ -209,6 +230,17 @@ export async function POST(request: Request) {
         }
         if (claimResult?.outcome === "COMPLETED") {
             const completedPaymentId = claimResult.responsePayload?.paymentId;
+            if (completedPaymentId) {
+                const { error: attemptRepairError } = await supabase
+                    .from("payment_link_payments")
+                    .update({ checkout_attempt_id: checkoutAttemptId })
+                    .eq("id", completedPaymentId)
+                    .is("checkout_attempt_id", null);
+                if (attemptRepairError) {
+                    console.error("[verify] Checkout-attempt repair failed:", attemptRepairError.message);
+                    return NextResponse.json({ error: "Failed to bind checkout attempt" }, { status: 500 });
+                }
+            }
             after(async () => {
                 if (completedPaymentId) {
                     await deliverWebhookOutboxEvent(supabase, `evt_payment_${completedPaymentId}`)
@@ -615,6 +647,15 @@ export async function POST(request: Request) {
                                 throw new Error("Atomic payment finalization returned no payment id");
                             }
                             const newPayment = { id: successPayload.paymentId };
+
+                            const { error: attemptError } = await supabase
+                                .from("payment_link_payments")
+                                .update({ checkout_attempt_id: checkoutAttemptId })
+                                .eq("id", newPayment.id)
+                                .is("checkout_attempt_id", null);
+                            if (attemptError) {
+                                throw new Error(`Failed to bind checkout attempt: ${attemptError.message}`);
+                            }
 
                             /* Resolve the open request DM(s) for this link so the payer no longer sees the
                                merchant "asking" for something they just paid — the DEBIT_SUCCESS receipt DM

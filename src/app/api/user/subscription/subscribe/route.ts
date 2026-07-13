@@ -7,12 +7,15 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireGasSponsored } from "@/lib/sponsor/gas";
-import { subscribeFromEmbedded, findActiveOnChainSubscriptionId } from "@/lib/subscriptions/onchain";
+import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
+import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
+import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 export const maxDuration = 120;
 
@@ -22,6 +25,16 @@ export async function POST(request: Request) {
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+        const verifiedEmail = await getVerifiedAccountEmail(wallet);
+        if (!verifiedEmail?.email) {
+            return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
+        }
+        if (verifiedEmail.provider === "external_wallet" || verifiedEmail.provider === "external_wallet_email_otp") {
+            return NextResponse.json({
+                error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
+                code: "EMBEDDED_WALLET_REQUIRED",
+            }, { status: 409 });
+        }
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
         const planId = typeof body.planId === "string" ? body.planId : "";
@@ -46,10 +59,13 @@ export async function POST(request: Request) {
             ? await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } })
             : null;
         const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+        if (!beneficiaryAddress && checkoutMeta?.beneficiary) {
+            beneficiaryAddress = checkoutMeta.beneficiary === wallet.toLowerCase() ? null : checkoutMeta.beneficiary;
+        }
         const merchantPlan = planId
             ? await prisma.merchantPlan.findUnique({ where: { id: planId } })
             : null;
-        if (checkoutSessionId && (!checkout || !checkout.active || checkout.status !== "PENDING" || !checkoutMeta)) {
+        if (checkoutSessionId && (!checkout || !checkout.active || !["PENDING", "PROCESSING"].includes(checkout.status) || !checkoutMeta)) {
             return NextResponse.json({ error: "Subscription checkout not found or no longer available" }, { status: 404 });
         }
         if (!checkoutSessionId && (!merchantPlan || !merchantPlan.active)) {
@@ -62,7 +78,7 @@ export async function POST(request: Request) {
             name: checkout.title,
             amountUsdc: checkout.amountUsdc,
             periodSeconds: subscriptionCheckoutPeriod(checkoutMeta),
-            minCommitmentSeconds: BigInt(0),
+            minCommitmentSeconds: BigInt(checkoutMeta.minCommitmentSeconds || 0),
         } : merchantPlan!;
         if (!ethers.isAddress(plan.merchantAddress)) {
             return NextResponse.json({ error: "Plan has an invalid merchant" }, { status: 400 });
@@ -83,6 +99,40 @@ export async function POST(request: Request) {
             let checkoutClaimed = false;
             let onChainSubmitted = false;
             try {
+                if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
+                    const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
+                    if (!recoveredId) {
+                        return NextResponse.json({
+                            error: "Your transaction is confirmed and subscription activation is still reconciling. Retry shortly; you will not be charged twice.",
+                            code: "RECONCILIATION_PENDING",
+                            txHash: checkout.verifiedTxHash,
+                        }, { status: 202 });
+                    }
+                    await mirrorSubscriptionCreated({
+                        subscriptionId: recoveredId,
+                        merchantAddress: merchant,
+                        subscriber,
+                        amountUsdc: plan.amountUsdc,
+                        periodSeconds: plan.periodSeconds,
+                        beneficiaryAddress,
+                        minCommitmentSeconds: plan.minCommitmentSeconds,
+                    });
+                    await prisma.paymentLink.update({
+                        where: { id: checkoutSessionId },
+                        data: { active: false, status: "PAID", paidAt: new Date() },
+                    });
+                    await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                        subscriptionId: recoveredId,
+                        status: "active",
+                        amountUsdcMicros: plan.amountUsdc,
+                        subscriber,
+                        merchantAddress: merchant,
+                        beneficiary: beneficiaryAddress,
+                        txHash: checkout.verifiedTxHash,
+                    })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
+                    return NextResponse.json({ success: true, txHash: checkout.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
+                }
+
                 const existingResult = await client.query(
                     `select subscription_id, amount_cap_usdc, billing_interval_seconds
                        from subscriptions
@@ -113,6 +163,19 @@ export async function POST(request: Request) {
                    unmirrored on-chain sub can't be duplicated. Best-effort (null on RPC error). */
                 const onChainActiveId = await findActiveOnChainSubscriptionId(subscriber, merchant);
                 if (onChainActiveId) {
+                    const onChain = await getSubscriptionOnChain(onChainActiveId);
+                    if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
+                        await mirrorSubscriptionCreated({
+                            subscriptionId: onChainActiveId,
+                            merchantAddress: merchant,
+                            subscriber,
+                            amountUsdc: onChain.amount,
+                            periodSeconds: onChain.period,
+                            beneficiaryAddress,
+                            minCommitmentSeconds: plan.minCommitmentSeconds,
+                        });
+                        return NextResponse.json({ success: true, subscriptionId: onChainActiveId, planName: plan.name, reconciled: true });
+                    }
                     return NextResponse.json({
                         error: "You already have an active subscription with this merchant. Manage that plan from your dashboard.",
                         code: "ACTIVE_MERCHANT_SUBSCRIPTION",
@@ -148,11 +211,19 @@ export async function POST(request: Request) {
                         : deterministicIdempotencyKey(`req:${requestId}:subscribe:${subscriber}:${planId}`)
                 );
                 onChainSubmitted = true;
+                if (checkoutSessionId) {
+                    await prisma.paymentLink.update({
+                        where: { id: checkoutSessionId },
+                        data: { verifiedTxHash: txHash.toLowerCase() },
+                    });
+                }
+                if (!subId) {
+                    throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+                }
 
                 /* Mirror before releasing the advisory lock, so the next request observes this
                    active subscription and cannot create a duplicate. */
-                if (subId) {
-                    await mirrorSubscriptionCreated({
+                await mirrorSubscriptionCreated({
                         subscriptionId: subId,
                         merchantAddress: merchant,
                         subscriber,
@@ -160,8 +231,7 @@ export async function POST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
-                    });
-                }
+                });
 
                 /* Open the merchant→user DM thread for this subscription (best-effort). */
                 await createSubscriptionStartedDm({
@@ -184,6 +254,16 @@ export async function POST(request: Request) {
                     });
                     checkoutClaimed = false;
                 }
+
+                await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                    subscriptionId: subId,
+                    status: "active",
+                    amountUsdcMicros: plan.amountUsdc,
+                    subscriber,
+                    merchantAddress: merchant,
+                    beneficiary: beneficiaryAddress,
+                    txHash,
+                })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
 
                 return NextResponse.json({
                     success: true,

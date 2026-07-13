@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient, useSignMessage } from "wagmi";
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
+import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 export interface PublicPayClientProps {
     id: string;
@@ -33,6 +34,10 @@ export interface PublicPayClientProps {
     successUrl?: string | null;
     cancelUrl?: string | null;
     initialSettlementVersion?: string | null;
+}
+
+function shortenAddress(value: string) {
+    return value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Unknown recipient";
 }
 
 export default function PublicPayClient({
@@ -61,9 +66,10 @@ export default function PublicPayClient({
     const fiatSymbol = getFiatSymbol(displayCurrency);
     const [mounted, setMounted] = useState(false);
     const { address: realAddress, isConnected: realIsConnected } = useAccount();
-    const { connect, connectors, isPending: isConnecting } = useConnect();
+    const { connectAsync, connectors, isPending: isConnecting } = useConnect();
     const { disconnect } = useDisconnect();
     const { writeContractAsync } = useWriteContract();
+    const { signMessageAsync } = useSignMessage();
     const chainId = useChainId();
     const { switchChainAsync } = useSwitchChain();
     const publicClient = usePublicClient();
@@ -82,12 +88,7 @@ export default function PublicPayClient({
     const [merchantVerified, setMerchantVerified] = useState<boolean | null>(null);
     const [showUnverifiedWarning, setShowUnverifiedWarning] = useState(false);
     const [unverifiedAccepted, setUnverifiedAccepted] = useState(false);
-
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            setCheckoutUrl(window.location.href);
-        }
-    }, [id]);
+    const [reviewPaymentMode, setReviewPaymentMode] = useState<"embedded" | "wallet" | null>(null);
 
     const { data: balanceData } = useBalance({
         address: address,
@@ -136,6 +137,8 @@ export default function PublicPayClient({
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
     const settlementNotifiedRef = useRef(false);
+    const [remoteStatusError, setRemoteStatusError] = useState<string | null>(null);
+    const [lastRemoteStatusCheck, setLastRemoteStatusCheck] = useState<Date | null>(null);
 
     /* Inbox DM creation states */
     const [isCreatingDm, setIsCreatingDm] = useState(false);
@@ -144,52 +147,97 @@ export default function PublicPayClient({
     /* Detect an existing SubScript session so we can offer "go to DMs" instead of
        forcing a fresh wallet connection. */
     const [sessionInfo, setSessionInfo] = useState<{ loggedIn: boolean; wallet?: string; email?: string | null; role?: string | null; isEmbedded?: boolean; provider?: string | null } | null>(null);
+    const [isSessionLoading, setIsSessionLoading] = useState(true);
+    const [isWalletAuthenticating, setIsWalletAuthenticating] = useState(false);
+    const [walletAuthenticationError, setWalletAuthenticationError] = useState<string | null>(null);
     const [isEmbeddedPaying, setIsEmbeddedPaying] = useState(false);
     const [clientIntentId, setClientIntentId] = useState("");
     useEffect(() => {
         const storageKey = `subscript_checkout_attempt:${id}`;
+        const url = new URL(window.location.href);
+        const linkedAttempt = url.searchParams.get("attempt");
         const stored = sessionStorage.getItem(storageKey);
-        const attemptId = stored || crypto.randomUUID();
+        const attemptId = (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(linkedAttempt || "")
+            ? linkedAttempt
+            : stored) || crypto.randomUUID();
         if (!stored) sessionStorage.setItem(storageKey, attemptId);
         setClientIntentId(attemptId);
+        url.searchParams.set("attempt", attemptId);
+        setCheckoutUrl(url.toString());
     }, [id]);
-    useEffect(() => {
-        let cancelled = false;
-        fetch("/api/auth/session")
-            .then((res) => res.json())
-            .then((data) => { if (!cancelled) setSessionInfo(data); })
-            .catch(() => { if (!cancelled) setSessionInfo(null); });
-        return () => { cancelled = true; };
+    const refreshSession = useCallback(async () => {
+        setIsSessionLoading(true);
+        try {
+            const response = await fetch("/api/auth/session", { cache: "no-store" });
+            const data = await response.json().catch(() => ({ loggedIn: false }));
+            setSessionInfo(data);
+            return data;
+        } catch {
+            setSessionInfo(null);
+            return null;
+        } finally {
+            setIsSessionLoading(false);
+        }
     }, []);
+    useEffect(() => { void refreshSession(); }, [refreshSession]);
 
     /* Returning-payer email prompt: an external wallet that already has a SubScript account
        but no email on file must verify one at checkout via OTP — the payment verifier no
        longer accepts a caller-supplied email, so binding happens only through the
        authenticated /api/user/email flow. */
-    const [payerNeedsEmail, setPayerNeedsEmail] = useState(false);
     const [payerEmailInput, setPayerEmailInput] = useState("");
     const [payerEmailError, setPayerEmailError] = useState<string | null>(null);
     const [payerEmailCode, setPayerEmailCode] = useState("");
     const [payerEmailStep, setPayerEmailStep] = useState<"email" | "code">("email");
     const [isSendingPayerEmailCode, setIsSendingPayerEmailCode] = useState(false);
     const [isVerifyingPayerEmail, setIsVerifyingPayerEmail] = useState(false);
-    useEffect(() => {
-        if (!address) {
-            setPayerNeedsEmail(false);
-            return;
-        }
-        let cancelled = false;
-        fetch(`/api/payer-status?address=${address}`)
-            .then((res) => res.json())
-            .then((data) => { if (!cancelled) { setPayerNeedsEmail(Boolean(data?.exists) && data?.isExternalWallet && !data?.hasEmail); setPayerEmailStep("email"); setPayerEmailCode(""); } })
-            .catch(() => { if (!cancelled) setPayerNeedsEmail(false); });
-        return () => { cancelled = true; };
-    }, [address]);
-
     const hasMatchingWalletSession = Boolean(
         sessionInfo?.loggedIn && sessionInfo.wallet && address &&
         sessionInfo.wallet.toLowerCase() === address.toLowerCase(),
     );
+    const embeddedPaySession = Boolean(sessionInfo?.loggedIn && sessionInfo?.isEmbedded && sessionInfo?.wallet);
+    const canBindPayerEmail = Boolean(hasMatchingWalletSession || embeddedPaySession);
+    const payerNeedsEmail = Boolean(canBindPayerEmail && !sessionInfo?.email);
+
+    const handleAuthenticateConnectedWallet = async () => {
+        if (!address || isWalletAuthenticating) return;
+        setIsWalletAuthenticating(true);
+        setWalletAuthenticationError(null);
+        setVerificationError(null);
+        try {
+            const accountResponse = await fetch("/api/auth/check-account", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ address }),
+            });
+            const account = await accountResponse.json().catch(() => ({}));
+            if (!accountResponse.ok) throw new Error(account.error || "Could not check this wallet account.");
+            if (!account.exists) {
+                throw new Error("This wallet does not have a SubScript user account yet. Create one, verify your email, then return to checkout.");
+            }
+            if (account.role === "ENTERPRISE") {
+                setIsRoleMismatch(true);
+                throw new Error("Merchant wallets cannot pay checkout links. Connect a personal user wallet.");
+            }
+            const nonceResponse = await fetch("/api/auth/nonce", { cache: "no-store" });
+            const nonceData = await nonceResponse.json().catch(() => ({}));
+            if (!nonceResponse.ok || !nonceData.nonce) throw new Error(nonceData.error || "Could not start wallet verification.");
+            const message = buildWalletAuthMessage({ address, nonce: nonceData.nonce, domain: window.location.host, uri: window.location.origin });
+            const signature = await signMessageAsync({ message });
+            const verifyResponse = await fetch("/api/auth/verify-signature", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ address, signature, nonce: nonceData.nonce }),
+            });
+            const verified = await verifyResponse.json().catch(() => ({}));
+            if (!verifyResponse.ok || !verified.success) throw new Error(verified.error || "Wallet verification failed.");
+            await refreshSession();
+        } catch (error: any) {
+            setWalletAuthenticationError(error.message || "Could not verify this wallet.");
+        } finally {
+            setIsWalletAuthenticating(false);
+        }
+    };
 
     const handleSendPayerEmailCode = async () => {
         setPayerEmailError(null);
@@ -235,7 +283,7 @@ export default function PublicPayClient({
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !data.success) throw new Error(data.error || "Could not verify your email.");
-            setPayerNeedsEmail(false);
+            await refreshSession();
             setPayerEmailStep("email");
             setPayerEmailCode("");
         } catch (error: any) {
@@ -332,8 +380,13 @@ export default function PublicPayClient({
         let cancelled = false;
         const poll = async () => {
             try {
-                const res = await fetch(`/api/payment-links/${linkData.id}/status`, { cache: "no-store" });
-                const data = await res.json();
+                const res = await fetch(`/api/payment-links/${linkData.id}/status?attempt=${encodeURIComponent(clientIntentId)}`, { cache: "no-store" });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || "Unable to check payment status");
+                if (!cancelled) {
+                    setRemoteStatusError(null);
+                    setLastRemoteStatusCheck(new Date());
+                }
                 const settlementVersion = typeof data?.settlementVersion === "string"
                     ? data.settlementVersion
                     : null;
@@ -350,18 +403,20 @@ export default function PublicPayClient({
                     if (data.receiptId) {
                         setReceiptId(data.receiptId);
                     }
+                    if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
                 }
             } catch (e) {
-                // ignore
+                if (!cancelled) setRemoteStatusError("Live payment status is temporarily unavailable. Retrying automatically…");
             }
         };
 
+        void poll();
         const interval = setInterval(poll, 3000);
         return () => {
             cancelled = true;
             clearInterval(interval);
         };
-    }, [isPaymentSettled, linkData?.id]);
+    }, [clientIntentId, isPaymentSettled, linkData?.id]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -472,13 +527,23 @@ export default function PublicPayClient({
         checkRole();
     }, [address, isUserRequest]);
 
-    const handleConnect = () => {
+    const handleConnect = async () => {
         const connector = connectors.find((item) => item.id === "injected") || connectors[0];
         if (!connector) {
             setVerificationError("No browser wallet connector is available. Install or unlock a wallet extension, then try again.");
             return;
         }
-        connect({ connector });
+        setVerificationError(null);
+        try {
+            await connectAsync({ connector });
+        } catch (err: any) {
+            const message = String(err?.shortMessage || err?.message || "");
+            setVerificationError(
+                /provider not found|no provider|not installed/i.test(message)
+                    ? "No browser wallet was detected. Install or unlock MetaMask or Rabby, then try again."
+                    : message || "The browser wallet could not be connected. Unlock it and try again."
+            );
+        }
     };
 
     const handleSwitchChain = async () => {
@@ -494,6 +559,26 @@ export default function PublicPayClient({
         setVerificationError(null);
         setVerificationStatus(null);
         setPayerEmailError(null);
+
+        const liveSession = await refreshSession();
+        const sessionMatchesWallet = Boolean(liveSession?.loggedIn && liveSession?.wallet && liveSession.wallet.toLowerCase() === address.toLowerCase());
+        if (!sessionMatchesWallet) {
+            setWalletAuthenticationError("Verify this connected wallet before paying.");
+            return;
+        }
+        if (!liveSession?.email) {
+            setPayerEmailError("A verified email and OTP confirmation are mandatory before payment.");
+            return;
+        }
+
+        if (isRoleMismatch || liveSession?.role === "ENTERPRISE") {
+            setVerificationError("Merchant accounts cannot pay checkout links. Sign in with a user account.");
+            return;
+        }
+        if (merchantVerified === false && !unverifiedAccepted && !isUserRequest) {
+            setShowUnverifiedWarning(true);
+            return;
+        }
 
         if (cannotPayLink) {
             setVerificationError(isLinkExhausted
@@ -682,6 +767,7 @@ export default function PublicPayClient({
                         payerAddress: payer || "",
                         receiptId: rid,
                         chainId: chain,
+                        checkoutAttemptId: clientIntentId,
                     })
                 });
 
@@ -711,6 +797,7 @@ export default function PublicPayClient({
                             settled = true;
                             eventSource.close();
                         } else if (data.status === "FAILED") {
+                            setVerificationStatus(null);
                             setVerificationError(data.errorMessage || "Payment verification failed");
                             setIsVerifying(false);
                             setIsPaying(false);
@@ -731,6 +818,7 @@ export default function PublicPayClient({
                     try {
                         const parsed = JSON.parse(data);
                         if (parsed?.message) {
+                            setVerificationStatus(null);
                             setVerificationError(parsed.message);
                             setIsVerifying(false);
                             setIsPaying(false);
@@ -747,12 +835,14 @@ export default function PublicPayClient({
                     if (settled) return;
                     console.error("EventSource connection error:", err);
                     eventSource.close();
+                    setVerificationStatus(null);
                     setVerificationError("Real-time stream disconnected. Please verify on explorer.");
                     setIsVerifying(false);
                     setIsPaying(false);
                     setIsEmbeddedPaying(false);
                 };
             } catch (err: any) {
+                setVerificationStatus(null);
                 setVerificationError(err.message || "Payment verification failed");
                 setIsVerifying(false);
                 setIsPaying(false);
@@ -760,11 +850,12 @@ export default function PublicPayClient({
             }
         };
         run();
-    }, [linkData]);
+    }, [clientIntentId, linkData]);
 
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && address && verifiedHash !== txHash) {
             if (txReceipt.status !== "success") {
+                setVerificationStatus(null);
                 setVerificationError("On-chain transaction reverted or failed.");
                 setIsPaying(false);
                 setIsVerifying(false);
@@ -775,9 +866,52 @@ export default function PublicPayClient({
         }
     }, [isConfirmed, txReceipt, txHash, linkData, address, verifiedHash, chainId, receiptId, startVerification]);
 
-    /* Logged-in embedded (Circle/email) wallet users can't sign the page's wagmi transactions, so
-       they pay on-page through the custody-signing endpoint instead of being bounced to DMs. */
-    const embeddedPaySession = Boolean(sessionInfo?.loggedIn && sessionInfo?.isEmbedded && sessionInfo?.wallet);
+    const beginPaymentReview = (mode: "embedded" | "wallet") => {
+        setVerificationError(null);
+        setWalletAuthenticationError(null);
+        if (cannotPayLink) {
+            setVerificationError(isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired.");
+            return;
+        }
+        if (isRoleMismatch || sessionInfo?.role === "ENTERPRISE") {
+            setVerificationError("Merchant accounts cannot pay checkout links. Sign in with a user account.");
+            return;
+        }
+        if (merchantVerified === false && !unverifiedAccepted && !isUserRequest) {
+            setShowUnverifiedWarning(true);
+            return;
+        }
+        if (mode === "wallet" && !hasMatchingWalletSession) {
+            setWalletAuthenticationError("Verify this connected wallet before continuing.");
+            paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+        if (!sessionInfo?.email) {
+            setPayerEmailError("Verify an email address with the emailed OTP before continuing.");
+            paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+        if (mode === "wallet" && isWrongChain) {
+            setVerificationError(`Switch to ${requiredChainName} before continuing.`);
+            return;
+        }
+        if (mode === "wallet" && (isInsufficientBalance || !hasSufficientArcBalance)) {
+            setVerificationError("Your Arc USDC balance is insufficient for this payment.");
+            return;
+        }
+        setReviewPaymentMode(mode);
+    };
+
+    const handlePayInBrowser = () => {
+        paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (embeddedPaySession) {
+            beginPaymentReview("embedded");
+        } else if (isConnected) {
+            beginPaymentReview("wallet");
+        } else {
+            handleConnect();
+        }
+    };
 
     const handleEmbeddedPay = async () => {
         if (!linkData) return;
@@ -815,6 +949,7 @@ export default function PublicPayClient({
             setVerificationStatus("Payment sent. Confirming settlement...");
             startVerification(hash, rid, sessionInfo?.wallet || "", expectedChainId);
         } catch (err: any) {
+            setVerificationStatus(null);
             setVerificationError(err.message || "Payment failed");
             setIsEmbeddedPaying(false);
             setIsVerifying(false);
@@ -824,9 +959,9 @@ export default function PublicPayClient({
     /* The verifying/settled panel is identical for browser and embedded wallets (it keys off
        verificationStatus, not the wallet), so it's shared by both branches below. */
     const verificationPanel = (
-        <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
-            <CheckCircle className="w-8 h-8 text-emerald-400" />
-            <p className="text-xs font-semibold text-white/80 leading-relaxed">{verificationStatus}</p>
+        <div className={`${isPaymentSettled ? "border-emerald-500/15 bg-emerald-500/5" : "border-amber-400/15 bg-amber-400/[0.04]"} border rounded-2xl p-5 text-center space-y-4 flex flex-col items-center`} aria-live="polite">
+            {isPaymentSettled ? <CheckCircle className="w-8 h-8 text-emerald-400" /> : <Loader2 className="w-8 h-8 animate-spin text-amber-300" />}
+            <p className={`text-xs font-semibold leading-relaxed ${isPaymentSettled ? "text-emerald-100/80" : "text-amber-100/80"}`}>{verificationStatus}</p>
             {shareableReceiptUrl && (
                 <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
                     Share receipt <ExternalLink className="w-3 h-3" />
@@ -889,6 +1024,25 @@ export default function PublicPayClient({
         </div>
     );
 
+    const embeddedEmailVerificationPanel = embeddedPaySession && payerNeedsEmail ? (
+        <div className="rounded-2xl border border-[#00d2b4]/20 bg-black/25 p-4 space-y-3 text-left">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#00d2b4]">Verify your email before payment</p>
+            <p className="text-[10px] leading-relaxed text-white/55">We will email a one-time code. Payment stays locked until the code is confirmed.</p>
+            {payerEmailStep === "email" ? <>
+                <input type="email" value={payerEmailInput} onChange={(event) => { setPayerEmailInput(event.target.value); setPayerEmailError(null); }} placeholder="you@example.com" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                <button type="button" onClick={handleSendPayerEmailCode} disabled={isSendingPayerEmailCode || !canBindPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                    {isSendingPayerEmailCode ? "Sending code…" : "Send verification code"}
+                </button>
+            </> : <>
+                <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={payerEmailCode} onChange={(event) => { setPayerEmailCode(event.target.value.replace(/\D/g, "")); setPayerEmailError(null); }} placeholder="6-digit code" className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-center text-xs tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/30 focus:border-[#00d2b4]/50 focus:outline-none" />
+                <button type="button" onClick={handleVerifyPayerEmail} disabled={isVerifyingPayerEmail} className="w-full rounded-xl bg-[#00d2b4] px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide text-black disabled:opacity-40">
+                    {isVerifyingPayerEmail ? "Verifying…" : "Verify email"}
+                </button>
+            </>}
+            {payerEmailError && <p className="text-[10px] font-mono text-red-400" role="alert">{payerEmailError}</p>}
+        </div>
+    ) : null;
+
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <AnimatedGradientBg />
@@ -899,7 +1053,7 @@ export default function PublicPayClient({
                     <h1 className="text-2xl font-extrabold text-white uppercase tracking-wider">
                         SubScript <span className="font-serif italic lowercase font-normal text-[#00d2b4]">checkout</span>
                     </h1>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Decentralized Payment Protocol</p>
+                    <p className="text-[10px] text-white/50 uppercase tracking-widest mt-1">Secure USDC checkout</p>
                 </div>
 
                 {isLoading ? (
@@ -933,7 +1087,7 @@ export default function PublicPayClient({
                                         Scan with your phone's wallet browser to complete this payment on mobile.
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 w-full flex items-center justify-center overflow-hidden">
+                                {!cannotPayLink ? <div className="bg-white rounded-2xl p-4 w-full flex items-center justify-center overflow-hidden">
                                     <QRCode
                                         value={checkoutUrl}
                                         size={320}
@@ -952,18 +1106,33 @@ export default function PublicPayClient({
                                         removeQrCodeBehindLogo={true}
                                         logoPadding={2}
                                     />
+                                </div> : <div className="flex min-h-[352px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-8 text-red-200">
+                                    <AlertTriangle className="h-10 w-10" />
+                                    <p className="text-xs font-bold uppercase tracking-wider">Checkout unavailable</p>
+                                    <p className="text-[10px] text-white/50">{isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired."}</p>
+                                </div>}
+                                <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-400/20 bg-amber-400/[0.05] text-amber-200" : "border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] text-[#00d2b4]"}`} aria-live="polite">
+                                    {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d2b4] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#00d2b4]" /></span>}
+                                    {cannotPayLink ? "Payment unavailable" : remoteStatusError || `Waiting for payment${lastRemoteStatusCheck ? ` · checked ${lastRemoteStatusCheck.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}`}
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                                    className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20"
+                                    onClick={handlePayInBrowser}
+                                    disabled={cannotPayLink}
+                                    className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                    Pay in this browser
+                                    {cannotPayLink ? "Payment unavailable" : "Pay in this browser"}
                                 </button>
                             </aside>
                         )}
 
                         <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden bg-black/40 lg:flex-1 lg:min-w-0">
+
+                        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/5 bg-black/25 p-2 text-center text-[9px] font-bold uppercase tracking-wider">
+                            <span className={isPaymentSettled ? "text-white/40" : "text-[#00d2b4]"}>1 · Account</span>
+                            <span className={reviewPaymentMode ? "text-[#00d2b4]" : "text-white/40"}>2 · Review</span>
+                            <span className={isPaymentSettled ? "text-emerald-300" : "text-white/40"}>3 · Confirmed</span>
+                        </div>
 
                         {/* Role Mismatch Warning Banner */}
                         {isRoleMismatch && (
@@ -1068,7 +1237,7 @@ export default function PublicPayClient({
                         <div ref={paymentControlsRef}>
                         {!isConnected ? (
                             <div className="space-y-4">
-                              {(embeddedPaySession && verificationStatus) ? verificationPanel : (
+                              {(verificationStatus && !verificationError) ? verificationPanel : (
                                 <>
                                 {/* Embedded (Circle/email) wallet: pay on-page from the SubScript wallet
                                     balance — no browser wallet to connect, and no DM detour for one-time
@@ -1078,9 +1247,10 @@ export default function PublicPayClient({
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
                                         </p>
+                                        {embeddedEmailVerificationPanel}
                                         <button
-                                            onClick={handleEmbeddedPay}
-                                            disabled={isEmbeddedPaying || !clientIntentId || cannotPayLink}
+                                            onClick={() => beginPaymentReview("embedded")}
+                                            disabled={isEmbeddedPaying || !clientIntentId || cannotPayLink || payerNeedsEmail}
                                             className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                         >
                                             {isEmbeddedPaying ? (
@@ -1139,7 +1309,12 @@ export default function PublicPayClient({
                                         {walletConnectors.map((connector) => (
                                             <button
                                                 key={connector.uid}
-                                                onClick={() => connect({ connector })}
+                                                onClick={() => {
+                                                    setVerificationError(null);
+                                                    void connectAsync({ connector }).catch((error: any) => {
+                                                        setVerificationError(error?.shortMessage || error?.message || "The browser wallet could not be connected.");
+                                                    });
+                                                }}
                                                 disabled={isConnecting}
                                                 className="w-full py-3.5 bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                                             >
@@ -1200,6 +1375,26 @@ export default function PublicPayClient({
                                     )}
                                 </div>
 
+                                {isSessionLoading ? (
+                                    <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-[10px] text-white/55"><Loader2 className="h-4 w-4 animate-spin" /> Checking SubScript account…</div>
+                                ) : hasMatchingWalletSession && sessionInfo?.email ? (
+                                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-left">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Ready to pay</p>
+                                        <p className="mt-1 text-[11px] text-white/70">Signed in as <span className="font-bold text-white">{sessionInfo.email}</span></p>
+                                        <p className="mt-1 text-[9px] text-white/40">Wallet ownership and email OTP are verified.</p>
+                                    </div>
+                                ) : !hasMatchingWalletSession ? (
+                                    <div className="space-y-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-4 text-left">
+                                        <div>
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Verify this wallet</p>
+                                            <p className="mt-1 text-[10px] leading-relaxed text-white/55">A wallet signature confirms ownership. After that, a verified email OTP is mandatory before payment.</p>
+                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[9px] text-white/40">This browser is currently signed in as {shortenAddress(sessionInfo.wallet)}.</p>}
+                                        </div>
+                                        <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:opacity-50">{isWalletAuthenticating ? "Waiting for signature…" : "Verify connected wallet"}</button>
+                                        {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-300" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#00d2b4] underline">Create a user account</a>}</div>}
+                                    </div>
+                                ) : null}
+
                                 {isWrongChain ? (
                                     <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 space-y-4">
                                         <div className="flex items-center gap-3">
@@ -1219,7 +1414,7 @@ export default function PublicPayClient({
                                             Switch to {requiredChainName}
                                         </button>
                                     </div>
-                                ) : verificationStatus ? (
+                                ) : verificationStatus && !verificationError ? (
                                     verificationPanel
                                 ) : (
                                     <div className="space-y-4">
@@ -1279,7 +1474,13 @@ export default function PublicPayClient({
                                             </div>
                                         )}
 
-                                        {isRoleMismatch ? (
+                                        {!hasMatchingWalletSession ? (
+                                            <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full py-4 border border-amber-400/25 bg-amber-400/[0.06] text-amber-200 font-bold rounded-2xl text-xs uppercase tracking-wider disabled:opacity-50">
+                                                {isWalletAuthenticating ? "Verifying wallet…" : "Verify wallet to continue"}
+                                            </button>
+                                        ) : payerNeedsEmail ? (
+                                            <button type="button" disabled className="w-full py-4 border border-amber-400/25 bg-amber-400/[0.06] text-amber-200 font-bold rounded-2xl text-xs uppercase tracking-wider cursor-not-allowed">Verify email OTP to continue</button>
+                                        ) : isRoleMismatch ? (
                                              <button
                                                  type="button"
                                                  disabled={true}
@@ -1314,7 +1515,7 @@ export default function PublicPayClient({
                                         ) : (
                                             <button
                                                 type="button"
-                                                onClick={handlePay}
+                                                onClick={() => beginPaymentReview("wallet")}
                                                 disabled={isPaying || isConfirming}
                                                 className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                             >
@@ -1390,10 +1591,51 @@ export default function PublicPayClient({
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
                         </div>
+                        {!isPaymentSettled && !(txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
+                            merchantCancelUrl ? (
+                                <a href={merchantCancelUrl} className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/50 underline hover:text-white">
+                                    Cancel and return to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="h-3 w-3" />
+                                </a>
+                            ) : (
+                                <button type="button" onClick={() => window.history.length > 1 ? window.history.back() : router.push("/")} className="mx-auto block text-[10px] font-bold text-white/50 underline hover:text-white">
+                                    Exit checkout
+                                </button>
+                            )
+                        )}
+                        {!isPaymentSettled && (txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
+                            <p className="text-center text-[10px] font-medium leading-relaxed text-amber-200/70">Payment submitted — keep this page open while settlement is confirmed.</p>
+                        )}
                         </div>
                     </div>
                 )}
             </div>
+
+            <AnimatePresence>
+                {reviewPaymentMode && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="checkout-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-[#09090b] p-6 text-left shadow-2xl">
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4]">Final review</p>
+                                <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-white">Confirm your payment</h3>
+                            </div>
+                            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs">
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold text-white">{linkData?.merchant_name_snapshot || shortenAddress(linkData?.merchant_address || "")}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-white/45">You pay</span><span className="font-bold text-white">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
+                                {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-white/45">Estimated value</span><span className="font-bold text-white">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Network</span><span className="font-bold text-white">{requiredChainName}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Paying wallet</span><span className="font-mono text-[10px] font-bold text-white">{shortenAddress((reviewPaymentMode === "embedded" ? sessionInfo?.wallet : address) || "")}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Wallet prompts</span><span className="text-right font-bold text-white">{reviewPaymentMode === "embedded" ? "No browser signature" : isUserRequest ? "1 transfer signature" : "Approval + payment"}</span></div>
+                                <div className="space-y-1"><span className="text-white/45">Recipient</span><p className="break-all font-mono text-[10px] text-white/75">{linkData?.merchant_address}</p></div>
+                            </div>
+                            <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">On-chain payments cannot be reversed. Only continue if the merchant, amount, and recipient are correct.</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button type="button" onClick={() => setReviewPaymentMode(null)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>
+                                <button type="button" onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black">Confirm payment</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             <AnimatePresence>
                 {showUnverifiedWarning && (
@@ -1402,6 +1644,9 @@ export default function PublicPayClient({
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="unverified-merchant-title"
                             className="w-full max-w-md liquid-glass border border-amber-500/30 rounded-3xl p-6 shadow-2xl space-y-6 bg-black/90 text-left relative overflow-hidden"
                         >
                             <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10" />
@@ -1410,7 +1655,7 @@ export default function PublicPayClient({
                                     <ShieldAlert className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="text-base font-bold text-white uppercase tracking-wider">Unverified Merchant</h3>
+                                    <h3 id="unverified-merchant-title" className="text-base font-bold text-white uppercase tracking-wider">Unverified Merchant</h3>
                                     <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Security Advisory</p>
                                 </div>
                             </div>
