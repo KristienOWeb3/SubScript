@@ -4,7 +4,10 @@
  * database transaction open while querying the chain or delivering side effects.
  */
 
-CREATE TABLE public.payment_link_verification_jobs (
+/* The production table may already exist when this migration was applied
+   out-of-band before the repository ledger recorded it. Keep creation safe to
+   replay, then validate the columns required by the worker before continuing. */
+CREATE TABLE IF NOT EXISTS public.payment_link_verification_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     execution_key TEXT NOT NULL UNIQUE,
     tx_hash TEXT NOT NULL UNIQUE,
@@ -40,16 +43,74 @@ CREATE TABLE public.payment_link_verification_jobs (
         CHECK (payer_address ~ '^0x[0-9a-f]{40}$')
 );
 
+DO $$
+DECLARE
+    v_missing_columns TEXT;
+BEGIN
+    SELECT string_agg(required.column_name, ', ' ORDER BY required.column_name)
+    INTO v_missing_columns
+    FROM (VALUES
+        ('id'),
+        ('execution_key'),
+        ('tx_hash'),
+        ('chain_id'),
+        ('payment_link_id'),
+        ('payer_address'),
+        ('receipt_id'),
+        ('merchant_address'),
+        ('beneficiary_address'),
+        ('amount_usdc'),
+        ('settles_directly_to_user'),
+        ('payment_title'),
+        ('external_reference'),
+        ('merchant_name_snapshot'),
+        ('checkout_attempt_id'),
+        ('request_origin'),
+        ('status'),
+        ('attempts'),
+        ('max_attempts'),
+        ('next_attempt_at'),
+        ('lease_token'),
+        ('lease_expires_at'),
+        ('last_error'),
+        ('completed_at'),
+        ('created_at'),
+        ('updated_at')
+    ) AS required(column_name)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns AS existing
+        WHERE existing.table_schema = 'public'
+          AND existing.table_name = 'payment_link_verification_jobs'
+          AND existing.column_name = required.column_name
+    );
+
+    IF v_missing_columns IS NOT NULL THEN
+        RAISE EXCEPTION
+            'Existing payment_link_verification_jobs table is incompatible; missing columns: %',
+            v_missing_columns;
+    END IF;
+END;
+$$;
+
 ALTER TABLE public.payment_link_verification_jobs ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.payment_link_verification_jobs FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.payment_link_verification_jobs TO service_role;
 
-CREATE INDEX payment_link_verification_jobs_ready_idx
+/* Reassert uniqueness for an existing out-of-band table. The names match the
+   indexes PostgreSQL creates for the inline UNIQUE declarations above. */
+CREATE UNIQUE INDEX IF NOT EXISTS payment_link_verification_jobs_execution_key_key
+    ON public.payment_link_verification_jobs (execution_key);
+
+CREATE UNIQUE INDEX IF NOT EXISTS payment_link_verification_jobs_tx_hash_key
+    ON public.payment_link_verification_jobs (tx_hash);
+
+CREATE INDEX IF NOT EXISTS payment_link_verification_jobs_ready_idx
     ON public.payment_link_verification_jobs (next_attempt_at, created_at)
     WHERE status IN ('PENDING', 'RETRY');
 
-CREATE INDEX payment_link_verification_jobs_expired_lease_idx
+CREATE INDEX IF NOT EXISTS payment_link_verification_jobs_expired_lease_idx
     ON public.payment_link_verification_jobs (lease_expires_at, created_at)
     WHERE status = 'PROCESSING';
 

@@ -47,9 +47,18 @@ test("the reconciliation keeper resumes durable payment-link verification", () =
     assert.match(route, /after\(async \(\) => \{[\s\S]*processPaymentLinkVerificationJobs\(supabase, 1\)/);
     assert.match(route, /durable job is already committed/i);
     assert.ok(
-        vercel.crons.some((entry) => entry.path === "/api/cron/reconcile" && entry.schedule === "*/5 * * * *"),
-        "Vercel must invoke the durable reconciliation endpoint every five minutes",
+        vercel.crons.some((entry) => entry.path === "/api/cron/reconcile" && entry.schedule === "0 2 * * *"),
+        "Vercel Hobby must invoke the durable reconciliation endpoint no more than once daily",
     );
+});
+
+test("the verification outbox migration safely converges an existing table", () => {
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.payment_link_verification_jobs/i);
+    assert.match(migration, /Existing payment_link_verification_jobs table is incompatible; missing columns/i);
+    assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS payment_link_verification_jobs_execution_key_key/i);
+    assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS payment_link_verification_jobs_tx_hash_key/i);
+    assert.match(migration, /CREATE INDEX IF NOT EXISTS payment_link_verification_jobs_ready_idx/i);
+    assert.match(migration, /CREATE INDEX IF NOT EXISTS payment_link_verification_jobs_expired_lease_idx/i);
 });
 
 test("the outbox and privileged functions are service-only", () => {
