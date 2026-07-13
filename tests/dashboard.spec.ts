@@ -148,6 +148,9 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
       await page.locator('button').filter({ hasText: /^Roll$/ }).click();
+      const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
+      await expect(confirmation).toBeVisible();
+      await confirmation.getByRole("button", { name: "Rotate Key", exact: true }).click();
       await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 10000 });
     });
 
@@ -190,17 +193,12 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await expect(page.locator("text=successfully re-delivered")).toBeVisible();
     });
 
-    test("should configure off-ramp settlement split", async ({ page }) => {
+    test("should keep off-ramp settlement disabled", async ({ page }) => {
       await page.goto("/dashboard?tab=offramp");
-      await expect(page.getByRole("heading", { name: /Fiat Escape Hatch \(Off-Ramp\)/ })).toBeVisible();
-      
-      // Get offramp slider
-      const slider = page.locator('input[type="range"]');
-      await expect(slider).toBeVisible();
-      
-      // Move slider
-      await slider.fill("45");
-      await expect(page.locator("text=45%")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Fiat off-ramp", exact: true })).toBeVisible();
+      await expect(page.getByText("Coming soon", { exact: true })).toBeVisible();
+      await expect(page.getByText(/Bank settlement routing is not yet available/)).toBeVisible();
+      await expect(page.locator('input[type="range"]')).toHaveCount(0);
     });
   });
 
