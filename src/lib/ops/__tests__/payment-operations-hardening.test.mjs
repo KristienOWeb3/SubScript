@@ -40,6 +40,9 @@ test("distributed limiter is atomic, privacy-preserving, and fails closed at cal
     assert.match(limiter, /on conflict \(scope, key_hash, window_started_at\)/);
     assert.match(limiter, /request_count = public\.api_rate_limit_windows\.request_count \+ 1/);
     assert.match(limiter, /delete from public\.api_rate_limit_windows/);
+    assert.match(limiter, /make_interval\(secs => \$3::integer\)/);
+    assert.match(limiter, /\[scope, rateLimitKeyDigest\(key\), windowSeconds\]/);
+    assert.doesNotMatch(limiter, /\$4::integer/);
     assert.match(migration, /api_rate_limit_windows_expiry_idx/);
     assert.match(migration, /ALTER TABLE public\.api_rate_limit_windows ENABLE ROW LEVEL SECURITY/i);
     assert.match(migration, /REVOKE ALL ON TABLE public\.api_rate_limit_windows FROM PUBLIC, anon, authenticated/i);

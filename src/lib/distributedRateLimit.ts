@@ -50,7 +50,7 @@ export async function consumeDistributedRateLimit({
     const row = await pgMaybeOne<RateLimitRow>(
         `with params as (
             select to_timestamp(
-                floor(extract(epoch from statement_timestamp()) / $4::integer) * $4::integer
+                floor(extract(epoch from statement_timestamp()) / $3::integer) * $3::integer
             ) as window_start
         ), cleanup as (
             delete from public.api_rate_limit_windows
@@ -63,7 +63,7 @@ export async function consumeDistributedRateLimit({
                 request_count,
                 expires_at
             )
-            select $1, $2, window_start, 1, window_start + make_interval(secs => $4::integer)
+            select $1, $2, window_start, 1, window_start + make_interval(secs => $3::integer)
             from params
             on conflict (scope, key_hash, window_started_at)
             do update set
@@ -72,7 +72,7 @@ export async function consumeDistributedRateLimit({
             returning request_count, expires_at
         )
         select request_count, expires_at from consumed`,
-        [scope, rateLimitKeyDigest(key), limit, windowSeconds],
+        [scope, rateLimitKeyDigest(key), windowSeconds],
     );
 
     if (!row) throw new Error("Rate-limit counter did not return a result");
@@ -86,4 +86,3 @@ export async function consumeDistributedRateLimit({
         remaining: Math.max(0, limit - requestCount),
     };
 }
-
