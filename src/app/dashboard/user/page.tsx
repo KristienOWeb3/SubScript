@@ -31,6 +31,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
+import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
 import {
@@ -78,6 +79,7 @@ import {
 import type { LucideIcon } from "@/components/icons";
 import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
+import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
@@ -286,6 +288,16 @@ export default function UserDashboard() {
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel?: string;
+    variant: "danger" | "warning" | "default";
+    onConfirm: () => void;
+    onCancel?: () => void;
+  } | null>(null);
 
   const triggerToast = (message: string) => {
     setToastMessage(message);
@@ -1090,9 +1102,8 @@ export default function UserDashboard() {
 
     /* Plan reductions are intentionally unavailable. Compare normalized recurring rates so a
        longer billing period cannot disguise a cheaper tier as an upgrade. */
-    let mode: "scheduled" | "immediate" = "scheduled";
+    let isUpgrade = false;
     if (activeSub) {
-      let isUpgrade = false;
       try {
         const comparison = compareRecurringRates(
           BigInt(plan.amountUsdc),
@@ -1110,46 +1121,62 @@ export default function UserDashboard() {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
       }
-      if (isUpgrade) {
-        const now = window.confirm(
-          `Upgrade to ${plan.name}?\n\n`
-          + `OK — upgrade now: you'll pay a prorated amount for the rest of the current period, and the new rate bills from the next renewal.\n\n`
-          + `Cancel — switch at renewal: keep your current plan until it renews, then the new rate starts automatically (no charge today).`
-        );
-        mode = now ? "immediate" : "scheduled";
-      }
     }
 
-    const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
-    await runAction(actionKey, async () => {
-      setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
-      setPlanManagerError(null);
-      const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
-      const body = activeSub
-        ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-        : { planId: plan.id };
-      /* Subscribing charges the first payment server-side; a retry with the same x-request-id
-         dedupes at Circle instead of creating (and charging) a second subscription. */
-      subscribeRequestKey.current ||= crypto.randomUUID();
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
-        body: JSON.stringify(body),
+    const applyPlanChange = async (mode: "scheduled" | "immediate") => {
+      const actionKey = activeSub ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+      await runAction(actionKey, async () => {
+        setPlanManagerStatus(activeSub ? "Switching plan on-chain..." : "Creating subscription on-chain...");
+        setPlanManagerError(null);
+        const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
+        const body = activeSub
+          ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
+          : { planId: plan.id };
+        /* Subscribing charges the first payment server-side; a retry with the same x-request-id
+           dedupes at Circle instead of creating (and charging) a second subscription. */
+        subscribeRequestKey.current ||= crypto.randomUUID();
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-request-id": subscribeRequestKey.current },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
+        subscribeRequestKey.current = null;
+        const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
+        setPlanManagerStatus(
+          activeSub
+            ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
+            : `Subscribed to ${data.planName || plan.name}.`
+        );
+        triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
+        await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+      }).catch((err: any) => {
+        setPlanManagerError(err.message || "Subscription transaction failed.");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Subscription transaction failed.");
-      subscribeRequestKey.current = null;
-      const charged = data.proratedChargeUsdc ? ` Charged ${data.proratedChargeUsdc} USDC now.` : "";
-      setPlanManagerStatus(
-        activeSub
-          ? `${data.effective || `Switched to ${data.planName || plan.name}.`}${charged}`
-          : `Subscribed to ${data.planName || plan.name}.`
-      );
-      triggerToast(activeSub ? "Plan change applied" : "Subscription created on-chain");
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Subscription transaction failed.");
-    });
+    };
+
+    if (isUpgrade) {
+      setConfirmModal({
+        open: true,
+        title: `Upgrade to ${plan.name}`,
+        description: "Upgrade now to pay the prorated amount for the rest of this period, or switch at renewal with no charge today.",
+        confirmLabel: "Upgrade Now",
+        cancelLabel: "At Renewal",
+        variant: "default",
+        onConfirm: () => {
+          setConfirmModal(null);
+          void applyPlanChange("immediate");
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          void applyPlanChange("scheduled");
+        },
+      });
+      return;
+    }
+
+    await applyPlanChange("scheduled");
   };
 
   const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
@@ -1158,31 +1185,47 @@ export default function UserDashboard() {
       setPlanManagerError("No active subscription found for this merchant.");
       return;
     }
-    if (!window.confirm("Cancel this subscription on-chain now? Access may stop immediately.")) return;
-    await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
-      setPlanManagerStatus("Cancelling subscription...");
-      setPlanManagerError(null);
-      const res = await fetch("/api/user/subscription/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+    await new Promise<void>((resolve) => {
+      setConfirmModal({
+        open: true,
+        title: "Cancel Subscription",
+        description: "This will cancel the subscription on-chain. Access may stop immediately, and the cancellation cannot be undone.",
+        confirmLabel: "Cancel Plan",
+        variant: "warning",
+        onConfirm: async () => {
+          setConfirmModal(null);
+          await runAction(`cancel-sub-${activeSub.subscriptionId}`, async () => {
+            setPlanManagerStatus("Cancelling subscription...");
+            setPlanManagerError(null);
+            const res = await fetch("/api/user/subscription/cancel", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ subscriptionId: activeSub.subscriptionId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
+            if (data.message) {
+              setPlanManagerStatus(data.message);
+              triggerToast("Subscription cancelled");
+            } else if (data.cancelAtPeriodEnd && data.accessUntil) {
+              const until = new Date(data.accessUntil).toLocaleDateString();
+              setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
+              triggerToast(`Cancelled — access until ${until}`);
+            } else {
+              setPlanManagerStatus("Subscription cancelled on-chain.");
+              triggerToast("Subscription cancelled on-chain");
+            }
+            await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
+          }).catch((err: any) => {
+            setPlanManagerError(err.message || "Cancel transaction failed.");
+          });
+          resolve();
+        },
+        onCancel: () => {
+          setConfirmModal(null);
+          resolve();
+        },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || "Cancel transaction failed.");
-      if (data.message) {
-        setPlanManagerStatus(data.message);
-        triggerToast("Subscription cancelled");
-      } else if (data.cancelAtPeriodEnd && data.accessUntil) {
-        const until = new Date(data.accessUntil).toLocaleDateString();
-        setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
-        triggerToast(`Cancelled — access until ${until}`);
-      } else {
-        setPlanManagerStatus("Subscription cancelled on-chain.");
-        triggerToast("Subscription cancelled on-chain");
-      }
-      await Promise.all([loadSubscriptions(), loadDms(), refetchUsdc().catch(() => {})]);
-    }).catch((err: any) => {
-      setPlanManagerError(err.message || "Cancel transaction failed.");
     });
   };
 
@@ -1438,6 +1481,12 @@ export default function UserDashboard() {
   const submitVaultAction = async (event?: React.FormEvent, opts?: { acknowledgedUnverified?: boolean }) => {
     event?.preventDefault();
     setVaultActionError(null);
+    /* /api/auth/session only exposes emails returned by getVerifiedAccountEmail, so userEmail is
+       the client-side source of truth for the same OTP/trusted-provider check enforced server-side. */
+    if (vaultActionMode === "commit" && !userEmail) {
+      setVaultActionError("Verify your email before committing.");
+      return;
+    }
     if (!vaultActionAmount || isNaN(Number(vaultActionAmount)) || Number(vaultActionAmount) <= 0) {
       setVaultActionError("Enter a valid amount.");
       return;
@@ -1598,33 +1647,36 @@ export default function UserDashboard() {
     const domainName = dnsDomain.endsWith(".sub") ? dnsDomain : `${dnsDomain}.sub`;
 
     /* Make sure the user understands the once-a-year limit before they commit. */
-    if (!window.confirm(
-      `Set your DNS name to "${domainName}"?\n\n`
-      + `You can only change your .sub name once every 365 days. After this you won't be able to change it again for a year, so make sure it's right.`
-    )) {
-      return;
-    }
+    setConfirmModal({
+      open: true,
+      title: "Confirm DNS Name",
+      description: `Set your DNS name to "${domainName}"? You can only change your .sub name once every 365 days, so make sure it is correct.`,
+      confirmLabel: "Set Name",
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDnsLoading(true);
+        setDnsError(null);
+        setDnsSuccess(null);
 
-    setDnsLoading(true);
-    setDnsError(null);
-    setDnsSuccess(null);
-
-    try {
-      const res = await fetch("/api/merchant/alias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alias: domainName }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to register domain.");
-      setDnsSuccess(`Successfully registered ${domainName}.`);
-      setRegisteredDomain(domainName);
-      setDnsDomain("");
-    } catch (err: any) {
-      setDnsError(err.message || "Network error registering DNS domain.");
-    } finally {
-      setDnsLoading(false);
-    }
+        try {
+          const res = await fetch("/api/merchant/alias", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ alias: domainName }),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || "Failed to register domain.");
+          setDnsSuccess(`Successfully registered ${domainName}.`);
+          setRegisteredDomain(domainName);
+          setDnsDomain("");
+        } catch (err: any) {
+          setDnsError(err.message || "Network error registering DNS domain.");
+        } finally {
+          setDnsLoading(false);
+        }
+      },
+    });
   };
 
   const handleProfilePicUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -4074,7 +4126,7 @@ export default function UserDashboard() {
                                   </td>
                                   <td className="py-4">
                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === "CONFIRMED" ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
-                                      {tx.status}
+                                      {humanStatus(tx.status)}
                                     </span>
                                   </td>
                                   <td className="py-4 text-right">
@@ -4478,7 +4530,7 @@ export default function UserDashboard() {
                   </div>
                   <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 shadow-2xl flex flex-col justify-between">
                     <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">Program Status</span>
-                    <span className="mt-2 font-mono text-base font-black text-emerald-400">ACTIVE</span>
+                    <span className="mt-2 font-mono text-base font-black text-emerald-400">Active</span>
                   </div>
                 </div>
 
@@ -4519,7 +4571,7 @@ export default function UserDashboard() {
                               <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
-                                  {ref.status}
+                                  {humanStatus(ref.status)}
                                 </span>
                               </td>
                             </tr>
@@ -4863,6 +4915,19 @@ export default function UserDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmModal && (
+        <ConfirmModal
+          open={confirmModal.open}
+          title={confirmModal.title}
+          description={confirmModal.description}
+          confirmLabel={confirmModal.confirmLabel}
+          cancelLabel={confirmModal.cancelLabel}
+          variant={confirmModal.variant}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+        />
+      )}
 
       {/* Blocking email capture — an email is required for receipts and notifications.
           Shown for accounts that don't have one yet (e.g. wallet-onboarded payers). */}
@@ -5267,7 +5332,7 @@ function SubscriptionRow({ subscription, balanceVisible }: { subscription: Subsc
         <p className="text-xs font-black text-[#ccff00]">
           {balanceVisible ? `${formatUsdc(subscription.amountCapUsdc)} USDC` : "•••• USDC"}
         </p>
-        <p className="text-[9px] uppercase text-white/35">{subscription.status}</p>
+        <p className="text-[9px] uppercase text-white/35">{humanSubscriptionStatus(subscription.status)}</p>
       </div>
     </div>
   );
@@ -5505,7 +5570,7 @@ function DmBubble({
               incoming ? "text-[#ccff00]" : "text-white/70"
             }`}
           >
-            {dm.messageType.replace(/_/g, " ")}
+            {humanStatus(dm.messageType)}
           </p>
           
           {isRequest ? (
@@ -5664,7 +5729,7 @@ function DmBubble({
 
           {dm.messageType === "CHURN_SURVEY" && !isPending && (
             <span className="text-[10px] font-sans font-black uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 border border-[#ccff00]/20 px-4 py-1.5 rounded-full select-none shadow-[0_2px_12px_rgba(204,255,0,0.06)]">
-              Response: {dm.status.replace(/_/g, " ")}
+              Response: {humanStatus(dm.status)}
             </span>
           )}
         </div>

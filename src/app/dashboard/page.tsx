@@ -15,6 +15,7 @@ import AnimatedBottomNavButton from "@/components/AnimatedBottomNavButton";
 import LiquidGlassEffect from "@/components/LiquidGlassEffect";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
+import ConfirmModal from "@/components/ConfirmModal";
 import DurationPicker from "@/components/DurationPicker";
 import SharePlanModal from "@/components/SharePlanModal";
 import KycVerificationPanel from "@/components/KycVerificationPanel";
@@ -225,6 +226,16 @@ export default function DashboardPage() {
     const [createdLinkInfo, setCreatedLinkInfo] = useState<{ id: string; title: string; checkoutUrl: string } | null>(null);
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState("");
+    const [confirmModal, setConfirmModal] = useState<{
+        open: boolean;
+        title: string;
+        description: string;
+        confirmLabel: string;
+        cancelLabel?: string;
+        variant: "danger" | "warning" | "default";
+        onConfirm: () => void;
+        onCancel?: () => void;
+    } | null>(null);
     const [linkCopyFeedback, setLinkCopyFeedback] = useState<{ [id: string]: boolean }>({});
     const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
     const [showLinkAdvanced, setShowLinkAdvanced] = useState(true);
@@ -988,30 +999,39 @@ export default function DashboardPage() {
             setPayoutDestinationError("Enter a valid EVM wallet address before saving.");
             return;
         }
-        if (!window.confirm(`Save ${normalized || "no address"} as the default payout destination? This changes the saved destination but does not move funds now.`)) return;
-        setSavingSettingsField("payoutDestination");
-        setPayoutDestinationError(null);
-        try {
-            const res = await fetch("/api/user/settings", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ payoutDestination: normalized })
-            });
-            const data = await res.json();
-            if (data.success) {
-                setUserSettings((prev: any) => ({ ...prev, payoutDestination: normalized }));
-                setToastMessage("Payout destination updated");
-                setShowToast(true);
-                setTimeout(() => setShowToast(false), 3000);
-            } else {
-                setPayoutDestinationError(data.error || "Could not save the payout destination.");
-            }
-        } catch (err) {
-            console.error("Error updating payout destination:", err);
-            setPayoutDestinationError("Network error. Your previous payout destination is still saved.");
-        } finally {
-            setSavingSettingsField(null);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Update Payout Destination",
+            description: `Save ${normalized || "no address"} as the default payout destination? This changes the saved destination but does not move funds now.`,
+            confirmLabel: "Save",
+            variant: "warning",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setSavingSettingsField("payoutDestination");
+                setPayoutDestinationError(null);
+                try {
+                    const res = await fetch("/api/user/settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ payoutDestination: normalized })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setUserSettings((prev: any) => ({ ...prev, payoutDestination: normalized }));
+                        setToastMessage("Payout destination updated");
+                        setShowToast(true);
+                        setTimeout(() => setShowToast(false), 3000);
+                    } else {
+                        setPayoutDestinationError(data.error || "Could not save the payout destination.");
+                    }
+                } catch (err) {
+                    console.error("Error updating payout destination:", err);
+                    setPayoutDestinationError("Network error. Your previous payout destination is still saved.");
+                } finally {
+                    setSavingSettingsField(null);
+                }
+            },
+        });
     };
 
     const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1373,20 +1393,29 @@ export default function DashboardPage() {
     };
 
     const handleDeleteLink = async (linkId: string) => {
-        if (!confirm("Are you sure you want to delete this payment link?")) return;
-        try {
-            const res = await fetch(`/api/payment-links/${linkId}`, {
-                method: "DELETE",
-            });
-            if (res.ok) {
-                await fetchPaymentLinks();
-            } else {
-                const data = await res.json();
-                console.error("Failed to delete payment link:", data.error);
-            }
-        } catch (err) {
-            console.error("Error deleting payment link:", err);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Delete Payment Link",
+            description: "This payment link will be permanently deleted. Any pending checkouts using this link will stop working. This cannot be undone.",
+            confirmLabel: "Delete",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                try {
+                    const res = await fetch(`/api/payment-links/${linkId}`, {
+                        method: "DELETE",
+                    });
+                    if (res.ok) {
+                        await fetchPaymentLinks();
+                    } else {
+                        const data = await res.json();
+                        console.error("Failed to delete payment link:", data.error);
+                    }
+                } catch (err) {
+                    console.error("Error deleting payment link:", err);
+                }
+            },
+        });
     };
 
     const getPublicCheckoutUrl = (linkId: string, checkoutUrl?: string | null) => {
@@ -1778,18 +1807,27 @@ export default function DashboardPage() {
     };
 
     const handleDeleteWebhook = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this webhook endpoint?")) return;
-        try {
-            const res = await fetch(`/api/webhooks/endpoints?id=${id}`, {
-                method: "DELETE",
-            });
-            const data = await res.json();
-            if (data.success) {
-                setWebhookEndpoints(prev => prev.filter(e => e.id !== id));
-            }
-        } catch (err) {
-            console.error("Error deleting endpoint:", err);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Delete Webhook Endpoint",
+            description: "This endpoint will stop receiving webhook events immediately. This cannot be undone.",
+            confirmLabel: "Delete",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                try {
+                    const res = await fetch(`/api/webhooks/endpoints?id=${id}`, {
+                        method: "DELETE",
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setWebhookEndpoints(prev => prev.filter(e => e.id !== id));
+                    }
+                } catch (err) {
+                    console.error("Error deleting endpoint:", err);
+                }
+            },
+        });
     };
 
 
@@ -1922,20 +1960,29 @@ export default function DashboardPage() {
     };
 
     const handleRollKeys = async () => {
-        if (!window.confirm("Rotate the production API key? The current key will stop working immediately and existing integrations may fail until updated.")) return;
-        setIsRolling(true);
-        try {
-            const res = await fetch("/api/keys", { method: "POST" });
-            const data = await res.json();
-            if (data.key) {
-                setApiKeys([data.key]);
-                handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
-            }
-        } catch (err) {
-            console.error("Error rolling keys:", err);
-        } finally {
-            setIsRolling(false);
-        }
+        setConfirmModal({
+            open: true,
+            title: "Rotate API Key",
+            description: "The current production key will stop working immediately. Existing integrations will fail until they are updated with the new key.",
+            confirmLabel: "Rotate Key",
+            variant: "danger",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setIsRolling(true);
+                try {
+                    const res = await fetch("/api/keys", { method: "POST" });
+                    const data = await res.json();
+                    if (data.key) {
+                        setApiKeys([data.key]);
+                        handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
+                    }
+                } catch (err) {
+                    console.error("Error rolling keys:", err);
+                } finally {
+                    setIsRolling(false);
+                }
+            },
+        });
     };
 
     const handleRetryCharge = async (rawId: string) => {
@@ -2081,35 +2128,41 @@ export default function DashboardPage() {
             return;
         }
 
-        if (!confirm("Are you sure you want to cancel your Privacy Premium plan? Your Privacy Premium benefits will remain active until the end of your current billing period.")) {
-            return;
-        }
+        setConfirmModal({
+            open: true,
+            title: "Cancel Privacy Premium",
+            description: "Your Privacy Premium benefits will remain active until the end of the current billing period. You can resume before that date.",
+            confirmLabel: "Cancel Plan",
+            variant: "warning",
+            onConfirm: async () => {
+                setConfirmModal(null);
+                setIsCancellingPremium(true);
+                setPremiumStatus("Executing cancellation...");
+                setPremiumError(null);
 
-        setIsCancellingPremium(true);
-        setPremiumStatus("Executing cancellation...");
-        setPremiumError(null);
+                try {
+                    /* Send the POST request to /api/premium/cancel */
+                    const cancelRes = await fetch("/api/premium/cancel", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    const cancelData = await cancelRes.json();
+                    if (!cancelRes.ok) {
+                        throw new Error(cancelData.error || "Failed to sync cancellation to database.");
+                    }
 
-        try {
-            /* Send the POST request to /api/premium/cancel */
-            const cancelRes = await fetch("/api/premium/cancel", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" }
-            });
-            const cancelData = await cancelRes.json();
-            if (!cancelRes.ok) {
-                throw new Error(cancelData.error || "Failed to sync cancellation to database.");
-            }
-
-            const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
-            setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
-            await refetchBalancesAndTier();
-            setTimeout(() => setPremiumStatus(null), 8000);
-        } catch (err: any) {
-            console.error("Cancellation failed:", err);
-            setPremiumError(err.message || "Cancellation failed.");
-        } finally {
-            setIsCancellingPremium(false);
-        }
+                    const dateStr = cancelData.nextBillingDate ? new Date(cancelData.nextBillingDate).toLocaleDateString() : "the end of the current period";
+                    setPremiumStatus(`Your Privacy Premium subscription will remain active until ${dateStr}. You can resume anytime before that date.`);
+                    await refetchBalancesAndTier();
+                    setTimeout(() => setPremiumStatus(null), 8000);
+                } catch (err: any) {
+                    console.error("Cancellation failed:", err);
+                    setPremiumError(err.message || "Cancellation failed.");
+                } finally {
+                    setIsCancellingPremium(false);
+                }
+            },
+        });
     };
 
     const handleResumePremium = async () => {
@@ -5981,6 +6034,18 @@ Please complete the following implementation tasks:
                         </div>
                     </motion.div>
                 </div>
+            )}
+            {confirmModal && (
+                <ConfirmModal
+                    open={confirmModal.open}
+                    title={confirmModal.title}
+                    description={confirmModal.description}
+                    confirmLabel={confirmModal.confirmLabel}
+                    cancelLabel={confirmModal.cancelLabel}
+                    variant={confirmModal.variant}
+                    onConfirm={confirmModal.onConfirm}
+                    onCancel={confirmModal.onCancel ?? (() => setConfirmModal(null))}
+                />
             )}
             {/* High-fidelity glassmorphic toast notification for settlement confirmation */}
                             {showToast && (

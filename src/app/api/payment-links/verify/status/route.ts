@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { checkProviderRateLimit } from "@/lib/providerRateLimit";
+import { consumeDistributedRateLimit } from "@/lib/distributedRateLimit";
+
+const STREAM_RATE_LIMIT = 10;
+const STREAM_RATE_WINDOW_SECONDS = 60;
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -9,8 +12,24 @@ export async function GET(request: Request) {
     if (!txHash || !/^0x[a-f0-9]{64}$/.test(txHash)) {
         return NextResponse.json({ error: "Invalid txHash query parameter" }, { status: 400 });
     }
-    const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
-    const rateLimit = checkProviderRateLimit({ provider: "payment-verification-status", key: requesterIp, limit: 10, windowMs: 60_000 });
+    const requesterIp = (request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "")
+        .split(",")[0]
+        .trim() || "unknown";
+    let rateLimit;
+    try {
+        rateLimit = await consumeDistributedRateLimit({
+            scope: "payment-verification-status-stream",
+            key: requesterIp,
+            limit: STREAM_RATE_LIMIT,
+            windowSeconds: STREAM_RATE_WINDOW_SECONDS,
+        });
+    } catch (error) {
+        console.error("Payment-verification status limiter failed:", error);
+        return NextResponse.json(
+            { error: "Payment status is temporarily unavailable" },
+            { status: 503, headers: { "Retry-After": "5" } },
+        );
+    }
     if (!rateLimit.ok) {
         return NextResponse.json(
             { error: "Too many payment-status requests" },
@@ -39,9 +58,10 @@ export async function GET(request: Request) {
                 }
             };
 
-            /* Loop for streaming updates every 1.5 seconds */
+            /* A 3-second cadence matches the checkout fallback poll and halves the old
+               per-stream database pressure while preserving the same ~90-second horizon. */
             let attempts = 0;
-            const maxAttempts = 60;
+            const maxAttempts = 30;
 
             while (active && attempts < maxAttempts) {
                 attempts++;
@@ -78,7 +98,7 @@ export async function GET(request: Request) {
                     active = false;
                     break;
                 }
-                await new Promise((res) => setTimeout(res, 1500));
+                await new Promise((res) => setTimeout(res, 3000));
             }
             try {
                 controller.close();

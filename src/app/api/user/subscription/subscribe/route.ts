@@ -16,6 +16,7 @@ import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 export const maxDuration = 120;
 
@@ -90,6 +91,16 @@ export async function POST(request: Request) {
         }
         const merchant = plan.merchantAddress.toLowerCase();
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
+        const subscriptionReconciliationContext = {
+            checkoutSessionId: checkoutSessionId || null,
+            planId: plan.id,
+            subscriber,
+            merchant,
+            amountUsdc: plan.amountUsdc.toString(),
+            periodSeconds: plan.periodSeconds.toString(),
+            beneficiaryAddress,
+            minCommitmentSeconds: plan.minCommitmentSeconds.toString(),
+        };
 
         /* Serialize subscription creation per user + merchant. Without this database-backed lock,
            two fast clicks can both pass the duplicate check before either on-chain transaction is
@@ -102,25 +113,42 @@ export async function POST(request: Request) {
                 if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
                     const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
                     if (!recoveredId) {
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout.verifiedTxHash.toLowerCase()}`,
+                            kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
+                            message: "confirmed checkout transaction still has no discoverable on-chain subscription",
+                            context: { ...subscriptionReconciliationContext, txHash: checkout.verifiedTxHash.toLowerCase() },
+                        });
                         return NextResponse.json({
                             error: "Your transaction is confirmed and subscription activation is still reconciling. Retry shortly; you will not be charged twice.",
                             code: "RECONCILIATION_PENDING",
                             txHash: checkout.verifiedTxHash,
                         }, { status: 202 });
                     }
-                    await mirrorSubscriptionCreated({
-                        subscriptionId: recoveredId,
-                        merchantAddress: merchant,
-                        subscriber,
-                        amountUsdc: plan.amountUsdc,
-                        periodSeconds: plan.periodSeconds,
-                        beneficiaryAddress,
-                        minCommitmentSeconds: plan.minCommitmentSeconds,
-                    });
-                    await prisma.paymentLink.update({
-                        where: { id: checkoutSessionId },
-                        data: { active: false, status: "PAID", paidAt: new Date() },
-                    });
+                    try {
+                        await mirrorSubscriptionCreated({
+                            subscriptionId: recoveredId,
+                            merchantAddress: merchant,
+                            subscriber,
+                            amountUsdc: plan.amountUsdc,
+                            periodSeconds: plan.periodSeconds,
+                            beneficiaryAddress,
+                            minCommitmentSeconds: plan.minCommitmentSeconds,
+                        });
+                        await prisma.paymentLink.update({
+                            where: { id: checkoutSessionId },
+                            data: { active: false, status: "PAID", paidAt: new Date() },
+                        });
+                    } catch (reconciliationError) {
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `subscription-recovery:${checkoutSessionId}:${checkout.verifiedTxHash.toLowerCase()}`,
+                            kind: "SUBSCRIPTION_ONCHAIN_RECOVERY",
+                            message: "confirmed subscription recovery could not update the local mirror",
+                            context: { ...subscriptionReconciliationContext, subscriptionId: recoveredId, txHash: checkout.verifiedTxHash.toLowerCase() },
+                            error: reconciliationError,
+                        });
+                        throw reconciliationError;
+                    }
                     await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
                         subscriptionId: recoveredId,
                         status: "active",
@@ -212,18 +240,36 @@ export async function POST(request: Request) {
                 );
                 onChainSubmitted = true;
                 if (checkoutSessionId) {
-                    await prisma.paymentLink.update({
-                        where: { id: checkoutSessionId },
-                        data: { verifiedTxHash: txHash.toLowerCase() },
-                    });
+                    try {
+                        await prisma.paymentLink.update({
+                            where: { id: checkoutSessionId },
+                            data: { verifiedTxHash: txHash.toLowerCase() },
+                        });
+                    } catch (reconciliationError) {
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `subscription-checkout-transaction:${checkoutSessionId}:${txHash.toLowerCase()}`,
+                            kind: "SUBSCRIPTION_CHECKOUT_TRANSACTION_PERSISTENCE",
+                            message: "on-chain subscription confirmed but the checkout transaction was not persisted",
+                            context: { ...subscriptionReconciliationContext, subscriptionId: subId || null, txHash: txHash.toLowerCase() },
+                            error: reconciliationError,
+                        });
+                        throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+                    }
                 }
                 if (!subId) {
+                    await recordPaymentReconciliationRequired({
+                        dedupeKey: `subscription-missing-id:${txHash.toLowerCase()}`,
+                        kind: "SUBSCRIPTION_MISSING_ONCHAIN_ID",
+                        message: "confirmed subscription transaction returned no subscription id",
+                        context: { ...subscriptionReconciliationContext, txHash: txHash.toLowerCase() },
+                    });
                     throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
                 }
 
                 /* Mirror before releasing the advisory lock, so the next request observes this
                    active subscription and cannot create a duplicate. */
-                await mirrorSubscriptionCreated({
+                try {
+                    await mirrorSubscriptionCreated({
                         subscriptionId: subId,
                         merchantAddress: merchant,
                         subscriber,
@@ -231,7 +277,17 @@ export async function POST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
-                });
+                    });
+                } catch (reconciliationError) {
+                    await recordPaymentReconciliationRequired({
+                        dedupeKey: `subscription-mirror:${subId}:${txHash.toLowerCase()}`,
+                        kind: "SUBSCRIPTION_LOCAL_MIRROR",
+                        message: "on-chain subscription confirmed but local mirroring failed",
+                        context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
+                        error: reconciliationError,
+                    });
+                    throw new Error("Subscription transaction confirmed, but activation is still reconciling. Retry shortly; you will not be charged twice.");
+                }
 
                 /* Open the merchant→user DM thread for this subscription (best-effort). */
                 await createSubscriptionStartedDm({
@@ -243,15 +299,26 @@ export async function POST(request: Request) {
                 }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
                 if (checkoutSessionId) {
-                    await prisma.paymentLink.update({
-                        where: { id: checkoutSessionId },
-                        data: {
-                            active: false,
-                            status: "PAID",
-                            paidAt: new Date(),
-                            verifiedTxHash: txHash.toLowerCase(),
-                        },
-                    });
+                    try {
+                        await prisma.paymentLink.update({
+                            where: { id: checkoutSessionId },
+                            data: {
+                                active: false,
+                                status: "PAID",
+                                paidAt: new Date(),
+                                verifiedTxHash: txHash.toLowerCase(),
+                            },
+                        });
+                    } catch (reconciliationError) {
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `subscription-checkout-finalize:${checkoutSessionId}:${txHash.toLowerCase()}`,
+                            kind: "SUBSCRIPTION_CHECKOUT_FINALIZATION",
+                            message: "confirmed subscription was mirrored but the checkout could not be finalized",
+                            context: { ...subscriptionReconciliationContext, subscriptionId: subId, txHash: txHash.toLowerCase() },
+                            error: reconciliationError,
+                        });
+                        throw new Error("Subscription activated, but checkout finalization is still reconciling. Retry shortly; you will not be charged twice.");
+                    }
                     checkoutClaimed = false;
                 }
 

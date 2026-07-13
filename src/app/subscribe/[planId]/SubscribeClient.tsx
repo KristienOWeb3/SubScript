@@ -55,6 +55,24 @@ function getHostname(url: string) {
     }
 }
 
+function friendlyError(raw: string): string {
+    const map: [RegExp, string][] = [
+        [/USDC approval.*reverted/i, "Your wallet denied the spending approval. Please try again."],
+        [/CCTP.*failed/i, "The cross-chain transfer could not be completed. Check your balance and try again."],
+        [/payment transaction failed/i, "The payment could not be completed. Check your balance and try again."],
+        [/reverted or failed/i, "The payment was rejected by the network. No funds were taken."],
+        [/stream disconnected/i, "Lost connection while confirming. Your payment may still be processing — check your wallet."],
+        [/payment verification failed/i, "We couldn't confirm your payment yet. If funds left your wallet, it may still be processing."],
+        [/failed to initiate verification/i, "We couldn't start payment confirmation. Please try again."],
+        [/user rejected/i, "You declined the transaction in your wallet."],
+        [/insufficient funds/i, "Your wallet doesn't have enough funds for this transaction."],
+    ];
+    for (const [pattern, friendly] of map) {
+        if (pattern.test(raw)) return friendly;
+    }
+    return raw;
+}
+
 export default function SubscribeClient({
     planId,
     initialPlanData,
@@ -136,6 +154,14 @@ export default function SubscribeClient({
         return () => { cancelled = true; };
     }, []);
 
+    useEffect(() => {
+        if (!result || !plan?.successUrl) return;
+        const redirectTimer = window.setTimeout(() => {
+            window.location.assign(plan.successUrl!);
+        }, 3500);
+        return () => window.clearTimeout(redirectTimer);
+    }, [result, plan?.successUrl]);
+
     const handleSignIn = () => {
         const next = `/subscribe/${planId}`;
         router.push(`/signin?next=${encodeURIComponent(next)}`);
@@ -197,9 +223,11 @@ export default function SubscribeClient({
     /* Stable per subscribe attempt: reused on retry so the server's Circle idempotency key
        dedupes the first charge instead of creating a second paid subscription. */
     const subscribeRequestKey = useRef<string | null>(null);
+    const subscribeInFlight = useRef(false);
 
     const handleSubscribe = async () => {
-        if (!plan) return;
+        if (!plan || isSubscribing || subscribeInFlight.current) return;
+        subscribeInFlight.current = true;
         setIsSubscribing(true);
         setSubscribeError(null);
         try {
@@ -220,8 +248,9 @@ export default function SubscribeClient({
             localStorage.removeItem(requestStorageKey);
             setResult({ txHash: data.txHash, subscriptionId: data.subscriptionId, planName: data.planName });
         } catch (err: any) {
-            setSubscribeError(err.message || "Failed to subscribe.");
+            setSubscribeError(friendlyError(err.message || "Failed to subscribe."));
         } finally {
+            subscribeInFlight.current = false;
             setIsSubscribing(false);
         }
     };
@@ -408,7 +437,7 @@ export default function SubscribeClient({
                                         disabled={isSubscribing}
                                         className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                     >
-                                        {isSubscribing ? <><Loader2 className="w-4 h-4 animate-spin" /> Subscribing...</>
+                                        {isSubscribing ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up subscription…</>
                                             : <>Review subscription <ArrowRight className="w-4 h-4" /></>}
                                     </button>
                                 ) : (

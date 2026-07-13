@@ -95,12 +95,19 @@ export async function GET(request: Request) {
             }, { status: 200 });
         }
 
+        const userAccount = await prisma.userEmbeddedWallet.findUnique({
+            where: { walletAddress: normalizedUser },
+            select: { email: true, emailVerifiedAt: true },
+        });
+        const verifiedOwner = Boolean(userAccount?.email && userAccount.emailVerifiedAt);
+
         return NextResponse.json({
             success: true,
             exists: true,
             active: vault.active,
             code: vault.active ? "VAULT_ACTIVE" : "VAULT_INACTIVE",
             vault: formatVault(vault),
+            verifiedOwner,
             onboarding: vault.active ? null : {
                 dashboardUrl: `${origin}/dashboard/user?tab=commit&merchantAddress=${encodeURIComponent(merchantAddress)}`,
                 action: "Ask the customer to re-commit from the SubScript user dashboard before granting more metered service.",

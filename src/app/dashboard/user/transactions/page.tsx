@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import AnimatedGradientBg from "@/components/DashboardSkeleton"; // Using layout background
 import FinancialStatusBadge from "@/components/FinancialStatusBadge";
+import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 
 interface Subscription {
   subscriptionId: string;
@@ -213,7 +214,7 @@ export default function UserTransactionsPage() {
       kind: "recurring" as const,
       name: s.merchantName,
       pic: s.merchantProfilePic,
-      detail: "Subscription authorization cap",
+      detail: `Subscription • ${humanSubscriptionStatus(s.status)}`,
       amountUsdc: s.amountCapUsdc,
       amountLabel: `${formatUsdc(s.amountCapUsdc)} USDC cap/${formatPlanPeriod(s.billingIntervalSeconds)}`,
       localAmountLabel: `≈ ${getLocalValueLabel(s.amountCapUsdc)}`,
@@ -235,7 +236,7 @@ export default function UserTransactionsPage() {
           kind: "one-time" as const,
           name: incoming ? (m.senderName || "Sender") : (m.receiverName || "Recipient"),
           pic: incoming ? m.senderProfilePic : m.receiverProfilePic,
-          detail: m.title || m.description || "Direct Payment",
+          detail: m.title || m.description || humanStatus(m.messageType),
           amountUsdc: m.amountUsdc,
           amountLabel: `${sign}$${formatUsdc(m.amountUsdc)}`,
           localAmountLabel: `${sign}${getLocalValueLabel(m.amountUsdc)}`,

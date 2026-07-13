@@ -61,8 +61,9 @@ test("checkout success polling is bound to a settlement newer than the page base
     assert.match(client, /settlementVersion !== baselineSettlementVersionRef\.current/);
     assert.match(client, /\/api\/payment-links\/\$\{linkData\.id\}\/status/);
     assert.match(statusRoute, /settlementVersion/);
-    assert.match(statusRoute, /verified_tx_hash/);
-    assert.match(statusRoute, /paid_at/);
+    assert.match(statusRoute, /attempt_payment\.tx_hash as attempt_tx_hash/);
+    assert.match(statusRoute, /attempt_payment\.created_at as attempt_created_at/);
+    assert.doesNotMatch(statusRoute, /pl\.verified_tx_hash|pl\.paid_at/);
     assert.match(page, /isValidPaymentLinkId\(id\)/);
     assert.doesNotMatch(page, /\[0-9a-fA-F-\]\{36\}/);
     assert.match(settlementVersion, /Number\.isNaN\(parsed\.getTime\(\)\)/);
@@ -118,7 +119,7 @@ test("a payment completed from the desktop QR updates the anonymous checkout", (
     assert.match(client, /data\.verifiedTxHash/);
     assert.match(client, /checkoutAttemptId: clientIntentId/);
     assert.match(status, /checkout_attempt_id/);
-    assert.match(status, /verifiedTxHash: attemptPayment\?\.tx_hash/);
+    assert.match(status, /verifiedTxHash: result\.attempt_tx_hash/);
 });
 
 test("money movement requires review and never exposes a cancel result after broadcast", () => {
@@ -128,7 +129,8 @@ test("money movement requires review and never exposes a cancel result after bro
 
     assert.match(checkout, /Confirm your payment/);
     assert.match(checkout, /reviewPaymentMode/);
-    assert.match(checkout, /!\(txHash \|\| successTxHash \|\| verificationStatus \|\| isPaying \|\| isEmbeddedPaying \|\| isVerifying\)/);
+    assert.match(checkout, /!\(pendingVerification \|\| txHash \|\| successTxHash \|\| verificationStatus \|\| isPaying \|\| isEmbeddedPaying \|\| isVerifying\)/);
+    assert.match(checkout, /This checkout is locked to the transaction above until settlement is confirmed/);
     assert.match(checkout, /verificationStatus && !verificationError/);
 
     assert.match(dashboard, /Review transfer/);

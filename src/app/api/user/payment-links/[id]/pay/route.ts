@@ -12,6 +12,7 @@ import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -167,10 +168,20 @@ export async function POST(request: Request, { params }: RouteContext) {
         }
 
         /* Mark the claim COMPLETED with the tx hash so an accidental re-submit returns it idempotently. */
-        await prisma.idempotencyKey.update({
-            where: { executionKey: claimKey },
-            data: { status: "COMPLETED", responsePayload: { txHash } },
-        }).catch(() => {});
+        try {
+            await prisma.idempotencyKey.update({
+                where: { executionKey: claimKey },
+                data: { status: "COMPLETED", responsePayload: { txHash } },
+            });
+        } catch (reconciliationError) {
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `embedded-payment-idempotency:${claimKey}`,
+                kind: "EMBEDDED_PAYMENT_IDEMPOTENCY_COMPLETION",
+                message: "on-chain payment confirmed but the idempotency record was not completed",
+                context: { paymentLinkId: id, payer, txHash: txHash.toLowerCase(), claimKey },
+                error: reconciliationError,
+            });
+        }
 
         return NextResponse.json({
             success: true,

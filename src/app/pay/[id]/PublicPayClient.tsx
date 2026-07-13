@@ -40,6 +40,32 @@ function shortenAddress(value: string) {
     return value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Unknown recipient";
 }
 
+type PendingCheckoutVerification = {
+    txHash: `0x${string}`;
+    receiptId: string | null;
+    payer: string;
+    chainId: number;
+    attemptId: string;
+    submittedAt: string;
+    source: "wallet" | "embedded";
+    phase: "broadcast" | "confirmed";
+};
+
+const CCTP_CHECKOUT_ENABLED = false;
+
+function isPendingCheckoutVerification(value: unknown): value is PendingCheckoutVerification {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<PendingCheckoutVerification>;
+    return /^0x[0-9a-f]{64}$/i.test(candidate.txHash || "")
+        && typeof candidate.payer === "string"
+        && Number.isInteger(candidate.chainId)
+        && typeof candidate.attemptId === "string"
+        && typeof candidate.submittedAt === "string"
+        && (candidate.source === "wallet" || candidate.source === "embedded")
+        && (candidate.phase === "broadcast" || candidate.phase === "confirmed")
+        && (candidate.receiptId === null || typeof candidate.receiptId === "string");
+}
+
 export default function PublicPayClient({
     id,
     initialLinkData,
@@ -82,6 +108,8 @@ export default function PublicPayClient({
     const isConnected = mounted ? realIsConnected : false;
 
     const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
+    const [pendingVerification, setPendingVerification] = useState<PendingCheckoutVerification | null>(null);
+    const [pendingVerificationHydrated, setPendingVerificationHydrated] = useState(false);
     const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
     const [showQrCode, setShowQrCode] = useState(false);
     const [checkoutUrl, setCheckoutUrl] = useState("");
@@ -97,11 +125,17 @@ export default function PublicPayClient({
 
     const { data: txReceipt, isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
         hash: txHash,
+        chainId: pendingVerification?.chainId,
     });
 
     const [linkData, setLinkData] = useState<any>(initialLinkData);
     const [isLoading, setIsLoading] = useState(!initialLinkData);
     const [error, setError] = useState<string | null>(null);
+    const hasInitialSingleUseSettlement = Boolean(
+        initialSettlementVersion
+        && Number(initialLinkData?.max_uses) === 1
+        && Number(initialLinkData?.use_count || 0) > 0
+    );
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
     const isLinkInactive = linkData?.active === false || isLinkExpired;
@@ -129,16 +163,47 @@ export default function PublicPayClient({
 
     const [isPaying, setIsPaying] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
-    const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+    const [paymentStep, setPaymentStep] = useState<"approving" | "sending" | "confirming" | "verifying" | null>(null);
+    const [verificationStatus, setVerificationStatus] = useState<string | null>(
+        hasInitialSingleUseSettlement ? "Payment confirmed and settled successfully!" : null
+    );
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [successTxHash, setSuccessTxHash] = useState<string | null>(null);
-    const [receiptId, setReceiptId] = useState<string | null>(null);
+    const [receiptId, setReceiptId] = useState<string | null>(
+        hasInitialSingleUseSettlement && isReceiptId(initialLinkData?.receipt_token)
+            ? initialLinkData.receipt_token
+            : null
+    );
     const [shareableReceiptUrl, setShareableReceiptUrl] = useState<string | null>(null);
     const [payerRole, setPayerRole] = useState<string | null>(null);
     const [isRoleMismatch, setIsRoleMismatch] = useState(false);
     const settlementNotifiedRef = useRef(false);
+    const paymentSubmissionGuardRef = useRef(false);
+    const paymentBroadcastRef = useRef(false);
+    const verificationInFlightRef = useRef<string | null>(null);
     const [remoteStatusError, setRemoteStatusError] = useState<string | null>(null);
     const [lastRemoteStatusCheck, setLastRemoteStatusCheck] = useState<Date | null>(null);
+    const [isPollingExpired, setIsPollingExpired] = useState(false);
+    const [isManualChecking, setIsManualChecking] = useState(false);
+    const [manualCheckMessage, setManualCheckMessage] = useState<string | null>(null);
+
+    const friendlyError = useCallback((raw: string): string => {
+        const map: [RegExp, string][] = [
+            [/USDC approval.*reverted/i, "Your wallet denied the spending approval. Please try again."],
+            [/CCTP.*failed/i, "The cross-chain transfer could not be completed. Check your balance and try again."],
+            [/payment transaction failed/i, "The payment could not be completed. Check your balance and try again."],
+            [/reverted or failed/i, "The payment was rejected by the network. No funds were taken."],
+            [/stream disconnected/i, "Lost connection while confirming. Your payment may still be processing — check your wallet."],
+            [/payment verification failed/i, "We couldn't confirm your payment yet. If funds left your wallet, it may still be processing."],
+            [/failed to initiate verification/i, "We couldn't start payment confirmation. Continue verification below; do not pay again."],
+            [/user rejected/i, "You declined the transaction in your wallet."],
+            [/insufficient funds/i, "Your wallet doesn't have enough funds for this transaction."],
+        ];
+        for (const [pattern, friendly] of map) {
+            if (pattern.test(raw)) return friendly;
+        }
+        return raw;
+    }, []);
 
     /* Inbox DM creation states */
     const [isCreatingDm, setIsCreatingDm] = useState(false);
@@ -165,6 +230,60 @@ export default function PublicPayClient({
         url.searchParams.set("attempt", attemptId);
         setCheckoutUrl(url.toString());
     }, [id]);
+
+    const persistPendingVerification = useCallback((record: PendingCheckoutVerification) => {
+        paymentSubmissionGuardRef.current = true;
+        paymentBroadcastRef.current = true;
+        setPendingVerification(record);
+        try {
+            sessionStorage.setItem(`subscript_pending_verification:${id}`, JSON.stringify(record));
+        } catch {
+            /* The in-memory guard still prevents a second submission when browser storage is denied. */
+        }
+    }, [id]);
+
+    const clearPendingVerification = useCallback(() => {
+        paymentBroadcastRef.current = false;
+        setPendingVerification(null);
+        try {
+            sessionStorage.removeItem(`subscript_pending_verification:${id}`);
+        } catch {
+            /* Settlement and known reverts remain authoritative when browser storage is denied. */
+        }
+    }, [id]);
+
+    useEffect(() => {
+        if (!clientIntentId) return;
+        if (hasInitialSingleUseSettlement) {
+            setPendingVerificationHydrated(true);
+            return;
+        }
+        try {
+            const stored = sessionStorage.getItem(`subscript_pending_verification:${id}`);
+            if (!stored) return;
+            const parsed: unknown = JSON.parse(stored);
+            if (!isPendingCheckoutVerification(parsed) || parsed.attemptId !== clientIntentId) {
+                sessionStorage.removeItem(`subscript_pending_verification:${id}`);
+                return;
+            }
+            paymentSubmissionGuardRef.current = true;
+            paymentBroadcastRef.current = true;
+            setPendingVerification(parsed);
+            setSuccessTxHash(parsed.txHash);
+            if (parsed.receiptId) setReceiptId(parsed.receiptId);
+            setVerificationError(null);
+            setVerificationStatus(parsed.phase === "confirmed"
+                ? "Payment submitted. Ready to continue settlement verification."
+                : "Payment submitted. Waiting for on-chain confirmation...");
+            setPaymentStep(parsed.phase === "confirmed" ? "verifying" : "confirming");
+            if (parsed.source === "wallet") setTxHash(parsed.txHash);
+        } catch {
+            try { sessionStorage.removeItem(`subscript_pending_verification:${id}`); } catch { /* no-op */ }
+        } finally {
+            setPendingVerificationHydrated(true);
+        }
+    }, [clientIntentId, hasInitialSingleUseSettlement, id]);
+
     const refreshSession = useCallback(async () => {
         setIsSessionLoading(true);
         try {
@@ -327,6 +446,11 @@ export default function PublicPayClient({
 
     const isPaymentSettled = verificationStatus === "Payment confirmed and settled successfully!";
 
+    useEffect(() => {
+        if (!mounted || !isPaymentSettled || !receiptId || shareableReceiptUrl) return;
+        setShareableReceiptUrl(receiptUrl(receiptId, window.location.origin));
+    }, [isPaymentSettled, mounted, receiptId, shareableReceiptUrl]);
+
     /* Post-settlement return to the merchant site, carrying receipt evidence the merchant
        integration can correlate server-side (webhooks remain the settlement authority). */
     const buildMerchantReturnUrl = (base: string) => {
@@ -356,6 +480,7 @@ export default function PublicPayClient({
     useEffect(() => {
         if (!isPaymentSettled || settlementNotifiedRef.current) return;
         settlementNotifiedRef.current = true;
+        clearPendingVerification();
         try {
             sessionStorage.removeItem(`subscript_checkout_attempt:${id}`);
             localStorage.setItem("subscript_payment_settled", JSON.stringify({
@@ -366,7 +491,7 @@ export default function PublicPayClient({
         } catch {
             /* Private browsing/storage denial must not affect the completed payment. */
         }
-    }, [id, isPaymentSettled, linkData?.id, receiptId]);
+    }, [clearPendingVerification, id, isPaymentSettled, linkData?.id, receiptId]);
 
     const baselineSettlementVersionRef = useRef(initialSettlementVersion);
     const baselineUseCountRef = useRef(Number(initialLinkData?.use_count || 0));
@@ -375,15 +500,31 @@ export default function PublicPayClient({
        Link.status is aggregate historical state and stays PAID on reusable links, so treating it as
        proof for this page visit would show success without a new transaction. */
     useEffect(() => {
-        if (isPaymentSettled || !linkData?.id) return;
+        if (isPaymentSettled || !linkData?.id || !clientIntentId) return;
         
         let cancelled = false;
+        let expired = false;
+        let pollAttempts = 0;
+        let interval: ReturnType<typeof setInterval> | null = null;
+        setIsPollingExpired(false);
+
         const poll = async () => {
+            if (pollAttempts >= 600) {
+                expired = true;
+                if (interval) clearInterval(interval);
+                if (!cancelled) {
+                    setIsPollingExpired(true);
+                    setRemoteStatusError("Session expired, refresh to continue.");
+                }
+                return;
+            }
+            pollAttempts += 1;
+
             try {
                 const res = await fetch(`/api/payment-links/${linkData.id}/status?attempt=${encodeURIComponent(clientIntentId)}`, { cache: "no-store" });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || "Unable to check payment status");
-                if (!cancelled) {
+                if (!cancelled && !expired) {
                     setRemoteStatusError(null);
                     setLastRemoteStatusCheck(new Date());
                 }
@@ -391,32 +532,46 @@ export default function PublicPayClient({
                     ? data.settlementVersion
                     : null;
                 const useCount = Number(data?.useCount || 0);
+                const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
                 const hasNewSettlement = Boolean(
-                    settlementVersion
-                    && settlementVersion !== baselineSettlementVersionRef.current
-                    && useCount > baselineUseCountRef.current
+                    hasAttemptSettlement
+                    || (
+                        settlementVersion
+                        && settlementVersion !== baselineSettlementVersionRef.current
+                        && useCount > baselineUseCountRef.current
+                    )
                 );
                 if (!cancelled && hasNewSettlement) {
                     baselineSettlementVersionRef.current = settlementVersion;
                     baselineUseCountRef.current = useCount;
+                    clearPendingVerification();
+                    paymentSubmissionGuardRef.current = false;
+                    setVerificationError(null);
                     setVerificationStatus("Payment confirmed and settled successfully!");
+                    setPaymentStep(null);
+                    setIsPaying(false);
+                    setIsEmbeddedPaying(false);
+                    setIsVerifying(false);
+                    setIsPollingExpired(false);
+                    setRemoteStatusError(null);
+                    setManualCheckMessage(null);
                     if (data.receiptId) {
                         setReceiptId(data.receiptId);
                     }
                     if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
                 }
             } catch (e) {
-                if (!cancelled) setRemoteStatusError("Live payment status is temporarily unavailable. Retrying automatically…");
+                if (!cancelled && !expired) setRemoteStatusError("Live payment status is temporarily unavailable. Retrying automatically…");
             }
         };
 
         void poll();
-        const interval = setInterval(poll, 3000);
+        interval = setInterval(poll, 3000);
         return () => {
             cancelled = true;
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
         };
-    }, [clientIntentId, isPaymentSettled, linkData?.id]);
+    }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
     const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
@@ -435,7 +590,8 @@ export default function PublicPayClient({
 
     const cctpOriginChainId = expectedChainId === 5042001 ? 1 : 11155111;
     const cctpOriginChainName = expectedChainId === 5042001 ? "Ethereum Mainnet" : "Ethereum Sepolia";
-    const cctpCheckoutEnabled = false;
+    /* Hard-disabled until Arc-side memo settlement is production-ready. */
+    const cctpCheckoutEnabled = CCTP_CHECKOUT_ENABLED;
 
     const isCctpMode = cctpCheckoutEnabled && isConnected && !hasSufficientArcBalance;
     const isCctpChain = cctpCheckoutEnabled && isConnected && chainId === cctpOriginChainId;
@@ -538,11 +694,11 @@ export default function PublicPayClient({
             await connectAsync({ connector });
         } catch (err: any) {
             const message = String(err?.shortMessage || err?.message || "");
-            setVerificationError(
+            setVerificationError(friendlyError(
                 /provider not found|no provider|not installed/i.test(message)
                     ? "No browser wallet was detected. Install or unlock MetaMask or Rabby, then try again."
                     : message || "The browser wallet could not be connected. Unlock it and try again."
-            );
+            ));
         }
     };
 
@@ -550,12 +706,20 @@ export default function PublicPayClient({
         try {
             await switchChainAsync({ chainId: requiredChainId });
         } catch (err: any) {
-            setVerificationError(`Failed to switch network: ${err.message || "User rejected the request"}`);
+            setVerificationError(friendlyError(`Failed to switch network: ${err.message || "User rejected the request"}`));
         }
     };
 
     const handlePay = async () => {
+        if (isPaying || isEmbeddedPaying) return;
         if (!linkData || !address) return;
+        if (paymentSubmissionGuardRef.current) return;
+        paymentSubmissionGuardRef.current = true;
+        if (!pendingVerificationHydrated) {
+            paymentSubmissionGuardRef.current = false;
+            setVerificationError("Restoring this checkout's payment state. Please wait a moment.");
+            return;
+        }
         setVerificationError(null);
         setVerificationStatus(null);
         setPayerEmailError(null);
@@ -563,24 +727,29 @@ export default function PublicPayClient({
         const liveSession = await refreshSession();
         const sessionMatchesWallet = Boolean(liveSession?.loggedIn && liveSession?.wallet && liveSession.wallet.toLowerCase() === address.toLowerCase());
         if (!sessionMatchesWallet) {
+            paymentSubmissionGuardRef.current = false;
             setWalletAuthenticationError("Verify this connected wallet before paying.");
             return;
         }
         if (!liveSession?.email) {
+            paymentSubmissionGuardRef.current = false;
             setPayerEmailError("A verified email and OTP confirmation are mandatory before payment.");
             return;
         }
 
         if (isRoleMismatch || liveSession?.role === "ENTERPRISE") {
+            paymentSubmissionGuardRef.current = false;
             setVerificationError("Merchant accounts cannot pay checkout links. Sign in with a user account.");
             return;
         }
         if (merchantVerified === false && !unverifiedAccepted && !isUserRequest) {
+            paymentSubmissionGuardRef.current = false;
             setShowUnverifiedWarning(true);
             return;
         }
 
         if (cannotPayLink) {
+            paymentSubmissionGuardRef.current = false;
             setVerificationError(isLinkExhausted
                 ? "This payment link has reached its usage limit."
                 : "This payment link is inactive or expired.");
@@ -589,23 +758,34 @@ export default function PublicPayClient({
 
         /* Returning payer must verify an email before paying. */
         if (payerNeedsEmail) {
+            paymentSubmissionGuardRef.current = false;
             setPayerEmailError("Verify an email address before completing this payment.");
+            return;
+        }
+
+        if (!clientIntentId) {
+            paymentSubmissionGuardRef.current = false;
+            setVerificationError("Preparing a secure payment attempt. Please try again.");
             return;
         }
 
         /* Strict production burn safeguard */
         if (!isProd && chainId === 1) {
-            throw new Error("Production burn safeguard: Cannot bridge from Ethereum Mainnet in a testnet environment.");
+            paymentSubmissionGuardRef.current = false;
+            setVerificationError("Switch to a supported test network before paying.");
+            return;
         }
 
         /* Guard: prevent network mismatches based on the current mode (CCTP vs Direct) */
         if (isCctpMode ? !isCctpChain : chainId !== expectedChainId) {
+            paymentSubmissionGuardRef.current = false;
             setVerificationError(`Wrong network detected. Please switch to ${requiredChainName} before paying.`);
             return;
         }
 
         const checkoutReceiptId = linkData.receipt_token;
         if (!isReceiptId(checkoutReceiptId)) {
+            paymentSubmissionGuardRef.current = false;
             setVerificationError("This checkout session is missing a valid receipt token. Please ask the merchant to generate a new payment link.");
             return;
         }
@@ -620,6 +800,7 @@ export default function PublicPayClient({
                 setVerificationStatus("Initiating CCTP transaction on origin chain...");
 
                 /* Step 1: Approve USDC spend by TokenMessenger */
+                setPaymentStep("approving");
                 setVerificationStatus("Approving USDC spend for CCTP TokenMessenger...");
                 const approveHash = await writeContractAsync({
                     address: cctpConfig.usdc,
@@ -636,7 +817,7 @@ export default function PublicPayClient({
                         timeout: 120_000,
                     });
                     if (approveReceipt.status !== "success") {
-                        throw new Error("USDC approval transaction reverted.");
+                        throw new Error("Your wallet denied the spending approval. Please try again.");
                     }
                 } else {
                     /* Fallback: wait 15 seconds if publicClient is unavailable */
@@ -644,6 +825,7 @@ export default function PublicPayClient({
                 }
 
                 /* Step 2: Call depositForBurn */
+                setPaymentStep("sending");
                 setVerificationStatus("Initiating cross-chain deposit for burn via CCTP...");
                 const mintRecipientBytes32 = ("0x" + SUBSCRIPT_ROUTER_ADDRESS.slice(2).padStart(64, "0")) as `0x${string}`;
                 
@@ -668,6 +850,7 @@ export default function PublicPayClient({
                 });
 
                 setTxHash(cctpHash);
+                setPaymentStep("confirming");
                 setSuccessTxHash(cctpHash);
                 setShareableReceiptUrl(receiptUrl(checkoutReceiptId, window.location.origin));
                 setIsVerifying(true);
@@ -675,9 +858,11 @@ export default function PublicPayClient({
                 setIsPaying(false);
 
             } catch (err: any) {
-                setVerificationError(err.message || "CCTP payment execution failed");
+                paymentSubmissionGuardRef.current = false;
+                setVerificationError(friendlyError(err.message || "CCTP payment execution failed"));
                 setIsPaying(false);
                 setIsVerifying(false);
+                setPaymentStep(null);
             }
         } else {
             /* Native Arc Network Payment Flow */
@@ -686,6 +871,7 @@ export default function PublicPayClient({
                 setReceiptId(nextReceiptId);
 
                 if (isUserRequest) {
+                    setPaymentStep("sending");
                     setVerificationStatus("Sending USDC directly to the requester...");
                     const hash = await writeContractAsync({
                         address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
@@ -694,7 +880,18 @@ export default function PublicPayClient({
                         args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc)],
                     });
 
+                    persistPendingVerification({
+                        txHash: hash,
+                        receiptId: nextReceiptId,
+                        payer: address,
+                        chainId: expectedChainId,
+                        attemptId: clientIntentId,
+                        submittedAt: new Date().toISOString(),
+                        source: "wallet",
+                        phase: "broadcast",
+                    });
                     setTxHash(hash);
+                    setPaymentStep("confirming");
                     setSuccessTxHash(hash);
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
@@ -710,6 +907,7 @@ export default function PublicPayClient({
                         : BigInt(0);
 
                     if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
+                        setPaymentStep("approving");
                         setVerificationStatus("Approving merchant payment route...");
                         const approvalHash = await writeContractAsync({
                             address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
@@ -724,11 +922,12 @@ export default function PublicPayClient({
                                 timeout: 120_000,
                             });
                             if (approvalReceipt.status !== "success") {
-                                throw new Error("USDC approval for merchant payment reverted.");
+                                throw new Error("Your wallet denied the spending approval. Please try again.");
                             }
                         }
                     }
 
+                    setPaymentStep("sending");
                     setVerificationStatus("Routing payment to merchant...");
                     const hash = await writeContractAsync({
                         address: SUBSCRIPT_ROUTER_ADDRESS as `0x${string}`,
@@ -737,7 +936,18 @@ export default function PublicPayClient({
                         args: [linkData.merchant_address as `0x${string}`, BigInt(linkData.amount_usdc), nextReceiptId],
                     });
 
+                    persistPendingVerification({
+                        txHash: hash,
+                        receiptId: nextReceiptId,
+                        payer: address,
+                        chainId: expectedChainId,
+                        attemptId: clientIntentId,
+                        submittedAt: new Date().toISOString(),
+                        source: "wallet",
+                        phase: "broadcast",
+                    });
                     setTxHash(hash);
+                    setPaymentStep("confirming");
                     setSuccessTxHash(hash);
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
@@ -745,9 +955,11 @@ export default function PublicPayClient({
                 }
 
             } catch (err: any) {
-                setVerificationError(err.message || "Payment transaction failed");
+                if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
+                setVerificationError(friendlyError(err.message || "Payment transaction failed"));
                 setIsPaying(false);
                 setIsVerifying(false);
+                setPaymentStep(null);
             }
         }
     };
@@ -756,6 +968,11 @@ export default function PublicPayClient({
        (driven by the wagmi receipt effect below) and the embedded-wallet flow (handleEmbeddedPay),
        so both settle through the identical /api/payment-links/verify pipeline. */
     const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number) => {
+        if (verificationInFlightRef.current === hash) return;
+        verificationInFlightRef.current = hash;
+        paymentSubmissionGuardRef.current = true;
+        setIsVerifying(true);
+        setPaymentStep("verifying");
         const run = async () => {
             try {
                 const verifyRes = await fetch("/api/payment-links/verify", {
@@ -771,8 +988,9 @@ export default function PublicPayClient({
                     })
                 });
 
-                if (!verifyRes.ok) {
-                    const verifyData = await verifyRes.json().catch(() => ({}));
+                const verifyData = await verifyRes.json().catch(() => ({}));
+                const alreadyVerifying = verifyRes.status === 409 && verifyData.status === "VERIFYING";
+                if (!verifyRes.ok && !alreadyVerifying) {
                     throw new Error(verifyData.error || "Failed to initiate verification");
                 }
 
@@ -790,18 +1008,25 @@ export default function PublicPayClient({
                         } else if (data.status === "VERIFYING") {
                             setVerificationStatus("Transaction confirmed. Verifying parameters...");
                         } else if (data.status === "CONFIRMED") {
+                            clearPendingVerification();
+                            paymentSubmissionGuardRef.current = false;
+                            verificationInFlightRef.current = null;
                             setVerificationStatus("Payment confirmed and settled successfully!");
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
+                            setPaymentStep(null);
                             settled = true;
                             eventSource.close();
                         } else if (data.status === "FAILED") {
+                            paymentSubmissionGuardRef.current = true;
+                            verificationInFlightRef.current = null;
                             setVerificationStatus(null);
-                            setVerificationError(data.errorMessage || "Payment verification failed");
+                            setVerificationError(friendlyError(data.errorMessage || "Payment verification needs attention"));
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
+                            setPaymentStep(null);
                             settled = true;
                             eventSource.close();
                         }
@@ -818,11 +1043,14 @@ export default function PublicPayClient({
                     try {
                         const parsed = JSON.parse(data);
                         if (parsed?.message) {
+                            paymentSubmissionGuardRef.current = true;
+                            verificationInFlightRef.current = null;
                             setVerificationStatus(null);
-                            setVerificationError(parsed.message);
+                            setVerificationError(friendlyError(parsed.message));
                             setIsVerifying(false);
                             setIsPaying(false);
                             setIsEmbeddedPaying(false);
+                            setPaymentStep(null);
                             settled = true;
                             eventSource.close();
                         }
@@ -835,40 +1063,89 @@ export default function PublicPayClient({
                     if (settled) return;
                     console.error("EventSource connection error:", err);
                     eventSource.close();
+                    paymentSubmissionGuardRef.current = true;
+                    verificationInFlightRef.current = null;
                     setVerificationStatus(null);
-                    setVerificationError("Real-time stream disconnected. Please verify on explorer.");
+                    setVerificationError(friendlyError("Real-time stream disconnected. Continue verification for the submitted transaction."));
                     setIsVerifying(false);
                     setIsPaying(false);
                     setIsEmbeddedPaying(false);
+                    setPaymentStep(null);
                 };
             } catch (err: any) {
+                paymentSubmissionGuardRef.current = true;
+                verificationInFlightRef.current = null;
                 setVerificationStatus(null);
-                setVerificationError(err.message || "Payment verification failed");
+                setVerificationError(friendlyError(err.message || "Payment verification failed"));
                 setIsVerifying(false);
                 setIsPaying(false);
                 setIsEmbeddedPaying(false);
+                setPaymentStep(null);
             }
         };
         run();
-    }, [clientIntentId, linkData]);
+    }, [clearPendingVerification, clientIntentId, friendlyError, linkData]);
 
     useEffect(() => {
-        if (isConfirmed && txReceipt && txHash && linkData && address && verifiedHash !== txHash) {
+        if (isConfirmed && txReceipt && txHash && linkData && verifiedHash !== txHash) {
             if (txReceipt.status !== "success") {
+                clearPendingVerification();
+                paymentSubmissionGuardRef.current = false;
+                verificationInFlightRef.current = null;
+                setTxHash(undefined);
+                setSuccessTxHash(null);
                 setVerificationStatus(null);
-                setVerificationError("On-chain transaction reverted or failed.");
+                setVerificationError(friendlyError("On-chain transaction reverted or failed."));
                 setIsPaying(false);
                 setIsVerifying(false);
+                setPaymentStep(null);
                 return;
             }
+            const matchingPending = pendingVerification?.txHash === txHash ? pendingVerification : null;
+            const payer = matchingPending?.payer || address || "";
+            if (!payer || !clientIntentId) return;
+            const confirmedRecord: PendingCheckoutVerification = {
+                txHash,
+                receiptId: matchingPending?.receiptId ?? receiptId,
+                payer,
+                chainId: matchingPending?.chainId ?? chainId,
+                attemptId: matchingPending?.attemptId || clientIntentId,
+                submittedAt: matchingPending?.submittedAt || new Date().toISOString(),
+                source: matchingPending?.source || "wallet",
+                phase: "confirmed",
+            };
+            persistPendingVerification(confirmedRecord);
             setVerifiedHash(txHash);
-            startVerification(txHash, receiptId, address, chainId);
+            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId);
         }
-    }, [isConfirmed, txReceipt, txHash, linkData, address, verifiedHash, chainId, receiptId, startVerification]);
+    }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, startVerification, txHash, txReceipt, verifiedHash]);
+
+    useEffect(() => {
+        if (!pendingVerification || pendingVerification.phase !== "confirmed" || isPaymentSettled) return;
+        if (!linkData?.id) return;
+        if (pendingVerification.attemptId !== clientIntentId || verifiedHash === pendingVerification.txHash) return;
+        setVerifiedHash(pendingVerification.txHash);
+        setVerificationStatus("Resuming settlement verification for your submitted payment...");
+        startVerification(
+            pendingVerification.txHash,
+            pendingVerification.receiptId,
+            pendingVerification.payer,
+            pendingVerification.chainId,
+        );
+    }, [clientIntentId, isPaymentSettled, linkData?.id, pendingVerification, startVerification, verifiedHash]);
 
     const beginPaymentReview = (mode: "embedded" | "wallet") => {
         setVerificationError(null);
         setWalletAuthenticationError(null);
+        if (!pendingVerificationHydrated) {
+            setVerificationError("Restoring this checkout's payment state. Please wait a moment.");
+            return;
+        }
+        if (pendingVerification) {
+            setVerificationError("This payment was already submitted. Continue verification of the existing transaction below.");
+            paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
         if (cannotPayLink) {
             setVerificationError(isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired.");
             return;
@@ -913,21 +1190,83 @@ export default function PublicPayClient({
         }
     };
 
+    const handleManualPaymentCheck = async () => {
+        if (!linkData?.id || isPaymentSettled || isManualChecking) return;
+        setIsManualChecking(true);
+        setManualCheckMessage(null);
+        try {
+            const res = await fetch(`/api/payment-links/${linkData.id}/status?attempt=${encodeURIComponent(clientIntentId)}`, { cache: "no-store" });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Unable to check payment status");
+            if (!isPollingExpired) setRemoteStatusError(null);
+            setLastRemoteStatusCheck(new Date());
+            const settlementVersion = typeof data?.settlementVersion === "string" ? data.settlementVersion : null;
+            const useCount = Number(data?.useCount || 0);
+            const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
+            const hasNewSettlement = Boolean(
+                hasAttemptSettlement
+                || (
+                    settlementVersion
+                    && settlementVersion !== baselineSettlementVersionRef.current
+                    && useCount > baselineUseCountRef.current
+                )
+            );
+            if (hasNewSettlement) {
+                baselineSettlementVersionRef.current = settlementVersion;
+                baselineUseCountRef.current = useCount;
+                clearPendingVerification();
+                paymentSubmissionGuardRef.current = false;
+                setVerificationError(null);
+                setVerificationStatus("Payment confirmed and settled successfully!");
+                setPaymentStep(null);
+                setIsPaying(false);
+                setIsEmbeddedPaying(false);
+                setIsVerifying(false);
+                setIsPollingExpired(false);
+                setRemoteStatusError(null);
+                setManualCheckMessage(null);
+                if (data.receiptId) setReceiptId(data.receiptId);
+                if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
+            } else {
+                setManualCheckMessage(isPollingExpired
+                    ? "No confirmed payment found yet. Refresh this page to start a new checkout session."
+                    : "No confirmed payment found yet. If you just sent it, wait a moment — we check automatically every 3 seconds.");
+            }
+        } catch {
+            setManualCheckMessage(isPollingExpired
+                ? "Could not check payment status. Refresh this page to start a new checkout session."
+                : "Could not check payment status. Automatic checks continue in the background.");
+        } finally {
+            setIsManualChecking(false);
+        }
+    };
+
     const handleEmbeddedPay = async () => {
+        if (isPaying || isEmbeddedPaying) return;
         if (!linkData) return;
+        if (paymentSubmissionGuardRef.current) return;
+        paymentSubmissionGuardRef.current = true;
+        if (!pendingVerificationHydrated) {
+            paymentSubmissionGuardRef.current = false;
+            setVerificationError("Restoring this checkout's payment state. Please wait a moment.");
+            return;
+        }
         setVerificationError(null);
         setVerificationStatus(null);
         if (cannotPayLink) {
             setVerificationError(isLinkExhausted
                 ? "This payment link has reached its usage limit."
                 : "This payment link is inactive or expired.");
+            paymentSubmissionGuardRef.current = false;
             return;
         }
         if (!clientIntentId) {
             setVerificationError("Preparing a secure payment attempt. Please try again.");
+            paymentSubmissionGuardRef.current = false;
             return;
         }
         setIsEmbeddedPaying(true);
+        setPaymentStep("sending");
         setVerificationStatus("Paying from your SubScript wallet...");
         try {
             const res = await fetch(`/api/user/payment-links/${linkData.id}/pay`, { 
@@ -942,19 +1281,83 @@ export default function PublicPayClient({
             const hash = data.txHash as string;
             const checkoutReceiptId = linkData.receipt_token;
             const rid = data.receiptId || (isReceiptId(checkoutReceiptId) ? checkoutReceiptId : null);
+            const payer = sessionInfo?.wallet || "";
+            const submittedRecord: PendingCheckoutVerification = {
+                txHash: hash as `0x${string}`,
+                receiptId: rid,
+                payer,
+                chainId: expectedChainId,
+                attemptId: clientIntentId,
+                submittedAt: new Date().toISOString(),
+                source: "embedded",
+                phase: "confirmed",
+            };
+            persistPendingVerification(submittedRecord);
             setReceiptId(rid);
             setSuccessTxHash(hash);
             if (rid) setShareableReceiptUrl(receiptUrl(rid, window.location.origin));
             setIsVerifying(true);
+            setPaymentStep("verifying");
             setVerificationStatus("Payment sent. Confirming settlement...");
-            startVerification(hash, rid, sessionInfo?.wallet || "", expectedChainId);
+            setVerifiedHash(hash);
+            startVerification(hash, rid, payer, expectedChainId);
         } catch (err: any) {
             setVerificationStatus(null);
-            setVerificationError(err.message || "Payment failed");
+            setVerificationError(friendlyError(err.message || "Payment failed"));
             setIsEmbeddedPaying(false);
             setIsVerifying(false);
+            setPaymentStep(null);
+            if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
         }
     };
+
+    const retryPendingVerification = () => {
+        if (!pendingVerification || isVerifying || isPaymentSettled) return;
+        setVerificationError(null);
+        setVerificationStatus("Continuing settlement verification for your submitted payment...");
+        startVerification(
+            pendingVerification.txHash,
+            pendingVerification.receiptId,
+            pendingVerification.payer,
+            pendingVerification.chainId,
+        );
+    };
+
+    const pendingVerificationPanel = pendingVerification && !isPaymentSettled ? (
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-5 text-center space-y-4" aria-live="polite">
+            <div className="flex justify-center">
+                {isVerifying || pendingVerification.phase === "broadcast"
+                    ? <Loader2 className="h-8 w-8 animate-spin text-amber-300" />
+                    : <AlertTriangle className="h-8 w-8 text-amber-300" />}
+            </div>
+            <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Payment already submitted</p>
+                <p className="text-xs leading-relaxed text-amber-100/80">
+                    {verificationStatus || "Settlement verification was interrupted. Continue with the same transaction — do not pay again."}
+                </p>
+                {verificationError && (
+                    <p className="text-[10px] font-mono leading-relaxed text-amber-200/70">{verificationError}</p>
+                )}
+            </div>
+            <a
+                href={`${pendingVerification.chainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${pendingVerification.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[9px] font-mono text-[#00d2b4] hover:underline"
+            >
+                View submitted transaction <ExternalLink className="h-3 w-3" />
+            </a>
+            <button
+                type="button"
+                onClick={retryPendingVerification}
+                disabled={isVerifying}
+                className="w-full rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-amber-100 transition hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                {isVerifying ? "Verifying submitted payment…" : "Continue verification"}
+            </button>
+            <p className="text-[9px] leading-relaxed text-white/40">This checkout is locked to the transaction above until settlement is confirmed.</p>
+        </div>
+    ) : null;
 
     /* The verifying/settled panel is identical for browser and embedded wallets (it keys off
        verificationStatus, not the wallet), so it's shared by both branches below. */
@@ -1115,6 +1518,25 @@ export default function PublicPayClient({
                                     {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d2b4] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#00d2b4]" /></span>}
                                     {cannotPayLink ? "Payment unavailable" : remoteStatusError || `Waiting for payment${lastRemoteStatusCheck ? ` · checked ${lastRemoteStatusCheck.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}`}
                                 </div>
+                                {!cannotPayLink && !isPaymentSettled && (
+                                    <div className="w-full space-y-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleManualPaymentCheck}
+                                            disabled={isManualChecking}
+                                            className="w-full rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                                        >
+                                            {isManualChecking ? (
+                                                <><Loader2 className="mr-1.5 inline h-3.5 w-3.5 animate-spin" /> Checking…</>
+                                            ) : (
+                                                <><CheckCircle className="mr-1.5 inline h-3.5 w-3.5" /> I've made my payment</>
+                                            )}
+                                        </button>
+                                        {manualCheckMessage && (
+                                            <p className="px-2 text-center text-[10px] leading-relaxed text-amber-200/70" aria-live="polite">{manualCheckMessage}</p>
+                                        )}
+                                    </div>
+                                )}
                                 <button
                                     type="button"
                                     onClick={handlePayInBrowser}
@@ -1237,7 +1659,7 @@ export default function PublicPayClient({
                         <div ref={paymentControlsRef}>
                         {!isConnected ? (
                             <div className="space-y-4">
-                              {(verificationStatus && !verificationError) ? verificationPanel : (
+                              {pendingVerificationPanel ? pendingVerificationPanel : (verificationStatus && !verificationError) ? verificationPanel : (
                                 <>
                                 {/* Embedded (Circle/email) wallet: pay on-page from the SubScript wallet
                                     balance — no browser wallet to connect, and no DM detour for one-time
@@ -1248,13 +1670,17 @@ export default function PublicPayClient({
                                             Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
                                         </p>
                                         {embeddedEmailVerificationPanel}
-                                        <button
-                                            onClick={() => beginPaymentReview("embedded")}
-                                            disabled={isEmbeddedPaying || !clientIntentId || cannotPayLink || payerNeedsEmail}
+                                         <button
+                                             onClick={() => beginPaymentReview("embedded")}
+                                             disabled={!pendingVerificationHydrated || Boolean(pendingVerification) || isEmbeddedPaying || !clientIntentId || cannotPayLink || payerNeedsEmail}
                                             className="w-full py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 disabled:opacity-50 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                         >
                                             {isEmbeddedPaying ? (
-                                                <><Loader2 className="w-4 h-4 animate-spin" /> Processing payment...</>
+                                                <><Loader2 className="w-4 h-4 animate-spin" /> {
+                                                    paymentStep === "sending" ? "Sending payment…" :
+                                                    paymentStep === "verifying" ? "Verifying settlement…" :
+                                                    "Processing…"
+                                                }</>
                                             ) : (
                                                 <>Pay {(Number(linkData.amount_usdc) / 1_000_000).toFixed(2)} USDC <ArrowRight className="w-4 h-4" /></>
                                             )}
@@ -1312,7 +1738,7 @@ export default function PublicPayClient({
                                                 onClick={() => {
                                                     setVerificationError(null);
                                                     void connectAsync({ connector }).catch((error: any) => {
-                                                        setVerificationError(error?.shortMessage || error?.message || "The browser wallet could not be connected.");
+                                                        setVerificationError(friendlyError(error?.shortMessage || error?.message || "The browser wallet could not be connected."));
                                                     });
                                                 }}
                                                 disabled={isConnecting}
@@ -1395,7 +1821,7 @@ export default function PublicPayClient({
                                     </div>
                                 ) : null}
 
-                                {isWrongChain ? (
+                                {pendingVerificationPanel ? pendingVerificationPanel : isWrongChain ? (
                                     <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 space-y-4">
                                         <div className="flex items-center gap-3">
                                             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
@@ -1516,13 +1942,17 @@ export default function PublicPayClient({
                                             <button
                                                 type="button"
                                                 onClick={() => beginPaymentReview("wallet")}
-                                                disabled={isPaying || isConfirming}
+                                                disabled={!pendingVerificationHydrated || Boolean(pendingVerification) || isPaying || isConfirming || isEmbeddedPaying}
                                                 className="w-full py-4 bg-gradient-to-r from-[#00d2b4] to-blue-500 hover:brightness-110 disabled:opacity-40 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(0,210,180,0.2)]"
                                             >
-                                                {(isPaying || isConfirming) ? (
-                                                    <>
-                                                        Processing...
-                                                    </>
+                                                {(isPaying || isConfirming || isEmbeddedPaying) ? (
+                                                    <><Loader2 className="w-4 h-4 animate-spin" /> {
+                                                        paymentStep === "approving" ? "Approving USDC…" :
+                                                        paymentStep === "sending" ? "Sending payment…" :
+                                                        paymentStep === "confirming" ? "Confirming on-chain…" :
+                                                        paymentStep === "verifying" ? "Verifying settlement…" :
+                                                        "Processing…"
+                                                    }</>
                                                 ) : isCctpChain ? (
                                                     /* Subscribe seamlessly via CCTP */
                                                     <>
@@ -1583,6 +2013,19 @@ export default function PublicPayClient({
                                                 logoPadding={2}
                                             />
                                         </div>
+                                        {!cannotPayLink && !isPaymentSettled && (
+                                            <button
+                                                type="button"
+                                                onClick={handleManualPaymentCheck}
+                                                disabled={isManualChecking}
+                                                className="w-full rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50"
+                                            >
+                                                {isManualChecking ? "Checking…" : "I've made my payment"}
+                                            </button>
+                                        )}
+                                        {manualCheckMessage && (
+                                            <p className="text-center text-[10px] leading-relaxed text-amber-200/70" aria-live="polite">{manualCheckMessage}</p>
+                                        )}
                                     </motion.div>
                                 )}
                             </div>
@@ -1591,7 +2034,7 @@ export default function PublicPayClient({
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
                             <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
                         </div>
-                        {!isPaymentSettled && !(txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
+                        {!isPaymentSettled && !(pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
                             merchantCancelUrl ? (
                                 <a href={merchantCancelUrl} className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/50 underline hover:text-white">
                                     Cancel and return to {hostOf(merchantCancelUrl) || "merchant site"} <ExternalLink className="h-3 w-3" />
@@ -1602,7 +2045,7 @@ export default function PublicPayClient({
                                 </button>
                             )
                         )}
-                        {!isPaymentSettled && (txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
+                        {!isPaymentSettled && (pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
                             <p className="text-center text-[10px] font-medium leading-relaxed text-amber-200/70">Payment submitted — keep this page open while settlement is confirmed.</p>
                         )}
                         </div>
@@ -1630,7 +2073,7 @@ export default function PublicPayClient({
                             <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">On-chain payments cannot be reversed. Only continue if the merchant, amount, and recipient are correct.</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <button type="button" onClick={() => setReviewPaymentMode(null)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>
-                                <button type="button" onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black">Confirm payment</button>
+                                <button type="button" disabled={isPaying || isEmbeddedPaying} onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">Confirm payment</button>
                             </div>
                         </motion.div>
                     </div>
