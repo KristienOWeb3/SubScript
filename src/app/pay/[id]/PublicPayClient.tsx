@@ -22,6 +22,7 @@ import {
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { ROUTER_DEPOSIT_ABI, isReceiptId, receiptUrl } from "@/lib/arc/memo";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 
 export interface PublicPayClientProps {
     id: string;
@@ -34,10 +35,6 @@ export interface PublicPayClientProps {
     successUrl?: string | null;
     cancelUrl?: string | null;
     initialSettlementVersion?: string | null;
-}
-
-function shortenAddress(value: string) {
-    return value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Unknown recipient";
 }
 
 type PendingCheckoutVerification = {
@@ -129,6 +126,7 @@ export default function PublicPayClient({
     });
 
     const [linkData, setLinkData] = useState<any>(initialLinkData);
+    const displayMerchantName = merchantDisplayName(linkData?.merchant_display_name);
     const [isLoading, setIsLoading] = useState(!initialLinkData);
     const [error, setError] = useState<string | null>(null);
     const hasInitialSingleUseSettlement = Boolean(
@@ -139,7 +137,7 @@ export default function PublicPayClient({
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
     const isLinkInactive = linkData?.active === false || isLinkExpired;
-    const cannotPayLink = isLinkInactive || isLinkExhausted;
+    const cannotPayLink = isLinkInactive || isLinkExhausted || linkData?.hosted_payments_enabled === false;
 
     /* Derived variables — same peer/user-request predicate as the server (isPeerRequestLink). */
     const isUserRequest = Boolean(
@@ -336,7 +334,7 @@ export default function PublicPayClient({
             }
             if (account.role === "ENTERPRISE") {
                 setIsRoleMismatch(true);
-                throw new Error("Merchant wallets cannot pay checkout links. Connect a personal user wallet.");
+                throw new Error("Business accounts cannot pay checkout links. Sign in with a personal account.");
             }
             const nonceResponse = await fetch("/api/auth/nonce", { cache: "no-store" });
             const nonceData = await nonceResponse.json().catch(() => ({}));
@@ -1180,6 +1178,10 @@ export default function PublicPayClient({
     };
 
     const handlePayInBrowser = () => {
+        if (pendingVerification) {
+            retryPendingVerification();
+            return;
+        }
         paymentControlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         if (embeddedPaySession) {
             beginPaymentReview("embedded");
@@ -1314,7 +1316,7 @@ export default function PublicPayClient({
     const retryPendingVerification = () => {
         if (!pendingVerification || isVerifying || isPaymentSettled) return;
         setVerificationError(null);
-        setVerificationStatus("Continuing settlement verification for your submitted payment...");
+        setVerificationStatus("Continuing confirmation for your submitted payment...");
         startVerification(
             pendingVerification.txHash,
             pendingVerification.receiptId,
@@ -1333,20 +1335,12 @@ export default function PublicPayClient({
             <div className="space-y-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Payment already submitted</p>
                 <p className="text-xs leading-relaxed text-amber-100/80">
-                    {verificationStatus || "Settlement verification was interrupted. Continue with the same transaction — do not pay again."}
+                    {verificationStatus || "Payment confirmation was interrupted. Continue with the same payment — do not pay again."}
                 </p>
                 {verificationError && (
                     <p className="text-[10px] font-mono leading-relaxed text-amber-200/70">{verificationError}</p>
                 )}
             </div>
-            <a
-                href={`${pendingVerification.chainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${pendingVerification.txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[9px] font-mono text-[#00d2b4] hover:underline"
-            >
-                View submitted transaction <ExternalLink className="h-3 w-3" />
-            </a>
             <button
                 type="button"
                 onClick={retryPendingVerification}
@@ -1355,7 +1349,7 @@ export default function PublicPayClient({
             >
                 {isVerifying ? "Verifying submitted payment…" : "Continue verification"}
             </button>
-            <p className="text-[9px] leading-relaxed text-white/40">This checkout is locked to the transaction above until settlement is confirmed.</p>
+            <p className="text-[9px] leading-relaxed text-white/40">We will reuse this payment until confirmation completes.</p>
         </div>
     ) : null;
 
@@ -1368,11 +1362,6 @@ export default function PublicPayClient({
             {shareableReceiptUrl && (
                 <a href={shareableReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
                     Share receipt <ExternalLink className="w-3 h-3" />
-                </a>
-            )}
-            {successTxHash && (
-                <a href={`${expectedChainId === 5042001 ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${successTxHash}`} target="_blank" rel="noopener noreferrer" className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1">
-                    View Tx on Explorer <ExternalLink className="w-3 h-3" />
                 </a>
             )}
             {isPaymentSettled && (
@@ -1540,10 +1529,12 @@ export default function PublicPayClient({
                                 <button
                                     type="button"
                                     onClick={handlePayInBrowser}
-                                    disabled={cannotPayLink}
+                                    disabled={pendingVerification ? isVerifying : cannotPayLink}
                                     className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#00d2b4] transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                    {cannotPayLink ? "Payment unavailable" : "Pay in this browser"}
+                                    {pendingVerification
+                                        ? (isVerifying ? "Confirming payment…" : "Continue verification")
+                                        : cannotPayLink ? "Payment unavailable" : "Pay in this browser"}
                                 </button>
                             </aside>
                         )}
@@ -1814,7 +1805,7 @@ export default function PublicPayClient({
                                         <div>
                                             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Verify this wallet</p>
                                             <p className="mt-1 text-[10px] leading-relaxed text-white/55">A wallet signature confirms ownership. After that, a verified email OTP is mandatory before payment.</p>
-                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[9px] text-white/40">This browser is currently signed in as {shortenAddress(sessionInfo.wallet)}.</p>}
+                                            {sessionInfo?.loggedIn && sessionInfo.wallet && <p className="mt-2 text-[9px] text-white/40">This browser is currently signed in to another SubScript account.</p>}
                                         </div>
                                         <button type="button" onClick={handleAuthenticateConnectedWallet} disabled={isWalletAuthenticating} className="w-full rounded-xl bg-white px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-black disabled:opacity-50">{isWalletAuthenticating ? "Waiting for signature…" : "Verify connected wallet"}</button>
                                         {walletAuthenticationError && <div className="space-y-2"><p className="text-[10px] leading-relaxed text-red-300" role="alert">{walletAuthenticationError}</p>{walletAuthenticationError.includes("does not have") && <a href={`/signup?next=${encodeURIComponent(`/pay/${id}`)}`} className="inline-block text-[10px] font-bold text-[#00d2b4] underline">Create a user account</a>}</div>}
@@ -1912,7 +1903,7 @@ export default function PublicPayClient({
                                                  disabled={true}
                                                  className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                              >
-                                                 Role Mismatch: Merchant Wallet
+                                                 Use a Personal Account
                                              </button>
                                         ) : cannotPayLink ? (
                                             <button
@@ -2032,7 +2023,7 @@ export default function PublicPayClient({
                         )}
 
                         <div className="pt-2 flex items-center justify-center gap-1.5 text-[9px] text-white/30 font-sans">
-                            <Lock className="w-3 h-3" /> Securely routed via SubScript Router protocol
+                            <Lock className="w-3 h-3" /> Protected by SubScript
                         </div>
                         {!isPaymentSettled && !(pendingVerification || txHash || successTxHash || verificationStatus || isPaying || isEmbeddedPaying || isVerifying) && (
                             merchantCancelUrl ? (
@@ -2059,18 +2050,14 @@ export default function PublicPayClient({
                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="checkout-review-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-[#09090b] p-6 text-left shadow-2xl">
                             <div>
                                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#00d2b4]">Final review</p>
-                                <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-white">Confirm your payment</h3>
+                                <h3 id="checkout-review-title" className="mt-1 text-xl font-black text-white">Pay {displayMerchantName}?</h3>
                             </div>
                             <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs">
-                                <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold text-white">{linkData?.merchant_name_snapshot || shortenAddress(linkData?.merchant_address || "")}</span></div>
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold text-white">{displayMerchantName}</span></div>
                                 <div className="flex justify-between gap-4"><span className="text-white/45">You pay</span><span className="font-bold text-white">{(Number(linkData?.amount_usdc || 0) / 1_000_000).toFixed(2)} USDC</span></div>
                                 {displayCurrency && displayCurrency !== "USD" && displayAmount !== undefined && <div className="flex justify-between gap-4"><span className="text-white/45">Estimated value</span><span className="font-bold text-white">≈ {fiatSymbol}{displayAmount.toFixed(2)} {displayCurrency}</span></div>}
-                                <div className="flex justify-between gap-4"><span className="text-white/45">Network</span><span className="font-bold text-white">{requiredChainName}</span></div>
-                                <div className="flex justify-between gap-4"><span className="text-white/45">Paying wallet</span><span className="font-mono text-[10px] font-bold text-white">{shortenAddress((reviewPaymentMode === "embedded" ? sessionInfo?.wallet : address) || "")}</span></div>
-                                <div className="flex justify-between gap-4"><span className="text-white/45">Wallet prompts</span><span className="text-right font-bold text-white">{reviewPaymentMode === "embedded" ? "No browser signature" : isUserRequest ? "1 transfer signature" : "Approval + payment"}</span></div>
-                                <div className="space-y-1"><span className="text-white/45">Recipient</span><p className="break-all font-mono text-[10px] text-white/75">{linkData?.merchant_address}</p></div>
                             </div>
-                            <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">On-chain payments cannot be reversed. Only continue if the merchant, amount, and recipient are correct.</p>
+                            <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">Only continue if you recognize {displayMerchantName} and the amount is correct.</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <button type="button" onClick={() => setReviewPaymentMode(null)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>
                                 <button type="button" disabled={isPaying || isEmbeddedPaying} onClick={() => { const mode = reviewPaymentMode; setReviewPaymentMode(null); if (mode === "embedded") void handleEmbeddedPay(); else void handlePay(); }} className="rounded-2xl bg-[#00d2b4] px-4 py-3 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">Confirm payment</button>
@@ -2105,16 +2092,16 @@ export default function PublicPayClient({
 
                             <div className="space-y-4 font-sans text-xs text-white/70 leading-relaxed">
                                 <p>
-                                    You are about to make a payment to an <span className="font-semibold text-white">unverified merchant address</span>:
+                                    You are about to make a payment to an unverified merchant:
                                 </p>
-                                <div className="p-3 bg-white/5 border border-white/10 rounded-xl font-mono text-[10px] break-all text-white/80 select-all">
-                                    {linkData?.merchant_address}
+                                <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-sm font-bold text-white/90">
+                                    {displayMerchantName}
                                 </div>
                                 <p>
-                                    This address has not completed the SubScript validation protocol. Please verify the identity of the recipient before proceeding.
+                                    This merchant has not completed SubScript verification. Confirm that you recognize the name before proceeding.
                                 </p>
                                 <p className="text-amber-300/80 font-medium">
-                                    Funds sent to unverified addresses cannot be recovered or reversed.
+                                    Payments to unverified merchants may be harder to recover.
                                 </p>
                             </div>
 

@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { resolveAliasForAddress, shortAddress } from "@/lib/alias/resolve";
+import { resolveAliasForAddress } from "@/lib/alias/resolve";
+import { accountDisplayName } from "@/lib/identityDisplay";
 
 /*
- * Renders a wallet's human ".sub" DNS name, resolving it from the address when not already known.
- * Falls back to a shortened address only when no (public) alias exists. Use this instead of showing
- * raw wallet addresses anywhere an identity is displayed.
+ * Renders a human account name without exposing the underlying settlement address.
  */
 export function Identity({
     address,
@@ -32,9 +31,9 @@ export function Identity({
         return () => { active = false; };
     }, [address, knownAlias]);
 
-    const label = alias || (fallbackToAddress ? shortAddress(address) : "");
+    const label = accountDisplayName(alias, fallbackToAddress ? "SubScript account" : "");
     return (
-        <span className={className} title={address || undefined}>
+        <span className={className}>
             {label}
         </span>
     );

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
     const sessionWallet = await getSessionWallet(request.headers);
@@ -81,14 +82,30 @@ export async function GET(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
 
-        /* Fetch merchant verified status */
-        const { data: merchant } = await supabase
-            .from("merchants")
-            .select("verified")
-            .eq("wallet_address", link.merchant_address.toLowerCase())
-            .maybeSingle();
+        const [
+            { data: merchant },
+            { data: merchantAlias },
+            { data: paymentSettings, error: paymentSettingsError },
+        ] = await Promise.all([
+            supabase
+                .from("merchants")
+                .select("verified")
+                .eq("wallet_address", link.merchant_address.toLowerCase())
+                .maybeSingle(),
+            supabase
+                .from("address_aliases")
+                .select("alias")
+                .eq("address", link.merchant_address.toLowerCase())
+                .maybeSingle(),
+            supabase
+                .from("system_settings")
+                .select("hosted_payments_enabled")
+                .maybeSingle(),
+        ]);
 
         const merchantVerified = merchant ? !!merchant.verified : false;
+        const merchantName = merchantDisplayName(merchantAlias?.alias);
+        const hostedPaymentsEnabled = !paymentSettingsError && paymentSettings?.hosted_payments_enabled !== false;
 
         /* Check authorization: if not owner, check active, expiration, and usage constraints */
         const auth = await authenticateRequest(request);
@@ -102,6 +119,8 @@ export async function GET(request: Request, { params }: RouteContext) {
             return NextResponse.json({
                 link: {
                     ...ownerLink,
+                    merchant_display_name: merchantName,
+                    hosted_payments_enabled: hostedPaymentsEnabled,
                     merchant_verified: merchantVerified
                 }
             }, { status: 200 });
@@ -142,6 +161,8 @@ export async function GET(request: Request, { params }: RouteContext) {
                 max_uses: link.max_uses,
                 use_count: link.use_count,
                 merchant_name_snapshot: link.merchant_name_snapshot,
+                merchant_display_name: merchantName,
+                hosted_payments_enabled: hostedPaymentsEnabled,
                 invoice_number: link.invoice_number,
                 due_date: link.due_date,
                 receipt_token: link.receipt_token,

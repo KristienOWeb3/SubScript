@@ -6,7 +6,6 @@ import {
     Loader2, CheckCircle, AlertTriangle, ArrowRight, Lock, Shield, ShieldAlert, RefreshCw, ExternalLink,
 } from "@/components/icons";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
-import { isProd } from "@/lib/contracts/constants";
 
 type PlanData = {
     id: string;
@@ -372,16 +371,6 @@ export default function SubscribeClient({
                                 <p className="text-xs font-semibold text-white/80 leading-relaxed">
                                     You&apos;re subscribed to {result.planName || plan.name}! Your first payment has been taken.
                                 </p>
-                                {result.txHash && (
-                                    <a
-                                        href={`${isProd ? "https://arcscan.app" : "https://testnet.arcscan.app"}/tx/${result.txHash}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[9px] font-mono text-[#00d2b4] hover:underline flex items-center gap-1"
-                                    >
-                                        View transaction <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                )}
                                 <button
                                     type="button"
                                     onClick={() => plan.successUrl ? window.location.assign(plan.successUrl) : router.push("/user?tab=inbox")}
@@ -479,7 +468,6 @@ export default function SubscribeClient({
                             <div className="flex justify-between gap-4"><span className="text-white/45">Charge today</span><span className="font-bold">{formatAmount(plan.amountUsdc)} USDC</span></div>
                             <div className="flex justify-between gap-4"><span className="text-white/45">Renews</span><span className="font-bold">Every {formatPeriod(plan.periodSeconds)}</span></div>
                             <div className="flex justify-between gap-4"><span className="text-white/45">Estimated next charge</span><span className="text-right font-bold">{new Date(Date.now() + Number(plan.periodSeconds) * 1000).toLocaleDateString()}</span></div>
-                            <div className="space-y-1"><span className="text-white/45">Merchant wallet</span><p className="break-all font-mono text-[10px] text-white/75">{plan.merchantAddress}</p></div>
                         </div>
                         <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">Confirming authorizes recurring USDC charges under these terms. You can manage or cancel the subscription from your dashboard; any minimum commitment shown above still applies.</p>
                         <div className="grid grid-cols-2 gap-3">

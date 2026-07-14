@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { requireAccountRole } from "@/lib/accounts/roles";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 
 export async function GET(request: Request) {
     try {
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
             return {
                 subscriptionId: sub.subscriptionId.toString(),
                 merchantAddress: sub.merchantAddress,
-                merchantName: aliasInfo ? aliasInfo.alias : sub.merchantAddress,
+                merchantName: merchantDisplayName(aliasInfo?.alias),
                 merchantVerified: sub.merchant.verified,
                 merchantProfilePic: sub.merchant.profilePic,
                 status: sub.status,

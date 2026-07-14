@@ -338,13 +338,6 @@ export default function ReceiptClient({ receiptId }: ReceiptClientProps) {
                             <Identity address={receipt.merchant_address} className="mt-1 block text-white/85 text-xs" />
                         </div>
 
-                        {receipt.tx_hash && (
-                            <a href={`https://explorer.testnet.arc.network/tx/${receipt.tx_hash}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/70 hover:border-[#00d2b4]/30 hover:text-white">
-                                <span>{receiptConfirmed ? "View on-chain proof" : "View transaction status"}</span>
-                                <ExternalLink className="h-4 w-4" />
-                            </a>
-                        )}
-
                         <div className="border border-white/10 rounded-2xl p-4 bg-black/20">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">Memo note</p>
                             <p className="mt-1 text-white/85 break-words text-xs">{receipt.memo_note || receipt.receipt_id}</p>

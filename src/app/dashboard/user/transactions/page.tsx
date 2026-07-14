@@ -362,7 +362,6 @@ export default function UserTransactionsPage() {
                       <p className="mt-1 text-[10px] text-white/55">{tx.detail} • {new Date(tx.time).toLocaleString()}</p>
                       <div className="mt-2 flex items-center gap-2">
                         <FinancialStatusBadge status={tx.status} />
-                        {tx.txHash && <a href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-[#ccff00] underline">Proof</a>}
                       </div>
                     </div>
                   </div>
