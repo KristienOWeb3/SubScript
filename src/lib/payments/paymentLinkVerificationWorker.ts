@@ -326,6 +326,12 @@ async function runPostSettlementEffects(
             .limit(1)
             .maybeSingle();
         if (!existingReceipt) {
+            /* Reads like a receipt a person would write: name the merchant (falling back to a
+               short address, never the raw 42-char one) and let the UI turn the receipt URL
+               into a "View receipt" link. The tx hash lives in tx_hash — the UI renders it as
+               an explorer link, so it isn't repeated as an inscrutable hex line here. */
+            const merchantLabel = job.merchant_name_snapshot?.trim()
+                || `${job.merchant_address.slice(0, 6)}…${job.merchant_address.slice(-4)}`;
             await insertSupabaseDmAndNotify(supabase, {
                 sender_address: job.merchant_address,
                 receiver_address: job.payer_address,
@@ -334,9 +340,7 @@ async function runPostSettlementEffects(
                 amount_usdc: job.amount_usdc.toString(),
                 title: `Receipt: ${job.payment_title}`,
                 description: [
-                    `SubScript confirmed your ${Number(job.amount_usdc) / 1_000_000} USDC payment.`,
-                    `Paid to: ${job.merchant_name_snapshot || job.merchant_address}`,
-                    `Transaction: ${job.tx_hash}`,
+                    `Your ${Number(job.amount_usdc) / 1_000_000} USDC payment to ${merchantLabel} has been confirmed.`,
                     `Receipt: ${shareUrl}`,
                 ].join("\n"),
                 tx_hash: job.tx_hash,

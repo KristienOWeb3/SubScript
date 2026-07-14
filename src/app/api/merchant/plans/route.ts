@@ -7,6 +7,7 @@ import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
+import { syncSitePlansFromCheckouts } from "@/lib/subscriptions/sitePlans";
 
 const MAX_DESCRIPTION_LEN = 300;
 
@@ -67,6 +68,11 @@ export async function GET(request: Request) {
 
         // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only.
         if (merchantParam && ethers.isAddress(merchantParam)) {
+            /* Merchants who only sell through their own site (API checkout sessions) have no
+               MerchantPlan rows even though they have real plans; materialize those shapes
+               first so the picker never claims "no plans" for an integrated merchant. */
+            await syncSitePlansFromCheckouts(merchantParam).catch((error) =>
+                console.error("Site-plan sync failed:", error));
             const plans = await prisma.merchantPlan.findMany({
                 where: { merchantAddress: merchantParam.toLowerCase(), active: true },
                 orderBy: { amountUsdc: "asc" },

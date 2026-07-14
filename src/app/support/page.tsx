@@ -7,6 +7,12 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
 const channels = [
   {
+    title: "Telegram support group",
+    link: { label: "t.me/subscriptsupport", href: "https://t.me/subscriptsupport" },
+    body: "The fastest way to reach the team and other builders. Ask anything — checkout issues, integrations, or just say hi.",
+    sla: "Community + team, usually same day",
+  },
+  {
     title: "General & product support",
     email: "support@subscriptonarc.com",
     body: "Integration questions, activation issues, dashboard problems, wallet onboarding, payment links, webhooks, and anything else about using SubScript.",
@@ -88,13 +94,19 @@ export default function SupportPage() {
             </p>
           </div>
 
-          <div className="mb-10 grid gap-4 sm:grid-cols-3">
+          <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {channels.map((ch) => (
               <section key={ch.title} className="liquid-glass flex flex-col gap-3 rounded-3xl border border-white/5 p-6">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-white">{ch.title}</h2>
-                <a href={`mailto:${ch.email}`} className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
-                  {ch.email}
-                </a>
+                {"link" in ch && ch.link ? (
+                  <a href={ch.link.href} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
+                    {ch.link.label}
+                  </a>
+                ) : (
+                  <a href={`mailto:${ch.email}`} className="break-all font-mono text-xs font-bold text-[#00d2b4] hover:underline">
+                    {ch.email}
+                  </a>
+                )}
                 <p className="text-xs leading-relaxed text-white/60">{ch.body}</p>
                 <p className="mt-auto text-[10px] font-bold uppercase tracking-wider text-white/40">{ch.sla}</p>
               </section>

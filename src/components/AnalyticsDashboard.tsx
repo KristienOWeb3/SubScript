@@ -394,10 +394,13 @@ export default function AnalyticsDashboard({
         return bars;
     }, [ledgers]);
 
-    /* Display list of subscribers actually generating revenue. */
+    /* Display list of subscribers actually generating revenue, most recently renewed first
+       (a later next-payment date means the subscriber settled more recently). */
     const displayList = useMemo(() => {
         return ledgers
             .filter(isPaying)
+            .slice()
+            .sort((a: any, b: any) => Number(b.nextPaymentTs || 0) - Number(a.nextPaymentTs || 0))
             .slice(0, 5)
             .map((sub: any) => ({
                 address: sub.shortSubAddress || "0x0000...0000",
@@ -544,7 +547,7 @@ export default function AnalyticsDashboard({
                                                 <p className="text-3xl font-extrabold text-white tracking-tight">{activeSubscribers}</p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">30-Day Churn Rate</p>
+                                                <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">All-Time Churn</p>
                                                 <p className="text-xl font-bold text-white/90">{stats.churn.toFixed(1)}%</p>
                                             </div>
                                             <div>
@@ -561,7 +564,7 @@ export default function AnalyticsDashboard({
                                         </div>
                                     </div>
                                     <p className="text-[9px] text-white/30 font-sans mt-4">
-                                        Subscriptions active this billing cycle vs cancellations
+                                        Share of all subscriptions ever created that are still active
                                     </p>
                                 </div>
                             </div>
