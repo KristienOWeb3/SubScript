@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 import { headers } from "next/headers";
 import { getCurrencyForCountry } from "@/lib/currencyMap";
 import { fetchExchangeRate } from "@/lib/fx";
@@ -64,7 +65,28 @@ async function getPaymentLink(id: string) {
         console.error("Error retrieving payment link on server:", error.message);
         return null;
     }
-    return link;
+    if (!link) return null;
+
+    const [
+        { data: alias },
+        { data: paymentSettings, error: paymentSettingsError },
+    ] = await Promise.all([
+        supabase
+            .from("address_aliases")
+            .select("alias")
+            .eq("address", String(link.merchant_address).toLowerCase())
+            .maybeSingle(),
+        supabase
+            .from("system_settings")
+            .select("hosted_payments_enabled")
+            .maybeSingle(),
+    ]);
+
+    return {
+        ...link,
+        merchant_display_name: merchantDisplayName(alias?.alias),
+        hosted_payments_enabled: !paymentSettingsError && paymentSettings?.hosted_payments_enabled !== false,
+    };
 }
 
 /* Dynamically generate Open Graph and Twitter Card metadata for dynamic checkouts */
@@ -80,11 +102,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
 
     const amountFormatted = (Number(link.amount_usdc) / 1000000).toFixed(2);
-    const merchantShort = link.merchant_address
-        ? `${link.merchant_address.slice(0, 6)}...${link.merchant_address.slice(-4)}`
-        : "Merchant";
-
-    const title = `Pay ${merchantShort} - ${amountFormatted} USDC`;
+    const title = `Pay ${link.merchant_display_name} - ${amountFormatted} USDC`;
     const description = link.description || "Secure checkout via SubScript Protocol";
 
     const configuredAppUrl = normalizePublicUrl(process.env.NEXT_PUBLIC_APP_URL);

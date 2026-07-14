@@ -174,13 +174,10 @@ export async function POST(request: Request) {
             .maybeSingle();
         if (settingsError) {
             console.error("[verify] Failed to read hosted payment settings:", settingsError.message);
-            return NextResponse.json({ error: "Failed to validate payment availability" }, { status: 500 });
-        }
-        if (settings?.hosted_payments_enabled === false) {
-            return NextResponse.json(
-                { error: "Service Unavailable: Hosted payments are temporarily disabled." },
-                { status: 503 },
-            );
+        } else if (settings?.hosted_payments_enabled === false) {
+            /* This request is post-broadcast. A circuit breaker may stop new payments, but it
+               must never strand funds that have already left the payer's account. */
+            console.warn("[verify] Hosted payments are disabled; continuing recovery for submitted payment.");
         }
 
         const expiresAt = new Date(Date.now() + ProtocolConfig.IDEMPOTENCY_TTL * 1000).toISOString();

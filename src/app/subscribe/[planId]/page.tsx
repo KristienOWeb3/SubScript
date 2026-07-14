@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import SubscribeClient from "./SubscribeClient";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
+import { merchantDisplayName } from "@/lib/identityDisplay";
 
 type PageProps = {
     params: Promise<{ planId: string }>;
@@ -79,10 +80,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
 
     const amountFormatted = (Number(plan.amount_usdc) / 1_000_000).toFixed(2);
-    const merchantName = plan.merchant_alias
-        || (plan.merchant_address
-            ? `${plan.merchant_address.slice(0, 6)}...${plan.merchant_address.slice(-4)}`
-            : "Merchant");
+    const merchantName = merchantDisplayName(plan.merchant_alias);
 
     const title = `Subscribe to ${plan.name} — ${amountFormatted} USDC`;
     const description = (plan.description && String(plan.description).trim())
@@ -133,8 +131,7 @@ export default async function PublicSubscribePage({ params }: PageProps) {
             cancelUrl: "cancel_url" in plan && plan.cancel_url ? String(plan.cancel_url) : undefined,
             merchant: {
                 address: String(plan.merchant_address).toLowerCase(),
-                name: plan.merchant_alias
-                    || `${String(plan.merchant_address).slice(0, 6)}...${String(plan.merchant_address).slice(-4)}`,
+                name: merchantDisplayName(plan.merchant_alias),
                 alias: plan.merchant_alias,
             },
         }

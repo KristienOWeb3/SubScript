@@ -1,5 +1,6 @@
 /* API route to load and update system-automated DMs for the authenticated user */
 import { NextResponse } from "next/server";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -100,11 +101,15 @@ export async function GET(request: Request) {
         const formatted = dms.map((dm: any) => ({
             id: dm.id,
             senderAddress: dm.senderAddress,
-            senderName: aliasMap.get(dm.senderAddress.toLowerCase()) || dm.senderAddress,
+            senderName: roleMap.get(dm.senderAddress.toLowerCase()) === "ENTERPRISE"
+                ? merchantDisplayName(aliasMap.get(dm.senderAddress.toLowerCase()))
+                : accountDisplayName(aliasMap.get(dm.senderAddress.toLowerCase())),
             senderRole: roleMap.get(dm.senderAddress.toLowerCase()) || null,
             senderProfilePic: profilePicMap.get(dm.senderAddress.toLowerCase()) || null,
             receiverAddress: dm.receiverAddress,
-            receiverName: aliasMap.get(dm.receiverAddress.toLowerCase()) || dm.receiverAddress,
+            receiverName: roleMap.get(dm.receiverAddress.toLowerCase()) === "ENTERPRISE"
+                ? merchantDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase()))
+                : accountDisplayName(aliasMap.get(dm.receiverAddress.toLowerCase())),
             receiverRole: roleMap.get(dm.receiverAddress.toLowerCase()) || null,
             receiverProfilePic: profilePicMap.get(dm.receiverAddress.toLowerCase()) || null,
             messageType: dm.messageType,

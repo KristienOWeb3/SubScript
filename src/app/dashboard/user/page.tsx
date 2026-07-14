@@ -81,6 +81,7 @@ import { USDC_NATIVE_GAS_ADDRESS, SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contract
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
 import { humanStatus, humanSubscriptionStatus } from "@/lib/transactionLabels";
 import { useSwipeTabs } from "@/hooks/useSwipeTabs";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
@@ -193,15 +194,15 @@ const looksLikeWalletAddress = (value: string | null | undefined) => {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 };
 
-const formatPeerDisplayName = (name: string | null | undefined, address: string | null) => {
+const formatPeerDisplayName = (name: string | null | undefined, _address: string | null) => {
   const cleanedName = name?.trim();
-  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return formatAddress(address);
-  return cleanedName;
+  if (!cleanedName || looksLikeWalletAddress(cleanedName)) return accountDisplayName(null);
+  return accountDisplayName(cleanedName);
 };
 
 const shortenWalletsInText = (value: string | null | undefined) => {
   if (!value) return value || null;
-  return value.replace(walletAddressPattern, (match) => formatAddress(match));
+  return value.replace(walletAddressPattern, "SubScript account");
 };
 
 const dmRequestDurationOptions = [
@@ -245,13 +246,6 @@ const microsToUsdcString = (micros: string | null) => {
 const splitDmDescription = (description: string | null) => {
   if (!description) return [];
   return description.split("\n").map((item) => item.trim()).filter(Boolean);
-};
-
-/* A DM only links to the explorer when it carries a genuine on-chain hash.
-   Reactions and other system messages have null/placeholder (all-zero) hashes. */
-const isRealTxHash = (txHash: string | null | undefined): txHash is string => {
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
-  return !/^0x0+$/.test(txHash);
 };
 
 const isReactionMessage = (messageType: string) => messageType === "PEER_REACTION";
@@ -1291,8 +1285,7 @@ export default function UserDashboard() {
         });
       }
 
-      /* Mark the request handled and drop a transfer receipt into the thread (real txHash
-         so "View Tx" links to the explorer). */
+      /* Mark the request handled and keep the transfer receipt in the thread. */
       await handleUpdateDmStatus(dm.id, "APPROVED");
       if (txHash) {
         await fetch("/api/user/dms", {
@@ -1494,12 +1487,16 @@ export default function UserDashboard() {
     const acknowledgedUnverified = opts?.acknowledgedUnverified === true;
     setVaultActionBusy(true);
     try {
-      // Accept a 0x address or a registered alias for the merchant on a new commit.
+      // Customer-facing vault setup accepts a friendly SubScript name only.
       let merchantAddress = vaultActionMerchant.trim();
+      if (!vaultActionMerchantLocked && merchantAddress.startsWith("0x")) {
+        throw new Error("Enter the merchant's SubScript name instead of a wallet address.");
+      }
       if (!merchantAddress.startsWith("0x")) {
-        const resolved = await resolveRecipient(merchantAddress);
-        if (!resolved) throw new Error("Could not resolve that merchant name to an address.");
-        merchantAddress = resolved;
+        const response = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(merchantAddress)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!data.success || !data.address) throw new Error("Could not find that merchant name.");
+        merchantAddress = data.address;
       }
 
       /* Committing escrows funds a merchant can bill metered usage against, so warn before
@@ -2288,7 +2285,7 @@ export default function UserDashboard() {
       return {
         id: `sub-${s.subscriptionId}`,
         kind: "recurring" as const,
-        name: s.merchantName || formatAddress(s.merchantAddress),
+        name: merchantDisplayName(s.merchantName),
         pic: s.merchantProfilePic,
         detail: `Plan • ${formatPlanPeriod(s.billingIntervalSeconds)}`,
         amountLabel: `-$${formatUsdc(s.amountCapUsdc)}/${formatPlanPeriod(s.billingIntervalSeconds)[0]}`,
@@ -4140,14 +4137,6 @@ export default function UserDashboard() {
                                       >
                                         Grant
                                       </a>
-                                      <a
-                                        href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[#ccff00] hover:underline inline-flex items-center gap-1"
-                                      >
-                                        Tx <ExternalLink className="w-3.5 h-3.5" />
-                                      </a>
                                     </div>
                                   </td>
                                 </tr>
@@ -4838,15 +4827,20 @@ export default function UserDashboard() {
                     : "Withdraw unused committed balance back to your wallet. Dropping below the required commit pauses the service until you re-commit."}
                 </p>
               </div>
-              <Field label="Merchant address or name">
-                <input
-                  value={vaultActionMerchant}
-                  onChange={(event) => setVaultActionMerchant(event.target.value)}
-                  placeholder="0x... or alice.sub"
-                  className="subscript-input"
-                  disabled={vaultActionMerchantLocked}
-                  required
-                />
+              <Field label="Merchant">
+                {vaultActionMerchantLocked ? (
+                  <div className="subscript-input flex items-center">
+                    {merchantDisplayName(vaults.find((vault: any) => vault.merchantAddress?.toLowerCase() === vaultActionMerchant.toLowerCase())?.merchantName)}
+                  </div>
+                ) : (
+                  <input
+                    value={vaultActionMerchant}
+                    onChange={(event) => setVaultActionMerchant(event.target.value)}
+                    placeholder="Merchant name"
+                    className="subscript-input"
+                    required
+                  />
+                )}
               </Field>
               <Field label="Amount (USDC)">
                 <input
@@ -5480,7 +5474,6 @@ function DmBubble({
       loadingKey: `decline-${dm.id}`,
     });
   }
-  /* Renewal receipts (DEBIT_SUCCESS) show only "View Tx" — no dismiss/thanks prompt. */
   /* Only the recipient of a transfer can thank the sender — you don't thank yourself. */
   if (dm.messageType === "PEER_TRANSFER" && incoming && onThanks) {
     actionItems.push({ key: "thanks", label: "Thanks", onClick: onThanks, loadingKey: `thanks-${dm.id}` });
@@ -5500,13 +5493,6 @@ function DmBubble({
       /* Opting out: the merchant is not emailed any reason. */
       { key: "survey-skip", label: "Prefer not to answer", onClick: () => onSurveySubmit(dm, "DISMISSED"), loadingKey: `survey-${dm.id}-DISMISSED` },
     );
-  }
-  if (isRealTxHash(dm.txHash)) {
-    actionItems.push({
-      key: "tx",
-      label: "View Tx",
-      href: `https://explorer.testnet.arc.network/tx/${dm.txHash}`,
-    });
   }
   const hasActionMenu = actionItems.length > 1;
 
@@ -6860,7 +6846,6 @@ function SendFundsModal({
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
                   <CheckCircle2 className="h-10 w-10 text-[#ccff00]" />
                   <p className="text-xs text-white/80 font-bold">Transfer confirmed on Arc</p>
-                  {transactionHash && <a href={`https://explorer.testnet.arc.network/tx/${transactionHash}`} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-[#ccff00] underline">View transaction</a>}
                   <button type="button" onClick={onClose} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-white">Done</button>
                 </div>
               )}
@@ -7205,7 +7190,7 @@ function ConfigureVaultModal({
     if (!open) return;
     setStatus(null);
     if (editingVault) {
-      setMerchantAddress(editingVault.merchantName || editingVault.merchantAddress);
+      setMerchantAddress(merchantDisplayName(editingVault.merchantName));
       setResolvedAddress(editingVault.merchantAddress);
       setThreshold((Number(editingVault.thresholdUsdc) / 1_000_000).toString());
       setTopUpAmount((Number(editingVault.topUpAmountUsdc) / 1_000_000).toString());
@@ -7231,7 +7216,8 @@ function ConfigureVaultModal({
     }
 
     if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-      setResolvedAddress(trimmed);
+      setResolvedAddress(null);
+      setStatus("Use the merchant's SubScript name instead of a wallet address.");
       return;
     }
 
@@ -7256,7 +7242,7 @@ function ConfigureVaultModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resolvedAddress) {
-      setStatus("Recipient merchant address is not resolved.");
+      setStatus("Merchant name was not found.");
       return;
     }
     if (Number(threshold) <= 0 || Number(topUpAmount) <= 0 || Number(monthlyLimit) <= 0) {
@@ -7313,7 +7299,7 @@ function ConfigureVaultModal({
 
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div className="space-y-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant wallet address (0x…)</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant</span>
                 {editingVault ? (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
                     {merchantAddress}
@@ -7324,13 +7310,13 @@ function ConfigureVaultModal({
                     value={merchantAddress}
                     onChange={(e) => setMerchantAddress(e.target.value)}
                     className="subscript-input text-xs"
-                    placeholder="merchant.sub or 0x..."
+                    placeholder="Merchant name"
                     required
                   />
                 )}
                 {!editingVault && resolving && <span className="text-[9px] text-[#ccff00] animate-pulse">Resolving...</span>}
                 {!editingVault && resolvedAddress && (
-                  <div className="text-[9px] text-white/40 truncate mt-1">Resolved: {resolvedAddress}</div>
+                  <div className="text-[9px] text-white/40 truncate mt-1">Merchant found</div>
                 )}
               </div>
 
@@ -7486,7 +7472,7 @@ function TopupVaultModal({
               <div className="space-y-1">
                 <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Merchant Vault</span>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs font-mono text-white/80">
-                  {vault.merchantName || vault.merchantAddress}
+                  {merchantDisplayName(vault.merchantName)}
                 </div>
               </div>
 

@@ -127,10 +127,10 @@ test("money movement requires review and never exposes a cancel result after bro
     const dashboard = source("src/app/dashboard/user/page.tsx");
     const withdrawal = source("src/components/WithdrawModal.tsx");
 
-    assert.match(checkout, /Confirm your payment/);
+    assert.match(checkout, /Pay \{displayMerchantName\}\?/);
     assert.match(checkout, /reviewPaymentMode/);
     assert.match(checkout, /!\(pendingVerification \|\| txHash \|\| successTxHash \|\| verificationStatus \|\| isPaying \|\| isEmbeddedPaying \|\| isVerifying\)/);
-    assert.match(checkout, /This checkout is locked to the transaction above until settlement is confirmed/);
+    assert.match(checkout, /We will reuse this payment until confirmation completes/);
     assert.match(checkout, /verificationStatus && !verificationError/);
 
     assert.match(dashboard, /Review transfer/);

@@ -49,6 +49,22 @@ test("distributed limiter is atomic, privacy-preserving, and fails closed at cal
     assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.api_rate_limit_windows TO service_role/i);
 });
 
+test("hosted payment availability has an idempotent production schema repair", async () => {
+    const [route, migration] = await Promise.all([
+        source("src/app/api/payment-links/verify/route.ts"),
+        source("supabase/migrations/20260714072112_repair_system_settings_payment_flags.sql"),
+    ]);
+
+    assert.match(route, /\.select\("hosted_payments_enabled"\)/);
+    assert.match(route, /settings\?\.hosted_payments_enabled === false/);
+    assert.match(route, /continuing recovery for submitted payment/);
+    assert.doesNotMatch(route, /Failed to validate payment availability/);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS hosted_payments_enabled BOOLEAN NOT NULL DEFAULT true/i);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS batch_payouts_enabled BOOLEAN NOT NULL DEFAULT true/i);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS sbt_minting_enabled BOOLEAN NOT NULL DEFAULT true/i);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS webhook_dispatch_enabled BOOLEAN NOT NULL DEFAULT true/i);
+});
+
 test("partial payment failures create durable deduplicated reconciliation events", async () => {
     const [helper, embeddedPay, subscribe, migration] = await Promise.all([
         source("src/lib/payments/reconciliationEvents.ts"),

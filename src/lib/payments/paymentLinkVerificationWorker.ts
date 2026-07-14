@@ -164,26 +164,27 @@ function assertVerifiedTransaction(job: PaymentLinkVerificationJob, receipt: any
     if (receipt.status !== 1) throw new PermanentVerificationError("On-chain transaction reverted");
 
     if (job.settles_directly_to_user) {
-        if (!nativeTx.to || nativeTx.to.toLowerCase() !== USDC_NATIVE_GAS_ADDRESS.toLowerCase()) {
-            throw new PermanentVerificationError("Target contract is not Arc USDC for peer payment");
-        }
-
-        let parsedTransferCall: ethers.TransactionDescription | null = null;
-        try {
-            parsedTransferCall = USDC_TRANSFER_INTERFACE.parseTransaction({
-                data: nativeTx.data,
-                value: nativeTx.value,
-            });
-        } catch {
-            /* Converted to the stable mismatch error below. */
-        }
-        if (
-            !parsedTransferCall ||
-            parsedTransferCall.name !== "transfer" ||
-            parsedTransferCall.args[0].toLowerCase() !== job.merchant_address ||
-            BigInt(parsedTransferCall.args[1]) !== BigInt(job.amount_usdc)
-        ) {
-            throw new PermanentVerificationError("Direct USDC transfer does not match payment link parameters");
+        const isDirectUsdcCall = Boolean(
+            nativeTx.to && nativeTx.to.toLowerCase() === USDC_NATIVE_GAS_ADDRESS.toLowerCase(),
+        );
+        if (isDirectUsdcCall) {
+            let parsedTransferCall: ethers.TransactionDescription | null = null;
+            try {
+                parsedTransferCall = USDC_TRANSFER_INTERFACE.parseTransaction({
+                    data: nativeTx.data,
+                    value: nativeTx.value,
+                });
+            } catch {
+                /* Converted to the stable mismatch error below. */
+            }
+            if (
+                !parsedTransferCall ||
+                parsedTransferCall.name !== "transfer" ||
+                parsedTransferCall.args[0].toLowerCase() !== job.merchant_address ||
+                BigInt(parsedTransferCall.args[1]) !== BigInt(job.amount_usdc)
+            ) {
+                throw new PermanentVerificationError("Direct USDC transfer does not match payment link parameters");
+            }
         }
 
         const transferFound = receipt.logs.some((log: any) => {
@@ -202,27 +203,28 @@ function assertVerifiedTransaction(job: PaymentLinkVerificationJob, receipt: any
         return;
     }
 
-    if (!nativeTx.to || nativeTx.to.toLowerCase() !== SUBSCRIPT_ROUTER_ADDRESS.toLowerCase()) {
-        throw new PermanentVerificationError("Target contract is not SubScript Router contract");
-    }
-
-    let parsedRouterCall: ethers.TransactionDescription | null = null;
-    try {
-        parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
-            data: nativeTx.data,
-            value: nativeTx.value,
-        });
-    } catch {
-        /* Converted to the stable mismatch error below. */
-    }
-    if (
-        !parsedRouterCall ||
-        parsedRouterCall.name !== "depositForMerchant" ||
-        parsedRouterCall.args[0].toLowerCase() !== job.merchant_address ||
-        BigInt(parsedRouterCall.args[1]) !== BigInt(job.amount_usdc) ||
-        parsedRouterCall.args[2] !== job.receipt_id
-    ) {
-        throw new PermanentVerificationError("SubScript Router deposit call does not match receipt parameters");
+    const isDirectRouterCall = Boolean(
+        nativeTx.to && nativeTx.to.toLowerCase() === SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
+    );
+    if (isDirectRouterCall) {
+        let parsedRouterCall: ethers.TransactionDescription | null = null;
+        try {
+            parsedRouterCall = ROUTER_DEPOSIT_INTERFACE.parseTransaction({
+                data: nativeTx.data,
+                value: nativeTx.value,
+            });
+        } catch {
+            /* Converted to the stable mismatch error below. */
+        }
+        if (
+            !parsedRouterCall ||
+            parsedRouterCall.name !== "depositForMerchant" ||
+            parsedRouterCall.args[0].toLowerCase() !== job.merchant_address ||
+            BigInt(parsedRouterCall.args[1]) !== BigInt(job.amount_usdc) ||
+            parsedRouterCall.args[2] !== job.receipt_id
+        ) {
+            throw new PermanentVerificationError("SubScript Router deposit call does not match receipt parameters");
+        }
     }
 
     const depositFound = receipt.logs.some((log: any) => {

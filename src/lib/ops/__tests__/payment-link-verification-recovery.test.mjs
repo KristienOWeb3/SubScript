@@ -92,3 +92,19 @@ test("CCTP remains rejected by both request and durable worker", () => {
     assert.match(worker, /CCTP checkout verification is disabled/);
     assert.match(worker, /Number\(job\.chain_id\) !== ProtocolConfig\.CHAIN_ID/);
 });
+
+test("embedded ERC-4337 payments are authorized by canonical settlement events", () => {
+    assert.match(worker, /const isDirectRouterCall = Boolean/);
+    assert.match(worker, /if \(isDirectRouterCall\) \{[\s\S]*ROUTER_DEPOSIT_INTERFACE\.parseTransaction/);
+    assert.match(worker, /log\.address\.toLowerCase\(\) !== SUBSCRIPT_ROUTER_ADDRESS\.toLowerCase\(\)/);
+    assert.match(worker, /parsed\?\.name === "DepositWithMemo"/);
+    assert.match(worker, /parsed\.args\.payer\.toLowerCase\(\) === job\.payer_address/);
+    assert.match(worker, /parsed\.args\.merchant\.toLowerCase\(\) === job\.merchant_address/);
+    assert.match(worker, /parsed\.args\.memo === job\.receipt_id/);
+    assert.doesNotMatch(worker, /Target contract is not SubScript Router contract/);
+
+    assert.match(worker, /const isDirectUsdcCall = Boolean/);
+    assert.match(worker, /if \(isDirectUsdcCall\) \{[\s\S]*USDC_TRANSFER_INTERFACE\.parseTransaction/);
+    assert.match(worker, /parsed\?\.name === "Transfer"/);
+    assert.doesNotMatch(worker, /Target contract is not Arc USDC for peer payment/);
+});

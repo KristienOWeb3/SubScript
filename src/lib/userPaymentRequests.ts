@@ -5,6 +5,7 @@ import {
     pushDmNotification,
     type DmPushInput,
 } from "@/lib/dms/notifications";
+import { accountDisplayName } from "@/lib/identityDisplay";
 
 type CreateUserPaymentRequestInput = {
     requester: string;
@@ -35,6 +36,15 @@ export async function createUserPaymentRequest({
                 [requester]
             );
 
+            const aliasResult = await client.query(
+                `select alias
+                 from address_aliases
+                 where lower(address) = lower($1)
+                 limit 1`,
+                [requester],
+            );
+            const requesterName = accountDisplayName(aliasResult.rows[0]?.alias);
+
             const linkResult = await client.query(
                 `insert into payment_links (
                     merchant_address,
@@ -57,7 +67,7 @@ export async function createUserPaymentRequest({
                     amountMicros.toString(),
                     expiresAt ? expiresAt.toISOString() : null,
                     receiver,
-                    "SubScript user request",
+                    requesterName,
                     `${dmOnly ? "dm-peer-request" : "peer-request"}:${requester}:${Date.now()}`,
                     generateReceiptId(title),
                 ]
@@ -81,7 +91,7 @@ export async function createUserPaymentRequest({
                     title: `${amount.toFixed(6).replace(/\.?0+$/, "")} USDC requested`,
                     description: [
                         description,
-                        `Requester: ${requester}`,
+                        `Requested by: ${requesterName}`,
                         `Amount: ${amount.toFixed(6).replace(/\.?0+$/, "")} USDC`,
                         expiresAt ? `Valid until: ${expiresAt.toLocaleString("en-US")}` : null,
                         "This is a structured SubScript payment request, not a free-form chat.",

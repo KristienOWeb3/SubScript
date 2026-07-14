@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveAccountRoleWithBackfill } from "@/lib/accounts/roles";
+import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 export async function GET(request: Request) {
     try {
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
                 id: v.id,
                 userAddress: v.userAddress,
                 merchantAddress: v.merchantAddress,
-                merchantName: aliasMap.get(v.merchantAddress.toLowerCase()) || v.merchantAddress,
+                merchantName: merchantDisplayName(aliasMap.get(v.merchantAddress.toLowerCase())),
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
                 owedUsdc: v.owedUsdc.toString(),
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
             const formattedVaults = vaults.map(v => ({
                 id: v.id,
                 userAddress: v.userAddress,
-                userName: aliasMap.get(v.userAddress.toLowerCase()) || v.userAddress,
+                userName: accountDisplayName(aliasMap.get(v.userAddress.toLowerCase())),
                 merchantAddress: v.merchantAddress,
                 balanceUsdc: v.balanceUsdc.toString(),
                 commitUsdc: v.commitUsdc.toString(),
