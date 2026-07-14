@@ -1493,9 +1493,10 @@ export default function UserDashboard() {
         throw new Error("Enter the merchant's SubScript name instead of a wallet address.");
       }
       if (!merchantAddress.startsWith("0x")) {
-        const resolved = await resolveRecipient(merchantAddress);
-        if (!resolved) throw new Error("Could not find that merchant name.");
-        merchantAddress = resolved;
+        const response = await fetch(`/api/merchant/alias?alias=${encodeURIComponent(merchantAddress)}`);
+        const data = await response.json().catch(() => ({}));
+        if (!data.success || !data.address) throw new Error("Could not find that merchant name.");
+        merchantAddress = data.address;
       }
 
       /* Committing escrows funds a merchant can bill metered usage against, so warn before

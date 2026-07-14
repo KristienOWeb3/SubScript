@@ -38,6 +38,14 @@ test("receipts and customer activity keep proof inside SubScript", async () => {
     }
     assert.doesNotMatch(dashboard, /Merchant wallet address/i);
     assert.doesNotMatch(dashboard, /placeholder="merchant\.sub or 0x\.\.\."/i);
+    assert.match(
+        dashboard,
+        /fetch\(`\/api\/merchant\/alias\?alias=\$\{encodeURIComponent\(merchantAddress\)\}`\)/,
+    );
+    assert.doesNotMatch(
+        dashboard,
+        /if \(!merchantAddress\.startsWith\("0x"\)\) \{\s*const resolved = await resolveRecipient/,
+    );
 });
 
 test("identity components never expose an address fallback or tooltip", async () => {
