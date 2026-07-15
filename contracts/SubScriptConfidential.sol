@@ -44,6 +44,12 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
     /* Mapping from viewKeyHash => merchant address */
     mapping(bytes32 => address) public viewKeyHashes;
 
+    /* Block at which each viewKeyHash was registered. A reveal may take over a
+       registration made AFTER its own commit block (see revealViewKey): the hash was
+       secret until the reveal hit the mempool, so any registration younger than the
+       commitment is by definition a front-run of that reveal. */
+    mapping(bytes32 => uint256) public viewKeyRegistrationBlock;
+
     /* Mapping from merchant => array of batch records */
     mapping(address => BatchRecord[]) private batchHistory;
 
@@ -118,12 +124,22 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
         bytes32 expectedCommitment = keccak256(abi.encodePacked(_viewKeyHash, msg.sender, _salt));
         require(pending.commitment == expectedCommitment, "Commitment mismatch");
 
-        // Check the hash is not already claimed by someone else
+        /* Earliest commitment wins. The reveal transaction itself exposes the hash in the
+           mempool, so an observer could race it with the single-step registerViewKey. Any
+           registration whose block is LATER than this commitment can only have learned the
+           hash from this reveal (or the legacy tx it raced) — the committer takes it over.
+           A registration older than the commitment is legitimate and stays owned. */
         address current = viewKeyHashes[_viewKeyHash];
-        require(current == address(0) || current == msg.sender, "Key hash already registered");
+        require(
+            current == address(0)
+                || current == msg.sender
+                || viewKeyRegistrationBlock[_viewKeyHash] > pending.commitBlock,
+            "Key hash already registered"
+        );
 
-        // Register and consume the commitment
+        // Register (anchoring priority at the commit block) and consume the commitment
         viewKeyHashes[_viewKeyHash] = msg.sender;
+        viewKeyRegistrationBlock[_viewKeyHash] = pending.commitBlock;
         delete pendingCommitments[msg.sender];
 
         emit ViewKeyRegistered(msg.sender, _viewKeyHash);
@@ -140,6 +156,7 @@ contract SubScriptConfidential is SubScriptPSA, Ownable {
         address current = viewKeyHashes[_viewKeyHash];
         require(current == address(0) || current == msg.sender, "Key hash already registered");
         viewKeyHashes[_viewKeyHash] = msg.sender;
+        viewKeyRegistrationBlock[_viewKeyHash] = block.number;
         emit ViewKeyRegistered(msg.sender, _viewKeyHash);
     }
 

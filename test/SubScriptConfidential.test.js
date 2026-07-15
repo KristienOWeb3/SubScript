@@ -301,6 +301,60 @@ describe("SubScriptConfidential", function () {
         confidentialContract.connect(merchant).revealViewKey(keyHash, salt)
       ).to.be.revertedWith("No pending commitment");
     });
+
+    it("legacy registration that front-runs a reveal is taken over by the earlier commitment", async function () {
+      const { confidentialContract, merchant, stranger } = await loadFixture(deployConfidentialFixture);
+
+      const rawKey = ethers.randomBytes(32);
+      const keyHash = ethers.keccak256(rawKey);
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      const commitment = ethers.keccak256(
+        ethers.solidityPacked(["bytes32", "address", "bytes32"], [keyHash, merchant.address, salt])
+      );
+
+      await confidentialContract.connect(merchant).commitViewKey(commitment);
+      await mine(10);
+
+      /* The reveal transaction exposes keyHash in the mempool. Simulate an attacker who
+         saw it and won the race with the single-step registerViewKey before the reveal
+         mined — the exact hole the commit-reveal scheme must close. */
+      await confidentialContract.connect(stranger).registerViewKey(keyHash);
+      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(stranger.address);
+
+      /* The merchant's reveal still succeeds: the attacker's registration is younger than
+         the merchant's commitment, so the earlier committer takes the hash over. */
+      await confidentialContract.connect(merchant).revealViewKey(keyHash, salt);
+      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(merchant.address);
+
+      /* And the attacker cannot re-claim it afterwards. */
+      await expect(
+        confidentialContract.connect(stranger).registerViewKey(keyHash)
+      ).to.be.revertedWith("Key hash already registered");
+    });
+
+    it("commit-reveal cannot steal a hash that was registered before the commitment", async function () {
+      const { confidentialContract, merchant, stranger } = await loadFixture(deployConfidentialFixture);
+
+      const rawKey = ethers.randomBytes(32);
+      const keyHash = ethers.keccak256(rawKey);
+
+      /* Legitimate long-standing legacy registration. */
+      await confidentialContract.connect(stranger).registerViewKey(keyHash);
+
+      /* A later committer (who could only have learned the hash after the fact) must not
+         be able to use the takeover rule against a registration older than their commit. */
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      const commitment = ethers.keccak256(
+        ethers.solidityPacked(["bytes32", "address", "bytes32"], [keyHash, merchant.address, salt])
+      );
+      await confidentialContract.connect(merchant).commitViewKey(commitment);
+      await mine(10);
+
+      await expect(
+        confidentialContract.connect(merchant).revealViewKey(keyHash, salt)
+      ).to.be.revertedWith("Key hash already registered");
+      expect(await confidentialContract.viewKeyHashes(keyHash)).to.equal(stranger.address);
+    });
   });
 
   describe("Unshielded (Transparent) Batch Payouts", function () {
