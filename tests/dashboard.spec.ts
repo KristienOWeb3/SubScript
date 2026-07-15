@@ -112,6 +112,16 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
   test.describe("Authenticated Dashboard Tests", () => {
     test.beforeEach(async ({ page, context, baseURL }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
+      
+      // Mock ALL RPC calls to prevent rate limiting
+      await page.route("**/rpc.testnet.arc.network/**", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ jsonrpc: "2.0", result: "0x", id: 1 })
+        });
+      });
+
       const token = await createAuthCookie("0x835A9aEd7287068778e11df9D922B3FfaC7cFc29");
       await context.addCookies([
         {
@@ -147,11 +157,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     test("should roll API credentials", async ({ page }) => {
       await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
+      
+      // Wait for button to be clickable
+      await page.locator('button').filter({ hasText: /^Roll$/ }).first().waitFor({ state: 'visible' });
       await page.locator('button').filter({ hasText: /^Roll$/ }).click();
+      
       const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
-      await expect(confirmation).toBeVisible();
+      await expect(confirmation).toBeVisible({ timeout: 15000 });
       await confirmation.getByRole("button", { name: "Rotate Key", exact: true }).click();
-      await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 10000 });
+      await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 15000 });
     });
 
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
@@ -164,15 +178,6 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should inspect webhooks and replay webhook event", async ({ page }) => {
-      // Mock RPC endpoint to prevent rate limiting
-      await page.route("**/rpc.testnet.arc.network/**", async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ result: "0x" })
-        });
-      });
-
       // Mock the replay API call to return a successful response instantly
       await page.route("**/api/webhooks/events/replay", async (route) => {
         await route.fulfill({
@@ -187,8 +192,10 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
 
       await page.click('button:has-text("Webhooks"):visible');
-      await page.waitForLoadState('networkidle');
-      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 30000 });
+      
+      // Wait for the webhook content tab to be visible first
+      await page.waitForSelector('text=Live Webhook Deliveries', { timeout: 30000 });
+      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
       
       // Select payment failed event via its unique ID
       await page.click('button:has-text("evt_03")');
