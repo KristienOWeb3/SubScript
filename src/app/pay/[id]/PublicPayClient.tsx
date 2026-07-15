@@ -1676,7 +1676,13 @@ export default function PublicPayClient({
 
 
                         <div ref={paymentControlsRef}>
-                        {!isConnected ? (
+                        {/* A logged-in SubScript (email/Google) account must ALWAYS be offered its
+                            embedded "pay from your SubScript wallet" path — even when a browser wallet
+                            extension has auto-connected (isConnected). Previously this whole block was
+                            gated on !isConnected, so an auto-connected extension flipped the checkout to
+                            the browser-wallet branch and forced the user to verify a DIFFERENT wallet,
+                            with no way to pay from their actual account. */}
+                        {(!isConnected || embeddedPaySession) ? (
                             <div className="space-y-4">
                               {pendingVerificationPanel ? pendingVerificationPanel : (verificationStatus && !verificationError) ? verificationPanel : (
                                 <>
@@ -1738,7 +1744,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {embeddedPaySession && (
+                                {embeddedPaySession && !isConnected && (
                                     <div className="flex items-center gap-3 pt-1">
                                         <span className="h-px flex-1 bg-white/10" />
                                         <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
@@ -1746,7 +1752,10 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {walletConnectors.length > 1 ? (
+                                {/* The browser-wallet connect prompt only makes sense when no wallet is
+                                    connected yet. When an embedded user already has an extension connected,
+                                    they pay via the embedded card above — no "Connect Wallet" nag. */}
+                                {!isConnected && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -1786,7 +1795,7 @@ export default function PublicPayClient({
                                             {isConnecting ? "Connecting..." : "Connect Wallet"}
                                         </button>
                                     </>
-                                )}
+                                ))}
                                 {/* Signed-out visitors previously had NO error surface: connect failures
                                     set verificationError, but it only rendered inside the signed-in
                                     embedded block — so "Pay in this browser" looked dead on desktops
