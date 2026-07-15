@@ -26,7 +26,9 @@ const MERCHANT_SPONSORED_ACTIONS = new Set([
     "withdraw",
     "cancelSubscription",
     "configurePayoutDestination",
-    "registerViewKey"
+    "registerViewKey",
+    "commitViewKey",
+    "revealViewKey"
 ]);
 
 const ERC20_ABI = [
@@ -107,6 +109,23 @@ const CONFIDENTIAL_ABI = [
         name: "registerViewKey",
         stateMutability: "nonpayable",
         inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
+        outputs: []
+    },
+    {
+        type: "function",
+        name: "commitViewKey",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_commitment", type: "bytes32" }],
+        outputs: []
+    },
+    {
+        type: "function",
+        name: "revealViewKey",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_viewKeyHash", type: "bytes32" },
+            { name: "_salt", type: "bytes32" }
+        ],
         outputs: []
     }
 ];
@@ -339,6 +358,46 @@ export async function POST(request: Request) {
                 contractAbi = CONFIDENTIAL_ABI;
                 functionName = "registerViewKey";
                 finalArgs = [viewKeyHash];
+                break;
+            }
+            case "commitViewKey": {
+                const { commitment } = args;
+                if (!commitment || typeof commitment !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(commitment)) {
+                    return NextResponse.json({ error: "Invalid commitment. Expected bytes32 hex." }, { status: 400 });
+                }
+
+                const { data: merchantDataC, error: merchantErrC } = await supabase
+                    .from("merchants")
+                    .select("tier")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
+
+                if (merchantErrC) {
+                    console.error(`[execute-tx] Failed to query merchant for view key commit: ${merchantErrC.message}`);
+                }
+                if (!merchantDataC || merchantDataC.tier === "FREE") {
+                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
+                }
+
+                contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
+                contractAbi = CONFIDENTIAL_ABI;
+                functionName = "commitViewKey";
+                finalArgs = [commitment];
+                break;
+            }
+            case "revealViewKey": {
+                const { viewKeyHash: revealHash, salt } = args;
+                if (!revealHash || typeof revealHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(revealHash)) {
+                    return NextResponse.json({ error: "Invalid view key hash. Expected bytes32 hex." }, { status: 400 });
+                }
+                if (!salt || typeof salt !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(salt)) {
+                    return NextResponse.json({ error: "Invalid salt. Expected bytes32 hex." }, { status: 400 });
+                }
+
+                contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
+                contractAbi = CONFIDENTIAL_ABI;
+                functionName = "revealViewKey";
+                finalArgs = [revealHash, salt];
                 break;
             }
             default:

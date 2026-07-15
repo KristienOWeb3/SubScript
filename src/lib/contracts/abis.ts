@@ -328,6 +328,23 @@ export const STANDARD_SUBSCRIPT_ABI = [
 export const CONFIDENTIAL_CONTRACT_ABI = [
     {
         type: "function",
+        name: "commitViewKey",
+        stateMutability: "nonpayable",
+        inputs: [{ name: "_commitment", type: "bytes32" }],
+        outputs: [],
+    },
+    {
+        type: "function",
+        name: "revealViewKey",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "_viewKeyHash", type: "bytes32" },
+            { name: "_salt", type: "bytes32" },
+        ],
+        outputs: [],
+    },
+    {
+        type: "function",
         name: "registerViewKey",
         stateMutability: "nonpayable",
         inputs: [{ name: "_viewKeyHash", type: "bytes32" }],
@@ -349,7 +366,7 @@ export const CONFIDENTIAL_CONTRACT_ABI = [
         type: "function",
         name: "getDecryptedBatchHistory",
         stateMutability: "view",
-        inputs: [{ name: "viewKey", type: "bytes32" }],
+        inputs: [{ name: "viewKeyHash", type: "bytes32" }],
         outputs: [
             {
                 name: "",
@@ -369,5 +386,22 @@ export const CONFIDENTIAL_CONTRACT_ABI = [
         stateMutability: "view",
         inputs: [{ name: "", type: "bytes32" }],
         outputs: [{ name: "", type: "address" }],
+    },
+    {
+        type: "function",
+        name: "pendingCommitments",
+        stateMutability: "view",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [
+            { name: "commitment", type: "bytes32" },
+            { name: "commitBlock", type: "uint256" },
+        ],
+    },
+    {
+        type: "function",
+        name: "COMMIT_DELAY",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ name: "", type: "uint256" }],
     },
 ] as const;
