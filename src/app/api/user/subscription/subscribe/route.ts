@@ -14,7 +14,7 @@ import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
@@ -44,25 +44,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "planId or checkoutSessionId is required" }, { status: 400 });
         }
 
-        /* Sponsored subscription ("Pay for Me"): the caller pays, someone else receives the
-           service. The beneficiary rides the mirror + merchant webhooks for entitlement mapping;
-           billing, cancellation rights, and on-chain authorization stay with the payer. */
-        let beneficiaryAddress: string | null = null;
-        if (body.beneficiaryAddress !== undefined && body.beneficiaryAddress !== null && body.beneficiaryAddress !== "") {
-            if (typeof body.beneficiaryAddress !== "string" || !ethers.isAddress(body.beneficiaryAddress)) {
-                return NextResponse.json({ error: "beneficiaryAddress must be a valid 0x address" }, { status: 400 });
-            }
-            beneficiaryAddress = body.beneficiaryAddress.toLowerCase();
-            if (beneficiaryAddress === wallet.toLowerCase()) beneficiaryAddress = null;
-        }
-
         const checkout = checkoutSessionId
             ? await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } })
             : null;
         const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
-        if (!beneficiaryAddress && checkoutMeta?.beneficiary) {
-            beneficiaryAddress = checkoutMeta.beneficiary === wallet.toLowerCase() ? null : checkoutMeta.beneficiary;
-        }
+        /* Beneficiary is merchant-authored checkout metadata. The payer cannot override the
+           entitlement recipient from this authenticated execution endpoint. */
+        const beneficiaryAddress = checkoutMeta?.beneficiary && checkoutMeta.beneficiary !== wallet.toLowerCase()
+            ? checkoutMeta.beneficiary
+            : null;
         const merchantPlan = planId
             ? await prisma.merchantPlan.findUnique({ where: { id: planId } })
             : null;
@@ -149,7 +139,7 @@ export async function POST(request: Request) {
                         });
                         throw reconciliationError;
                     }
-                    await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
                         subscriptionId: recoveredId,
                         status: "active",
                         amountUsdcMicros: plan.amountUsdc,
@@ -157,7 +147,7 @@ export async function POST(request: Request) {
                         merchantAddress: merchant,
                         beneficiary: beneficiaryAddress,
                         txHash: checkout.verifiedTxHash,
-                    })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
+                    }), `created:${recoveredId}:${checkout.verifiedTxHash.toLowerCase()}`);
                     return NextResponse.json({ success: true, txHash: checkout.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
                 }
 
@@ -225,10 +215,16 @@ export async function POST(request: Request) {
                 await requireGasSponsored(subscriber);
                 /* createSubscription charges the first payment, so a retry after a timed-out
                    response must reuse the SAME Circle idempotency key or it double-charges.
-                   Checkout sessions are single-use → durable key on the session id. Plan
-                   subscribes key on the client's x-request-id (reused across its retries);
-                   without one, each request is its own attempt. */
-                const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+                   Checkout sessions are single-use → durable key on the session id. Direct plan
+                   subscribes derive a generation from durable subscription history under the
+                   advisory lock, so even clients without a retry header reuse the same attempt. */
+                const generationResult = await client.query(
+                    `select count(*)::bigint AS generation
+                       from subscriptions
+                      where subscriber = $1 and merchant_address = $2 and kind = 'CUSTOMER'`,
+                    [subscriber, merchant],
+                );
+                const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
                     merchant,
@@ -236,7 +232,7 @@ export async function POST(request: Request) {
                     plan.periodSeconds,
                     checkoutSessionId
                         ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
-                        : deterministicIdempotencyKey(`req:${requestId}:subscribe:${subscriber}:${planId}`)
+                        : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`)
                 );
                 onChainSubmitted = true;
                 if (checkoutSessionId) {
@@ -322,7 +318,7 @@ export async function POST(request: Request) {
                     checkoutClaimed = false;
                 }
 
-                await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "active",
                     amountUsdcMicros: plan.amountUsdc,
@@ -330,7 +326,7 @@ export async function POST(request: Request) {
                     merchantAddress: merchant,
                     beneficiary: beneficiaryAddress,
                     txHash,
-                })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
+                }), `created:${subId}:${txHash.toLowerCase()}`);
 
                 return NextResponse.json({
                     success: true,

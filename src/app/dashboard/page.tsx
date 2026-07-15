@@ -573,7 +573,7 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (typeof window !== "undefined" && address) {
-            const storedKey = localStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
+            const storedKey = sessionStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
             if (storedKey) {
                 setViewKey(storedKey);
             } else {
@@ -2258,19 +2258,61 @@ export default function DashboardPage() {
     };
 
     const handleSaveConfidentiality = async () => {
-        if (!viewKey) return;
+        if (!viewKey || !address) return;
         setIsSavingConfidentiality(true);
         setPremiumError(null);
         try {
             const viewKeyHash = ethers.keccak256(viewKey);
 
-            /* 1. If key is not registered, perform on-chain transaction */
+            /* 1. If key is not registered, use commit-reveal to prevent front-running */
             if (!isViewKeyRegistered) {
+                /* Generate a random salt to blind the commitment */
+                const salt = ethers.hexlify(ethers.randomBytes(32));
+
+                /* commitment = keccak256(abi.encodePacked(viewKeyHash, msg.sender, salt)) */
+                const commitment = ethers.keccak256(
+                    ethers.solidityPacked(
+                        ["bytes32", "address", "bytes32"],
+                        [viewKeyHash, address, salt]
+                    )
+                );
+
+                /* Phase 1: commit the blinded hash */
                 await executeContractWrite({
                     address: CONFIDENTIAL_CONTRACT_ADDRESS,
                     abi: CONFIDENTIAL_CONTRACT_ABI,
-                    functionName: "registerViewKey",
-                    args: [viewKeyHash],
+                    functionName: "commitViewKey",
+                    args: [commitment],
+                });
+
+                /* Wait for COMMIT_DELAY blocks (~20s on Arc with ~2s blocks).
+                   Poll the chain until enough blocks have passed. */
+                const provider = new ethers.BrowserProvider((window as any).ethereum);
+                const commitBlockNum = await provider.getBlockNumber();
+                const targetBlock = commitBlockNum + 11; /* COMMIT_DELAY (10) + 1 margin */
+
+                await new Promise<void>((resolve, reject) => {
+                    const maxWait = setTimeout(() => reject(new Error("Timed out waiting for commit delay")), 120_000);
+                    const poll = setInterval(async () => {
+                        try {
+                            const current = await provider.getBlockNumber();
+                            if (current >= targetBlock) {
+                                clearInterval(poll);
+                                clearTimeout(maxWait);
+                                resolve();
+                            }
+                        } catch {
+                            /* keep polling */
+                        }
+                    }, 2000);
+                });
+
+                /* Phase 2: reveal the view key hash */
+                await executeContractWrite({
+                    address: CONFIDENTIAL_CONTRACT_ADDRESS,
+                    abi: CONFIDENTIAL_CONTRACT_ABI,
+                    functionName: "revealViewKey",
+                    args: [viewKeyHash, salt],
                 });
             }
 
@@ -2290,8 +2332,10 @@ export default function DashboardPage() {
             }
 
             setIsViewKeyRegistered(true);
+            /* Store in sessionStorage (not localStorage) — cleared on tab close to
+               reduce the XSS exposure window for the plaintext view key. */
             if (typeof window !== "undefined" && address) {
-                localStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
+                sessionStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
             }
             
             /* Refresh settings */

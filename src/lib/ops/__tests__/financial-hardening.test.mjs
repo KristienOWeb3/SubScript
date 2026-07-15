@@ -77,7 +77,7 @@ test("reconciliation reports aggregate failures through HTTP status", () => {
     const worker = source("src/lib/payments/reconciliationWorker.ts");
 
     assert.match(route, /const workerHealthy = "error" in paymentLinkVerification[\s\S]*paymentLinkVerification\.success/);
-    assert.match(route, /result\.success && workerHealthy \? 200 : 500/);
+    assert.match(route, /result\.success[\s\S]*workerHealthy[\s\S]*!\("error" in webhookOutbox\)[\s\S]*!\("error" in paymentOperations\)[\s\S]*\? 200[\s\S]*: 500/);
     assert.match(worker, /results\.every\(\(result\)\s*=>\s*result\.success\)/);
 });
 
@@ -229,7 +229,7 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
        a legitimate re-subscribe return the old cancelled transaction. */
     assert.match(subOnchain, /subscribeFromEmbedded\([^)]*idempotencyKey\?: string\)/);
     assert.match(subscribeRoute, /subscribe-checkout:\$\{checkoutSessionId\}/);
-    assert.match(subscribeRoute, /req:\$\{requestId\}:subscribe:/);
+    assert.match(subscribeRoute, /subscribe-plan:\$\{subscriber\}:\$\{merchant\}:\$\{planId\}:generation:\$\{generation\}/);
 
     /* Vault commit (escrows funds): attempt-scoped key including wallet, merchant and amount. */
     assert.match(vaultOnchain, /commitFromEmbedded\([^)]*idempotencyKey\?: string\)/);

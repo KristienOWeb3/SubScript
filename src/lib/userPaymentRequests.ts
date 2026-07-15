@@ -57,8 +57,10 @@ export async function createUserPaymentRequest({
                     receiver_address,
                     merchant_name_snapshot,
                     external_reference,
-                    receipt_token
-                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7, $8, $9)
+                    receipt_token,
+                    link_kind,
+                    sandbox_mode
+                ) values ($1, $2, $3, $4, true, 1, $5, $6, $7, $8, $9, 'PEER_REQUEST', false)
                 returning id`,
                 [
                     requester,

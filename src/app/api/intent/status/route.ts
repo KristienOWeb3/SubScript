@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getIntentStatus } from "@/lib/intentStatus";
+import { getIntentStatus, resolveViewerMerchant } from "@/lib/intentStatus";
 
 export async function GET(request: Request) {
     try {
@@ -9,7 +9,10 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Missing intent id" }, { status: 400 });
         }
 
-        const intent = await getIntentStatus(id, origin);
+        /* Anonymous callers get aggregate status only; the owning merchant (session or
+           API key) additionally sees latestPayment (payer + tx proof). */
+        const viewerMerchantAddress = await resolveViewerMerchant(request);
+        const intent = await getIntentStatus(id, origin, { viewerMerchantAddress });
         if (!intent) {
             return NextResponse.json({ error: "Intent not found" }, { status: 404 });
         }

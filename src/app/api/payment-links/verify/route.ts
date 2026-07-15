@@ -159,14 +159,9 @@ export async function POST(request: Request) {
             }
         }
 
-        const paymentLinkReceiptId = isReceiptId(paymentLink.receipt_token) ? paymentLink.receipt_token : null;
-        const finalReceiptId = paymentLinkReceiptId || submittedReceiptId;
-        if (!finalReceiptId) {
-            return NextResponse.json({ error: "Payment link is missing a valid receipt token" }, { status: 400 });
-        }
-        if (submittedReceiptId !== finalReceiptId) {
-            return NextResponse.json({ error: "Receipt token does not match this checkout session" }, { status: 400 });
-        }
+        /* Receipt identity belongs to the reserved attempt, not the reusable link. The claim RPC
+           atomically verifies (attempt, link, payer, receipt) and binds the tx hash once. */
+        const finalReceiptId = submittedReceiptId;
 
         const { data: settings, error: settingsError } = await supabase
             .from("system_settings")
@@ -233,7 +228,7 @@ export async function POST(request: Request) {
                         .select("id, verification_block")
                         .eq("tx_hash", normalizedTx)
                         .maybeSingle();
-                    const { error: repairError } = await supabase.from("receipts").upsert({
+                    const { error: repairError } = await supabase.from("receipts").insert({
                         receipt_id: finalReceiptId,
                         payment_link_id: paymentLink.id,
                         payment_link_payment_id: paymentRow?.id ?? null,
@@ -254,7 +249,7 @@ export async function POST(request: Request) {
                             : null,
                         confirmed_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
-                    }, { onConflict: "receipt_id" });
+                    });
                     if (repairError) {
                         console.error("[verify] Missing-receipt repair failed:", repairError.message);
                     } else {
@@ -275,6 +270,12 @@ export async function POST(request: Request) {
         if (claimResult?.outcome === "LINK_UNAVAILABLE") {
             return NextResponse.json(
                 { error: "Payment link is inactive, expired, or at its usage limit" },
+                { status: 409 },
+            );
+        }
+        if (claimResult?.outcome === "ATTEMPT_NOT_FOUND") {
+            return NextResponse.json(
+                { error: "Checkout attempt reservation was not found. Start a new payment attempt." },
                 { status: 409 },
             );
         }

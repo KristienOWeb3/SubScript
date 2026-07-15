@@ -66,29 +66,57 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
 
     const cycleStart = v.cycleStart > BigInt(0) ? new Date(Number(v.cycleStart) * 1000) : null;
     const lockedUntil = v.lockedUntil > BigInt(0) ? new Date(Number(v.lockedUntil) * 1000) : null;
-    await prisma.meteredVault.upsert({
-        where: { userAddress_merchantAddress: { userAddress: normalizedUser, merchantAddress: normalizedMerchant } },
-        update: {
-            balanceUsdc: v.balance,
-            owedUsdc: v.owed,
-            commitUsdc: v.commitNeeded,
-            cycleStart,
-            lockedUntil,
-            active: v.active,
-            vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
-        },
-        create: {
-            userAddress: normalizedUser,
-            merchantAddress: normalizedMerchant,
-            balanceUsdc: v.balance,
-            owedUsdc: v.owed,
-            commitUsdc: v.commitNeeded,
-            cycleStart,
-            lockedUntil,
-            active: v.active,
-            vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
-        },
-    });
+    /* Keep the chain snapshot and cycle-local counters in one atomic upsert. A
+       draw can succeed on-chain while the request dies before the old two-step
+       reset; the next generic sync must therefore clear accrued usage whenever
+       the chain advances (or closes) the cycle. */
+    await prisma.$executeRaw`
+        INSERT INTO public.metered_vaults (
+            user_address,
+            merchant_address,
+            balance_usdc,
+            owed_usdc,
+            commit_usdc,
+            cycle_start,
+            locked_until,
+            active,
+            vault_chain_id,
+            updated_at
+        ) VALUES (
+            ${normalizedUser},
+            ${normalizedMerchant},
+            ${v.balance},
+            ${v.owed},
+            ${v.commitNeeded},
+            ${cycleStart},
+            ${lockedUntil},
+            ${v.active},
+            ${SUBSCRIPT_VAULT_CHAIN_ID},
+            now()
+        )
+        ON CONFLICT (user_address, merchant_address)
+        DO UPDATE SET
+            balance_usdc = EXCLUDED.balance_usdc,
+            owed_usdc = EXCLUDED.owed_usdc,
+            commit_usdc = EXCLUDED.commit_usdc,
+            cycle_start = EXCLUDED.cycle_start,
+            locked_until = EXCLUDED.locked_until,
+            active = EXCLUDED.active,
+            vault_chain_id = EXCLUDED.vault_chain_id,
+            accrued_usage_usdc = CASE
+                WHEN public.metered_vaults.cycle_start IS DISTINCT FROM EXCLUDED.cycle_start
+                    OR EXCLUDED.active = false
+                THEN 0
+                ELSE public.metered_vaults.accrued_usage_usdc
+            END,
+            usage_notified_bps = CASE
+                WHEN public.metered_vaults.cycle_start IS DISTINCT FROM EXCLUDED.cycle_start
+                    OR EXCLUDED.active = false
+                THEN 0
+                ELSE public.metered_vaults.usage_notified_bps
+            END,
+            updated_at = now()
+    `;
     return v;
 }
 

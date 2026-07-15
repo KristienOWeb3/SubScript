@@ -9,6 +9,7 @@ import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
+import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -195,7 +196,12 @@ export async function POST(request: Request) {
             payer_email,
             payerEmail,
         } = body;
-        const isSandboxRequest = sandbox === true || auth.apiKeyMode === "test";
+        /* Settlement mode is credential-owned. A caller cannot label a live/session checkout as
+           sandbox to bypass payout-destination enforcement. */
+        if (sandbox !== undefined && sandbox !== (auth.apiKeyMode === "test")) {
+            return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
+        }
+        const isSandboxRequest = auth.apiKeyMode === "test";
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -257,26 +263,17 @@ export async function POST(request: Request) {
         /* Parse and validate amount_usdc (micro-USDC) strictly. BigInt() would coerce booleans
            (true->1), hex strings ("0x10"->16), and whitespace, so validate the shape first: a
            plain non-negative integer, given as a digit string or a safe-integer number. */
-        const MAX_LINK_AMOUNT = BigInt(1_000_000) * BigInt(1_000_000); /* 1,000,000 USDC in micros */
-        let amountBigInt: bigint;
-        {
-            let amountSource: string | null = null;
-            if (typeof amount_usdc === "string" && /^\d+$/.test(amount_usdc.trim())) {
-                amountSource = amount_usdc.trim();
-            } else if (typeof amount_usdc === "number" && Number.isSafeInteger(amount_usdc) && amount_usdc >= 0) {
-                amountSource = String(amount_usdc);
-            }
-            if (amountSource === null) {
-                return NextResponse.json({ error: "Bad Request: amount_usdc must be a whole number of micro-USDC" }, { status: 400 });
-            }
-            amountBigInt = BigInt(amountSource);
-            if (amountBigInt <= BigInt(0)) {
-                return NextResponse.json({ error: "Bad Request: Amount must be greater than 0" }, { status: 400 });
-            }
-            if (amountBigInt > MAX_LINK_AMOUNT) {
-                return NextResponse.json({ error: "Bad Request: amount_usdc exceeds the maximum allowed" }, { status: 400 });
-            }
+        const amountResult = normalizeMicrouscAmount(amount_usdc);
+        if (!amountResult.ok) {
+            return NextResponse.json({ error: `Bad Request: ${amountResult.error}` }, { status: 400 });
         }
+        const amountBigInt = amountResult.value;
+
+        const expiryResult = parsePaymentLinkExpiry(expires_at);
+        if (!expiryResult.ok) {
+            return NextResponse.json({ error: `Bad Request: ${expiryResult.error}` }, { status: 400 });
+        }
+        const normalizedExpiry = expiryResult.value?.toISOString() ?? null;
 
         /* Invoice fields (v1): optional number, due date, and payer identity ride the
            existing link/receipt/webhook lifecycle so a payment link can serve as an invoice. */
@@ -362,9 +359,41 @@ export async function POST(request: Request) {
                 }
                 /* Fingerprint the financial terms too — silently returning the old link when the
                    caller changed the amount would let a stale key mask a different-price checkout. */
-                if (String(existingLink.amount_usdc) !== amountBigInt.toString()) {
+                const requestedFingerprint = {
+                    merchantAddress: merchantAddress.toLowerCase(),
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: normalizedBeneficiary,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    maxUses,
+                    expiresAt: normalizedExpiry,
+                };
+                /* Legacy rows created before creation_fingerprint existed: derive an equivalent
+                   fingerprint from the stored columns so the SAME full comparison runs. Comparing
+                   only the amount let a legacy key silently return a link with a changed expiry,
+                   max_uses, sandbox mode, or link kind. */
+                const existingFingerprint = existingLink.creation_fingerprint ?? {
+                    merchantAddress: String(existingLink.merchant_address || "").toLowerCase(),
+                    amountUsdc: String(existingLink.amount_usdc),
+                    beneficiaryAddress: existingLink.beneficiary_address
+                        ? String(existingLink.beneficiary_address).toLowerCase()
+                        : null,
+                    linkKind: existingLink.link_kind ?? "MERCHANT",
+                    sandboxMode: Boolean(existingLink.sandbox_mode),
+                    maxUses: existingLink.max_uses ?? null,
+                    expiresAt: existingLink.expires_at
+                        ? new Date(existingLink.expires_at).toISOString()
+                        : null,
+                };
+                if (existingFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
+                    || existingFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
+                    || (existingFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
+                    || existingFingerprint.linkKind !== requestedFingerprint.linkKind
+                    || existingFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                    || (existingFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
+                    || (existingFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt) {
                     return NextResponse.json(
-                        { error: "Conflict: Idempotency key was used with a different amount" },
+                        { error: "Conflict: Idempotency key was used with different financial terms" },
                         { status: 409 },
                     );
                 }
@@ -411,7 +440,7 @@ export async function POST(request: Request) {
         /* Verification is a manual trust badge, not a functional gate — merchants can create links
            without it. Access is gated only by the tier system (active-link quota below) and, for
            live keys, a configured payout destination. */
-        if (auth.apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
+        if (!isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
             return merchantPayoutWalletMissingResponse();
         }
 
@@ -434,15 +463,7 @@ export async function POST(request: Request) {
                 description: description || null,
                 amount_usdc: amountBigInt.toString(),
                 active: true,
-                expires_at: expires_at
-                    ? (() => {
-                        const num = Number(expires_at);
-                        if (!isNaN(num)) {
-                            return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
-                        }
-                        return new Date(expires_at).toISOString();
-                    })()
-                    : null,
+                expires_at: normalizedExpiry,
                 external_reference: external_reference || null,
                 idempotency_key: idempotency_key || null,
                 merchant_name_snapshot: merchant_name || null,
@@ -452,11 +473,25 @@ export async function POST(request: Request) {
                 invoice_number: normalizedInvoiceNumber,
                 due_date: normalizedDueDate,
                 payer_email: normalizedPayerEmail,
+                link_kind: "MERCHANT",
+                sandbox_mode: isSandboxRequest,
+                creation_fingerprint: {
+                    merchantAddress: merchantAddress.toLowerCase(),
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: normalizedBeneficiary,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    maxUses,
+                    expiresAt: normalizedExpiry,
+                },
             })
             .select()
             .single();
 
         if (insertError) {
+            if (/payment link quota exceeded/i.test(insertError.message)) {
+                return NextResponse.json({ error: `Quota Exceeded: Active link limit of ${limit} reached for your merchant tier.` }, { status: 403 });
+            }
             console.error("Error inserting payment link:", insertError.message);
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }

@@ -530,15 +530,7 @@ export default function PublicPayClient({
                     ? data.settlementVersion
                     : null;
                 const useCount = Number(data?.useCount || 0);
-                const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
-                const hasNewSettlement = Boolean(
-                    hasAttemptSettlement
-                    || (
-                        settlementVersion
-                        && settlementVersion !== baselineSettlementVersionRef.current
-                        && useCount > baselineUseCountRef.current
-                    )
-                );
+                const hasNewSettlement = data?.attemptSettled === true && Boolean(settlementVersion);
                 if (!cancelled && hasNewSettlement) {
                     baselineSettlementVersionRef.current = settlementVersion;
                     baselineUseCountRef.current = useCount;
@@ -556,7 +548,6 @@ export default function PublicPayClient({
                     if (data.receiptId) {
                         setReceiptId(data.receiptId);
                     }
-                    if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
                 }
             } catch (e) {
                 if (!cancelled && !expired) setRemoteStatusError("Live payment status is temporarily unavailable. Retrying automatically…");
@@ -682,6 +673,14 @@ export default function PublicPayClient({
     }, [address, isUserRequest]);
 
     const handleConnect = async () => {
+        /* Without an injected provider the wagmi connector is still registered but can never
+           connect — attempting it produces no visible feedback. Fail with guidance instead. */
+        if (typeof window !== "undefined" && !(window as any).ethereum) {
+            setVerificationError(
+                "No browser wallet was detected in this browser. Install or unlock MetaMask or Rabby — or sign in to SubScript to pay from your email wallet.",
+            );
+            return;
+        }
         const connector = connectors.find((item) => item.id === "injected") || connectors[0];
         if (!connector) {
             setVerificationError("No browser wallet connector is available. Install or unlock a wallet extension, then try again.");
@@ -706,6 +705,40 @@ export default function PublicPayClient({
         } catch (err: any) {
             setVerificationError(friendlyError(`Failed to switch network: ${err.message || "User rejected the request"}`));
         }
+    };
+
+    const reserveCheckoutAttempt = async (payer: string) => {
+        if (!linkData?.id || !clientIntentId) throw new Error("Checkout attempt is not ready.");
+        const response = await fetch(`/api/payment-links/${linkData.id}/attempt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attemptId: clientIntentId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success || !isReceiptId(data.receiptId)) {
+            throw new Error(data.error || "Unable to reserve this checkout attempt.");
+        }
+        /* Past this point the server has RESERVED capacity. Any validation failure below must
+           release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
+           a single-use link consumed even though no transaction was sent. */
+        if (String(data.amountUsdc) !== String(linkData.amount_usdc)
+            || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()) {
+            await releaseUnbroadcastAttempt();
+            throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
+        }
+        if (!payer) {
+            await releaseUnbroadcastAttempt();
+            throw new Error("The paying wallet is unavailable.");
+        }
+        setReceiptId(data.receiptId);
+        return data.receiptId as string;
+    };
+
+    const releaseUnbroadcastAttempt = async () => {
+        if (!linkData?.id || !clientIntentId || paymentBroadcastRef.current) return;
+        await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(clientIntentId)}`, {
+            method: "DELETE",
+        }).catch(() => undefined);
     };
 
     const handlePay = async () => {
@@ -781,15 +814,17 @@ export default function PublicPayClient({
             return;
         }
 
-        const checkoutReceiptId = linkData.receipt_token;
-        if (!isReceiptId(checkoutReceiptId)) {
+        setIsPaying(true);
+
+        let checkoutReceiptId: string;
+        try {
+            checkoutReceiptId = await reserveCheckoutAttempt(address || "");
+        } catch (error) {
             paymentSubmissionGuardRef.current = false;
-            setVerificationError("This checkout session is missing a valid receipt token. Please ask the merchant to generate a new payment link.");
+            setIsPaying(false);
+            setVerificationError(friendlyError(error instanceof Error ? error.message : "Unable to reserve checkout."));
             return;
         }
-        setReceiptId(checkoutReceiptId);
-
-        setIsPaying(true);
 
         if (isCctpChain && chainId) {
             /* CCTP Payment Flow */
@@ -818,8 +853,7 @@ export default function PublicPayClient({
                         throw new Error("Your wallet denied the spending approval. Please try again.");
                     }
                 } else {
-                    /* Fallback: wait 15 seconds if publicClient is unavailable */
-                    await new Promise((resolve) => setTimeout(resolve, 15000));
+                    throw new Error("A network client is required to confirm token approval.");
                 }
 
                 /* Step 2: Call depositForBurn */
@@ -856,6 +890,7 @@ export default function PublicPayClient({
                 setIsPaying(false);
 
             } catch (err: any) {
+                await releaseUnbroadcastAttempt();
                 paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "CCTP payment execution failed"));
                 setIsPaying(false);
@@ -905,6 +940,9 @@ export default function PublicPayClient({
                         : BigInt(0);
 
                     if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
+                        if (!publicClient) {
+                            throw new Error("A network client is required to confirm token approval.");
+                        }
                         setPaymentStep("approving");
                         setVerificationStatus("Approving merchant payment route...");
                         const approvalHash = await writeContractAsync({
@@ -914,14 +952,12 @@ export default function PublicPayClient({
                             args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
                         });
 
-                        if (publicClient) {
-                            const approvalReceipt = await publicClient.waitForTransactionReceipt({
-                                hash: approvalHash,
-                                timeout: 120_000,
-                            });
-                            if (approvalReceipt.status !== "success") {
-                                throw new Error("Your wallet denied the spending approval. Please try again.");
-                            }
+                        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                            hash: approvalHash,
+                            timeout: 120_000,
+                        });
+                        if (approvalReceipt.status !== "success") {
+                            throw new Error("Your wallet denied the spending approval. Please try again.");
                         }
                     }
 
@@ -953,6 +989,7 @@ export default function PublicPayClient({
                 }
 
             } catch (err: any) {
+                await releaseUnbroadcastAttempt();
                 if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "Payment transaction failed"));
                 setIsPaying(false);
@@ -1204,15 +1241,7 @@ export default function PublicPayClient({
             setLastRemoteStatusCheck(new Date());
             const settlementVersion = typeof data?.settlementVersion === "string" ? data.settlementVersion : null;
             const useCount = Number(data?.useCount || 0);
-            const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
-            const hasNewSettlement = Boolean(
-                hasAttemptSettlement
-                || (
-                    settlementVersion
-                    && settlementVersion !== baselineSettlementVersionRef.current
-                    && useCount > baselineUseCountRef.current
-                )
-            );
+            const hasNewSettlement = data?.attemptSettled === true && Boolean(settlementVersion);
             if (hasNewSettlement) {
                 baselineSettlementVersionRef.current = settlementVersion;
                 baselineUseCountRef.current = useCount;
@@ -1228,7 +1257,6 @@ export default function PublicPayClient({
                 setRemoteStatusError(null);
                 setManualCheckMessage(null);
                 if (data.receiptId) setReceiptId(data.receiptId);
-                if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
             } else {
                 setManualCheckMessage(isPollingExpired
                     ? "No confirmed payment found yet. Refresh this page to start a new checkout session."
@@ -1758,6 +1786,22 @@ export default function PublicPayClient({
                                             {isConnecting ? "Connecting..." : "Connect Wallet"}
                                         </button>
                                     </>
+                                )}
+                                {/* Signed-out visitors previously had NO error surface: connect failures
+                                    set verificationError, but it only rendered inside the signed-in
+                                    embedded block — so "Pay in this browser" looked dead on desktops
+                                    without a wallet extension. */}
+                                {!embeddedPaySession && verificationError && (
+                                    <p className="text-[10px] font-mono text-red-400 text-center leading-relaxed" role="alert">{verificationError}</p>
+                                )}
+                                {!embeddedPaySession && (
+                                    <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
+                                        Have a SubScript account?{" "}
+                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
+                                            Sign in
+                                        </a>
+                                        , then reload this page to pay from your email wallet — no extension needed.
+                                    </p>
                                 )}
                                 </>
                               )}

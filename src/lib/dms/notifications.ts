@@ -21,6 +21,7 @@ export type SupabaseDmInsert = {
     description?: string | null;
     tx_hash?: string | null;
     payment_link_id?: string | null;
+    dedupe_key?: string | null;
 };
 
 const FALLBACK_TITLES: Record<string, string> = {
@@ -90,11 +91,20 @@ export async function insertSupabaseDmAndNotify(
     supabase: any,
     row: SupabaseDmInsert
 ): Promise<{ id: string }> {
-    const { data, error } = await supabase
-        .from("subscript_dms")
-        .insert(row)
-        .select("id")
-        .single();
+    const query = supabase.from("subscript_dms");
+    const { data, error } = row.dedupe_key
+        ? await query.upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select("id").maybeSingle()
+        : await query.insert(row).select("id").single();
+
+    if (row.dedupe_key && !data?.id && !error) {
+        const { data: existing, error: existingError } = await supabase
+            .from("subscript_dms")
+            .select("id")
+            .eq("dedupe_key", row.dedupe_key)
+            .single();
+        if (existingError || !existing?.id) throw new Error(existingError?.message || "DM dedupe lookup failed");
+        return { id: existing.id };
+    }
 
     if (error || !data?.id) {
         throw new Error(error?.message || "DM insert did not return an id");
@@ -131,7 +141,8 @@ export async function insertPgDm(
             description,
             tx_hash,
             payment_link_id
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            , dedupe_key
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         returning id`,
         [
             row.sender_address,
@@ -143,6 +154,7 @@ export async function insertPgDm(
             row.description ?? null,
             row.tx_hash ?? null,
             row.payment_link_id ?? null,
+            row.dedupe_key ?? null,
         ]
     );
 

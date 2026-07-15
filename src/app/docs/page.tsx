@@ -864,7 +864,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Status polling</p>
                 <p className="mt-2">
-                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Fulfillment should still happen from the signed webhook.
+                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Anonymous calls return aggregate status only; pass your <span className="font-mono">Authorization: Bearer sk_...</span> key (or call from a signed-in dashboard session) to also receive <span className="font-mono">latestPayment</span> — payer identity and transaction proof are visible only to the merchant who owns the checkout. Fulfillment should still happen from the signed webhook.
                 </p>
               </div>
               <CodeBlock code={intentStatusCode} language="javascript" />

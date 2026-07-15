@@ -69,10 +69,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Missing event or data payload" }, { status: 400 });
         }
 
-        const txHash = data.txHash || data.transactionHash;
-        if (!txHash) {
-            return NextResponse.json({ error: "Bad Request: Missing unique txHash" }, { status: 400 });
+        /* Replay protection is a text-equality check on tx_hash, so the identifier must be
+           structurally valid and case-normalized — otherwise re-sending the same signed event
+           with different hash casing (0xAB… vs 0xab…) would bypass deduplication. */
+        const rawTxHash = data.txHash || data.transactionHash;
+        if (typeof rawTxHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(rawTxHash.trim())) {
+            return NextResponse.json({ error: "Bad Request: Missing or malformed txHash" }, { status: 400 });
         }
+        const txHash = rawTxHash.trim().toLowerCase();
 
         /* 3. Extract the merchant identity. */
         const merchantAddress = (data.merchant || "").toLowerCase();
@@ -93,45 +97,108 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
         }
 
-        /* 5. Ensure the merchant identity exists (idempotent — keyed by wallet_address). */
-        const { error: merchantError } = await supabase
-            .from("merchants")
-            .upsert({
-                wallet_address: merchantAddress,
-            }, { onConflict: "wallet_address" });
-
-        if (merchantError) {
-            console.error("[Webhook Database Error] Merchant upsert failed:", merchantError);
-            throw new Error(`Failed to sync merchant: ${merchantError.message}`);
+        /* 5. Parse and merge subscription details (idempotent — keyed by subscription_id).
+           Numeric fields are validated as COMPLETE numeric strings: parseInt("sub_12oops"→"12oops")
+           silently yields 12 and would target the wrong subscription, and parseInt on a malformed
+           amount/period/nonce would corrupt billing data. */
+        const strictNonNegativeInt = (value: unknown): number | null => {
+            if (value === undefined || value === null) return null;
+            const text = String(value).trim();
+            if (!/^\d+$/.test(text)) return null;
+            const parsed = Number(text);
+            return Number.isSafeInteger(parsed) ? parsed : null;
+        };
+        const subIdRaw = data.subscriptionId ?? data.subId;
+        const cleanSubId = subIdRaw !== undefined && subIdRaw !== null
+            ? strictNonNegativeInt(String(subIdRaw).replace(/^sub_/, ""))
+            : null;
+        /* A present-but-malformed subscription id must not be silently dropped or coerced. */
+        if (subIdRaw !== undefined && subIdRaw !== null && String(subIdRaw).trim() !== "" && cleanSubId === null) {
+            return NextResponse.json({ error: "Bad Request: malformed subscription id" }, { status: 400 });
         }
-
-        /* 6. Parse and upsert subscription details (idempotent — keyed by subscription_id). */
-        const subIdStr = data.subscriptionId || data.subId;
-        const cleanSubId = subIdStr ? parseInt(String(subIdStr).replace(/^sub_/, ""), 10) : null;
         let exitSurveySubId: number | null = null;
 
-        if (cleanSubId !== null && !isNaN(cleanSubId)) {
+        if (cleanSubId !== null) {
+            const incomingSubscriber = data.subscriber ? String(data.subscriber).toLowerCase() : null;
+            const incomingKind = merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
+                ? "PREMIUM"
+                : "CUSTOMER";
+            const { data: existingSubscription, error: existingSubscriptionError } = await supabase
+                .from("subscriptions")
+                .select("merchant_address,subscriber,current_nonce,last_settlement_timestamp,next_billing_date,billing_interval_seconds,amount_cap_usdc,payment_tx_hash,status,kind,tier")
+                .eq("subscription_id", cleanSubId)
+                .maybeSingle();
+            if (existingSubscriptionError) {
+                throw new Error(`Failed to load existing subscription: ${existingSubscriptionError.message}`);
+            }
+
+            /* Old protocol deliveries used the treasury recipient as the row owner and could
+               overwrite an already-canonical Premium row when ids collided. Never let a CUSTOMER
+               delivery rewrite Premium entitlement identity. */
+            if (existingSubscription?.kind === "PREMIUM" && incomingKind !== "PREMIUM") {
+                console.warn(`[Webhook Obsolete Identity] Ignoring CUSTOMER event for canonical premium subscription ${cleanSubId}.`);
+                return NextResponse.json({ success: true, message: "Obsolete subscription identity ignored" });
+            }
+
+            const canonicalOwner = incomingKind === "PREMIUM"
+                ? (incomingSubscriber || existingSubscription?.subscriber || existingSubscription?.merchant_address)
+                : merchantAddress;
+            if (!canonicalOwner) {
+                return NextResponse.json({ error: "Bad Request: Missing premium subscriber identity" }, { status: 400 });
+            }
+
+            /* Ensure the canonical row owner exists before the subscription FK write. */
+            const { error: merchantError } = await supabase
+                .from("merchants")
+                .upsert({ wallet_address: canonicalOwner }, { onConflict: "wallet_address" });
+            if (merchantError) {
+                throw new Error(`Failed to sync merchant: ${merchantError.message}`);
+            }
+
             /* amount_cap_usdc is integer micro-USDC everywhere else (mirror.ts writes micros; the
                billing crons/driftHealer read it as amountUsdcMicros). The canonical webhook payload
                carries `amount_usdc_micros` (integer) alongside a human `amount` (decimal). Prefer the
                integer micros field; only fall back to converting the decimal (× 1e6) for legacy
                senders. Writing parseFloat(decimal) straight into this column was 1e6× too small. */
+            /* Preserve the exact micro-USDC value with BigInt/string arithmetic — parseInt and
+               Number()*1e6 both lose precision above 2^53 and would persist a different billing
+               cap. Integer micros pass through as a string; decimals are capped at 6 places. */
             const microsRaw = data.amount_usdc_micros ?? data.amountUsdcMicros;
-            let amountMicros = 0;
-            if (microsRaw !== undefined && microsRaw !== null && /^\d+$/.test(String(microsRaw).trim())) {
-                amountMicros = parseInt(String(microsRaw).trim(), 10);
+            let amountMicros: number | string = existingSubscription?.amount_cap_usdc ?? 0;
+            if (microsRaw !== undefined && microsRaw !== null) {
+                const microsText = String(microsRaw).trim();
+                if (!/^\d+$/.test(microsText)) {
+                    return NextResponse.json({ error: "Bad Request: malformed subscription amount" }, { status: 400 });
+                }
+                amountMicros = BigInt(microsText).toString();
             } else if (data.amount !== undefined && data.amount !== null && data.amount !== "") {
-                const decimal = parseFloat(String(data.amount));
-                amountMicros = Number.isFinite(decimal) ? Math.round(decimal * 1_000_000) : 0;
+                /* Full-string decimal validation (≤6 fractional digits) — reject "12.5abc". */
+                const decimalStr = String(data.amount).trim();
+                if (!/^\d+(\.\d{1,6})?$/.test(decimalStr)) {
+                    return NextResponse.json({ error: "Bad Request: malformed subscription amount" }, { status: 400 });
+                }
+                const [whole, fraction = ""] = decimalStr.split(".");
+                amountMicros = BigInt(`${whole}${fraction.padEnd(6, "0")}`).toString();
             }
-            const period = data.period ? parseInt(String(data.period), 10) : 0;
+            /* period/nonce: a malformed value falls back to the stored value rather than becoming
+               NaN (parseInt junk) which would corrupt the billing interval / replay nonce. */
+            const periodParsed = strictNonNegativeInt(data.period);
+            const period = periodParsed !== null
+                ? periodParsed
+                : Number(existingSubscription?.billing_interval_seconds || 0);
             /* `last_settlement_timestamp` is when THIS payment settled (now), not the next due date.
                A BEFORE INSERT/UPDATE trigger (update_subscription_next_billing_date) derives
                next_billing_date as last_settlement_timestamp + billing_interval_seconds, so storing a
                future value here would push the renewal a full period late. We also set next_billing_date
                explicitly so it's correct even if that trigger isn't deployed. Matches subscriptions/mirror.ts. */
             const nowIso = new Date().toISOString();
-            const nextBillingDate = new Date(Date.now() + period * 1000).toISOString();
+            const settlesPayment = ["subscription.created", "subscription.renewed", "payment.executed", "subscription.payment.executed"].includes(event);
+            const lastSettlementTimestamp = settlesPayment
+                ? nowIso
+                : existingSubscription?.last_settlement_timestamp ?? null;
+            const nextBillingDate = settlesPayment && period > 0
+                ? new Date(Date.now() + period * 1000).toISOString()
+                : existingSubscription?.next_billing_date ?? null;
 
             let status = "ACTIVE";
             if (event === "subscription.cancelled" || event === "subscription.expired") {
@@ -140,27 +207,22 @@ export async function POST(request: Request) {
                 status = "FAILED";
             }
 
-            /* Classify by recipient: subscriptions paid to the SubScript treasury are PREMIUM
-               (merchant -> SubScript); everything else is a CUSTOMER plan (customer -> merchant)
-               which the Premium billing cron must ignore. */
-            const kind = merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
-                ? "PREMIUM"
-                : "CUSTOMER";
-
             const { error: subError } = await supabase
                 .from("subscriptions")
                 .upsert({
                     subscription_id: cleanSubId,
-                    merchant_address: merchantAddress,
-                    subscriber: data.subscriber ? String(data.subscriber).toLowerCase() : null,
-                    current_nonce: data.currentNonce !== undefined ? parseInt(String(data.currentNonce), 10) : 0,
-                    last_settlement_timestamp: nowIso,
+                    merchant_address: canonicalOwner,
+                    subscriber: incomingSubscriber || existingSubscription?.subscriber || (incomingKind === "PREMIUM" ? canonicalOwner : null),
+                    current_nonce: strictNonNegativeInt(data.currentNonce)
+                        ?? Number(existingSubscription?.current_nonce || 0),
+                    last_settlement_timestamp: lastSettlementTimestamp,
                     next_billing_date: nextBillingDate,
                     billing_interval_seconds: period,
                     amount_cap_usdc: amountMicros,
-                    payment_tx_hash: data.nextCommitment || data.nullifierHash || null,
+                    payment_tx_hash: data.nextCommitment || data.nullifierHash || existingSubscription?.payment_tx_hash || null,
                     status: status,
-                    kind,
+                    kind: incomingKind,
+                    tier: incomingKind === "PREMIUM" ? 1 : Number(existingSubscription?.tier || 0),
                     updated_at: new Date().toISOString()
                 }, { onConflict: "subscription_id" });
 

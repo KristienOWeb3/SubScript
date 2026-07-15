@@ -6,11 +6,18 @@
    /pay, which showed "Go to DMs" again: an infinite loop. Keying every surface off the same link
    metadata keeps them consistent. */
 export function isPeerRequestLink(link: {
+    linkKind?: string | null;
+    link_kind?: string | null;
     merchantNameSnapshot?: string | null;
     merchant_name_snapshot?: string | null;
     externalReference?: string | null;
     external_reference?: string | null;
 }): boolean {
+    const linkKind = link.linkKind ?? link.link_kind ?? null;
+    if (linkKind !== null) return linkKind === "PEER_REQUEST";
+
+    /* Compatibility only for rows created before the link_kind migration. New rows always carry
+       the database-owned discriminator, and the immutability trigger prevents later reclassification. */
     const nameSnapshot = link.merchantNameSnapshot ?? link.merchant_name_snapshot ?? null;
     const externalReference = link.externalReference ?? link.external_reference ?? null;
     return nameSnapshot === "SubScript user request" ||

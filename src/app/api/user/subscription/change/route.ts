@@ -21,14 +21,17 @@ import {
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { deterministicIdempotencyKey } from "@/lib/custody";
+import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 export const maxDuration = 150;
 
 export async function POST(request: Request) {
     let changeClaimKey: string | null = null;
+    let proratedTxHashForRecovery: string | null = null;
+    let modifyTxHashForRecovery: string | null = null;
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -88,7 +91,23 @@ export async function POST(request: Request) {
            apply the modify twice. Claim (subscription, plan, subscriber) atomically — a concurrent
            attempt gets 409, a completed one replays the stored result, and an abandoned (expired)
            PROCESSING claim is reclaimed. */
-        changeClaimKey = `subscription-change:${fromSubscriptionId}:${planId}:${subscriber}`;
+        /* Fingerprint the FINANCIAL terms only. plan.updatedAt must NOT be included: a
+           metadata-only plan edit (name/description) would otherwise change this fingerprint —
+           and therefore the proration and modify custody keys — so a retry of an in-flight
+           proration submits under a new key and double-charges. The amount/period already
+           uniquely identify the money-moving terms. */
+        const changeFingerprint = [
+            "v2",
+            fromSubscriptionId,
+            subscriber,
+            current.amount.toString(),
+            current.period.toString(),
+            planId,
+            plan.amountUsdc.toString(),
+            plan.periodSeconds.toString(),
+            mode,
+        ].join(":");
+        changeClaimKey = `subscription-change:${changeFingerprint}`;
         const changeClaimExpiry = () => new Date(Date.now() + 3 * 60 * 1000);
         try {
             await prisma.idempotencyKey.create({
@@ -101,6 +120,22 @@ export async function POST(request: Request) {
                     changeClaimKey = null; /* don't release a completed claim in the catch */
                     return NextResponse.json(existing.responsePayload as any, { status: 200 });
                 }
+                if (["PRORATION_PAID", "RECONCILIATION_REQUIRED"].includes(existing?.status || "")) {
+                    const prior = existing?.responsePayload as Record<string, unknown> | null;
+                    proratedTxHashForRecovery = typeof prior?.proratedTxHash === "string" ? prior.proratedTxHash : null;
+                    modifyTxHashForRecovery = typeof prior?.modifyTxHash === "string" ? prior.modifyTxHash : null;
+                    const resumed = await prisma.idempotencyKey.updateMany({
+                        where: { executionKey: changeClaimKey, status: { in: ["PRORATION_PAID", "RECONCILIATION_REQUIRED"] } },
+                        data: { status: "PROCESSING", expiresAt: changeClaimExpiry() },
+                    });
+                    if (resumed.count === 1) {
+                        /* Continue from durable recovery state. Custody keys below are deterministic,
+                           so an ambiguous provider response cannot repeat the transfer/modify. */
+                    } else {
+                        changeClaimKey = null;
+                        return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
+                    }
+                } else {
                 const reclaimable = existing?.status === "PROCESSING" && existing?.expiresAt && new Date(existing.expiresAt) < new Date();
                 if (reclaimable) {
                     const reclaimed = await prisma.idempotencyKey.updateMany({
@@ -115,6 +150,7 @@ export async function POST(request: Request) {
                     changeClaimKey = null;
                     return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
                 }
+                }
             } else {
                 throw e;
             }
@@ -123,7 +159,7 @@ export async function POST(request: Request) {
         /* Immediate upgrade: charge only the prorated difference for the rest of the current
            period now. */
         let proratedChargeMicros = BigInt(0);
-        let proratedTxHash: string | null = null;
+        let proratedTxHash: string | null = proratedTxHashForRecovery;
         if (mode === "immediate" && isUpgrade) {
             const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
             proratedChargeMicros = proratedUpgradeDelta(
@@ -140,13 +176,29 @@ export async function POST(request: Request) {
                     subscriber,
                     plan.merchantAddress,
                     proratedChargeMicros,
-                    deterministicIdempotencyKey(`sub-upgrade-proration:${fromSubscriptionId}:${planId}`),
+                    deterministicIdempotencyKey(`sub-upgrade-proration:${changeFingerprint}`),
                 );
+                proratedTxHashForRecovery = proratedTxHash;
+                await prisma.idempotencyKey.update({
+                    where: { executionKey: changeClaimKey! },
+                    data: {
+                        status: "PRORATION_PAID",
+                        responsePayload: { proratedTxHash, fingerprint: changeFingerprint } as any,
+                        expiresAt: changeClaimExpiry(),
+                    },
+                });
             }
         }
 
         /* Apply the new amount/period on-chain (no payment taken by modify itself). */
-        const txHash = await modifyFromEmbedded(subscriber, fromSubscriptionId, plan.amountUsdc, plan.periodSeconds);
+        const txHash = modifyTxHashForRecovery || await modifyFromEmbedded(
+            subscriber,
+            fromSubscriptionId,
+            plan.amountUsdc,
+            plan.periodSeconds,
+            deterministicIdempotencyKey(`sub-change-modify:${changeFingerprint}`),
+        );
+        modifyTxHashForRecovery = txHash;
 
         /* Mirror the new amount/period so the dashboard reflects the change. */
         await mirrorSubscriptionModified({
@@ -176,7 +228,7 @@ export async function POST(request: Request) {
                     select: { beneficiaryAddress: true },
                 })
                 .catch(() => null);
-            await dispatchMerchantWebhook(plan.merchantAddress, "subscription.updated", {
+            await dispatchDurableSubscriptionWebhook(plan.merchantAddress, "subscription.updated", {
                 ...subscriptionWebhookData({
                     subscriptionId: fromSubscriptionId,
                     status: "updated",
@@ -201,7 +253,7 @@ export async function POST(request: Request) {
                 proratedChargeUsdcMicros: proratedChargeMicros > BigInt(0) ? proratedChargeMicros.toString() : null,
                 prorated_tx_hash: proratedTxHash,
                 proratedTxHash,
-            });
+            }, `updated:${fromSubscriptionId}:${txHash.toLowerCase()}`);
         } catch (err) {
             console.error("[subscription/change] merchant webhook dispatch failed:", err);
         }
@@ -228,10 +280,32 @@ export async function POST(request: Request) {
         return NextResponse.json(responsePayload, { status: 200 });
     } catch (error: any) {
         console.error("Change plan failed:", error);
-        /* Release the claim so the user can retry. The prorated charge is idempotency-keyed at the
-           custody layer, so a retry re-uses the same on-chain transfer rather than double-charging. */
+        /* Once either on-chain leg may have succeeded, retain a durable recovery state. Deleting
+           the claim would lose evidence of a collected proration and strand the payment. */
         if (changeClaimKey) {
-            await prisma.idempotencyKey.delete({ where: { executionKey: changeClaimKey } }).catch(() => {});
+            if (proratedTxHashForRecovery || modifyTxHashForRecovery) {
+                await prisma.idempotencyKey.update({
+                    where: { executionKey: changeClaimKey },
+                    data: {
+                        status: "RECONCILIATION_REQUIRED",
+                        responsePayload: {
+                            proratedTxHash: proratedTxHashForRecovery,
+                            modifyTxHash: modifyTxHashForRecovery,
+                            error: error.message || "Plan change reconciliation required",
+                        } as any,
+                        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                    },
+                }).catch(() => {});
+                await recordPaymentReconciliationRequired({
+                    dedupeKey: `subscription-plan-change:${changeClaimKey}`,
+                    kind: "SUBSCRIPTION_PLAN_CHANGE_RECONCILIATION",
+                    message: "a plan change collected payment or modified chain state before local completion",
+                    context: { changeClaimKey, proratedTxHash: proratedTxHashForRecovery, modifyTxHash: modifyTxHashForRecovery },
+                    error,
+                }).catch(() => {});
+            } else {
+                await prisma.idempotencyKey.delete({ where: { executionKey: changeClaimKey } }).catch(() => {});
+            }
         }
         return NextResponse.json({ error: error.message || "Failed to change plan" }, { status: 500 });
     }

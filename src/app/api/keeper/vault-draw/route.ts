@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getKeeperSigner, syncVaultMirror, VAULT_ABI } from "@/lib/vault/onchain";
 import { SUBSCRIPT_VAULT_ADDRESS } from "@/lib/contracts/constants";
 import { withPgClient } from "@/lib/serverPg";
+import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 export const maxDuration = 300;
 
@@ -60,27 +61,70 @@ async function runVaultDraw(request: Request) {
                 const signer = getKeeperSigner();
                 const vault = new ethers.Contract(SUBSCRIPT_VAULT_ADDRESS, VAULT_ABI, signer);
 
-                const results: Array<{ id: string; txHash?: string; error?: string }> = [];
+                const results: Array<{
+                    id: string;
+                    txHash?: string;
+                    error?: string;
+                    warning?: string;
+                    reconciled?: boolean;
+                }> = [];
                 for (const row of due) {
+                    let submittedHash: string | undefined;
                     try {
                         const tx = await vault.drawUsageFor(row.merchantAddress, row.userAddress, row.accruedUsageUsdc);
                         const receipt = await tx.wait();
-                        await prisma.meteredVault.update({
-                            where: { id: row.id },
-                            /* New cycle: clear accrued usage and re-arm the 50%/80% usage alerts. */
-                            data: { accruedUsageUsdc: BigInt(0), usageNotifiedBps: 0 },
-                        });
-                        await syncVaultMirror(row.userAddress, row.merchantAddress);
-                        results.push({ id: row.id, txHash: receipt?.hash || tx.hash });
+                        submittedHash = receipt?.hash || tx.hash;
                     } catch (err: any) {
                         console.error(`[vault-draw] failed for vault ${row.id}:`, err);
+                        /* A previous invocation may have mined the draw but died before
+                           updating the mirror. Re-read chain state before treating this
+                           as a fresh failure; sync also resets cycle-local accrual. */
+                        try {
+                            const state = await syncVaultMirror(row.userAddress, row.merchantAddress);
+                            const mirroredCycle = row.cycleStart
+                                ? BigInt(Math.floor(row.cycleStart.getTime() / 1000))
+                                : BigInt(0);
+                            if (state.cycleStart !== mirroredCycle || !state.active) {
+                                results.push({ id: row.id, reconciled: true, warning: "Recovered an already-settled vault draw" });
+                                continue;
+                            }
+                        } catch (syncError) {
+                            console.error(`[vault-draw] recovery sync failed for vault ${row.id}:`, syncError);
+                        }
                         results.push({ id: row.id, error: err.message || "draw failed" });
+                        continue;
+                    }
+
+                    try {
+                        await syncVaultMirror(row.userAddress, row.merchantAddress);
+                        results.push({ id: row.id, txHash: submittedHash });
+                    } catch (syncError: any) {
+                        /* Money movement is final; never report it as an ordinary failed
+                           draw that a caller might blindly repeat. Queue the mirror repair. */
+                        await recordPaymentReconciliationRequired({
+                            dedupeKey: `vault-draw:${submittedHash}`,
+                            kind: "VAULT_DRAW_MIRROR_SYNC",
+                            message: "Vault draw settled but mirror sync failed",
+                            context: {
+                                vaultId: row.id,
+                                userAddress: row.userAddress,
+                                merchantAddress: row.merchantAddress,
+                                txHash: submittedHash,
+                            },
+                            error: syncError,
+                        });
+                        results.push({
+                            id: row.id,
+                            txHash: submittedHash,
+                            warning: "Draw settled; mirror repair queued",
+                        });
                     }
                 }
 
                 return NextResponse.json({
                     success: true,
                     drawn: results.filter((r) => r.txHash).length,
+                    reconciled: results.filter((r) => r.reconciled).length,
                     failed: results.filter((r) => r.error).length,
                     vaults: results,
                 }, { status: 200 });

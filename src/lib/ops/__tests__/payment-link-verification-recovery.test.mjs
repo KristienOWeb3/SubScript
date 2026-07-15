@@ -10,6 +10,7 @@ const route = source("src/app/api/payment-links/verify/route.ts");
 const worker = source("src/lib/payments/paymentLinkVerificationWorker.ts");
 const cron = source("src/app/api/cron/reconcile/route.ts");
 const vercel = JSON.parse(source("vercel.json"));
+const keepersWorkflow = source(".github/workflows/keepers.yml");
 const migration = source("supabase/migrations/20260713192546_durable_payment_link_verification_jobs.sql");
 
 test("the payment claim and verification outbox are committed atomically", () => {
@@ -36,7 +37,8 @@ test("workers use bounded leases, skip locked rows, and exponential retry", () =
     assert.match(worker, /"claim_payment_link_verification_jobs"/);
     assert.match(worker, /JOB_LEASE_SECONDS = 300/);
     assert.match(worker, /POLL_ATTEMPTS_PER_LEASE = 15/);
-    assert.match(worker, /job\.attempts > job\.max_attempts/);
+    assert.doesNotMatch(worker, /job\.attempts > job\.max_attempts/);
+    assert.match(source("supabase/migrations/20260715093000_checkout_receipt_integrity.sql"), /Provider\/indexing outages are not proof of payment failure/);
     assert.match(worker, /error instanceof PermanentVerificationError/);
 });
 
@@ -46,10 +48,8 @@ test("the reconciliation keeper resumes durable payment-link verification", () =
     assert.match(cron, /paymentLinkVerification\.success/);
     assert.match(route, /after\(async \(\) => \{[\s\S]*processPaymentLinkVerificationJobs\(supabase, 1\)/);
     assert.match(route, /durable job is already committed/i);
-    assert.ok(
-        vercel.crons.some((entry) => entry.path === "/api/cron/reconcile" && entry.schedule === "0 2 * * *"),
-        "Vercel Hobby must invoke the durable reconciliation endpoint no more than once daily",
-    );
+    assert.equal(vercel.crons.length, 2, "Vercel Hobby supports only the two configured daily crons");
+    assert.match(keepersWorkflow, /cron: "\*\/15 \* \* \* \*"[\s\S]*\/api\/cron\/reconcile/);
 });
 
 test("the verification outbox migration safely converges an existing table", () => {
@@ -107,4 +107,33 @@ test("embedded ERC-4337 payments are authorized by canonical settlement events",
     assert.match(worker, /if \(isDirectUsdcCall\) \{[\s\S]*USDC_TRANSFER_INTERFACE\.parseTransaction/);
     assert.match(worker, /parsed\?\.name === "Transfer"/);
     assert.doesNotMatch(worker, /Target contract is not Arc USDC for peer payment/);
+});
+
+test("a transaction never observed on-chain goes terminal instead of holding capacity forever", () => {
+    /* Fabricated tx hashes must not park a job in eternal RETRY while the link's consumed
+       use-count keeps a single-use link exhausted. After the deadline the job goes terminal,
+       and the terminal path releases capacity via release_payment_link_settlement. */
+    assert.match(worker, /TX_NEVER_OBSERVED_TERMINAL_MS = 24 \* 60 \* 60 \* 1000/);
+    assert.match(worker, /txNeverObservedIsTerminal[\s\S]*?PermanentVerificationError\(\s*"Transaction was never observed on-chain within 24 hours/);
+    /* Terminal only when the TRANSACTION itself is also absent — a merely-unmined (pending) tx,
+       which has no receipt yet, must stay retryable so a late settlement is never stranded. */
+    assert.match(worker, /txNeverObservedIsTerminal\)\s*\{[\s\S]*?getTransaction\(job\.tx_hash\)[\s\S]*?if \(!pendingTx\)/);
+    /* The transient interpretation must survive for young jobs. */
+    assert.match(worker, /Transaction receipt not found on-chain yet/);
+});
+
+test("protocol webhook replay ids are structurally validated and case-normalized", () => {
+    const webhook = source("src/app/api/webhooks/subscript/route.ts");
+    assert.match(webhook, /\^0x\[0-9a-fA-F\]\{64\}\$/);
+    assert.match(webhook, /rawTxHash\.trim\(\)\.toLowerCase\(\)/);
+});
+
+test("intent status hides payer identity and proof from anonymous callers", () => {
+    const statusLib = source("src/lib/intentStatus.ts");
+    assert.match(statusLib, /resolveViewerMerchant/);
+    assert.match(statusLib, /isOwnerView && latestPayment/);
+    const idRoute = source("src/app/api/intent/[id]/route.ts");
+    const legacyRoute = source("src/app/api/intent/status/route.ts");
+    assert.match(idRoute, /resolveViewerMerchant\(request\)/);
+    assert.match(legacyRoute, /resolveViewerMerchant\(request\)/);
 });

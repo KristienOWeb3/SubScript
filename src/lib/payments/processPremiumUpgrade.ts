@@ -20,7 +20,6 @@ export async function processPremiumUpgrade({
     txHash,
     sessionId,
     walletAddress,
-    subId,
     isReconciler = false,
     claimId,
     requestId = "unknown"
@@ -29,7 +28,6 @@ export async function processPremiumUpgrade({
     txHash: string;
     sessionId: string;
     walletAddress: string;
-    subId?: number;
     isReconciler?: boolean;
     claimId?: string;
     requestId?: string;
@@ -306,23 +304,13 @@ export async function processPremiumUpgrade({
             };
         }
 
-        /* Expiration Enforcement vs Block Timestamp */
+        /* A verified premium payment is never retained while entitlement is denied. A transaction
+           can be submitted before expiry and mined afterwards; once the canonical contract event
+           proves the exact payer, recipient and terms, reconciliation grants the paid service. */
         const block = await verificationResult.provider.getBlock(verificationResult.receipt!.blockNumber);
         const blockTimestampMs = block ? block.timestamp * 1000 : 0;
         if (blockTimestampMs > expiresMs) {
-            console.error(`[Premium Upgrade Failed] Transaction block timestamp ${blockTimestampMs} is after session expiration ${expiresMs}. requestId: ${requestId}`);
-            
-            const newAttempts = (session.processing_attempts || 0) + 1;
-            const isPermanent = newAttempts >= 5;
-
-            await updateOwnedSession({
-                status: isPermanent ? "FAILED_PERMANENTLY" : "FAILED",
-                processing_attempts: newAttempts,
-                last_error: "Transaction was mined after the payment session expired.",
-                failure_code: "EXPIRED_TRANSACTION"
-            });
-
-            return { success: false, status: 400, error: "Transaction was mined after the payment session expired." };
+            console.warn(`[Premium Upgrade Recovery] Verified payment was mined after session expiry; granting paid entitlement. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
         }
 
         console.log(`[Premium Upgrade Verified] Transaction verified and fully confirmed. requestId: ${requestId}, sessionId: ${sessionId}, txHash: ${txHash}`);
@@ -378,8 +366,9 @@ export async function processPremiumUpgrade({
             }
         }
 
-        /* 4. Extract subId from logs if not provided */
-        let extractedSubId = subId || (verificationResult.subId ? Number(verificationResult.subId) : undefined);
+        /* 4. The subscription id is server-derived exclusively from the verified canonical event.
+           Never trust a caller-supplied id: contract ids are the ownership boundary for billing. */
+        let extractedSubId = verificationResult.subId ? Number(verificationResult.subId) : undefined;
         if (!extractedSubId) {
             const subscriptInterface = new ethers.Interface([
                 "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)"

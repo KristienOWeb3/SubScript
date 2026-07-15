@@ -19,7 +19,22 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             .select("url, secret, active")
             .eq("id", delivery.webhook_endpoint_id)
             .maybeSingle();
-        if (endpointError || !endpoint?.active) continue;
+        /* A transient lookup error may recover — leave the row for the next scan. But a MISSING
+           or INACTIVE endpoint will never deliver, so park the row in DEAD_LETTER; otherwise the
+           oldest-first batch drainer re-selects these undeliverable rows every run and starves
+           newer, valid webhooks. */
+        if (endpointError) continue;
+        if (!endpoint || endpoint.active !== true) {
+            await supabase.from("webhook_deliveries").update({
+                status: "DEAD_LETTER",
+                last_error: endpoint ? "Endpoint is inactive" : "Endpoint no longer exists",
+                updated_at: new Date().toISOString(),
+                /* Include PROCESSING: a row left in a stale PROCESSING state by a crashed worker
+                   whose endpoint is since deleted would otherwise never be dead-lettered here,
+                   and the drainer would keep re-selecting it — permanently starving the queue. */
+            }).eq("id", delivery.id).in("status", ["PENDING", "FAILED", "PROCESSING"]);
+            continue;
+        }
 
         const attempts = Number(delivery.attempts || 0) + 1;
         const claimId = crypto.randomUUID();
@@ -67,4 +82,41 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
     }
 
     return { delivered };
+}
+
+/**
+ * Drains webhook deliveries independently of the request that created them.
+ *
+ * A payment must not depend on the payer revisiting `/verify` before a failed
+ * merchant webhook is retried. The reconciliation cron calls this worker and
+ * the row-level claim in `deliverWebhookOutboxEvent` keeps overlapping cron
+ * runs safe.
+ */
+export async function deliverPendingWebhookOutboxEvents(
+    supabase: SupabaseLike,
+    limit: number = 50,
+) {
+    const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
+    const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: rows, error } = await supabase
+        .from("webhook_deliveries")
+        .select("event_id")
+        .not("event_id", "is", null)
+        .or(`status.in.(PENDING,FAILED),and(status.eq.PROCESSING,updated_at.lt.${staleCutoff})`)
+        .order("updated_at", { ascending: true })
+        .limit(boundedLimit);
+    if (error) throw new Error(`Failed to load pending webhook outbox rows: ${error.message}`);
+
+    const eventIds: string[] = [...new Set<string>(
+        (rows || [])
+            .map((row: { event_id?: unknown }) => row.event_id)
+            .filter((eventId: unknown): eventId is string => typeof eventId === "string" && eventId.length > 0),
+    )];
+    let delivered = 0;
+    for (const eventId of eventIds) {
+        const result = await deliverWebhookOutboxEvent(supabase, eventId);
+        delivered += result.delivered;
+    }
+
+    return { attemptedEvents: eventIds.length, delivered };
 }
