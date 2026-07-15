@@ -183,14 +183,22 @@ async function main() {
                     AS exists
             `);
             const adoptingLegacySchema = legacySchema.rows[0].exists;
-            if (adoptingLegacySchema) {
+            /* A populated schema with no ledger must NOT be silently baselined in production —
+               that could mark un-applied financial hardening as done. The only sanctioned path
+               is an explicit operator opt-in (ADOPT_EXISTING_DB_BASELINE=1), used by the isolated
+               E2E stack where `supabase start` has already applied every migration file. */
+            if (adoptingLegacySchema && process.env.ADOPT_EXISTING_DB_BASELINE !== "1") {
                 throw new Error(
-                    "Existing schema has no migration ledger. Automatic baseline adoption is disabled because it can mark unapplied financial hardening as applied. Restore the reviewed _subscript_migrations ledger or migrate into an empty database."
+                    "Existing schema has no migration ledger. Automatic baseline adoption is disabled because it can mark unapplied financial hardening as applied. Set ADOPT_EXISTING_DB_BASELINE=1 for the reviewed one-time baseline adoption, or migrate into an empty database."
                 );
             }
 
-            freshBootstrap = true;
-            console.log("[migrations] Empty database detected — creating ledger and executing the full schema history.");
+            freshBootstrap = !adoptingLegacySchema;
+            console.log(
+                freshBootstrap
+                    ? "[migrations] Empty database detected — creating ledger and executing the full schema history."
+                    : "[migrations] ADOPT_EXISTING_DB_BASELINE=1 — adopting the already-migrated schema as the ledger baseline."
+            );
             await client.query(`
                 CREATE TABLE _subscript_migrations (
                     filename   text PRIMARY KEY,
@@ -198,6 +206,18 @@ async function main() {
                     baseline   boolean NOT NULL DEFAULT false
                 );
             `);
+            if (adoptingLegacySchema) {
+                /* The adopted schema is already fully migrated (every file ran via the tooling that
+                   built it), so record ALL currently-known files as baseline. This prevents any
+                   double-apply against the existing objects; genuinely new files added after this
+                   run still apply normally on the next invocation. */
+                for (const file of await listMigrationFiles()) {
+                    await client.query(
+                        "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT (filename) DO NOTHING",
+                        [file]
+                    );
+                }
+            }
         }
 
         const files = await listMigrationFiles({ freshBootstrap });

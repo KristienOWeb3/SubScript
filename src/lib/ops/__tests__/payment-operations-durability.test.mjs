@@ -31,7 +31,9 @@ test("Circle webhooks persist before acknowledgement and wake recovery", async (
     assert.match(route, /MAX_WEBHOOK_BYTES/);
     assert.match(route, /enqueuePaymentReconciliationRequired/);
     assert.match(route, /CIRCLE_TRANSACTION_NOTIFICATION/);
-    assert.ok(route.indexOf("enqueuePaymentReconciliationRequired") < route.lastIndexOf("NextResponse.json"));
+    const enqueueCall = route.indexOf("await enqueuePaymentReconciliationRequired(");
+    const acknowledgement = route.indexOf("return NextResponse.json({", enqueueCall);
+    assert.ok(enqueueCall >= 0 && acknowledgement > enqueueCall, "reconciliation must be enqueued before the response is returned");
     assert.match(events, /export async function enqueuePaymentReconciliationRequired/);
     assert.match(retry, /processing_attempts = least/);
     assert.match(retry, /FAILED_PERMANENTLY/);
@@ -75,7 +77,10 @@ test("migration runner never fabricates a baseline or hides privilege failures",
     ]);
 
     assert.match(runner, /Automatic baseline adoption is disabled/);
-    assert.doesNotMatch(runner, /INSERT INTO _subscript_migrations \(filename, baseline\)/);
+    /* Baseline adoption is permitted ONLY behind the explicit ADOPT_EXISTING_DB_BASELINE=1 opt-in
+       (used by the isolated E2E stack). It must never happen silently — the gate is the guarantee. */
+    assert.match(runner, /ADOPT_EXISTING_DB_BASELINE !== "1"/);
+    assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline\)/);
     assert.doesNotMatch(runner, /Warning: failed to grant privileges/);
     assert.match(runner, /Up to date[\s\S]*Granting public schema privileges/);
     assert.doesNotMatch(ledgerMigration, /DROP TABLE IF EXISTS ledger_entries/i);

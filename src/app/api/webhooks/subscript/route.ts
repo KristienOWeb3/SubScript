@@ -97,12 +97,28 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Duplicate transaction processed" });
         }
 
-        /* 5. Parse and merge subscription details (idempotent — keyed by subscription_id). */
-        const subIdStr = data.subscriptionId || data.subId;
-        const cleanSubId = subIdStr ? parseInt(String(subIdStr).replace(/^sub_/, ""), 10) : null;
+        /* 5. Parse and merge subscription details (idempotent — keyed by subscription_id).
+           Numeric fields are validated as COMPLETE numeric strings: parseInt("sub_12oops"→"12oops")
+           silently yields 12 and would target the wrong subscription, and parseInt on a malformed
+           amount/period/nonce would corrupt billing data. */
+        const strictNonNegativeInt = (value: unknown): number | null => {
+            if (value === undefined || value === null) return null;
+            const text = String(value).trim();
+            if (!/^\d+$/.test(text)) return null;
+            const parsed = Number(text);
+            return Number.isSafeInteger(parsed) ? parsed : null;
+        };
+        const subIdRaw = data.subscriptionId ?? data.subId;
+        const cleanSubId = subIdRaw !== undefined && subIdRaw !== null
+            ? strictNonNegativeInt(String(subIdRaw).replace(/^sub_/, ""))
+            : null;
+        /* A present-but-malformed subscription id must not be silently dropped or coerced. */
+        if (subIdRaw !== undefined && subIdRaw !== null && String(subIdRaw).trim() !== "" && cleanSubId === null) {
+            return NextResponse.json({ error: "Bad Request: malformed subscription id" }, { status: 400 });
+        }
         let exitSurveySubId: number | null = null;
 
-        if (cleanSubId !== null && !isNaN(cleanSubId)) {
+        if (cleanSubId !== null) {
             const incomingSubscriber = data.subscriber ? String(data.subscriber).toLowerCase() : null;
             const incomingKind = merchantAddress === PREMIUM_PAYMENT_RECIPIENT_ADDRESS.toLowerCase()
                 ? "PREMIUM"
@@ -149,11 +165,18 @@ export async function POST(request: Request) {
             if (microsRaw !== undefined && microsRaw !== null && /^\d+$/.test(String(microsRaw).trim())) {
                 amountMicros = parseInt(String(microsRaw).trim(), 10);
             } else if (data.amount !== undefined && data.amount !== null && data.amount !== "") {
-                const decimal = parseFloat(String(data.amount));
-                amountMicros = Number.isFinite(decimal) ? Math.round(decimal * 1_000_000) : 0;
+                /* Full-string decimal validation — reject "12.5abc" rather than parseFloat-ing it. */
+                const decimalStr = String(data.amount).trim();
+                if (!/^\d+(\.\d+)?$/.test(decimalStr)) {
+                    return NextResponse.json({ error: "Bad Request: malformed subscription amount" }, { status: 400 });
+                }
+                amountMicros = Math.round(Number(decimalStr) * 1_000_000);
             }
-            const period = data.period !== undefined && data.period !== null && data.period !== ""
-                ? parseInt(String(data.period), 10)
+            /* period/nonce: a malformed value falls back to the stored value rather than becoming
+               NaN (parseInt junk) which would corrupt the billing interval / replay nonce. */
+            const periodParsed = strictNonNegativeInt(data.period);
+            const period = periodParsed !== null
+                ? periodParsed
                 : Number(existingSubscription?.billing_interval_seconds || 0);
             /* `last_settlement_timestamp` is when THIS payment settled (now), not the next due date.
                A BEFORE INSERT/UPDATE trigger (update_subscription_next_billing_date) derives
@@ -182,9 +205,8 @@ export async function POST(request: Request) {
                     subscription_id: cleanSubId,
                     merchant_address: canonicalOwner,
                     subscriber: incomingSubscriber || existingSubscription?.subscriber || (incomingKind === "PREMIUM" ? canonicalOwner : null),
-                    current_nonce: data.currentNonce !== undefined
-                        ? parseInt(String(data.currentNonce), 10)
-                        : Number(existingSubscription?.current_nonce || 0),
+                    current_nonce: strictNonNegativeInt(data.currentNonce)
+                        ?? Number(existingSubscription?.current_nonce || 0),
                     last_settlement_timestamp: lastSettlementTimestamp,
                     next_billing_date: nextBillingDate,
                     billing_interval_seconds: period,

@@ -402,10 +402,18 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                     provider.getBlockNumber(),
                 ]);
                 if (!receipt) {
+                    /* A missing receipt alone is NOT proof the tx doesn't exist — a legitimately
+                       pending tx has no receipt yet and can still mine after 24h. Only go terminal
+                       when the node also has no record of the TRANSACTION itself (never broadcast /
+                       never seen). Releasing capacity on a merely-unmined tx could reopen a
+                       single-use link and strand a late-settling payment. */
                     if (txNeverObservedIsTerminal) {
-                        throw new PermanentVerificationError(
-                            "Transaction was never observed on-chain within 24 hours; the claimed payment does not exist.",
-                        );
+                        const pendingTx = await provider.getTransaction(job.tx_hash);
+                        if (!pendingTx) {
+                            throw new PermanentVerificationError(
+                                "Transaction was never observed on-chain within 24 hours; the claimed payment does not exist.",
+                            );
+                        }
                     }
                     throw new Error("Transaction receipt not found on-chain yet");
                 }

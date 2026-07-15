@@ -394,6 +394,21 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Invalid salt. Expected bytes32 hex." }, { status: 400 });
                 }
 
+                /* Gate reveal on premium too. Commit can be made directly on-chain (outside this
+                   sponsored endpoint), so a FREE merchant could otherwise complete the premium-only
+                   view-key registration at SubScript's expense through this reveal alone. */
+                const { data: merchantDataR, error: merchantErrR } = await supabase
+                    .from("merchants")
+                    .select("tier")
+                    .eq("wallet_address", wallet.toLowerCase())
+                    .maybeSingle();
+                if (merchantErrR) {
+                    console.error(`[execute-tx] Failed to query merchant for view key reveal: ${merchantErrR.message}`);
+                }
+                if (!merchantDataR || merchantDataR.tier === "FREE") {
+                    return NextResponse.json({ error: "Forbidden: Premium merchant tier required for view key registration." }, { status: 403 });
+                }
+
                 contractAddress = CONFIDENTIAL_CONTRACT_ADDRESS;
                 contractAbi = CONFIDENTIAL_ABI;
                 functionName = "revealViewKey";

@@ -57,9 +57,13 @@ test("subscriber cannot override beneficiary and direct plan retries reuse a dur
 
 test("plan changes fingerprint terms and retain paid-proration recovery state", async () => {
     const change = await source("src/app/api/user/subscription/change/route.ts");
-    assert.match(change, /plan\.updatedAt\.toISOString\(\)/);
+    /* The change fingerprint must be built from FINANCIAL terms only. plan.updatedAt must NOT be
+       included — a metadata-only plan edit would otherwise rotate the custody key mid-proration
+       and double-charge on retry. */
+    assert.doesNotMatch(change, /plan\.updatedAt\.toISOString\(\)/);
     assert.match(change, /current\.amount\.toString\(\)/);
     assert.match(change, /plan\.periodSeconds\.toString\(\)/);
+    assert.match(change, /plan\.amountUsdc\.toString\(\)/);
     assert.match(change, /"PRORATION_PAID"/);
     assert.match(change, /"RECONCILIATION_REQUIRED"/);
     assert.match(change, /sub-change-modify:\$\{changeFingerprint\}/);
@@ -84,6 +88,8 @@ test("billing derives entitlement from chain and persists renewal finality befor
     assert.match(internalBilling, /router\.merchantTiers\(subscriber\)/);
     assert.match(internalBilling, /Tier reconciled but claim completion failed/);
     for (const billing of [premiumBilling, customerBilling]) {
+        /* Both RPCs must be present. Note: textual order is NOT a proxy for runtime finality here —
+           they live in separate branches/functions, so an index comparison would be misleading. */
         const record = billing.indexOf("record_subscription_billing_chain_confirmation");
         const complete = billing.indexOf("complete_subscription_billing");
         assert.ok(record >= 0 && complete >= 0);
@@ -101,9 +107,12 @@ test("subscription lifecycle webhooks use the durable retrying outbox", async ()
     assert.match(helper, /deliverWebhookOutboxEvent/);
 });
 
-test("manual webhook replay accepts only normalized UUID event ids", async () => {
+test("manual webhook replay normalizes and validates event ids (UUID or evt_ prefixed)", async () => {
     const replay = await source("src/app/api/webhooks/events/replay/route.ts");
     assert.match(replay, /body\.eventId\.trim\(\)\.toLowerCase\(\)/);
-    assert.match(replay, /eventId must be a canonical UUID/);
+    /* Must accept the evt_-prefixed lifecycle/payment webhook ids as well as canonical UUIDs,
+       while still rejecting unrelated garbage. */
+    assert.match(replay, /evt_\[a-z0-9_\]\+/);
+    assert.match(replay, /eventId must be a valid event ID/);
     assert.match(replay, /crypto\.randomUUID\(\)/);
 });

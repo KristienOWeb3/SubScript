@@ -368,16 +368,30 @@ export async function POST(request: Request) {
                     maxUses,
                     expiresAt: normalizedExpiry,
                 };
-                const existingFingerprint = existingLink.creation_fingerprint;
-                if (existingFingerprint
-                    ? existingFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
-                        || existingFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
-                        || (existingFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
-                        || existingFingerprint.linkKind !== requestedFingerprint.linkKind
-                        || existingFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
-                        || (existingFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
-                        || (existingFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt
-                    : String(existingLink.amount_usdc) !== amountBigInt.toString()) {
+                /* Legacy rows created before creation_fingerprint existed: derive an equivalent
+                   fingerprint from the stored columns so the SAME full comparison runs. Comparing
+                   only the amount let a legacy key silently return a link with a changed expiry,
+                   max_uses, sandbox mode, or link kind. */
+                const existingFingerprint = existingLink.creation_fingerprint ?? {
+                    merchantAddress: String(existingLink.merchant_address || "").toLowerCase(),
+                    amountUsdc: String(existingLink.amount_usdc),
+                    beneficiaryAddress: existingLink.beneficiary_address
+                        ? String(existingLink.beneficiary_address).toLowerCase()
+                        : null,
+                    linkKind: existingLink.link_kind ?? "MERCHANT",
+                    sandboxMode: Boolean(existingLink.sandbox_mode),
+                    maxUses: existingLink.max_uses ?? null,
+                    expiresAt: existingLink.expires_at
+                        ? new Date(existingLink.expires_at).toISOString()
+                        : null,
+                };
+                if (existingFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
+                    || existingFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
+                    || (existingFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
+                    || existingFingerprint.linkKind !== requestedFingerprint.linkKind
+                    || existingFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                    || (existingFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
+                    || (existingFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt) {
                     return NextResponse.json(
                         { error: "Conflict: Idempotency key was used with different financial terms" },
                         { status: 409 },

@@ -18,14 +18,49 @@ function firstString(...values: unknown[]) {
     return values.find((value): value is string => typeof value === "string" && value.length > 0) || null;
 }
 
+class PayloadTooLargeError extends Error {}
+
+/* Read the request body with a hard byte cap enforced WHILE streaming, so an untrusted oversized
+   payload is never fully buffered into memory before the size check. */
+async function readCappedBody(request: Request, maxBytes: number): Promise<string> {
+    if (!request.body) return await request.text();
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+            total += value.byteLength;
+            if (total > maxBytes) {
+                await reader.cancel().catch(() => {});
+                throw new PayloadTooLargeError();
+            }
+            chunks.push(value);
+        }
+    }
+    return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function POST(request: Request) {
     try {
-        const bodyText = await request.text();
+        /* Reject early on an oversized declared length before reading a single byte. */
+        const declaredLength = Number(request.headers.get("content-length") || "");
+        if (Number.isFinite(declaredLength) && declaredLength > MAX_WEBHOOK_BYTES) {
+            return NextResponse.json({ error: "Webhook payload too large" }, { status: 413 });
+        }
+
+        let bodyText: string;
+        try {
+            bodyText = await readCappedBody(request, MAX_WEBHOOK_BYTES);
+        } catch (readError) {
+            if (readError instanceof PayloadTooLargeError) {
+                return NextResponse.json({ error: "Webhook payload too large" }, { status: 413 });
+            }
+            throw readError;
+        }
         if (!bodyText) {
             return NextResponse.json({ error: "Empty request body" }, { status: 400 });
-        }
-        if (Buffer.byteLength(bodyText, "utf8") > MAX_WEBHOOK_BYTES) {
-            return NextResponse.json({ error: "Webhook payload too large" }, { status: 413 });
         }
 
         let payload: any;

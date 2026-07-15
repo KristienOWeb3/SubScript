@@ -115,6 +115,9 @@ test("a transaction never observed on-chain goes terminal instead of holding cap
        and the terminal path releases capacity via release_payment_link_settlement. */
     assert.match(worker, /TX_NEVER_OBSERVED_TERMINAL_MS = 24 \* 60 \* 60 \* 1000/);
     assert.match(worker, /txNeverObservedIsTerminal[\s\S]*?PermanentVerificationError\(\s*"Transaction was never observed on-chain within 24 hours/);
+    /* Terminal only when the TRANSACTION itself is also absent — a merely-unmined (pending) tx,
+       which has no receipt yet, must stay retryable so a late settlement is never stranded. */
+    assert.match(worker, /txNeverObservedIsTerminal\)\s*\{[\s\S]*?getTransaction\(job\.tx_hash\)[\s\S]*?if \(!pendingTx\)/);
     /* The transient interpretation must survive for young jobs. */
     assert.match(worker, /Transaction receipt not found on-chain yet/);
 });

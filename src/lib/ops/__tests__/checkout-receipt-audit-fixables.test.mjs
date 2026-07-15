@@ -53,8 +53,12 @@ test("settlements use immutable snapshots and unique per-attempt receipts", () =
     assert.match(migration, /INSERT INTO public\.payment_link_settlement_effects/i);
     assert.doesNotMatch(worker, /upsert\(\{[\s\S]{0,80}receipt_id: job\.receipt_id/);
     const settlementFlow = worker.slice(worker.indexOf("async function verifyAndFinalize"));
+    const finalizeIndex = settlementFlow.indexOf('"finalize_payment_link_settlement"');
+    const effectsIndex = settlementFlow.indexOf("runDurablePostSettlementEffects");
+    assert.notEqual(finalizeIndex, -1, "settlement finalization must be present");
+    assert.notEqual(effectsIndex, -1, "post-settlement effects must be present");
     assert.ok(
-        settlementFlow.indexOf('"finalize_payment_link_settlement"') < settlementFlow.indexOf("runDurablePostSettlementEffects"),
+        finalizeIndex < effectsIndex,
         "settlement must commit before best-effort effects run",
     );
 });

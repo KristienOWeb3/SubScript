@@ -26,8 +26,11 @@ export async function POST(request: Request) {
         }
 
         const eventId = body.eventId.trim().toLowerCase();
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(eventId)) {
-            return NextResponse.json({ error: "eventId must be a canonical UUID" }, { status: 400 });
+        /* Accept both canonical UUIDs and the `evt_`-prefixed IDs that payment and subscription
+           lifecycle webhooks use (e.g. evt_subscription_… from lifecycleEventId, evt_payment_…).
+           A strict UUID check silently 400s every replay of those events. */
+        if (!/^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(eventId)) {
+            return NextResponse.json({ error: "eventId must be a valid event ID" }, { status: 400 });
         }
         const supabase = getSupabase();
 

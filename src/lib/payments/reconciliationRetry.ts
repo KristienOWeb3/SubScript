@@ -18,6 +18,12 @@ const ADDRESS_PATTERN = /^0x[0-9a-f]{40}$/i;
 const TX_HASH_PATTERN = /^0x[0-9a-f]{64}$/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/* After this many attempts a reconciliation event is treated as a poison row: an unsupported
+   kind or permanently-invalid context will never succeed, and — because the cron marks any
+   failing batch unhealthy — a single such row would otherwise 500 the reconcile endpoint on
+   every run forever. Exhausted events are parked (dead-lettered) for manual review instead. */
+const MAX_RECONCILIATION_ATTEMPTS = 12;
+
 function requiredString(context: Record<string, unknown>, key: string) {
     const value = context[key];
     if (typeof value !== "string" || !value) {
@@ -206,7 +212,7 @@ export async function processPaymentReconciliationEvents(limit: number = 25) {
         [boundedLimit],
     );
 
-    const results: Array<{ id: string; success: boolean; error?: string }> = [];
+    const results: Array<{ id: string; success: boolean; error?: string; deadLettered?: boolean }> = [];
     for (const event of events) {
         try {
             await retryPaymentReconciliationEvent(event);
@@ -221,6 +227,27 @@ export async function processPaymentReconciliationEvents(limit: number = 25) {
             results.push({ id: event.id, success: true });
         } catch (error) {
             const message = error instanceof Error ? error.message : "Reconciliation retry failed";
+            if (event.attempt_count >= MAX_RECONCILIATION_ATTEMPTS) {
+                /* Dead-letter: park the poison row in the terminal RESOLVED state with the failure
+                   preserved in last_error and a context marker, so it stops being re-selected and
+                   stops keeping the reconcile cron perpetually unhealthy. It is NOT a success, but
+                   it is no longer an actively-failing event — surface it as dead-lettered for
+                   manual review rather than counting it against batch health forever. */
+                await pgMaybeOne<{ id: string }>(
+                    `update public.payment_reconciliation_events
+                     set status = 'RESOLVED',
+                         last_error = left($3, 4000),
+                         context = context || jsonb_build_object('deadLetteredAt', now()::text, 'deadLetterReason', left($3, 500)),
+                         resolved_at = now(),
+                         updated_at = now()
+                     where id = $1::uuid and status = 'PROCESSING' and attempt_count = $2
+                     returning id`,
+                    [event.id, event.attempt_count, message],
+                );
+                console.error("[payment-reconciliation] DEAD-LETTERED after exhausting retries — manual review required", { id: event.id, kind: event.kind, attempts: event.attempt_count, error });
+                results.push({ id: event.id, success: true, deadLettered: true, error: message });
+                continue;
+            }
             await pgMaybeOne<{ id: string }>(
                 `update public.payment_reconciliation_events
                  set status = 'PENDING',
@@ -241,6 +268,7 @@ export async function processPaymentReconciliationEvents(limit: number = 25) {
     return {
         success: results.every((result) => result.success),
         processedCount: events.length,
+        deadLetteredCount: results.filter((result) => result.deadLettered).length,
         results,
     };
 }

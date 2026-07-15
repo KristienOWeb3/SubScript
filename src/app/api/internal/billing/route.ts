@@ -196,8 +196,9 @@ export async function POST(request: Request) {
             }
             /* A prior attempt changed no committed state or failed before marking completion.
                Re-run the idempotent chain-derived reconciliation instead of abandoning the claim. */
-        }
-        if (claimError) {
+        } else if (claimError) {
+            /* else-if: the 23505 branch above is a RECOVERABLE duplicate that must fall through to
+               reconciliation, not into this generic 500. Only non-duplicate claim errors abort. */
             console.error("[internal/billing] Failed to claim webhook event:", claimError.message);
             return NextResponse.json({ error: "Database idempotency check failed" }, { status: 500 });
         }
@@ -227,7 +228,15 @@ export async function POST(request: Request) {
         /* 4. Signed events are wake-ups, not entitlement authority. Re-read the canonical router
            tier so delayed/out-of-order success and cancellation deliveries can never move the DB
            backwards or report Premium after on-chain activation failed. */
-        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://rpc.testnet.arc.network");
+        /* Chain-aware fallback: an authoritative tier read must target the SAME network the router
+           address belongs to. A hardcoded testnet default would read unrelated state on mainnet and
+           could overwrite a real merchant's tier. */
+        const defaultArcRpc = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet"
+            ? "https://rpc.mainnet.arc.network"
+            : "https://rpc.testnet.arc.network";
+        const provider = new ethers.JsonRpcProvider(
+            process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || defaultArcRpc,
+        );
         const router = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, ROUTER_ABI, provider);
         let newTier: number;
         try {

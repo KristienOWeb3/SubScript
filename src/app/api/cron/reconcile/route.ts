@@ -78,6 +78,9 @@ export async function POST(request: Request) {
                     && workerHealthy
                     && !("error" in webhookOutbox)
                     && !("error" in paymentOperations)
+                    /* processPaymentReconciliationEvents returns { success:false } (not { error })
+                       when individual events fail; treat that as unhealthy so the cron surfaces it. */
+                    && !("success" in paymentOperations && paymentOperations.success === false)
                     ? 200
                     : 500,
             },

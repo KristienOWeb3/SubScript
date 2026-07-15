@@ -364,7 +364,10 @@ export async function POST(request: Request) {
                         CONFIDENTIAL_CONTRACT_ADDRESS
                     );
 
-                    if (BigInt(contractAllowance.toString()) < totalPayrollAmount) {
+                    /* Exact-match, not >=: a legacy MaxUint256 (or any larger) grant must be
+                       downgraded to this payday's bounded amount, not left standing. Re-approving
+                       to the exact total keeps the keeper's spend authority scoped per payout. */
+                    if (BigInt(contractAllowance.toString()) !== totalPayrollAmount) {
                         const approveTx = await usdcContract.approve(
                             CONFIDENTIAL_CONTRACT_ADDRESS,
                             totalPayrollAmount

@@ -718,11 +718,18 @@ export default function PublicPayClient({
         if (!response.ok || !data.success || !isReceiptId(data.receiptId)) {
             throw new Error(data.error || "Unable to reserve this checkout attempt.");
         }
+        /* Past this point the server has RESERVED capacity. Any validation failure below must
+           release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
+           a single-use link consumed even though no transaction was sent. */
         if (String(data.amountUsdc) !== String(linkData.amount_usdc)
             || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()) {
+            await releaseUnbroadcastAttempt();
             throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
         }
-        if (!payer) throw new Error("The paying wallet is unavailable.");
+        if (!payer) {
+            await releaseUnbroadcastAttempt();
+            throw new Error("The paying wallet is unavailable.");
+        }
         setReceiptId(data.receiptId);
         return data.receiptId as string;
     };

@@ -13,6 +13,7 @@ import { getRpcProviderForWrite } from "@/lib/payments/rpc";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import {
     PERMIT2_ADDRESS,
+    PERMIT2_MAX_AMOUNT,
     PERMIT2_TYPES,
     permit2Domain,
     buildPermitSingle,
@@ -47,6 +48,11 @@ export async function POST(request: Request) {
         const frequencyDays = body?.frequencyDays;
         if (!/^\d+$/.test(totalAmountText) || BigInt(totalAmountText) <= BigInt(0)) {
             return NextResponse.json({ error: "A positive exact payroll total is required." }, { status: 400 });
+        }
+        /* Reject amounts exceeding the Permit2 uint160 ceiling up front. buildPermitSingle rejects
+           them later, but only after this route may already have written an ERC20 approval. */
+        if (BigInt(totalAmountText) > PERMIT2_MAX_AMOUNT) {
+            return NextResponse.json({ error: "Payroll total exceeds the maximum authorizable amount." }, { status: 400 });
         }
         let window: ReturnType<typeof payrollPermitWindow>;
         try {

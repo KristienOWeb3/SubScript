@@ -19,7 +19,19 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
             .select("url, secret, active")
             .eq("id", delivery.webhook_endpoint_id)
             .maybeSingle();
-        if (endpointError || !endpoint?.active) continue;
+        /* A transient lookup error may recover — leave the row for the next scan. But a MISSING
+           or INACTIVE endpoint will never deliver, so park the row in DEAD_LETTER; otherwise the
+           oldest-first batch drainer re-selects these undeliverable rows every run and starves
+           newer, valid webhooks. */
+        if (endpointError) continue;
+        if (!endpoint || endpoint.active !== true) {
+            await supabase.from("webhook_deliveries").update({
+                status: "DEAD_LETTER",
+                last_error: endpoint ? "Endpoint is inactive" : "Endpoint no longer exists",
+                updated_at: new Date().toISOString(),
+            }).eq("id", delivery.id).in("status", ["PENDING", "FAILED"]);
+            continue;
+        }
 
         const attempts = Number(delivery.attempts || 0) + 1;
         const claimId = crypto.randomUUID();

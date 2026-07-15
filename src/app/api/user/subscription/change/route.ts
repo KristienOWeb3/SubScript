@@ -91,6 +91,11 @@ export async function POST(request: Request) {
            apply the modify twice. Claim (subscription, plan, subscriber) atomically — a concurrent
            attempt gets 409, a completed one replays the stored result, and an abandoned (expired)
            PROCESSING claim is reclaimed. */
+        /* Fingerprint the FINANCIAL terms only. plan.updatedAt must NOT be included: a
+           metadata-only plan edit (name/description) would otherwise change this fingerprint —
+           and therefore the proration and modify custody keys — so a retry of an in-flight
+           proration submits under a new key and double-charges. The amount/period already
+           uniquely identify the money-moving terms. */
         const changeFingerprint = [
             "v2",
             fromSubscriptionId,
@@ -100,7 +105,6 @@ export async function POST(request: Request) {
             planId,
             plan.amountUsdc.toString(),
             plan.periodSeconds.toString(),
-            plan.updatedAt.toISOString(),
             mode,
         ].join(":");
         changeClaimKey = `subscription-change:${changeFingerprint}`;
