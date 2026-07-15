@@ -112,13 +112,40 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
   test.describe("Authenticated Dashboard Tests", () => {
     test.beforeEach(async ({ page, context, baseURL }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
+      page.on("response", response => {
+        if (response.status() >= 500) {
+          console.log(`[SERVER ERROR] ${response.url()} - ${response.status()}`);
+        }
+      });
       
-      // Mock ALL RPC calls to prevent rate limiting
+      // Mock RPC calls with method-specific responses
       await page.route("**/rpc.testnet.arc.network/**", async (route) => {
+        const body = route.request().postDataJSON();
+        const method = body?.method;
+        
+        let result = "0x";
+        
+        if (method === "eth_call") {
+          const data = body?.params?.[0]?.data;
+          // balanceOf selector: 0x70a08231
+          if (data?.startsWith("0x70a08231")) {
+            result = "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000"; // 1000 balance
+          }
+          // merchantTiers selector (example): 0x12345678
+          else if (data?.startsWith("0x12345678")) {
+            result = "0x0000000000000000000000000000000000000000000000000000000000000001"; // tier 1
+          } else {
+            result = "0x0000000000000000000000000000000000000000000000000000000000000000"; // generic 0
+          }
+        } else if (method === "eth_getCode") {
+          // Return non-empty for contract existence checks
+          result = "0x60806040"; 
+        }
+
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ jsonrpc: "2.0", result: "0x", id: 1 })
+          body: JSON.stringify({ jsonrpc: "2.0", result, id: body?.id || 1 })
         });
       });
 
@@ -137,6 +164,9 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       ]);
       await page.goto("/dashboard");
       await page.waitForSelector('[data-mounted="true"]');
+      await page.waitForLoadState("networkidle");
+      // Give the dashboard time to render webhook data
+      await page.waitForTimeout(2000);
     });
 
     test.skip("should toggle Testnet and Mainnet environments", async ({ page }) => {
@@ -194,7 +224,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await page.click('button:has-text("Webhooks"):visible');
       
       // Wait for the webhook content tab to be visible first
-      await page.waitForSelector('text=Live Webhook Deliveries', { timeout: 30000 });
+      await page.waitForSelector('[role="tab"]:has-text("Deliveries")', { timeout: 15000 });
       await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
       
       // Select payment failed event via its unique ID
