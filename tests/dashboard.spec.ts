@@ -182,8 +182,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await page.goto("/dashboard");
       await page.waitForSelector('[data-mounted="true"]');
       await page.waitForLoadState("networkidle");
-      // Give the dashboard time to render webhook data
-      await page.waitForTimeout(2000);
+      // Each test waits for its own concrete elements, so no arbitrary settle delay is needed.
     });
 
     test.skip("should toggle Testnet and Mainnet environments", async ({ page }) => {
@@ -205,9 +204,8 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
       
-      // Wait for button to be clickable
-      await page.locator('button').filter({ hasText: /^Roll$/ }).first().waitFor({ state: 'visible' });
-      await page.locator('button').filter({ hasText: /^Roll$/ }).click();
+      // .click() auto-waits for visibility/actionability; .first() keeps it strict-mode safe.
+      await page.locator('button').filter({ hasText: /^Roll$/ }).first().click();
       
       const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
       await expect(confirmation).toBeVisible({ timeout: 15000 });
@@ -239,18 +237,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
 
       await page.click('button:has-text("Webhooks"):visible');
-      
-      // Add a fallback check and increase visibility wait
-      await page.waitForSelector('[role="tab"]', { timeout: 10000 });
-      
-      // Add explicit network idle and DOM stability wait
-      await page.waitForLoadState("networkidle");
-      await page.waitForTimeout(1000);
-      
-      // Simplified wait - just check if any tab exists with text containing Deliveries
-      await page.locator('[role="tab"]').filter({ hasText: /Deliveries/i }).waitFor({ state: 'visible', timeout: 15000 });
-      
-      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 15000 });
+
+      // The Webhooks tab renders the "Live Webhook Deliveries" heading directly — the dashboard
+      // has NO [role="tab"] elements, so the previous [role="tab"] waits timed out deterministically.
+      // Wait idiomatically for the actual heading instead.
+      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 30000 });
       
       // Select payment failed event via its unique ID
       await page.click('button:has-text("evt_03")');
