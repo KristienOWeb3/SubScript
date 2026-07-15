@@ -120,6 +120,7 @@ export interface Subscription {
     intervalSeconds?: number;
     intervalCount?: number;
     interval?: string | null;
+    planId?: string | null;
     checkoutUrl?: string;
     cancelAtPeriodEnd?: boolean;
     [key: string]: unknown;
@@ -132,6 +133,8 @@ export interface CreateSubscriptionParams {
     intervalSeconds?: number;
     intervalCount?: number;
     subscriber?: string;
+    /** Publish this generic, unassigned checkout as a DM-selectable plan. Requires idempotencyKey. */
+    publishToDm?: boolean;
     title?: string;
     externalReference?: string;
     idempotencyKey?: string;

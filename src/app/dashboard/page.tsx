@@ -39,6 +39,7 @@ import {
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
+import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import {
@@ -162,10 +163,12 @@ const shortenHash = (value: string | undefined) => {
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
+/* Same icons AND names as the desktop sidebar (`tabs`) so merchant navigation reads
+   identically on both form factors. */
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
-    { id: "overview", label: "Home", icon: SquaresFour },
+    { id: "overview", label: "Overview", icon: SquaresFour },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Plans", icon: Sliders },
+    { id: "payment-links", label: "Payments", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
@@ -244,6 +247,7 @@ export default function DashboardPage() {
     const [dbProvider, setDbProvider] = useState("none");
     const [sessionProvider, setSessionProvider] = useState("none");
     const [ledgerPage, setLedgerPage] = useState(0);
+    const [ledgerCursors, setLedgerCursors] = useState<Array<string | null>>([null]);
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
 
@@ -1836,14 +1840,21 @@ export default function DashboardPage() {
 
 
     const [ledgers, setLedgers] = useState<any[]>([]);
+    const [ledgerPagination, setLedgerPagination] = useState({ total: 0, totalPages: 1 });
+    const [merchantAnalytics, setMerchantAnalytics] = useState<MerchantAnalyticsSummary | null>(null);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const ledgerCursor = ledgerCursors[ledgerPage] || null;
 
 
     useEffect(() => {
         const merchantAddress = address;
         if (!isConnected || !merchantAddress) {
             setLedgers([]);
+            setLedgerPagination({ total: 0, totalPages: 1 });
+            setMerchantAnalytics(null);
+            setLedgerPage(0);
+            setLedgerCursors([null]);
             return;
         }
 
@@ -1854,76 +1865,71 @@ export default function DashboardPage() {
             setIsLoadingContract(true);
             if (isTestMode) {
                 setLedgers([]);
+                setLedgerPagination({ total: 0, totalPages: 1 });
+                setMerchantAnalytics(null);
                 setIsLoadingContract(false);
                 setInitialContractFetched(true);
                 return;
             }
             try {
-                const mirrorRequest = fetch("/api/merchant/subscriptions").catch(() => null);
-                const nextIdRequest = publicClient.readContract({
-                    address: STANDARD_CONTRACT_ADDRESS,
-                    abi: STANDARD_ABI,
-                    functionName: "nextSubscriptionId",
+                const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
+                const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
+                const mirrorPayload = await mirrorResponse.json().catch(() => null);
+                if (!mirrorResponse.ok || !mirrorPayload?.success) {
+                    throw new Error(mirrorPayload?.error || "Subscription analytics could not be loaded");
+                }
+
+                /* The server owns merchant scoping, complete aggregates, and page-bounded detail.
+                   This keeps browser work constant and removes every protocol-wide RPC scan. */
+                const fetchedLedgers = (mirrorPayload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
+                    const subscriber = subscription.subscriber || "";
+                    const shortAddress = subscriber
+                        ? `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`
+                        : "Unknown subscriber";
+                    const nextBillingTs = subscription.nextBillingDate
+                        ? Math.floor(new Date(subscription.nextBillingDate).getTime() / 1000)
+                        : 0;
+                    return {
+                        id: `agent-run-${subscription.subscriptionId}`,
+                        rawId: subscription.subscriptionId,
+                        address: subscriber,
+                        displayAddress: subscription.subscriberName || shortAddress,
+                        shortSubAddress: subscription.subscriberName || shortAddress,
+                        limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
+                        rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
+                        rawPeriod: subscription.periodSeconds,
+                        nextBilling: subscription.nextBillingDate
+                            ? new Date(subscription.nextBillingDate).toLocaleDateString()
+                            : "Not scheduled",
+                        nextPaymentTs: nextBillingTs,
+                        activityAt: subscription.activityAt,
+                        active: subscription.status === "ACTIVE",
+                        billingStatus: subscription.status,
+                        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+                        downgradeFailures: Number(subscription.downgradeFailures || 0),
+                    };
                 });
-                const [mirrorResponse, nextId] = await Promise.all([mirrorRequest, nextIdRequest]);
-
-                const mirrorById = new Map<string, {
-                    subscriberName: string | null;
-                    status: string;
-                    cancelAtPeriodEnd: boolean;
-                    nextBillingDate: string | null;
-                    downgradeFailures: number;
-                }>();
-                if (mirrorResponse?.ok) {
-                    const mirrorPayload = await mirrorResponse.json().catch(() => null);
-                    for (const subscription of mirrorPayload?.subscriptions || []) {
-                        mirrorById.set(String(subscription.subscriptionId), subscription);
-                    }
-                }
-                
-                const nextIdNum = Number(nextId);
-                const fetchedLedgers = [];
-                const onChainSubscriptions = await Promise.all(
-                    Array.from({ length: Math.max(0, nextIdNum - 1) }, async (_, index) => {
-                        const id = index + 1;
-                        const subscription = await publicClient.readContract({
-                            address: STANDARD_CONTRACT_ADDRESS,
-                            abi: STANDARD_ABI,
-                            functionName: "subscriptions",
-                            args: [BigInt(id)],
-                        });
-                        return { id, subscription };
-                    })
-                );
-
-                for (const { id, subscription: sub } of onChainSubscriptions) {
-                    const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-
-                    if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
-                        const mirror = mirrorById.get(String(id));
-                        const shortAddress = `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`;
-                        fetchedLedgers.push({
-                            id: `agent-run-${id}`,
-                            rawId: String(id),
-                            address: subscriber,
-                            displayAddress: mirror?.subscriberName || shortAddress,
-                            shortSubAddress: mirror?.subscriberName || shortAddress,
-                            limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
-                            rawAmount: formatUnits(amount, 6),
-                            rawPeriod: String(period),
-                            nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
-                            active: isActive,
-                            billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
-                            cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
-                            downgradeFailures: Number(mirror?.downgradeFailures || 0),
-                        });
-                    }
-                }
                 
                 if (isSubscribed) {
+                    const totalPages = Math.max(1, Number(mirrorPayload.pagination?.totalPages || 1));
+                    if (ledgerPage >= totalPages) {
+                        setLedgerPage(totalPages - 1);
+                        return;
+                    }
                     setLedgers(fetchedLedgers);
-                    if (fetchedLedgers.length > 0 && !selectedWebhook) {
-                        setSelectedWebhook(`evt_01_0`);
+                    setLedgerPagination({
+                        total: Number(mirrorPayload.pagination?.total || 0),
+                        totalPages,
+                    });
+                    const nextCursor = mirrorPayload.pagination?.nextCursor || null;
+                    setLedgerCursors((current) => {
+                        const updated = current.slice(0, ledgerPage + 1);
+                        if (nextCursor) updated[ledgerPage + 1] = String(nextCursor);
+                        return updated;
+                    });
+                    setMerchantAnalytics(mirrorPayload.analytics || null);
+                    if (fetchedLedgers.length > 0) {
+                        setSelectedWebhook((current) => current || "evt_01_0");
                     }
                 }
             } catch (err) {
@@ -1937,13 +1943,15 @@ export default function DashboardPage() {
         }
 
         fetchOnChainData();
-        const interval = setInterval(fetchOnChainData, 10000);
+        /* 45s: subscription state changes on billing-cycle timescales; a 10s poll only
+           multiplied RPC load (and 429s) without making the numbers fresher in practice. */
+        const interval = setInterval(fetchOnChainData, 45000);
 
         return () => {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode]);
+    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -2383,12 +2391,20 @@ Please complete the following implementation tasks:
     };
 
 
-    const activeAllowances = ledgers.filter(l => l.active).length;
-    const revokedCount = ledgers.filter(l => !l.active).length;
-    const totalSubs = ledgers.length;
+    const activeAllowances = merchantAnalytics?.activeSubscriptions ?? ledgers.filter(l => l.active).length;
+    const totalSubs = merchantAnalytics?.totalSubscriptions ?? ledgerPagination.total;
+    const revokedCount = Math.max(0, totalSubs - activeAllowances);
     const failureRate = totalSubs > 0 ? ((revokedCount / totalSubs) * 100).toFixed(1) : "0.0";
-    const projected30DaySettlement = ledgers.reduce((acc, sub) => {
-        if (!sub.active) return acc;
+    /* Only subscriptions that will actually renew belong in a forward projection: an
+       on-chain-active sub that is mid-failed-renewal, past due, or ending at period end
+       will not collect next cycle, so counting it overstates expected volume. Mirrors
+       the isPaying definition in AnalyticsDashboard. */
+    const projected30DaySettlement = merchantAnalytics?.mrrUsdc ?? ledgers.reduce((acc, sub) => {
+        const willRenew = sub.active
+            && sub.billingStatus === "ACTIVE"
+            && Number(sub.downgradeFailures || 0) === 0
+            && !sub.cancelAtPeriodEnd;
+        if (!willRenew) return acc;
         const amountNum = parseFloat(sub.rawAmount) || 0;
         const periodNum = parseFloat(sub.rawPeriod) || 2592000;
         const monthlyEquivalent = amountNum * (2592000 / periodNum);
@@ -3248,59 +3264,57 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
-                    {/* Merchant Verification Tier Matrix */}
+                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
+                        the plan gates product features. Each card always reflects the real DB
+                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
                     <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Merchant Verification & Tiers</h3>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
                         <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
-                            Provider verification adds a public trust badge. Product access remains governed by your plan and each feature's own eligibility rules.
+                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent — you can hold either without the other.
                         </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {/* Tier 1 Card */}
-                            <div className={`p-4 rounded-2xl border ${!userSettings.verified ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* KYC track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 1: Free Unverified</h4>
-                                    {!userSettings.verified && (
-                                        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-bold text-amber-300">Active</span>
-                                    )}
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                        {userSettings.verified ? 'Verified' : 'Unverified'}
+                                    </span>
                                 </div>
                                 <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-white/60">• Payment links remain available</li>
-                                    <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
-                                    <li className="flex items-center gap-1 text-white/60">• Regulated rails may stay limited</li>
+                                    {userSettings.verified ? (
+                                        <>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
+                                        </>
+                                    )}
                                 </ul>
                             </div>
 
-                            {/* Tier 2 Card */}
-                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'FREE') ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                            {/* Plan track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 2: Verified Merchant</h4>
-                                    {userSettings.verified && userSettings.tier === 'FREE' && (
-                                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[8px] font-bold text-emerald-300">Active</span>
-                                    )}
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
+                                    </span>
                                 </div>
                                 <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
                                     <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No API/Webhooks access</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No vault commits</li>
-                                </ul>
-                                {!userSettings.verified && (
-                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Submit business registry KYC to upgrade.</p>
-                                )}
-                            </div>
-
-                            {/* Tier 3 Card */}
-                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'PREMIUM') ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 3: Premium Plan</h4>
-                                    {userSettings.verified && userSettings.tier === 'PREMIUM' && (
-                                        <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">Active</span>
-                                    )}
-                                </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ API Keys & Webhook endpoints</li>
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Customer commitment vaults</li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
+                                    </li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
+                                    </li>
                                 </ul>
                                 {userSettings.tier !== 'PREMIUM' && (
                                     <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
@@ -3317,7 +3331,7 @@ Please complete the following implementation tasks:
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
                             {merchantAliasNextChange
-                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change or unregister it again then.</>
+                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change it again then. Business names cannot be unregistered.</>
                                 : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
@@ -3326,33 +3340,11 @@ Please complete the following implementation tasks:
                                     <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
                                     <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
                                 </div>
-                                <button
-                                    onClick={async () => {
-                                        setDnsLoading(true);
-                                        setDnsError(null);
-                                        try {
-                                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                                            const data = await res.json().catch(() => ({}));
-                                            if (res.ok) {
-                                                setUserSettings((prev: any) => ({ ...prev, alias: null }));
-                                                setMerchantAlias(null);
-                                                setDnsDomain("");
-                                                setDnsSuccess("Alias removed successfully");
-                                                setTimeout(() => setDnsSuccess(null), 3000);
-                                            } else {
-                                                setDnsError(data.error || "Could not unregister this name.");
-                                            }
-                                        } catch (err) {
-                                            console.error(err);
-                                            setDnsError("Network error removing DNS name.");
-                                        } finally {
-                                            setDnsLoading(false);
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
-                                >
-                                    {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
-                                </button>
+                                {/* Merchants can never unregister: the registered business name is the
+                                    identity customers pay to, and the API refuses the DELETE too. */}
+                                <span className="px-3 py-1.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase tracking-wider rounded-xl select-none">
+                                    Permanent
+                                </span>
                             </div>
                         ) : dnsConfirmPending ? (
                             <div className="p-5 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/[0.04] space-y-4">
@@ -3427,7 +3419,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Wallet Recovery & Backup */}
-                {userSettings.walletBackup && (
+                {userSettings.walletBackup?.available && (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -3441,12 +3433,8 @@ Please complete the following implementation tasks:
                                     opens this same merchant account.
                                 </p>
                             </div>
-                            <span className={`self-start rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                                userSettings.walletBackup.available
-                                    ? "border border-[#00d2b4]/25 bg-[#00d2b4]/10 text-[#00d2b4]"
-                                    : "border border-white/10 bg-white/5 text-white/45"
-                            }`}>
-                                {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                            <span className="self-start rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">
+                                Exportable
                             </span>
                         </div>
 
@@ -3535,14 +3523,10 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={requestMerchantExportOtp}
-                                disabled={merchantExportOtpSending || !userSettings.walletBackup.available}
+                                disabled={merchantExportOtpSending}
                                 className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {merchantExportOtpSending
-                                    ? "Sending verification code…"
-                                    : userSettings.walletBackup.available
-                                        ? "Verify email & export wallet"
-                                        : "Private-key export unavailable"}
+                                {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                             </button>
                         )}
                     </div>
@@ -4131,6 +4115,7 @@ Please complete the following implementation tasks:
                         walletBalance={walletBalance}
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
+                        analytics={merchantAnalytics}
                         onRetryCharge={handleRetryCharge}
                         merchantAddress={address || ""}
                     />
@@ -4283,9 +4268,7 @@ Please complete the following implementation tasks:
                                                 </tr>
                                             ) : (
                                                 (() => {
-                                                    const ledgerPageSize = 5;
-                                                    const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                                    return paginatedLedgers.map((item) => (
+                                                    return ledgers.map((item) => (
                                                         <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                             <td className="py-4 font-semibold text-white">{item.id}</td>
                                                             <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
@@ -4314,8 +4297,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
@@ -4464,12 +4446,14 @@ Please complete the following implementation tasks:
 
                             {/* Quick Actions Grid (Circles) */}
                             <div className="grid grid-cols-4 gap-3 py-2 text-center">
+                                {/* Quick-action icons mirror the desktop sidebar so the same
+                                    destination always carries the same icon on every screen. */}
                                 <div>
                                     <button
                                         onClick={() => setActiveTab("payment-links")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUpRight className="w-5 h-5" />
+                                        <Sliders className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
                                 </div>
@@ -4478,7 +4462,7 @@ Please complete the following implementation tasks:
                                         onClick={() => setActiveTab("webhooks")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUp className="w-5 h-5" />
+                                        <Broadcast className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
                                 </div>
@@ -4523,9 +4507,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     ) : (
                                         (() => {
-                                            const ledgerPageSize = 5;
-                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                            return paginatedLedgers.map((item) => (
+                                            return ledgers.map((item) => (
                                                 <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
                                                     <div className="flex justify-between items-start pr-8">
                                                         <div>
@@ -4561,8 +4543,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">

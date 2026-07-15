@@ -34,6 +34,7 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
+import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
 import {
   AlertCircle,
   ArrowDown,
@@ -200,9 +201,17 @@ const formatPeerDisplayName = (name: string | null | undefined, _address: string
   return accountDisplayName(cleanedName);
 };
 
+const txHashPattern = /0x[a-fA-F0-9]{64}/g;
+
+/* Shorten raw hex identifiers to a scannable form. Tx hashes (66 chars) must be replaced
+   before addresses (42 chars) or the address pattern eats the front of the hash and leaves
+   mangled text. Never replace with a generic label like "SubScript account" — that hid who
+   was actually paid. */
 const shortenWalletsInText = (value: string | null | undefined) => {
   if (!value) return value || null;
-  return value.replace(walletAddressPattern, "SubScript account");
+  return value
+    .replace(txHashPattern, (hash) => `${hash.slice(0, 10)}…${hash.slice(-6)}`)
+    .replace(walletAddressPattern, (address) => `${address.slice(0, 6)}…${address.slice(-4)}`);
 };
 
 const dmRequestDurationOptions = [
@@ -990,6 +999,36 @@ export default function UserDashboard() {
     await fetch("/api/auth/logout", { method: "POST" });
     disconnect();
     redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
+  };
+
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+  const handleDeleteAccount = () => {
+    setConfirmModal({
+      open: true,
+      title: "Delete your account?",
+      description: "This erases your profile, alias, and settings, and signs you out everywhere. Your payment receipts remain part of the shared ledger. Active subscriptions must be cancelled and vault funds withdrawn before deleting. This cannot be undone.",
+      confirmLabel: "Delete Account",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDeleteAccountLoading(true);
+        try {
+          const res = await fetch("/api/user/account", { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            triggerToast(data.error || "Account deletion failed.");
+            return;
+          }
+          disconnect();
+          redirectTo(getDashboardUrl("USER", "/signup"), "Deleting your account...");
+        } catch {
+          triggerToast("Account deletion failed. Please try again.");
+        } finally {
+          setDeleteAccountLoading(false);
+        }
+      },
+      onCancel: () => setConfirmModal(null),
+    });
   };
 
   const copyAddress = async () => {
@@ -3619,6 +3658,23 @@ export default function UserDashboard() {
                         </div>
                         <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
                       </button>
+
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deleteAccountLoading}
+                        className="w-full text-left p-4 hover:bg-red-500/[0.06] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 group-hover:bg-red-500/20 transition-all">
+                            {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-red-400 uppercase tracking-wide">Delete Account</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-red-400/60 group-hover:translate-x-0.5 transition-all" />
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3635,7 +3691,7 @@ export default function UserDashboard() {
                       </button>
                       <h2 className="text-sm font-black uppercase tracking-wider text-white">KYC Verification</h2>
                     </div>
-                    <KycVerificationPanel accent="#ccff00" />
+                    <KycVerificationPanel accent="#ccff00" variant="user" />
                   </div>
                 )}
 
@@ -3769,7 +3825,8 @@ export default function UserDashboard() {
                               const res = await fetch("/api/merchant/alias", { method: "DELETE" });
                               if (res.ok) {
                                 setRegisteredDomain(null);
-                                setProfilePic(null);
+                                /* The profile picture belongs to the account, not the alias —
+                                   unregistering a name must not blank the avatar. */
                                 setDnsDomain("");
                                 setDnsSuccess("Alias removed successfully");
                                 setTimeout(() => setDnsSuccess(null), 3000);
@@ -4099,24 +4156,29 @@ export default function UserDashboard() {
                         <table className="w-full text-left font-sans text-xs">
                           <thead>
                             <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                              <th className="pb-3">Receipt ID</th>
+                              <th className="pb-3">Payment</th>
                               <th className="pb-3">Date &amp; Time</th>
                               <th className="pb-3">Amount</th>
                               <th className="pb-3">Status</th>
-                              <th className="pb-3 text-right">Action</th>
+                              <th className="pb-3 text-right">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {settingsTransactions.length === 0 ? (
                               <tr>
                                 <td colSpan={5} className="text-center py-6 text-white/30">
-                                  No recent transaction logs.
+                                  No payments yet.
                                 </td>
                               </tr>
                             ) : (
-                              settingsTransactions.map((tx) => (
+                              settingsTransactions.map((tx) => {
+                                const counterparty = tx.counterpartyName
+                                  || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                                return (
                                 <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                  <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                                  <td className="py-4 font-semibold text-white/80">
+                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
+                                  </td>
                                   <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
                                   <td className="py-4 font-mono font-bold text-white">
                                     ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
@@ -4129,18 +4191,28 @@ export default function UserDashboard() {
                                   <td className="py-4 text-right">
                                     <div className="inline-flex items-center gap-3">
                                       <a
+                                        href={`/receipt/${tx.receiptId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                        title="Open this receipt in a new tab"
+                                      >
+                                        View receipt
+                                      </a>
+                                      <a
                                         href={`/receipt/${tx.receiptId}?invite=1`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
                                         title="Grant another address permission to view this private receipt"
                                       >
-                                        Grant
+                                        Share
                                       </a>
                                     </div>
                                   </td>
                                 </tr>
-                              ))
+                                );
+                              })
                             )}
                           </tbody>
                         </table>
@@ -4312,7 +4384,8 @@ export default function UserDashboard() {
                       )}
                     </div>
 
-                    {userSettings?.walletBackup && (
+                    {/* Key export exists only for wallet providers that expose a recoverable key. */}
+                    {userSettings?.walletBackup?.available && (
                       <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="space-y-2">
@@ -4323,12 +4396,8 @@ export default function UserDashboard() {
                               Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
                             </p>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                            userSettings.walletBackup.available
-                              ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
-                              : "border border-white/10 bg-white/5 text-white/45"
-                          }`}>
-                            {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                          <span className="rounded-full border border-[#ccff00]/25 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                            Exportable
                           </span>
                         </div>
 
@@ -4413,11 +4482,11 @@ export default function UserDashboard() {
                           <button
                             type="button"
                             onClick={requestExportOtp}
-                            disabled={exportOtpSending || !userSettings.walletBackup.available}
+                            disabled={exportOtpSending}
                             className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
                           >
                             {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                            Export Private Key
                           </button>
                         )}
                       </div>
@@ -4452,24 +4521,32 @@ export default function UserDashboard() {
 
                       <div className="w-full space-y-3 pt-4">
                         <a
-                          href="https://docs.subscript.com"
+                          href="https://t.me/subscriptsupport"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                        >
+                          <span>Join Telegram Support Group</span>
+                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
+                        </a>
+
+                        <a
+                          href="https://www.subscriptonarc.com/support"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span>Explore FAQs & Docs</span>
+                          <span>Help Center & FAQs</span>
                           <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
                         </a>
 
-                        <button
-                          onClick={() => {
-                            setActiveTab("inbox");
-                          }}
-                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                        <a
+                          href="mailto:support@subscriptonarc.com"
+                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span>Start On-Chain Live Chat</span>
-                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
-                        </button>
+                          <span>Email Support</span>
+                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                        </a>
                       </div>
                     </div>
                   </div>
@@ -5594,9 +5671,31 @@ function DmBubble({
             <>
               <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
-                {lines.length > 0 ? lines.map((line) => (
-                  <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
-                )) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
+                {lines.length > 0 ? lines.map((line) => {
+                  /* Receipt references read as noise in a chat bubble — show a same-origin
+                     "View receipt" action and never trust a host stored in legacy DM text. */
+                  const receiptHref = receiptHrefFromDescriptionLine(line);
+                  if (receiptHref) {
+                    return (
+                      <a
+                        key={line}
+                        href={receiptHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 text-xs font-bold underline underline-offset-2 ${incoming ? "text-[#ccff00]" : "text-white"}`}
+                      >
+                        View receipt <ExternalLink className="h-3 w-3" />
+                      </a>
+                    );
+                  }
+                  /* Older receipts embedded the raw tx hash — meaningless to a person, and
+                     payment proof stays inside SubScript (the receipt page carries it), so the
+                     line is simply dropped rather than linked to an external explorer. */
+                  if (/^transaction\b/i.test(line)) return null;
+                  return (
+                    <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                  );
+                }) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}

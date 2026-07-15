@@ -201,6 +201,39 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
         }
 
+        /* Reserved peer-request sentinels: these classify a link as a user-to-user request
+           (isPeerRequestLink), which settles as a direct USDC transfer and bypasses the router
+           and its fee/ledger accounting. Only the internal peer-request flow may set them — a
+           merchant checkout must never self-classify, or a merchant could dodge the router fee. */
+        if (typeof merchant_name === "string" && merchant_name.trim() === "SubScript user request") {
+            return NextResponse.json({ error: "Bad Request: merchant_name uses a reserved value" }, { status: 400 });
+        }
+        if (typeof external_reference === "string" &&
+            (external_reference.startsWith("peer-request:") || external_reference.startsWith("dm-peer-request:"))) {
+            return NextResponse.json({ error: "Bad Request: external_reference uses a reserved prefix" }, { status: 400 });
+        }
+
+        /* Bound free-text/identifier inputs so oversized payloads can't amplify storage or 500. */
+        if (title.length > 200) {
+            return NextResponse.json({ error: "Bad Request: title must be 200 characters or fewer" }, { status: 400 });
+        }
+        if (description !== undefined && description !== null &&
+            (typeof description !== "string" || description.length > 2000)) {
+            return NextResponse.json({ error: "Bad Request: description must be a string of 2000 characters or fewer" }, { status: 400 });
+        }
+        if (external_reference !== undefined && external_reference !== null &&
+            (typeof external_reference !== "string" || external_reference.length > 256)) {
+            return NextResponse.json({ error: "Bad Request: external_reference must be a string of 256 characters or fewer" }, { status: 400 });
+        }
+        if (merchant_name !== undefined && merchant_name !== null &&
+            (typeof merchant_name !== "string" || merchant_name.length > 128)) {
+            return NextResponse.json({ error: "Bad Request: merchant_name must be a string of 128 characters or fewer" }, { status: 400 });
+        }
+        if (idempotency_key !== undefined && idempotency_key !== null &&
+            (typeof idempotency_key !== "string" || idempotency_key.length > 200)) {
+            return NextResponse.json({ error: "Bad Request: idempotency_key must be a string of 200 characters or fewer" }, { status: 400 });
+        }
+
         if (
             beneficiary_address !== undefined &&
             beneficiaryAddress !== undefined &&
@@ -221,15 +254,28 @@ export async function POST(request: Request) {
         }
         const normalizedBeneficiary = beneficiaryValidation.address;
 
-        /* Parse and validate amount_usdc as positive bigint */
+        /* Parse and validate amount_usdc (micro-USDC) strictly. BigInt() would coerce booleans
+           (true->1), hex strings ("0x10"->16), and whitespace, so validate the shape first: a
+           plain non-negative integer, given as a digit string or a safe-integer number. */
+        const MAX_LINK_AMOUNT = BigInt(1_000_000) * BigInt(1_000_000); /* 1,000,000 USDC in micros */
         let amountBigInt: bigint;
-        try {
-            amountBigInt = BigInt(amount_usdc);
+        {
+            let amountSource: string | null = null;
+            if (typeof amount_usdc === "string" && /^\d+$/.test(amount_usdc.trim())) {
+                amountSource = amount_usdc.trim();
+            } else if (typeof amount_usdc === "number" && Number.isSafeInteger(amount_usdc) && amount_usdc >= 0) {
+                amountSource = String(amount_usdc);
+            }
+            if (amountSource === null) {
+                return NextResponse.json({ error: "Bad Request: amount_usdc must be a whole number of micro-USDC" }, { status: 400 });
+            }
+            amountBigInt = BigInt(amountSource);
             if (amountBigInt <= BigInt(0)) {
                 return NextResponse.json({ error: "Bad Request: Amount must be greater than 0" }, { status: 400 });
             }
-        } catch {
-            return NextResponse.json({ error: "Bad Request: Invalid amount_usdc" }, { status: 400 });
+            if (amountBigInt > MAX_LINK_AMOUNT) {
+                return NextResponse.json({ error: "Bad Request: amount_usdc exceeds the maximum allowed" }, { status: 400 });
+            }
         }
 
         /* Invoice fields (v1): optional number, due date, and payer identity ride the
@@ -311,6 +357,14 @@ export async function POST(request: Request) {
                 if (existingBeneficiary !== normalizedBeneficiary) {
                     return NextResponse.json(
                         { error: "Conflict: Idempotency key was used with a different beneficiary" },
+                        { status: 409 },
+                    );
+                }
+                /* Fingerprint the financial terms too — silently returning the old link when the
+                   caller changed the amount would let a stale key mask a different-price checkout. */
+                if (String(existingLink.amount_usdc) !== amountBigInt.toString()) {
+                    return NextResponse.json(
+                        { error: "Conflict: Idempotency key was used with a different amount" },
                         { status: 409 },
                     );
                 }

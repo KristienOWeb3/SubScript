@@ -62,12 +62,12 @@ test.describe("merchant subscription UX", () => {
     await page.goto("/dashboard");
     await page.locator('[data-mounted="true"]').waitFor();
 
-    const plansNav = page.getByRole("button", { name: "Plans", exact: true });
-    await expect(plansNav).toBeVisible();
+    const paymentsNav = page.getByRole("button", { name: "Payments", exact: true });
+    await expect(paymentsNav).toBeVisible();
     /* A click during hydration can be swallowed, leaving the default (One-Time) panel up —
        re-click until the Plans panel actually renders. */
     await expect(async () => {
-      await plansNav.click();
+      await paymentsNav.click();
       await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 30_000 });
     await expect(page.getByTestId("merchant-plan-row").filter({ hasText: plan.name })).toBeVisible();
