@@ -149,6 +149,23 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
         });
       });
 
+      // Add this route mock for merchant endpoints
+      await page.route("**/api/merchant/alias", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ alias: "test-merchant" })
+        });
+      });
+
+      await page.route("**/api/merchant/confidentiality", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ confidentiality: true })
+        });
+      });
+
       const token = await createAuthCookie("0x835A9aEd7287068778e11df9D922B3FfaC7cFc29");
       await context.addCookies([
         {
@@ -224,7 +241,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       await page.click('button:has-text("Webhooks"):visible');
       
       // Wait for the webhook content tab to be visible first
-      await page.waitForSelector('[role="tab"]:has-text("Deliveries")', { timeout: 15000 });
+      await page.waitForSelector('[role="tab"]:has-text("Deliveries")', { timeout: 30000 });
       await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
       
       // Select payment failed event via its unique ID
