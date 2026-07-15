@@ -130,12 +130,15 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
         return { sponsored: false, reason: "invalid_sponsor_config" };
     }
 
-    /* Arc's native gas currency is USDC with 6 decimals (see ARC_TESTNET/ARC_MAINNET
-       nativeCurrency). The tx `value` is denominated in those 6-decimal base units, so the
-       top-up must be scaled by 1e6 — parseEther (1e18) would over-send by ~1e12x. */
+    /* Arc's native gas currency is USDC, but at the RPC/EVM level it is denominated in
+       standard 18-decimal wei units, NOT the 6 decimals of ERC-20 USDC. Empirically verified
+       against rpc.testnet.arc.network: a wallet holding 80 USDC reports eth_getBalance of
+       80e18, and eth_gasPrice is ~20 gwei (a 21000-gas transfer costs ~0.0004 USDC at 18dp;
+       at a 6dp interpretation it would absurdly cost 426M USDC). Scaling the top-up by 1e6
+       here sent 1e-13 USDC of gas — a no-op sponsorship. */
     let topupValue: bigint;
     try {
-        topupValue = ethers.parseUnits(process.env.SPONSOR_GAS_TOPUP_USDC || "0.10", 6);
+        topupValue = ethers.parseUnits(process.env.SPONSOR_GAS_TOPUP_USDC || "0.10", 18);
         if (topupValue <= BigInt(0)) throw new Error("top-up must be greater than zero");
     } catch (error: any) {
         console.error("[gas-sponsor] invalid top-up configuration:", error?.message || error);
@@ -161,7 +164,7 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
             if (balance < topupValue * BigInt(2)) {
                 console.error(
                     `[gas-sponsor] sponsor wallet ${sponsor.address} underfunded: ` +
-                    `balance=${balance.toString()} needed>=${(topupValue * BigInt(2)).toString()} (6dp USDC base units)`,
+                    `balance=${balance.toString()} needed>=${(topupValue * BigInt(2)).toString()} (18dp wei units)`,
                 );
                 return { sponsored: false, reason: "sponsor_underfunded" };
             }

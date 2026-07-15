@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { revokePayrollAuthority } from "@/lib/payroll/authority";
 
 /* Ethereum address validation: 0x followed by 40 hex characters */
 const ETH_ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -208,8 +209,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Title must be 200 characters or fewer" }, { status: 400 });
         }
 
-        if (frequencyDays === undefined || typeof frequencyDays !== "number" || !Number.isInteger(frequencyDays) || frequencyDays < 1) {
-            return NextResponse.json({ error: "Missing or invalid field: frequencyDays (must be a positive integer)" }, { status: 400 });
+        if (frequencyDays === undefined || typeof frequencyDays !== "number" || !Number.isInteger(frequencyDays) || frequencyDays < 1 || frequencyDays > 366) {
+            return NextResponse.json({ error: "frequencyDays must be an integer from 1 to 366" }, { status: 400 });
         }
 
         if (typeof isShielded !== "boolean") {
@@ -224,6 +225,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Maximum 500 recipients per campaign" }, { status: 400 });
         }
 
+        let totalPayrollAmount = BigInt(0);
         /* Validate each recipient */
         for (let i = 0; i < recipients.length; i++) {
             const r = recipients[i];
@@ -242,29 +244,54 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: `Missing salaryAmountUsdc at index ${i}` }, { status: 400 });
             }
 
-            /* Accept string or number, but validate it represents a positive integer (bigint-safe) */
+            /* Accept a digit string or safe integer only. Coercing floats/scientific
+               notation here would make the signed total differ from stored payroll. */
             let salaryStr: string;
             try {
-                salaryStr = String(r.salaryAmountUsdc);
+                if (typeof r.salaryAmountUsdc === "number") {
+                    if (!Number.isSafeInteger(r.salaryAmountUsdc)) throw new Error("unsafe integer");
+                    salaryStr = String(r.salaryAmountUsdc);
+                } else if (typeof r.salaryAmountUsdc === "string" && /^\d+$/.test(r.salaryAmountUsdc)) {
+                    salaryStr = r.salaryAmountUsdc;
+                } else {
+                    throw new Error("invalid integer encoding");
+                }
                 const salaryBig = BigInt(salaryStr);
                 if (salaryBig <= BigInt(0)) {
                     return NextResponse.json({ error: `salaryAmountUsdc at index ${i} must be a positive amount` }, { status: 400 });
                 }
+                totalPayrollAmount += salaryBig;
             } catch {
                 return NextResponse.json({ error: `Invalid salaryAmountUsdc at index ${i}: must be a valid positive integer` }, { status: 400 });
             }
         }
 
-        /* Validate optional Permit2 fields: if signature is provided, all permit fields are required */
-        if (permit2Signature !== undefined && permit2Signature !== null) {
-            if (typeof permit2Signature !== "string" || permit2Signature.trim().length === 0) {
-                return NextResponse.json({ error: "Invalid permit2Signature" }, { status: 400 });
-            }
-            /* The Permit2 authorization is a fixed max-allowance/max-expiration (see lib/payroll/permit2),
-               so the only signed dynamic field we persist is the nonce. */
-            if (permit2Nonce === undefined || permit2Nonce === null || typeof permit2Nonce !== "number" || !Number.isInteger(permit2Nonce) || permit2Nonce < 0) {
-                return NextResponse.json({ error: "Invalid permit2Nonce: must be a non-negative integer when permit2Signature is provided" }, { status: 400 });
-            }
+        if (typeof permit2Signature !== "string" || permit2Signature.trim().length === 0) {
+            return NextResponse.json({ error: "A bounded Permit2 authorization is required" }, { status: 400 });
+        }
+        if (permit2Nonce === undefined || permit2Nonce === null || typeof permit2Nonce !== "number" || !Number.isInteger(permit2Nonce) || permit2Nonce < 0) {
+            return NextResponse.json({ error: "permit2Nonce must be a non-negative integer" }, { status: 400 });
+        }
+        const deadline = new Date(permit2Deadline);
+        const expiration = new Date(permit2Expiration);
+        const nowMs = Date.now();
+        const firstPaydayMs = nowMs + frequencyDays * 24 * 60 * 60 * 1000;
+        if (
+            !Number.isFinite(deadline.getTime())
+            || deadline.getTime() <= nowMs
+            || deadline.getTime() > nowMs + 30 * 60 * 1000
+        ) {
+            return NextResponse.json({ error: "Permit2 signature deadline must be within the next 30 minutes" }, { status: 400 });
+        }
+        if (
+            !Number.isFinite(expiration.getTime())
+            || expiration.getTime() < firstPaydayMs
+            || expiration.getTime() > firstPaydayMs + 24 * 60 * 60 * 1000
+        ) {
+            return NextResponse.json({ error: "Permit2 authorization must expire within 24 hours after the first payday" }, { status: 400 });
+        }
+        if (totalPayrollAmount > BigInt("0xffffffffffffffffffffffffffffffffffffffff")) {
+            return NextResponse.json({ error: "Payroll total exceeds Permit2's authorization limit" }, { status: 400 });
         }
 
         /* Calculate next_payday: current time + frequencyDays */
@@ -300,7 +327,7 @@ export async function POST(request: Request) {
         const recipientRows = recipients.map((r: any) => ({
             campaign_id: campaign.id,
             employee_wallet: r.employeeWallet.toLowerCase(),
-            salary_amount_usdc: String(r.salaryAmountUsdc),
+            salary_amount_usdc: typeof r.salaryAmountUsdc === "string" ? r.salaryAmountUsdc : String(r.salaryAmountUsdc),
         }));
 
         const { data: insertedRecipients, error: recipientsError } = await supabaseAdmin
@@ -389,7 +416,7 @@ export async function PUT(request: Request) {
         /* Verify campaign exists and belongs to this merchant */
         const { data: existing, error: lookupError } = await supabaseAdmin
             .from("payroll_campaigns")
-            .select("id, organization_address, status")
+            .select("id, organization_address, status, frequency_days, next_payday, processing_claim_id")
             .eq("id", campaignId)
             .maybeSingle();
 
@@ -405,6 +432,9 @@ export async function PUT(request: Request) {
         if (existing.organization_address !== normalizedUser) {
             return NextResponse.json({ error: "Access denied: you do not own this campaign" }, { status: 403 });
         }
+        if (existing.processing_claim_id) {
+            return NextResponse.json({ error: "This campaign is currently executing. Wait for settlement before changing it." }, { status: 409 });
+        }
 
         /* Build the update object based on the action */
         const updateObj: any = {};
@@ -413,12 +443,44 @@ export async function PUT(request: Request) {
             if (existing.status === "PAUSED") {
                 return NextResponse.json({ error: "Campaign is already paused" }, { status: 400 });
             }
+            /* Do not claim the campaign is paused until the token-level Permit2
+               authority is gone on-chain. A failed revocation is retryable. */
+            const revocationTxHash = await revokePayrollAuthority(normalizedUser, campaignId);
             updateObj.status = "PAUSED";
+            updateObj.permit2_signature = null;
+            updateObj.permit2_nonce = null;
+            updateObj.permit2_deadline = null;
+            updateObj.permit2_expiration = null;
+            updateObj.last_execution_status = "AUTHORITY_REVOKED";
+            updateObj.last_execution_tx_hash = revocationTxHash;
         } else if (action === "RESUME") {
             if (existing.status === "ACTIVE") {
                 return NextResponse.json({ error: "Campaign is already active" }, { status: 400 });
             }
+            if (!permit2Signature || typeof permit2Signature !== "string" || permit2Signature.length > 2048) {
+                return NextResponse.json({ error: "A fresh bounded payroll authorization is required to resume" }, { status: 400 });
+            }
+            if (!Number.isInteger(permit2Nonce) || permit2Nonce < 0 || permit2Nonce > Number("281474976710655")) {
+                return NextResponse.json({ error: "permit2Nonce must be a valid uint48 value" }, { status: 400 });
+            }
+            const resumedAt = new Date();
+            const nextPayday = new Date(resumedAt.getTime() + existing.frequency_days * 24 * 60 * 60 * 1000);
+            const deadline = new Date(permit2Deadline);
+            const expiration = new Date(permit2Expiration);
+            if (!Number.isFinite(deadline.getTime()) || deadline <= resumedAt || deadline.getTime() > resumedAt.getTime() + 30 * 60 * 1000) {
+                return NextResponse.json({ error: "The resumed authorization signature deadline is invalid" }, { status: 400 });
+            }
+            if (!Number.isFinite(expiration.getTime()) || expiration < nextPayday || expiration.getTime() > nextPayday.getTime() + 24 * 60 * 60 * 1000) {
+                return NextResponse.json({ error: "The resumed authorization must expire within 24 hours after its payday" }, { status: 400 });
+            }
             updateObj.status = "ACTIVE";
+            updateObj.next_payday = nextPayday.toISOString();
+            updateObj.permit2_signature = permit2Signature;
+            updateObj.permit2_nonce = permit2Nonce;
+            updateObj.permit2_deadline = deadline.toISOString();
+            updateObj.permit2_expiration = expiration.toISOString();
+            updateObj.last_execution_status = "AUTHORIZED";
+            updateObj.last_execution_error = null;
         } else if (action === "UPDATE_PERMIT") {
             /* All permit2 fields are required for this action */
             if (!permit2Signature || typeof permit2Signature !== "string" || permit2Signature.trim().length === 0) {
@@ -428,8 +490,19 @@ export async function PUT(request: Request) {
                 return NextResponse.json({ error: "permit2Nonce must be a non-negative integer for UPDATE_PERMIT action" }, { status: 400 });
             }
 
+            const deadline = new Date(permit2Deadline);
+            const expiration = new Date(permit2Expiration);
+            if (!Number.isFinite(deadline.getTime()) || deadline <= new Date()) {
+                return NextResponse.json({ error: "A future permit2Deadline is required for UPDATE_PERMIT" }, { status: 400 });
+            }
+            if (!Number.isFinite(expiration.getTime()) || expiration <= deadline) {
+                return NextResponse.json({ error: "permit2Expiration must be after the signature deadline" }, { status: 400 });
+            }
+
             updateObj.permit2_signature = permit2Signature;
             updateObj.permit2_nonce = permit2Nonce;
+            updateObj.permit2_deadline = deadline.toISOString();
+            updateObj.permit2_expiration = expiration.toISOString();
         }
 
         /* Apply the update */
@@ -437,11 +510,15 @@ export async function PUT(request: Request) {
             .from("payroll_campaigns")
             .update(updateObj)
             .eq("id", campaignId)
+            .is("processing_claim_id", null)
             .select("*")
             .single();
 
         if (updateError) {
             console.error("Failed to update payroll campaign:", updateError);
+            if (updateError.code === "PGRST116") {
+                return NextResponse.json({ error: "Campaign execution started while it was being updated. Try again after settlement." }, { status: 409 });
+            }
             return NextResponse.json({ error: "Database error updating campaign" }, { status: 500 });
         }
 
@@ -499,7 +576,7 @@ export async function DELETE(request: Request) {
         /* Verify campaign exists and belongs to this merchant */
         const { data: existing, error: lookupError } = await supabaseAdmin
             .from("payroll_campaigns")
-            .select("id, organization_address")
+            .select("id, organization_address, processing_claim_id")
             .eq("id", id)
             .maybeSingle();
 
@@ -515,27 +592,30 @@ export async function DELETE(request: Request) {
         if (existing.organization_address !== normalizedUser) {
             return NextResponse.json({ error: "Access denied: you do not own this campaign" }, { status: 403 });
         }
-
-        /* Delete recipients first (child rows) */
-        const { error: deleteRecipientsError } = await supabaseAdmin
-            .from("payroll_recipients")
-            .delete()
-            .eq("campaign_id", id);
-
-        if (deleteRecipientsError) {
-            console.error("Failed to delete payroll recipients:", deleteRecipientsError);
-            return NextResponse.json({ error: "Database error deleting recipients" }, { status: 500 });
+        if (existing.processing_claim_id) {
+            return NextResponse.json({ error: "This campaign is currently executing. Wait for settlement before deleting it." }, { status: 409 });
         }
 
-        /* Delete the campaign itself */
-        const { error: deleteCampaignError } = await supabaseAdmin
+        /* Deleting database rows does not revoke an on-chain allowance. Revoke
+           first and fail closed so a deleted campaign cannot retain spend power. */
+        await revokePayrollAuthority(normalizedUser, id);
+
+        /* Delete the campaign in one statement; the FK cascades recipients. The
+           lease predicate closes the race with a keeper claiming this payday. */
+        const { data: deletedCampaign, error: deleteCampaignError } = await supabaseAdmin
             .from("payroll_campaigns")
             .delete()
-            .eq("id", id);
+            .eq("id", id)
+            .is("processing_claim_id", null)
+            .select("id")
+            .maybeSingle();
 
         if (deleteCampaignError) {
             console.error("Failed to delete payroll campaign:", deleteCampaignError);
             return NextResponse.json({ error: "Database error deleting campaign" }, { status: 500 });
+        }
+        if (!deletedCampaign) {
+            return NextResponse.json({ error: "Campaign execution started while it was being deleted. Try again after settlement." }, { status: 409 });
         }
 
         return NextResponse.json({ success: true, deletedCampaignId: id }, { status: 200 });

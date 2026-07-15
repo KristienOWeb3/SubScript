@@ -7,6 +7,8 @@ import { sanitizeInput } from "@/utils/security";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 export const maxDuration = 120;
 
@@ -76,6 +78,16 @@ export async function POST(request: Request) {
 
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
         await mirrorSubscriptionCanceled(subscriptionId);
+
+        await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.canceled", subscriptionWebhookData({
+            subscriptionId,
+            status: "canceled",
+            amountUsdcMicros: sub.amount,
+            subscriber: wallet.toLowerCase(),
+            merchantAddress: sub.merchant,
+            txHash,
+            reason: "Canceled by subscriber",
+        }), `customer-canceled:${subscriptionId}:${txHash.toLowerCase()}`);
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>

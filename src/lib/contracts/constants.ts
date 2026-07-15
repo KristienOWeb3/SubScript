@@ -43,7 +43,9 @@ export const ARC_TESTNET = {
   nativeCurrency: {
     name: "USDC",
     symbol: "USDC",
-    decimals: 6,
+    /* 18 at the RPC/EVM level (verified: eth_getBalance returns 80e18 for an 80-USDC
+       wallet). The 6-decimal representation belongs to the ERC-20 USDC interface only. */
+    decimals: 18,
   },
   rpcUrls: {
     default: {
@@ -65,7 +67,8 @@ export const ARC_MAINNET = {
   nativeCurrency: {
     name: "USDC",
     symbol: "USDC",
-    decimals: 6,
+    /* 18 at the RPC/EVM level — see ARC_TESTNET note. */
+    decimals: 18,
   },
   rpcUrls: {
     default: {

@@ -15,9 +15,9 @@
  *       supabase/migrations/*.sql  (same convention; *.down.sql rollback files are ignored)
  *   - A `_subscript_migrations` ledger table records what has been applied, keyed by the
  *     repo-relative path (e.g. "supabase/migrations/20260705000000_add_x.sql").
- *   - On first run against an existing legacy schema, BASELINE_FILES are adopted only when the
- *     operator explicitly sets ADOPT_EXISTING_DB_BASELINE=1. An empty database executes every
- *     migration instead of pretending the schema already exists.
+ *   - An existing schema without a migration ledger fails closed. A filename list cannot prove
+ *     that each migration's constraints, grants, functions, and indexes are really present.
+ *     Empty databases execute the full migration history.
  *   - Everything newer than the baseline is applied in filename order, one transaction per file.
  *
  * Behavior without DATABASE_URL: skips with a note and exits 0, so local `next build` and
@@ -46,9 +46,9 @@ function supabaseDbCa() {
 }
 const MIGRATION_DIRS = ["prisma/migrations", "supabase/migrations"];
 
-/* Files that were already applied to production by hand (or restored directly against the DB)
-   before this runner existed. Recorded as applied on ledger creation; never executed here. */
-const BASELINE_FILES = [
+/* Historical files present when the ledger was introduced. Kept as documentation only; never
+   auto-record these as applied because existence of a few tables cannot prove their hardening. */
+const HISTORICAL_BASELINE_FILES = [
     "prisma/migrations/20260612000000_reset_premium_tier.sql",
     "prisma/migrations/20260618000000_circle_wallets_arc_receipts.sql",
     "supabase/migrations/20260529120000_init.sql",
@@ -107,6 +107,7 @@ const BASELINE_FILES = [
     "supabase/migrations/20260711131500_otp_failed_attempt_counter.sql",
     "supabase/migrations/20260711193707_bind_worker_claim_ownership.sql",
 ];
+void HISTORICAL_BASELINE_FILES;
 
 async function listMigrationFiles({ freshBootstrap = false } = {}) {
     const files = [];
@@ -182,18 +183,14 @@ async function main() {
                     AS exists
             `);
             const adoptingLegacySchema = legacySchema.rows[0].exists;
-            if (adoptingLegacySchema && process.env.ADOPT_EXISTING_DB_BASELINE !== "1") {
+            if (adoptingLegacySchema) {
                 throw new Error(
-                    "Existing schema has no migration ledger. Set ADOPT_EXISTING_DB_BASELINE=1 for the reviewed one-time baseline adoption."
+                    "Existing schema has no migration ledger. Automatic baseline adoption is disabled because it can mark unapplied financial hardening as applied. Restore the reviewed _subscript_migrations ledger or migrate into an empty database."
                 );
             }
 
-            freshBootstrap = !adoptingLegacySchema;
-            console.log(
-                freshBootstrap
-                    ? "[migrations] Empty database detected — creating ledger and executing the full schema history."
-                    : "[migrations] Adopting reviewed legacy production baseline."
-            );
+            freshBootstrap = true;
+            console.log("[migrations] Empty database detected — creating ledger and executing the full schema history.");
             await client.query(`
                 CREATE TABLE _subscript_migrations (
                     filename   text PRIMARY KEY,
@@ -201,23 +198,6 @@ async function main() {
                     baseline   boolean NOT NULL DEFAULT false
                 );
             `);
-            if (adoptingLegacySchema) {
-                for (const f of BASELINE_FILES) {
-                    await client.query(
-                        "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
-                        [f]
-                    );
-                }
-            }
-        } else {
-            // Ledger exists. Reconcile any newly added BASELINE_FILES into the ledger 
-            // so they aren't double-applied.
-            for (const f of BASELINE_FILES) {
-                await client.query(
-                    "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT DO NOTHING",
-                    [f]
-                );
-            }
         }
 
         const files = await listMigrationFiles({ freshBootstrap });
@@ -227,40 +207,36 @@ async function main() {
 
         if (pending.length === 0) {
             console.log(`[migrations] Up to date (${files.length} known, 0 pending).`);
-            return;
-        }
-
-        for (const file of pending) {
-            const sql = await readFile(path.join(REPO_ROOT, file), "utf8");
-            console.log(`[migrations] Applying ${file}...`);
-            try {
-                await client.query("BEGIN");
-                await client.query(sql);
-                await client.query(
-                    "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
-                    [file]
-                );
-                await client.query("COMMIT");
-                console.log(`[migrations] Applied ${file}.`);
-            } catch (err) {
-                await client.query("ROLLBACK").catch(() => {});
-                throw new Error(`Migration ${file} failed: ${err.message}`);
+        } else {
+            for (const file of pending) {
+                const sql = await readFile(path.join(REPO_ROOT, file), "utf8");
+                console.log(`[migrations] Applying ${file}...`);
+                try {
+                    await client.query("BEGIN");
+                    await client.query(sql);
+                    await client.query(
+                        "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
+                        [file]
+                    );
+                    await client.query("COMMIT");
+                    console.log(`[migrations] Applied ${file}.`);
+                } catch (err) {
+                    await client.query("ROLLBACK").catch(() => {});
+                    throw new Error(`Migration ${file} failed: ${err.message}`);
+                }
             }
+            console.log(`[migrations] Done — applied ${pending.length} migration(s).`);
         }
-        console.log(`[migrations] Done — applied ${pending.length} migration(s).`);
 
         // The service role backs trusted server APIs. RLS bypass alone is insufficient when a
-        // table lacks SQL privileges, so preserve the CRUD access those APIs require.
+        // table lacks SQL privileges. Always repair grants, even when there are no pending files,
+        // and fail the deploy if the privilege repair cannot be proven.
         console.log("[migrations] Granting public schema privileges to service_role...");
-        try {
-            await client.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;");
-            await client.query("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role;");
-            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;");
-            await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO service_role;");
-            console.log("[migrations] Successfully granted public schema privileges to service_role.");
-        } catch (grantErr) {
-            console.warn(`[migrations] Warning: failed to grant privileges to service_role: ${grantErr.message}`);
-        }
+        await client.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;");
+        await client.query("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO service_role;");
+        await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;");
+        await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO service_role;");
+        console.log("[migrations] Successfully granted public schema privileges to service_role.");
     } finally {
         await client.query("SELECT pg_advisory_unlock(hashtext('subscript:migrations'))").catch(() => {});
         await client.end();

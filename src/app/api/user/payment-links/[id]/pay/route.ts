@@ -13,6 +13,7 @@ import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -51,6 +52,9 @@ export async function POST(request: Request, { params }: RouteContext) {
         } catch (e) {
             // Ignore parsing errors, default to empty
         }
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientIntentId)) {
+            return NextResponse.json({ error: "Missing or invalid checkout attempt" }, { status: 400 });
+        }
 
         const link = await prisma.paymentLink.findUnique({ where: { id } });
         if (!link) {
@@ -87,23 +91,48 @@ export async function POST(request: Request, { params }: RouteContext) {
 
         const settlesDirectlyToUser = isPeerRequestLink(link);
 
+        if (!supabaseAdmin) {
+            return NextResponse.json({ error: "Payment service is unavailable" }, { status: 503 });
+        }
+        const { data: reservation, error: reservationError } = await supabaseAdmin.rpc(
+            "reserve_payment_link_checkout_attempt",
+            {
+                p_attempt_id: clientIntentId,
+                p_payment_link_id: id,
+                p_payer_address: payer,
+                p_ttl_seconds: 600,
+            },
+        );
+        if (reservationError) {
+            console.error("Embedded checkout reservation failed:", reservationError.message);
+            return NextResponse.json({ error: "Unable to reserve this checkout attempt" }, { status: 503 });
+        }
+        if (reservation?.outcome === "DISABLED") {
+            return NextResponse.json({ error: "Hosted payments are temporarily unavailable." }, { status: 503 });
+        }
+        if (reservation?.outcome === "IN_PROGRESS") {
+            return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
+        }
+        if (reservation?.outcome !== "RESERVED" && reservation?.outcome !== "SETTLED") {
+            return NextResponse.json({ error: "This link cannot accept a payment right now." }, { status: 409 });
+        }
+
         /* Both settlement paths need a valid receipt token downstream in /verify (the merchant path
            uses it as the on-chain memo; the peer path still requires one for the receipt record), so
            validate it BEFORE moving any funds rather than transferring and only failing at verify. */
-        if (!isReceiptId(link.receiptToken)) {
+        if (!isReceiptId(reservation.receiptId)) {
             return NextResponse.json(
                 { error: "This checkout is missing a valid receipt token. Ask the merchant to regenerate the link." },
                 { status: 400 },
             );
         }
-        const receiptToken = link.receiptToken as string;
+        const receiptToken = reservation.receiptId as string;
 
         /* Single-flight guard: two concurrent POSTs (double-click, two tabs) would otherwise both pass
            the read-only guards above and sign SEPARATE custody transfers — a double charge. Atomically
            claim the (link, payer) pair via the unique idempotency key: a concurrent attempt gets 409,
            and an already-completed one returns the original tx hash instead of paying again. */
-        const intentSuffix = clientIntentId ? `:${clientIntentId}` : "";
-        const claimKey = `embedded-pay:${id}:${payer}${intentSuffix}`;
+        const claimKey = `embedded-pay-attempt:${clientIntentId}`;
         const claimExpiry = () => new Date(Date.now() + 5 * 60 * 1000);
         try {
             await prisma.idempotencyKey.create({
@@ -142,7 +171,7 @@ export async function POST(request: Request, { params }: RouteContext) {
            but the response times out, a retry submits the SAME key and Circle returns the original
            transaction instead of charging again. This is the real double-charge guard — the DB
            claim below only serializes concurrent requests within this process. */
-        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay:${id}:${payer}${intentSuffix}`);
+        const custodyIdempotencyKey = deterministicIdempotencyKey(`embedded-pay-attempt:${clientIntentId}`);
 
         let txHash: string;
         try {

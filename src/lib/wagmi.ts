@@ -21,7 +21,11 @@ export const arcTestnet = defineChain({
     nativeCurrency: {
         name: "USDC",
         symbol: "USDC",
-        decimals: 6,
+        /* Native USDC is 18 decimals at the RPC/EVM level (eth_getBalance for an 80-USDC
+           wallet returns 80e18; gas prices are gwei-scale). Only the ERC-20 USDC interface
+           uses 6 decimals. Declaring 6 here made wallets and native-balance formatting
+           misread amounts by 1e12. */
+        decimals: 18,
     },
     rpcUrls: {
         default: {

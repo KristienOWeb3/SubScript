@@ -21,11 +21,14 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => null);
-        if (!body || typeof body !== "object" || !body.eventId) {
+        if (!body || typeof body !== "object" || typeof body.eventId !== "string") {
             return NextResponse.json({ error: "eventId is required" }, { status: 400 });
         }
 
-        const { eventId } = body;
+        const eventId = body.eventId.trim().toLowerCase();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(eventId)) {
+            return NextResponse.json({ error: "eventId must be a canonical UUID" }, { status: 400 });
+        }
         const supabase = getSupabase();
 
         const { data: pastEvent, error: pastEventError } = await supabase
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
             endpoint.secret
         );
 
-        const newRecordId = `evt_${crypto.randomBytes(12).toString("hex")}`;
+        const newRecordId = crypto.randomUUID();
         
         const { error: insertError } = await supabase
             .from("webhook_events")

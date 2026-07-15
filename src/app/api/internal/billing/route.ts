@@ -5,6 +5,10 @@ import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PREMIUM_PAYMENT_RECIPIENT_ADDRESS } from "@/lib/contracts/constants";
 import { verifyWebhookSignature } from "@/lib/webhooks";
+import { ethers } from "ethers";
+import { SUBSCRIPT_ROUTER_ADDRESS } from "@/lib/contracts/constants";
+
+const ROUTER_ABI = ["function merchantTiers(address) view returns (uint8)"];
 
 /*
  * GET handler: Cron execution to synchronize billing state and downgrade delinquent merchants.
@@ -162,7 +166,7 @@ export async function POST(request: Request) {
         }
 
         const subscriber = (data.subscriber || "").toLowerCase();
-        if (!subscriber) {
+        if (!ethers.isAddress(subscriber)) {
             return NextResponse.json({ error: "Bad Request: Missing subscriber address" }, { status: 400 });
         }
 
@@ -179,7 +183,19 @@ export async function POST(request: Request) {
                 expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
             });
         if (claimError?.code === "23505") {
-            return NextResponse.json({ success: true, duplicate: true, message: "Event already processed" });
+            const { data: existingClaim, error: existingClaimError } = await supabaseAdmin
+                .from("idempotency_keys")
+                .select("status")
+                .eq("execution_key", executionKey)
+                .maybeSingle();
+            if (existingClaimError) {
+                return NextResponse.json({ error: "Database idempotency lookup failed" }, { status: 500 });
+            }
+            if (existingClaim?.status === "COMPLETED") {
+                return NextResponse.json({ success: true, duplicate: true, message: "Event already processed" });
+            }
+            /* A prior attempt changed no committed state or failed before marking completion.
+               Re-run the idempotent chain-derived reconciliation instead of abandoning the claim. */
         }
         if (claimError) {
             console.error("[internal/billing] Failed to claim webhook event:", claimError.message);
@@ -187,56 +203,69 @@ export async function POST(request: Request) {
         }
 
         /* 3. Execute state transitions based on subscription event type */
-        let newTier: number = 0;
-        let actionMessage = "";
-
-        if (
+        const isStateEvent = (
             event === "subscription.created" || 
             event === "payment.executed" || 
-            event === "subscription.payment.executed"
-        ) {
-            newTier = 1;
-            actionMessage = "Upgraded merchant to PREMIUM";
-        } else if (
+            event === "subscription.payment.executed" ||
             event === "subscription.cancelled" || 
             event === "subscription.expired" || 
             event === "subscription.payment.failed"
-        ) {
-            newTier = 0;
-            actionMessage = "Downgraded merchant to FREE";
-        } else {
+        );
+        if (!isStateEvent) {
             /* Ignore unhandled events but return 200 */
-            await supabaseAdmin.from("idempotency_keys").update({
+            const { data: completed, error: completionError } = await supabaseAdmin.from("idempotency_keys").update({
                 status: "COMPLETED",
                 response_payload: { event, ignored: true },
                 updated_at: new Date().toISOString(),
-            }).eq("execution_key", executionKey);
+            }).eq("execution_key", executionKey).select("id").maybeSingle();
+            if (completionError || !completed) {
+                return NextResponse.json({ error: "Database idempotency completion failed" }, { status: 500 });
+            }
             return NextResponse.json({ success: true, message: `No action taken for event: ${event}` });
         }
 
-        /* 4. Update the database record */
+        /* 4. Signed events are wake-ups, not entitlement authority. Re-read the canonical router
+           tier so delayed/out-of-order success and cancellation deliveries can never move the DB
+           backwards or report Premium after on-chain activation failed. */
+        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "https://rpc.testnet.arc.network");
+        const router = new ethers.Contract(SUBSCRIPT_ROUTER_ADDRESS, ROUTER_ABI, provider);
+        let newTier: number;
+        try {
+            newTier = Number(await router.merchantTiers(subscriber));
+        } catch (chainError) {
+            console.error("[internal/billing] Authoritative tier read failed:", chainError);
+            return NextResponse.json({ error: "On-chain entitlement state unavailable" }, { status: 503 });
+        }
+        const actionMessage = newTier >= 1 ? "Reconciled merchant to PREMIUM" : "Reconciled merchant to FREE";
+
         const { error: updateError } = await supabaseAdmin
             .from("merchants")
-            .update({
-                tier: newTier === 1 ? "PREMIUM" : "FREE",
+            .upsert({
+                wallet_address: subscriber,
+                tier: newTier >= 1 ? "PREMIUM" : "FREE",
                 updated_at: new Date().toISOString()
-            })
-            .eq("wallet_address", subscriber);
+            }, { onConflict: "wallet_address" });
 
         if (updateError) {
-            await supabaseAdmin.from("idempotency_keys").delete().eq("execution_key", executionKey);
             console.error(`Failed to update tier for merchant ${subscriber}:`, updateError);
             return NextResponse.json({ error: "Database update failed" }, { status: 500 });
         }
 
-        await supabaseAdmin
+        const { data: completedClaim, error: completionError } = await supabaseAdmin
             .from("idempotency_keys")
             .update({
                 status: "COMPLETED",
                 response_payload: { event, subscriber, tier: newTier },
                 updated_at: new Date().toISOString(),
             })
-            .eq("execution_key", executionKey);
+            .eq("execution_key", executionKey)
+            .eq("status", "PROCESSING")
+            .select("id")
+            .maybeSingle();
+        if (completionError || !completedClaim) {
+            console.error("[internal/billing] Tier reconciled but claim completion failed:", completionError?.message || "claim missing");
+            return NextResponse.json({ error: "Billing event reconciliation is incomplete" }, { status: 500 });
+        }
 
         console.log(`[Billing Webhook] ${actionMessage} for ${subscriber}. Event: ${event}`);
 

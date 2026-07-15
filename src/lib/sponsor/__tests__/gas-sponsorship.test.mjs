@@ -100,7 +100,7 @@ test("an underfunded failure is not cached and the no-funds guarantee survives r
         let balanceChecks = 0;
         let sends = 0;
         const provider = {
-            getBalance: async () => (++balanceChecks === 1 ? BigInt(0) : BigInt(1_000_000)),
+            getBalance: async () => (++balanceChecks === 1 ? BigInt(0) : parseUnits("1", 18)),
         };
         const gas = loadGasModule({
             getProviderForWrite: async () => ({ provider }),
@@ -126,7 +126,7 @@ test("an RPC failure is not cached and the next call retries the provider", asyn
     await withSponsorEnvironment(async () => {
         let providerCalls = 0;
         let sends = 0;
-        const provider = { getBalance: async () => BigInt(1_000_000) };
+        const provider = { getBalance: async () => parseUnits("1", 18) };
         const gas = loadGasModule({
             getProviderForWrite: async () => {
                 providerCalls++;
@@ -153,7 +153,7 @@ test("an RPC failure is not cached and the next call retries the provider", asyn
 test("a failed top-up send is not reusable and the next call sends again", async () => {
     await withSponsorEnvironment(async () => {
         let sends = 0;
-        const provider = { getBalance: async () => BigInt(1_000_000) };
+        const provider = { getBalance: async () => parseUnits("1", 18) };
         const gas = loadGasModule({
             getProviderForWrite: async () => ({ provider }),
             sendTransaction: async () => {
@@ -180,7 +180,7 @@ test("concurrent callers share one top-up attempt", async () => {
         let sends = 0;
         let confirm;
         const confirmation = new Promise((resolve) => { confirm = resolve; });
-        const provider = { getBalance: async () => BigInt(1_000_000) };
+        const provider = { getBalance: async () => parseUnits("1", 18) };
         const gas = loadGasModule({
             getProviderForWrite: async () => {
                 providerCalls++;
@@ -212,7 +212,7 @@ test("only a confirmed transaction is reused inside the sponsorship window", asy
     await withSponsorEnvironment(async () => {
         let providerCalls = 0;
         let sends = 0;
-        const provider = { getBalance: async () => BigInt(1_000_000) };
+        const provider = { getBalance: async () => parseUnits("1", 18) };
         const gas = loadGasModule({
             getProviderForWrite: async () => {
                 providerCalls++;
@@ -239,7 +239,7 @@ test("only a confirmed transaction is reused inside the sponsorship window", asy
 test("invalid sponsor and top-up configuration fail closed before RPC", async () => {
     await withSponsorEnvironment(async () => {
         let providerCalls = 0;
-        const provider = { getBalance: async () => BigInt(1_000_000) };
+        const provider = { getBalance: async () => parseUnits("1", 18) };
         const gas = loadGasModule({
             getProviderForWrite: async () => {
                 providerCalls++;

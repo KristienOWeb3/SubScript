@@ -49,9 +49,24 @@ export async function POST(request: Request) {
             const txReceipt = await provider.getTransactionReceipt(log.transactionHash);
             if (!txReceipt || txReceipt.status !== 1) continue;
 
-            await supabaseAdmin
+            const { data: existingReceipt, error: existingReceiptError } = await supabaseAdmin
                 .from("receipts")
-                .upsert({
+                .select("tx_hash, payer_address, merchant_address, amount_usdc")
+                .eq("receipt_id", receiptId)
+                .maybeSingle();
+            if (existingReceiptError) throw new Error(existingReceiptError.message);
+            if (existingReceipt) {
+                const matches = existingReceipt.tx_hash?.toLowerCase() === log.transactionHash.toLowerCase()
+                    && existingReceipt.payer_address?.toLowerCase() === parsedDeposit.args.payer.toLowerCase()
+                    && existingReceipt.merchant_address?.toLowerCase() === parsedDeposit.args.merchant.toLowerCase()
+                    && BigInt(existingReceipt.amount_usdc) === BigInt(parsedDeposit.args.amount);
+                if (!matches) throw new Error(`Receipt ${receiptId} is already bound to a different settlement`);
+                continue;
+            }
+
+            const { error: receiptInsertError } = await supabaseAdmin
+                .from("receipts")
+                .insert({
                     receipt_id: receiptId,
                     tx_hash: log.transactionHash.toLowerCase(),
                     chain_id: Number((await provider.getNetwork()).chainId),
@@ -66,7 +81,8 @@ export async function POST(request: Request) {
                     log_index: log.index,
                     confirmed_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
-                }, { onConflict: "receipt_id" });
+                });
+            if (receiptInsertError) throw new Error(`Receipt conflict: ${receiptInsertError.message}`);
             indexed++;
         }
 

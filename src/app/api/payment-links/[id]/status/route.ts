@@ -14,8 +14,8 @@ type PaymentLinkStatusRow = {
     remaining: number;
     link_id: string | null;
     use_count: number | string | null;
-    receipt_token: string | null;
-    attempt_tx_hash: string | null;
+    attempt_settled: boolean;
+    attempt_receipt_id: string | null;
     attempt_created_at: Date | string | null;
 };
 
@@ -69,19 +69,22 @@ export async function GET(request: Request, { params }: RouteContext) {
                 select
                     pl.id as link_id,
                     pl.use_count,
-                    pl.receipt_token,
-                    attempt_payment.tx_hash as attempt_tx_hash,
+                    attempt_payment.id is not null as attempt_settled,
+                    attempt_receipt.receipt_id as attempt_receipt_id,
                     attempt_payment.created_at as attempt_created_at
                 from consumed c
                 join public.payment_links pl on pl.id = $5::uuid
                 left join lateral (
-                    select payment.tx_hash, payment.created_at
+                    select payment.id, payment.created_at
                     from public.payment_link_payments payment
                     where payment.payment_link_id = pl.id
                       and payment.checkout_attempt_id = $6::uuid
                     order by payment.created_at desc
                     limit 1
                 ) attempt_payment on true
+                left join public.receipts attempt_receipt
+                  on attempt_receipt.payment_link_payment_id = attempt_payment.id
+                 and attempt_receipt.status = 'CONFIRMED'
                 where c.request_count <= $3::integer
             )
             select
@@ -93,8 +96,8 @@ export async function GET(request: Request, { params }: RouteContext) {
                 greatest(0, $3::integer - c.request_count) as remaining,
                 ls.link_id,
                 ls.use_count,
-                ls.receipt_token,
-                ls.attempt_tx_hash,
+                coalesce(ls.attempt_settled, false) as attempt_settled,
+                ls.attempt_receipt_id,
                 ls.attempt_created_at
             from consumed c
             left join link_status ls on true`,
@@ -130,9 +133,12 @@ export async function GET(request: Request, { params }: RouteContext) {
 
     return NextResponse.json({
         useCount: Number(result.use_count || 0),
-        receiptId: result.receipt_token || null,
-        verifiedTxHash: result.attempt_tx_hash || null,
-        settlementVersion: paymentLinkSettlementVersion(result.attempt_created_at, result.attempt_tx_hash),
+        attemptSettled: result.attempt_settled === true,
+        receiptId: result.attempt_receipt_id || null,
+        settlementVersion: paymentLinkSettlementVersion(
+            result.attempt_created_at,
+            result.attempt_settled ? result.attempt_receipt_id : null,
+        ),
     }, {
         headers: {
             "Cache-Control": "no-store, max-age=0",

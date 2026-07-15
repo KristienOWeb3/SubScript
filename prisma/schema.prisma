@@ -100,6 +100,10 @@ model PaymentLink {
   verifiedTxHash       String?              @map("verified_tx_hash")
   settlementReference  String?              @map("settlement_reference")
   stateSnapshot        Json?                @map("state_snapshot")
+  linkKind             String               @default("MERCHANT") @map("link_kind")
+  sandboxMode          Boolean              @default(false) @map("sandbox_mode")
+  creationFingerprint  Json?                @map("creation_fingerprint")
+  deletedAt            DateTime?            @map("deleted_at")
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @default(now()) @map("updated_at")
   payments             PaymentLinkPayment[]
@@ -114,7 +118,7 @@ model PaymentLink {
 model PaymentLinkPayment {
   id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentLinkId       String      @map("payment_link_id") @db.Uuid
-  paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Cascade)
+  paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Restrict)
   payerAddress        String      @map("payer_address")
   beneficiaryAddress  String?     @map("beneficiary_address")
   amountUsdc          BigInt      @map("amount_usdc")
@@ -489,10 +493,19 @@ model PayrollCampaign {
   permit2Nonce        Int?               @map("permit2_nonce")
   permit2Deadline     DateTime?          @map("permit2_deadline")
   permit2Expiration   DateTime?          @map("permit2_expiration")
+  processingClaimId   String?            @map("processing_claim_id") @db.Uuid
+  processingStartedAt DateTime?          @map("processing_started_at")
+  lastExecutionPayday DateTime?          @map("last_execution_payday")
+  lastPullTxHash      String?            @map("last_pull_tx_hash")
+  lastPayoutTxHash    String?            @map("last_payout_tx_hash")
+  lastExecutionTxHash String?            @map("last_execution_tx_hash")
+  lastExecutionStatus String?            @map("last_execution_status")
+  lastExecutionError  String?            @map("last_execution_error")
   recipients          PayrollRecipient[]
 
   @@index([organizationAddress])
   @@index([status])
+  @@index([status, nextPayday, processingStartedAt])
   @@map("payroll_campaigns")
 }
 
@@ -584,6 +597,7 @@ model SubscriptDm {
   description     String?
   txHash          String?  @map("tx_hash")
   paymentLinkId   String?  @map("payment_link_id") @db.Uuid
+  dedupeKey       String?  @unique(map: "subscript_dms_dedupe_key_unique") @map("dedupe_key")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 

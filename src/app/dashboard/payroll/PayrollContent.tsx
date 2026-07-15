@@ -26,7 +26,7 @@ import {
     SUBSCRIPT_ROUTER_ABI,
     USDC_ERC20_ABI
 } from "@/lib/contracts/abis";
-import { buildPermitSingle } from "@/lib/payroll/permit2";
+import { buildPermitSingle, payrollPermitWindow } from "@/lib/payroll/permit2";
 import { buildWalletAuthMessage } from "@/lib/walletAuthMessage";
 
 /* ------------------------------------------------------------------ */
@@ -122,6 +122,7 @@ interface PayrollCampaign {
     isShielded: boolean;
     status: "ACTIVE" | "PAUSED";
     permit2Signature: string | null;
+    totalPayrollUsdc: string;
     recipients: Array<{
         id: string;
         employeeWallet: string;
@@ -142,6 +143,15 @@ interface ToastState {
 
 function formatUsdc(microUsdc: number): string {
     return (microUsdc / 1_000_000).toFixed(2);
+}
+
+function parseUsdcToMicro(value: string): bigint | null {
+    const normalized = value.trim();
+    const match = /^(0|[1-9]\d*)(?:\.(\d{1,6}))?$/.exec(normalized);
+    if (!match) return null;
+    const amount = BigInt(match[1]) * BigInt(1_000_000)
+        + BigInt((match[2] || "").padEnd(6, "0") || "0");
+    return amount > BigInt(0) ? amount : null;
 }
 
 function generateTempId(): string {
@@ -218,6 +228,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
     ]);
     const [permit2Sig, setPermit2Sig] = useState<string | null>(null);
     const [permit2Nonce, setPermit2Nonce] = useState<number | null>(null);
+    const [permit2Deadline, setPermit2Deadline] = useState<string | null>(null);
+    const [permit2Expiration, setPermit2Expiration] = useState<string | null>(null);
     const [isSigning, setIsSigning] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -516,10 +528,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             /* Compute total payroll in micro-USDC */
             let totalMicro = BigInt(0);
             for (const r of formRecipients) {
-                const parsed = parseFloat(r.salaryAmountUsdc);
-                if (!isNaN(parsed) && parsed > 0) {
-                    totalMicro += BigInt(Math.round(parsed * 1_000_000));
-                }
+                const parsed = parseUsdcToMicro(r.salaryAmountUsdc);
+                if (parsed) totalMicro += parsed;
             }
 
             if (totalMicro === BigInt(0)) {
@@ -527,15 +537,28 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 setIsSigning(false);
                 return;
             }
+            const frequencyDays = formFrequencyPreset === 0
+                ? parseInt(formCustomDays, 10)
+                : formFrequencyPreset;
+            const window = payrollPermitWindow(frequencyDays);
 
             if (embeddedWallet) {
                 /* Embedded merchant (the only kind now): the server approves USDC -> Permit2 and signs
                    the authorization from the embedded key. */
-                const res = await fetch("/api/merchant/payroll/permit-sign", { method: "POST" });
+                const res = await fetch("/api/merchant/payroll/permit-sign", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        totalAmountUsdc: totalMicro.toString(),
+                        frequencyDays,
+                    }),
+                });
                 const data = await res.json();
                 if (!res.ok || !data.success) throw new Error(data.error || "Could not authorize payroll.");
                 setPermit2Sig(data.signature);
                 setPermit2Nonce(Number(data.nonce));
+                setPermit2Deadline(data.permit2Deadline);
+                setPermit2Expiration(data.permit2Expiration);
                 showToastMessage("Payroll authorization signed", "success");
                 return;
             }
@@ -556,7 +579,14 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             })) as readonly [bigint, number, number];
             const nonce = Number(allowanceRes[2]);
 
-            const message = buildPermitSingle(USDC_ADDRESS, keeperAddress, nonce);
+            const message = buildPermitSingle(
+                USDC_ADDRESS,
+                keeperAddress,
+                nonce,
+                totalMicro,
+                window.expiration,
+                window.sigDeadline,
+            );
             const signature = await signTypedDataAsync({
                 domain: PERMIT2_DOMAIN,
                 types: PERMIT2_TYPES,
@@ -565,6 +595,8 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
             });
             setPermit2Sig(signature);
             setPermit2Nonce(nonce);
+            setPermit2Deadline(new Date(Number(window.sigDeadline) * 1000).toISOString());
+            setPermit2Expiration(new Date(Number(window.expiration) * 1000).toISOString());
             showToastMessage("Payroll authorization signed", "success");
         } catch (err: any) {
             showToastMessage(err?.shortMessage || err?.message || "Signing failed", "error");
@@ -594,7 +626,7 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
 
         /* Validate recipients */
         const validRecipients = formRecipients.filter(
-            (r) => r.employeeWallet.trim() && parseFloat(r.salaryAmountUsdc) > 0
+            (r) => r.employeeWallet.trim() && parseUsdcToMicro(r.salaryAmountUsdc) !== null
         );
         if (validRecipients.length === 0) {
             showToastMessage("Add at least one recipient with a wallet and salary", "error");
@@ -624,9 +656,11 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
                 isShielded: formShielded,
                 permit2Signature: permit2Sig,
                 permit2Nonce,
+                permit2Deadline,
+                permit2Expiration,
                 recipients: validRecipients.map((r) => ({
                     employeeWallet: r.employeeWallet.trim(),
-                    salaryAmountUsdc: Math.round(parseFloat(r.salaryAmountUsdc) * 1_000_000),
+                    salaryAmountUsdc: parseUsdcToMicro(r.salaryAmountUsdc)!.toString(),
                 })),
             };
 
@@ -659,10 +693,35 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         setTogglingIds((prev) => new Set(prev).add(campaign.id));
         try {
             const newStatus = campaign.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+            let authorization: Record<string, unknown> = {};
+            if (newStatus === "ACTIVE") {
+                const permitRes = await fetch("/api/merchant/payroll/permit-sign", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        totalAmountUsdc: campaign.totalPayrollUsdc,
+                        frequencyDays: campaign.frequencyDays,
+                    }),
+                });
+                const permit = await permitRes.json().catch(() => ({}));
+                if (!permitRes.ok || !permit.success) {
+                    throw new Error(permit.error || "Could not renew the payroll authorization");
+                }
+                authorization = {
+                    permit2Signature: permit.signature,
+                    permit2Nonce: Number(permit.nonce),
+                    permit2Deadline: permit.permit2Deadline,
+                    permit2Expiration: permit.permit2Expiration,
+                };
+            }
             const res = await fetch("/api/merchant/payroll", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: campaign.id, status: newStatus }),
+                body: JSON.stringify({
+                    campaignId: campaign.id,
+                    action: newStatus === "ACTIVE" ? "RESUME" : "PAUSE",
+                    ...authorization,
+                }),
             });
 
             if (!res.ok) {
@@ -752,6 +811,9 @@ export function PayrollContent({ embedded = false }: { embedded?: boolean }) {
         setFormShielded(false);
         setFormRecipients([{ id: generateTempId(), employeeWallet: "", salaryAmountUsdc: "" }]);
         setPermit2Sig(null);
+        setPermit2Nonce(null);
+        setPermit2Deadline(null);
+        setPermit2Expiration(null);
     };
 
     /* ------------------------------------------------------------------ */

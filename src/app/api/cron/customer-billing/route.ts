@@ -21,7 +21,7 @@ import { ethers } from "ethers";
 import crypto from "crypto";
 import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
@@ -71,6 +71,7 @@ async function createBillingDm({
     title,
     description,
     txHash,
+    dedupeKey,
 }: {
     supabase: any;
     senderAddress: string;
@@ -80,6 +81,7 @@ async function createBillingDm({
     title: string;
     description: string;
     txHash?: string | null;
+    dedupeKey?: string | null;
 }) {
     const { data: customerSettings } = await supabase
         .from("customers")
@@ -100,6 +102,7 @@ async function createBillingDm({
         title,
         description,
         tx_hash: txHash || null,
+        dedupe_key: dedupeKey || null,
     });
 }
 
@@ -163,6 +166,30 @@ export async function POST(request: Request) {
             const subId = Number(sub.subscription_id);
             const merchantAddress: string = sub.merchant_address;
             const maxRenewalFailures = dunningConfig.get(String(merchantAddress).toLowerCase()) ?? DEFAULT_MAX_RENEWAL_FAILURES;
+            let claimedSequenceId: number | null = null;
+            let billingClaimId: string | null = null;
+
+            const releaseBillingClaim = async () => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("release_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                });
+                if (error) throw new Error(`Failed to release customer billing claim: ${error.message}`);
+                return data === true;
+            };
+            const completeBillingClaim = async (txHash: string | null) => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("complete_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                    p_tx_hash: txHash,
+                });
+                if (error) throw new Error(`Failed to complete customer billing claim: ${error.message}`);
+                return data === true;
+            };
 
             try {
                 /* Authoritative on-chain state. */
@@ -177,14 +204,14 @@ export async function POST(request: Request) {
                         .from("subscriptions")
                         .update({ status: "CANCELED", updated_at: new Date().toISOString() })
                         .eq("subscription_id", subId);
-                    await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "canceled",
                         amountUsdcMicros: amountOnChain,
                         subscriber,
                         merchantAddress,
                         reason: "Canceled on-chain",
-                    })).catch(() => { /* best-effort */ });
+                    }), `customer-canceled:${subId}:on-chain`);
                     results.push({ subId, subscriber, action: "CANCELLED_ON_CHAIN", success: true });
                     continue;
                 }
@@ -202,15 +229,77 @@ export async function POST(request: Request) {
                     continue;
                 }
                 const sequenceId = Number((nowSeconds - nextPaymentOnChain) / periodOnChain) + 1;
+                const settlementTimestampIso = new Date(
+                    Number((nextPaymentOnChain + BigInt(sequenceId - 1) * periodOnChain) * BigInt(1000)),
+                ).toISOString();
+                const requestedClaimId = crypto.randomUUID();
+                const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
+                    p_subscription_id: subId,
+                    p_sequence_id: sequenceId,
+                    p_claim_id: requestedClaimId,
+                    p_lease_seconds: 600,
+                });
+                if (claimError) throw new Error(`Failed to claim customer billing sequence: ${claimError.message}`);
+                if (!claimed) {
+                    results.push({ subId, subscriber, action: "BILLING_SEQUENCE_ALREADY_CLAIMED", success: true });
+                    continue;
+                }
+                claimedSequenceId = sequenceId;
+                billingClaimId = requestedClaimId;
+                const { data: persistedClaim, error: persistedClaimError } = await supabase
+                    .from("subscription_billing_claims")
+                    .select("status,tx_hash")
+                    .eq("subscription_id", subId)
+                    .eq("sequence_id", sequenceId)
+                    .eq("claim_id", requestedClaimId)
+                    .maybeSingle();
+                if (persistedClaimError || !persistedClaim) {
+                    throw new Error(`Failed to load customer billing claim: ${persistedClaimError?.message || "claim missing"}`);
+                }
 
                 if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
-                    results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN", success: true });
+                    const settlementTxHash = persistedClaim.status === "CHAIN_CONFIRMED" ? persistedClaim.tx_hash : null;
+                    const { data: mirrored, error: mirrorError } = await supabase
+                        .from("subscriptions")
+                        .update({
+                            status: "ACTIVE",
+                            downgrade_failures: 0,
+                            last_settlement_timestamp: settlementTimestampIso,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq("subscription_id", subId)
+                        .select("subscription_id")
+                        .maybeSingle();
+                    if (mirrorError || !mirrored) throw new Error(`Customer renewal repair failed: ${mirrorError?.message || "subscription missing"}`);
+                    await createBillingDm({
+                        supabase,
+                        senderAddress: merchantAddress,
+                        receiverAddress: subscriber,
+                        messageType: "DEBIT_SUCCESS",
+                        amountUsdc: amountOnChain,
+                        title: "Subscription renewed",
+                        description: `Your subscription was renewed successfully.\nAmount: ${Number(amountOnChain) / 1_000_000} USDC\nSubscription ID: ${subId}`,
+                        txHash: settlementTxHash,
+                        dedupeKey: `customer-renewal:${subId}:${sequenceId}`,
+                    });
+                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "active",
+                        amountUsdcMicros: amountOnChain,
+                        subscriber,
+                        merchantAddress,
+                        txHash: settlementTxHash,
+                        beneficiary: sub.beneficiary_address || null,
+                    }), `customer-renewed:${subId}:${sequenceId}:${settlementTxHash || "chain-confirmed"}`);
+                    if (!await completeBillingClaim(settlementTxHash)) throw new Error("Customer renewal repair claim completion failed");
+                    results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN_REPAIRED", success: true, txHash: settlementTxHash });
                     continue;
                 }
 
                 /* The chain is the source of truth for "not too early". */
                 const isDueOnChain = await standardContract.isPaymentDue(subId, sequenceId);
                 if (!isDueOnChain) {
+                    await releaseBillingClaim();
                     results.push({ subId, subscriber, action: "NOT_DUE_ON_CHAIN", success: false });
                     continue;
                 }
@@ -237,14 +326,14 @@ export async function POST(request: Request) {
                                 "Add USDC to keep your plan active — we'll retry automatically.",
                             ].join("\n"),
                         }).catch((e: any) => console.error("[customer-billing] warning DM failed:", e));
-                        await dispatchMerchantWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
+                        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
                             subscriptionId: subId,
                             status: "past_due",
                             amountUsdcMicros: amountOnChain,
                             subscriber,
                             merchantAddress,
                             reason: "Insufficient balance or allowance",
-                        })).catch(() => { /* best-effort */ });
+                        }), `customer-payment-failed:${subId}:${newFailures}`);
                     }
 
                     if (newFailures >= maxRenewalFailures) {
@@ -289,14 +378,14 @@ export async function POST(request: Request) {
                         }).catch((e: any) => console.error("[customer-billing] zombie-kill DM failed:", e));
 
                         if (revokedOnChain) {
-                            await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                            await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
                                 subscriptionId: subId,
                                 status: "canceled",
                                 amountUsdcMicros: amountOnChain,
                                 subscriber,
                                 merchantAddress,
                                 reason: "Stopped after repeated failed renewals (zombie kill)",
-                            })).catch(() => { /* best-effort */ });
+                            }), `customer-canceled:${subId}:zombie-kill`);
                         }
                         results.push({ subId, subscriber, action: "ZOMBIE_KILLED", success: false, failuresCount: newFailures, revokedOnChain });
                     } else {
@@ -307,6 +396,7 @@ export async function POST(request: Request) {
                             .eq("subscription_id", subId);
                         results.push({ subId, subscriber, action: "RETRY_SCHEDULED", success: false, failuresCount: newFailures });
                     }
+                    await releaseBillingClaim();
                     continue;
                 }
 
@@ -316,17 +406,29 @@ export async function POST(request: Request) {
                 if (receipt.status !== 1) {
                     throw new Error("Payment execution transaction reverted");
                 }
+                const { data: recorded, error: recordError } = await supabase.rpc("record_subscription_billing_chain_confirmation", {
+                    p_subscription_id: subId,
+                    p_sequence_id: sequenceId,
+                    p_claim_id: requestedClaimId,
+                    p_tx_hash: tx.hash,
+                });
+                if (recordError || recorded !== true) {
+                    throw new Error(`Failed to persist customer chain confirmation: ${recordError?.message || "claim ownership changed"}`);
+                }
 
                 /* Stamp settlement; the trigger derives the next billing date. Reset failures. */
-                await supabase
+                const { data: mirrored, error: mirrorError } = await supabase
                     .from("subscriptions")
                     .update({
                         status: "ACTIVE",
                         downgrade_failures: 0,
-                        last_settlement_timestamp: new Date().toISOString(),
+                        last_settlement_timestamp: settlementTimestampIso,
                         updated_at: new Date().toISOString(),
                     })
-                    .eq("subscription_id", subId);
+                    .eq("subscription_id", subId)
+                    .select("subscription_id")
+                    .maybeSingle();
+                if (mirrorError || !mirrored) throw new Error(`Customer renewal mirror failed: ${mirrorError?.message || "subscription missing"}`);
 
                 await createBillingDm({
                     supabase,
@@ -341,9 +443,10 @@ export async function POST(request: Request) {
                         `Subscription ID: ${subId}`,
                     ].join("\n"),
                     txHash: tx.hash,
-                }).catch((e: any) => console.error("[customer-billing] receipt DM failed:", e));
+                    dedupeKey: `customer-renewal:${subId}:${sequenceId}`,
+                });
 
-                await dispatchMerchantWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "active",
                     amountUsdcMicros: amountOnChain,
@@ -351,7 +454,9 @@ export async function POST(request: Request) {
                     merchantAddress,
                     txHash: tx.hash,
                     beneficiary: sub.beneficiary_address || null,
-                })).catch(() => { /* best-effort */ });
+                }), `customer-renewed:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
+
+                if (!await completeBillingClaim(tx.hash)) throw new Error("Customer renewal claim completion failed");
 
                 results.push({ subId, subscriber, action: "PAYMENT_EXECUTED", success: true, txHash: tx.hash });
             } catch (err: any) {
@@ -393,14 +498,14 @@ export async function POST(request: Request) {
                         .update({ status: "CANCELED", updated_at: new Date().toISOString() })
                         .eq("subscription_id", subId);
 
-                    await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "canceled",
                         amountUsdcMicros: amount,
                         subscriber,
                         merchantAddress: sub.merchant_address,
                         reason: "Canceled at period end",
-                    })).catch(() => { /* best-effort */ });
+                    }), `customer-canceled:${subId}:period-end`);
 
                     cancelResults.push({ subId, action: "CANCELED_AT_PERIOD_END", success: true });
                 } catch (err: any) {

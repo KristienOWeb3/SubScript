@@ -9,7 +9,7 @@ import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { readSubscriptionCheckoutMeta, type SubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
 import {
@@ -413,13 +413,13 @@ export async function POST(request: Request) {
             },
         });
 
-        await dispatchMerchantWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
             subscriptionId: link.id,
             status: "incomplete",
             amountUsdcMicros: amountMicros,
             subscriber: subscriberAddress,
             merchantAddress,
-        })).catch(() => { /* delivery is best-effort */ });
+        }), `checkout-created:${link.id}`);
 
         /* Publication is opt-in. Persisting the checkout first makes a transient publication
            failure recoverable: the same idempotency key finds this checkout and retries the
@@ -497,13 +497,13 @@ export async function DELETE(request: Request) {
             where: { id: idParam },
             data: { active: false, status: "CANCELED" },
         });
-        await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
             subscriptionId: idParam,
             status: "canceled",
             amountUsdcMicros: link.amountUsdc,
             merchantAddress,
             reason: "Canceled before activation",
-        })).catch(() => { /* delivery is best-effort */ });
+        }), `checkout-canceled:${idParam}`);
         return NextResponse.json({ id: `sub_${idParam}`, object: "subscription", status: "canceled" }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions DELETE error:", error);

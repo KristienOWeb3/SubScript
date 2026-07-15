@@ -103,8 +103,9 @@ test("internal billing rejects an identical signed event replay", async () => {
 
 test("migration runner distinguishes fresh bootstrap and serializes deploys", async () => {
     const runner = await source("scripts/apply-migrations.mjs");
-    assert.match(runner, /ADOPT_EXISTING_DB_BASELINE/);
-    assert.match(runner, /freshBootstrap = !adoptingLegacySchema/);
+    assert.match(runner, /Automatic baseline adoption is disabled/);
+    assert.match(runner, /freshBootstrap = true/);
+    assert.doesNotMatch(runner, /INSERT INTO _subscript_migrations \(filename, baseline\)/);
     assert.match(runner, /pg_advisory_lock\(hashtext\('subscript:migrations'\)\)/);
     assert.match(runner, /rejectUnauthorized: true/);
 });

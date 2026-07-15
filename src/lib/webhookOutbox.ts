@@ -68,3 +68,40 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
 
     return { delivered };
 }
+
+/**
+ * Drains webhook deliveries independently of the request that created them.
+ *
+ * A payment must not depend on the payer revisiting `/verify` before a failed
+ * merchant webhook is retried. The reconciliation cron calls this worker and
+ * the row-level claim in `deliverWebhookOutboxEvent` keeps overlapping cron
+ * runs safe.
+ */
+export async function deliverPendingWebhookOutboxEvents(
+    supabase: SupabaseLike,
+    limit: number = 50,
+) {
+    const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
+    const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: rows, error } = await supabase
+        .from("webhook_deliveries")
+        .select("event_id")
+        .not("event_id", "is", null)
+        .or(`status.in.(PENDING,FAILED),and(status.eq.PROCESSING,updated_at.lt.${staleCutoff})`)
+        .order("updated_at", { ascending: true })
+        .limit(boundedLimit);
+    if (error) throw new Error(`Failed to load pending webhook outbox rows: ${error.message}`);
+
+    const eventIds: string[] = [...new Set<string>(
+        (rows || [])
+            .map((row: { event_id?: unknown }) => row.event_id)
+            .filter((eventId: unknown): eventId is string => typeof eventId === "string" && eventId.length > 0),
+    )];
+    let delivered = 0;
+    for (const eventId of eventIds) {
+        const result = await deliverWebhookOutboxEvent(supabase, eventId);
+        delivered += result.delivered;
+    }
+
+    return { attemptedEvents: eventIds.length, delivered };
+}

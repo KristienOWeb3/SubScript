@@ -24,7 +24,8 @@ test("embedded checkout cannot double-charge after a Circle polling timeout", ()
     assert.match(helpers, /payPeerLinkFromEmbedded\([^)]*idempotencyKey: string,\s*\)/s);
     assert.match(helpers, /idempotencyKey,\s*\}\);/);
 
-    assert.match(payRoute, /deterministicIdempotencyKey\(`embedded-pay:\$\{id\}:\$\{payer\}\$\{intentSuffix\}`\)/);
+    assert.match(payRoute, /deterministicIdempotencyKey\(`embedded-pay-attempt:\$\{clientIntentId\}`\)/);
+    assert.doesNotMatch(payRoute, /intentSuffix/);
     assert.match(payRoute, /const isPreSubmission = /);
     assert.match(payRoute, /if \(isPreSubmission\) \{\s*await prisma\.idempotencyKey\.delete/);
     /* The unconditional delete-on-every-error is gone. */
@@ -99,25 +100,12 @@ test("settlement RPCs are hardened and service-role-only", () => {
     }
 });
 
-test("the receipt is persisted before settlement completion and repaired on the fast-path", () => {
-    /* The old order marked the claim COMPLETED and wrote the receipt after: a crash between
-       the two lost the receipt forever, because every retry returned on the completed
-       fast-path. The receipt must be upserted BEFORE finalize_payment_link_settlement, and
-       the COMPLETED fast-path must self-heal a missing receipt from database truth. */
-    const receiptWrite = worker.indexOf('from("receipts")');
-    const finalizeCall = worker.indexOf('"finalize_payment_link_settlement"');
-    assert.ok(receiptWrite > 0 && finalizeCall > 0, "receipt upsert and finalize call must both exist");
-
-    /* Order inside the verification job: the CONFIRMED receipt upsert precedes finalization. */
-    const jobReceiptUpsert = worker.search(/upsert\(\{\s*receipt_id: job\.receipt_id/);
-    const jobFinalize = worker.indexOf('"finalize_payment_link_settlement"');
-    assert.ok(jobReceiptUpsert > 0, "verification job must upsert the receipt");
-    assert.ok(jobReceiptUpsert < jobFinalize, "receipt must persist before the settlement is finalized");
-    assert.match(worker, /Failed to persist payment receipt/);
-
-    /* After finalization the payment row id is back-linked, never re-created. */
-    assert.match(worker, /payment_link_payment_id: paymentId/);
-    assert.match(worker, /\.is\("payment_link_payment_id", null\)/);
+test("the receipt becomes confirmed in the same transaction as settlement", () => {
+    const integrity = source("supabase/migrations/20260715093000_checkout_receipt_integrity.sql");
+    assert.match(integrity, /persist_confirmed_checkout_receipt/);
+    assert.match(integrity, /INSERT INTO public\.receipts/);
+    assert.match(integrity, /'CONFIRMED'/);
+    assert.doesNotMatch(worker, /upsert\(\{\s*receipt_id: job\.receipt_id/);
 
     /* The COMPLETED fast-path checks for and rebuilds a missing receipt. */
     const fastPath = route.slice(route.indexOf('claimResult?.outcome === "COMPLETED"'), route.indexOf('"FINGERPRINT_MISMATCH"'));

@@ -178,6 +178,7 @@ export async function modifyFromEmbedded(
     subId: string | bigint,
     newAmount: bigint,
     newPeriod: bigint,
+    idempotencyKey?: string,
 ) {
     const custody = await getWalletCustody(walletAddress);
     await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(newAmount, newPeriod));
@@ -186,6 +187,7 @@ export async function modifyFromEmbedded(
         abi: SUB_ABI,
         functionName: "modifySubscription",
         args: [BigInt(subId), newAmount, newPeriod],
+        ...(idempotencyKey ? { idempotencyKey } : {}),
     });
     return txHash;
 }

@@ -39,7 +39,16 @@ export type PaymentLinkVerificationJob = {
     attempts: number;
     max_attempts: number;
     lease_token: string;
+    created_at?: string | null;
 };
+
+/* A transaction that no RPC endpoint has EVER observed is treated as transient (mempools
+   and lagging nodes are real), but not forever: after this window on a seconds-blocktime
+   chain the claimed hash provably does not exist, and keeping the job in eternal RETRY
+   would let a fabricated hash hold the link's consumed capacity indefinitely (a single-use
+   link would stay exhausted). Going terminal routes through release_payment_link_settlement,
+   which restores capacity — or completes the job if settlement actually landed meanwhile. */
+const TX_NEVER_OBSERVED_TERMINAL_MS = 24 * 60 * 60 * 1000;
 
 type WorkerResult = {
     jobId: string;
@@ -131,6 +140,8 @@ async function recoverCompletedSettlement(supabase: any, job: PaymentLinkVerific
     if (!payment?.id) return false;
 
     await bindCheckoutAttempt(supabase, job, payment.id);
+    const shareUrl = receiptUrl(job.receipt_id, job.request_origin);
+    await runDurablePostSettlementEffects(supabase, job, payment.id, shareUrl);
     await completeJob(supabase, job);
     await deliverWebhookOutboxEvent(supabase, `evt_payment_${payment.id}`)
         .catch((deliveryError) => console.error("[verify-worker] Webhook outbox recovery failed:", deliveryError));
@@ -244,31 +255,6 @@ function assertVerifiedTransaction(job: PaymentLinkVerificationJob, receipt: any
     if (!depositFound) throw new PermanentVerificationError("SubScript Router DepositWithMemo event not found");
 }
 
-async function persistReceipt(supabase: any, job: PaymentLinkVerificationJob, blockNumber: number | bigint) {
-    const shareUrl = receiptUrl(job.receipt_id, job.request_origin);
-    const { error } = await supabase.from("receipts").upsert({
-        receipt_id: job.receipt_id,
-        payment_link_id: job.payment_link_id,
-        tx_hash: job.tx_hash,
-        chain_id: Number(job.chain_id),
-        memo_contract: job.settles_directly_to_user
-            ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
-            : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
-        payer_address: job.payer_address,
-        beneficiary_address: job.beneficiary_address,
-        merchant_address: job.merchant_address,
-        amount_usdc: job.amount_usdc.toString(),
-        memo_note: job.receipt_id,
-        share_url: shareUrl,
-        status: "CONFIRMED",
-        block_number: blockNumber.toString(),
-        confirmed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    }, { onConflict: "receipt_id" });
-    if (error) throw new Error(`Failed to persist payment receipt: ${error.message}`);
-    return shareUrl;
-}
-
 async function runPostSettlementEffects(
     supabase: any,
     job: PaymentLinkVerificationJob,
@@ -372,6 +358,29 @@ async function runPostSettlementEffects(
     }
 }
 
+async function runDurablePostSettlementEffects(
+    supabase: any,
+    job: PaymentLinkVerificationJob,
+    paymentId: string,
+    shareUrl: string,
+) {
+    const { data: effect, error: effectError } = await supabase
+        .from("payment_link_settlement_effects")
+        .select("status")
+        .eq("payment_link_payment_id", paymentId)
+        .maybeSingle();
+    if (effectError) throw new Error(`Failed to inspect settlement effects: ${effectError.message}`);
+    if (effect?.status === "COMPLETED") return;
+
+    await runPostSettlementEffects(supabase, job, paymentId, shareUrl);
+    const { error: completeError } = await supabase
+        .from("payment_link_settlement_effects")
+        .update({ status: "COMPLETED", attempts: 1, last_error: null, updated_at: new Date().toISOString() })
+        .eq("payment_link_payment_id", paymentId)
+        .neq("status", "COMPLETED");
+    if (completeError) throw new Error(`Failed to complete settlement effects: ${completeError.message}`);
+}
+
 async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob) {
     if (Number(job.chain_id) !== ProtocolConfig.CHAIN_ID) {
         throw new PermanentVerificationError(
@@ -381,6 +390,10 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
 
     if (await recoverCompletedSettlement(supabase, job)) return;
 
+    const jobCreatedAtMs = job.created_at ? new Date(job.created_at).getTime() : Number.NaN;
+    const txNeverObservedIsTerminal = Number.isFinite(jobCreatedAtMs)
+        && Date.now() - jobCreatedAtMs > TX_NEVER_OBSERVED_TERMINAL_MS;
+
     for (let attempt = 1; attempt <= POLL_ATTEMPTS_PER_LEASE; attempt++) {
         try {
             const lookup = await executeWithRpcFallback(async (provider) => {
@@ -388,7 +401,14 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                     provider.getTransactionReceipt(job.tx_hash),
                     provider.getBlockNumber(),
                 ]);
-                if (!receipt) throw new Error("Transaction receipt not found on-chain yet");
+                if (!receipt) {
+                    if (txNeverObservedIsTerminal) {
+                        throw new PermanentVerificationError(
+                            "Transaction was never observed on-chain within 24 hours; the claimed payment does not exist.",
+                        );
+                    }
+                    throw new Error("Transaction receipt not found on-chain yet");
+                }
                 return { receipt, confirmations: Math.max(0, currentBlock - receipt.blockNumber + 1) };
             });
 
@@ -402,7 +422,7 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
             const txLookup = await executeWithRpcFallback((provider) => provider.getTransaction(job.tx_hash));
             assertVerifiedTransaction(job, receipt, txLookup.result);
 
-            const shareUrl = await persistReceipt(supabase, job, receipt.blockNumber);
+            const shareUrl = receiptUrl(job.receipt_id, job.request_origin);
             const webhookPayload = job.settles_directly_to_user ? null : createPaymentSucceededWebhook({
                 paymentId: "pending",
                 checkoutSessionId: job.payment_link_id,
@@ -433,6 +453,9 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                         beneficiaryAddress: job.beneficiary_address,
                         receiptId: job.receipt_id,
                         shareUrl,
+                        memoContract: job.settles_directly_to_user
+                            ? USDC_NATIVE_GAS_ADDRESS.toLowerCase()
+                            : SUBSCRIPT_ROUTER_ADDRESS.toLowerCase(),
                     },
                     p_webhook_payload: webhookPayload,
                 },
@@ -445,17 +468,8 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
             if (!paymentId) throw new Error("Atomic payment finalization returned no payment id");
 
             await bindCheckoutAttempt(supabase, job, paymentId);
-            const { error: receiptLinkError } = await supabase
-                .from("receipts")
-                .update({ payment_link_payment_id: paymentId, updated_at: new Date().toISOString() })
-                .eq("receipt_id", job.receipt_id)
-                .is("payment_link_payment_id", null);
-            if (receiptLinkError) {
-                throw new Error(`Failed to back-link receipt to payment row: ${receiptLinkError.message}`);
-            }
-
+            await runDurablePostSettlementEffects(supabase, job, paymentId, shareUrl);
             await completeJob(supabase, job);
-            await runPostSettlementEffects(supabase, job, paymentId, shareUrl);
             return;
         } catch (error) {
             if (error instanceof PermanentVerificationError) throw error;
@@ -469,10 +483,6 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
 }
 
 async function processClaimedJob(supabase: any, job: PaymentLinkVerificationJob): Promise<WorkerResult> {
-    if (job.attempts > job.max_attempts) {
-        return rescheduleJob(supabase, job, new Error("Verification retry budget exhausted"), true);
-    }
-
     try {
         await verifyAndFinalize(supabase, job);
         return { jobId: job.id, txHash: job.tx_hash, outcome: "COMPLETED" };

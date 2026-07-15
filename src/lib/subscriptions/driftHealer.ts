@@ -22,7 +22,7 @@ import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureGasSponsored } from "@/lib/sponsor/gas";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
@@ -99,14 +99,14 @@ export async function healSubscriptionDrift(
                     .from("subscriptions")
                     .update({ status: "CANCELED", updated_at: new Date().toISOString() })
                     .eq("subscription_id", subId);
-                await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "canceled",
                     amountUsdcMicros: sub.amount_cap_usdc || 0,
                     subscriber,
                     merchantAddress: sub.merchant_address,
                     reason: "Canceled on-chain (reconciled)",
-                })).catch(() => { /* best-effort */ });
+                }), `drift-canceled:${subId}`);
                 healed.push({ subId, action: "MIRRORED_ONCHAIN_CANCEL" });
                 continue;
             }
