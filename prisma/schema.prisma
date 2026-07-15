@@ -166,6 +166,7 @@ model Merchant {
 model MerchantPlan {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   merchantAddress String   @map("merchant_address")
+  sourceCheckoutId String? @unique(map: "merchant_plans_source_checkout_id_key") @map("source_checkout_id") @db.Uuid
   name            String
   description     String?
   detailsUrl      String?  @map("details_url")
@@ -209,6 +210,8 @@ model Subscription {
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
   @@index([merchantAddress])
+  @@index([merchantAddress, kind, subscriptionId(sort: Desc)], map: "subscriptions_merchant_kind_id_idx")
+  @@index([merchantAddress, kind, status, cancelAtPeriodEnd, downgradeFailures, subscriptionId(sort: Desc)], map: "subscriptions_merchant_attention_idx")
   @@index([subscriber])
   @@index([beneficiaryAddress])
   @@map("subscriptions")

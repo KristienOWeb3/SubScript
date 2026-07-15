@@ -3,11 +3,16 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
-import { getAccountRole, requireAccountRole } from "@/lib/accounts/roles";
+import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { parseUsdcToMicros } from "@/lib/dms/system";
-import { syncSitePlansFromCheckouts } from "@/lib/subscriptions/sitePlans";
+import {
+    lockMerchantPlanCatalog,
+    MAX_ACTIVE_MERCHANT_PLANS,
+    publishSitePlanFromCheckout,
+    SitePlanPublicationError,
+} from "@/lib/subscriptions/sitePlans";
 
 const MAX_DESCRIPTION_LEN = 300;
 
@@ -68,11 +73,6 @@ export async function GET(request: Request) {
 
         // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only.
         if (merchantParam && ethers.isAddress(merchantParam)) {
-            /* Merchants who only sell through their own site (API checkout sessions) have no
-               MerchantPlan rows even though they have real plans; materialize those shapes
-               first so the picker never claims "no plans" for an integrated merchant. */
-            await syncSitePlansFromCheckouts(merchantParam).catch((error) =>
-                console.error("Site-plan sync failed:", error));
             const plans = await prisma.merchantPlan.findMany({
                 where: { merchantAddress: merchantParam.toLowerCase(), active: true },
                 orderBy: { amountUsdc: "asc" },
@@ -96,8 +96,6 @@ export async function GET(request: Request) {
     }
 }
 
-const MAX_PLANS = 20;
-
 export async function POST(request: Request) {
     try {
         const wallet = await getSessionWallet(request.headers);
@@ -106,6 +104,20 @@ export async function POST(request: Request) {
         if (!roleCheck.ok) return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
+        const checkoutSessionId = typeof body.checkoutSessionId === "string"
+            ? body.checkoutSessionId.trim()
+            : "";
+
+        /* Publishing a site checkout is an explicit merchant action. Customer-facing GETs are
+           read-only and can never infer a public catalog entry from a private checkout attempt. */
+        if (checkoutSessionId) {
+            const published = await publishSitePlanFromCheckout(wallet, checkoutSessionId);
+            return NextResponse.json(
+                { success: true, plan: formatPlan(published.plan), created: published.created },
+                { status: published.created ? 201 : 200 },
+            );
+        }
+
         const name = typeof body.name === "string" ? body.name.trim().slice(0, 60) : "";
         if (!name) return NextResponse.json({ error: "Plan name is required" }, { status: 400 });
 
@@ -141,26 +153,47 @@ export async function POST(request: Request) {
             minCommitmentSeconds = BigInt(Math.round(days * 24 * 60 * 60));
         }
 
-        const activeCount = await prisma.merchantPlan.count({
-            where: { merchantAddress: wallet.toLowerCase(), active: true },
+        const merchantAddress = wallet.toLowerCase();
+        const result = await prisma.$transaction(async (tx) => {
+            /* Serialize every catalog insertion for this merchant so concurrent manual and
+               checkout publications cannot both pass the active-plan ceiling. */
+            await lockMerchantPlanCatalog(tx, merchantAddress);
+            const activeCount = await tx.merchantPlan.count({
+                where: { merchantAddress, active: true },
+            });
+            if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
+                return { limitReached: true as const };
+            }
+            const plan = await tx.merchantPlan.create({
+                data: {
+                    merchantAddress,
+                    name,
+                    description: descriptionResult.value,
+                    detailsUrl: detailsUrlResult.value,
+                    amountUsdc,
+                    periodSeconds,
+                    minCommitmentSeconds,
+                },
+            });
+            return { limitReached: false as const, plan };
         });
-        if (activeCount >= MAX_PLANS) {
-            return NextResponse.json({ error: `You can have at most ${MAX_PLANS} active plans.` }, { status: 403 });
+        if (result.limitReached) {
+            return NextResponse.json(
+                { error: `You can have at most ${MAX_ACTIVE_MERCHANT_PLANS} active plans.` },
+                { status: 403 },
+            );
         }
-
-        const plan = await prisma.merchantPlan.create({
-            data: {
-                merchantAddress: wallet.toLowerCase(),
-                name,
-                description: descriptionResult.value,
-                detailsUrl: detailsUrlResult.value,
-                amountUsdc,
-                periodSeconds,
-                minCommitmentSeconds,
-            },
-        });
-        return NextResponse.json({ success: true, plan: formatPlan(plan) }, { status: 201 });
+        return NextResponse.json({ success: true, plan: formatPlan(result.plan) }, { status: 201 });
     } catch (error: any) {
+        if (error instanceof SitePlanPublicationError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
+        if (error?.code === "P2002" && error?.meta?.target?.includes?.("source_checkout_id")) {
+            return NextResponse.json(
+                { error: "This checkout has already been published as a plan.", code: "SOURCE_CONFLICT" },
+                { status: 409 },
+            );
+        }
         console.error("Create plan failed:", error);
         return NextResponse.json({ error: error.message || "Failed to create plan" }, { status: 500 });
     }

@@ -39,6 +39,7 @@ import {
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
+import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import {
@@ -246,6 +247,7 @@ export default function DashboardPage() {
     const [dbProvider, setDbProvider] = useState("none");
     const [sessionProvider, setSessionProvider] = useState("none");
     const [ledgerPage, setLedgerPage] = useState(0);
+    const [ledgerCursors, setLedgerCursors] = useState<Array<string | null>>([null]);
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
 
@@ -1838,14 +1840,21 @@ export default function DashboardPage() {
 
 
     const [ledgers, setLedgers] = useState<any[]>([]);
+    const [ledgerPagination, setLedgerPagination] = useState({ total: 0, totalPages: 1 });
+    const [merchantAnalytics, setMerchantAnalytics] = useState<MerchantAnalyticsSummary | null>(null);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const ledgerCursor = ledgerCursors[ledgerPage] || null;
 
 
     useEffect(() => {
         const merchantAddress = address;
         if (!isConnected || !merchantAddress) {
             setLedgers([]);
+            setLedgerPagination({ total: 0, totalPages: 1 });
+            setMerchantAnalytics(null);
+            setLedgerPage(0);
+            setLedgerCursors([null]);
             return;
         }
 
@@ -1856,89 +1865,71 @@ export default function DashboardPage() {
             setIsLoadingContract(true);
             if (isTestMode) {
                 setLedgers([]);
+                setLedgerPagination({ total: 0, totalPages: 1 });
+                setMerchantAnalytics(null);
                 setIsLoadingContract(false);
                 setInitialContractFetched(true);
                 return;
             }
             try {
-                const mirrorResponse = await fetch("/api/merchant/subscriptions").catch(() => null);
-
-                const mirrorById = new Map<string, {
-                    subscriberName: string | null;
-                    status: string;
-                    cancelAtPeriodEnd: boolean;
-                    nextBillingDate: string | null;
-                    downgradeFailures: number;
-                }>();
-                if (mirrorResponse?.ok) {
-                    const mirrorPayload = await mirrorResponse.json().catch(() => null);
-                    for (const subscription of mirrorPayload?.subscriptions || []) {
-                        mirrorById.set(String(subscription.subscriptionId), subscription);
-                    }
+                const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
+                const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
+                const mirrorPayload = await mirrorResponse.json().catch(() => null);
+                if (!mirrorResponse.ok || !mirrorPayload?.success) {
+                    throw new Error(mirrorPayload?.error || "Subscription analytics could not be loaded");
                 }
 
-                /* Indexer-backed: read only THIS merchant's subscription ids (from the mirror)
-                   from chain for authoritative amount/period/active state. The old approach
-                   scanned every id on the shared contract (1..nextSubscriptionId) on every
-                   poll — O(total protocol subscriptions) RPC reads per merchant per refresh,
-                   which both rate-limited the RPC and could render partial/incorrect data.
-                   If the mirror is unreachable, fall back to a bounded scan so a fresh
-                   deployment still renders. */
-                let candidateIds: number[] = Array.from(mirrorById.keys())
-                    .map((id) => Number(id))
-                    .filter((id) => Number.isSafeInteger(id) && id > 0);
-                if (!mirrorResponse?.ok) {
-                    const nextId = await publicClient.readContract({
-                        address: STANDARD_CONTRACT_ADDRESS,
-                        abi: STANDARD_ABI,
-                        functionName: "nextSubscriptionId",
-                    });
-                    const scanCap = Math.min(Number(nextId) - 1, 300);
-                    candidateIds = Array.from({ length: Math.max(0, scanCap) }, (_, index) => index + 1);
-                }
-
-                const fetchedLedgers = [];
-                const onChainSubscriptions = await Promise.all(
-                    candidateIds.map(async (id) => {
-                        const subscription = await publicClient.readContract({
-                            address: STANDARD_CONTRACT_ADDRESS,
-                            abi: STANDARD_ABI,
-                            functionName: "subscriptions",
-                            args: [BigInt(id)],
-                        });
-                        return { id, subscription };
-                    })
-                );
-
-                for (const { id, subscription: sub } of onChainSubscriptions) {
-                    const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-
-                    if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
-                        const mirror = mirrorById.get(String(id));
-                        const shortAddress = `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`;
-                        fetchedLedgers.push({
-                            id: `agent-run-${id}`,
-                            rawId: String(id),
-                            address: subscriber,
-                            displayAddress: mirror?.subscriberName || shortAddress,
-                            shortSubAddress: mirror?.subscriberName || shortAddress,
-                            limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
-                            rawAmount: formatUnits(amount, 6),
-                            rawPeriod: String(period),
-                            nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
-                            nextPaymentTs: Number(nextPayment),
-                            active: isActive,
-                            billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
-                            cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
-                            downgradeFailures: Number(mirror?.downgradeFailures || 0),
-                        });
-                    }
-                }
+                /* The server owns merchant scoping, complete aggregates, and page-bounded detail.
+                   This keeps browser work constant and removes every protocol-wide RPC scan. */
+                const fetchedLedgers = (mirrorPayload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
+                    const subscriber = subscription.subscriber || "";
+                    const shortAddress = subscriber
+                        ? `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`
+                        : "Unknown subscriber";
+                    const nextBillingTs = subscription.nextBillingDate
+                        ? Math.floor(new Date(subscription.nextBillingDate).getTime() / 1000)
+                        : 0;
+                    return {
+                        id: `agent-run-${subscription.subscriptionId}`,
+                        rawId: subscription.subscriptionId,
+                        address: subscriber,
+                        displayAddress: subscription.subscriberName || shortAddress,
+                        shortSubAddress: subscription.subscriberName || shortAddress,
+                        limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
+                        rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
+                        rawPeriod: subscription.periodSeconds,
+                        nextBilling: subscription.nextBillingDate
+                            ? new Date(subscription.nextBillingDate).toLocaleDateString()
+                            : "Not scheduled",
+                        nextPaymentTs: nextBillingTs,
+                        activityAt: subscription.activityAt,
+                        active: subscription.status === "ACTIVE",
+                        billingStatus: subscription.status,
+                        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+                        downgradeFailures: Number(subscription.downgradeFailures || 0),
+                    };
+                });
                 
                 if (isSubscribed) {
+                    const totalPages = Math.max(1, Number(mirrorPayload.pagination?.totalPages || 1));
+                    if (ledgerPage >= totalPages) {
+                        setLedgerPage(totalPages - 1);
+                        return;
+                    }
                     setLedgers(fetchedLedgers);
-                    if (fetchedLedgers.length > 0 && !selectedWebhook) {
-                        setSelectedWebhook(`evt_01_0`);
+                    setLedgerPagination({
+                        total: Number(mirrorPayload.pagination?.total || 0),
+                        totalPages,
+                    });
+                    const nextCursor = mirrorPayload.pagination?.nextCursor || null;
+                    setLedgerCursors((current) => {
+                        const updated = current.slice(0, ledgerPage + 1);
+                        if (nextCursor) updated[ledgerPage + 1] = String(nextCursor);
+                        return updated;
+                    });
+                    setMerchantAnalytics(mirrorPayload.analytics || null);
+                    if (fetchedLedgers.length > 0) {
+                        setSelectedWebhook((current) => current || "evt_01_0");
                     }
                 }
             } catch (err) {
@@ -1960,7 +1951,7 @@ export default function DashboardPage() {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode]);
+    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -2400,15 +2391,15 @@ Please complete the following implementation tasks:
     };
 
 
-    const activeAllowances = ledgers.filter(l => l.active).length;
-    const revokedCount = ledgers.filter(l => !l.active).length;
-    const totalSubs = ledgers.length;
+    const activeAllowances = merchantAnalytics?.activeSubscriptions ?? ledgers.filter(l => l.active).length;
+    const totalSubs = merchantAnalytics?.totalSubscriptions ?? ledgerPagination.total;
+    const revokedCount = Math.max(0, totalSubs - activeAllowances);
     const failureRate = totalSubs > 0 ? ((revokedCount / totalSubs) * 100).toFixed(1) : "0.0";
     /* Only subscriptions that will actually renew belong in a forward projection: an
        on-chain-active sub that is mid-failed-renewal, past due, or ending at period end
        will not collect next cycle, so counting it overstates expected volume. Mirrors
        the isPaying definition in AnalyticsDashboard. */
-    const projected30DaySettlement = ledgers.reduce((acc, sub) => {
+    const projected30DaySettlement = merchantAnalytics?.mrrUsdc ?? ledgers.reduce((acc, sub) => {
         const willRenew = sub.active
             && sub.billingStatus === "ACTIVE"
             && Number(sub.downgradeFailures || 0) === 0
@@ -3428,7 +3419,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Wallet Recovery & Backup */}
-                {userSettings.walletBackup && (
+                {userSettings.walletBackup?.available && (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -3442,12 +3433,8 @@ Please complete the following implementation tasks:
                                     opens this same merchant account.
                                 </p>
                             </div>
-                            <span className={`self-start rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                                userSettings.walletBackup.available
-                                    ? "border border-[#00d2b4]/25 bg-[#00d2b4]/10 text-[#00d2b4]"
-                                    : "border border-white/10 bg-white/5 text-white/45"
-                            }`}>
-                                {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                            <span className="self-start rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">
+                                Exportable
                             </span>
                         </div>
 
@@ -3536,14 +3523,10 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={requestMerchantExportOtp}
-                                disabled={merchantExportOtpSending || !userSettings.walletBackup.available}
+                                disabled={merchantExportOtpSending}
                                 className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {merchantExportOtpSending
-                                    ? "Sending verification code…"
-                                    : userSettings.walletBackup.available
-                                        ? "Verify email & export wallet"
-                                        : "Private-key export unavailable"}
+                                {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                             </button>
                         )}
                     </div>
@@ -4132,6 +4115,7 @@ Please complete the following implementation tasks:
                         walletBalance={walletBalance}
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
+                        analytics={merchantAnalytics}
                         onRetryCharge={handleRetryCharge}
                         merchantAddress={address || ""}
                     />
@@ -4284,9 +4268,7 @@ Please complete the following implementation tasks:
                                                 </tr>
                                             ) : (
                                                 (() => {
-                                                    const ledgerPageSize = 5;
-                                                    const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                                    return paginatedLedgers.map((item) => (
+                                                    return ledgers.map((item) => (
                                                         <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                             <td className="py-4 font-semibold text-white">{item.id}</td>
                                                             <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
@@ -4315,8 +4297,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
@@ -4526,9 +4507,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     ) : (
                                         (() => {
-                                            const ledgerPageSize = 5;
-                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                            return paginatedLedgers.map((item) => (
+                                            return ledgers.map((item) => (
                                                 <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
                                                     <div className="flex justify-between items-start pr-8">
                                                         <div>
@@ -4564,8 +4543,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">

@@ -12,6 +12,10 @@ import { sanitizeInput } from "@/utils/security";
 import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { readSubscriptionCheckoutMeta, type SubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
+import {
+    publishSitePlanFromCheckout,
+    SitePlanPublicationError,
+} from "@/lib/subscriptions/sitePlans";
 
 const SUBSCRIPT_ABI = [
     {
@@ -221,7 +225,7 @@ export async function GET(request: Request) {
    returns an `incomplete` subscription with a `checkoutUrl` the subscriber completes on-chain;
    it becomes `active` once activation settles. Body: { amountUsdcMicros | amountUsdc | planId,
    interval | intervalSeconds, intervalCount?, subscriber?, title?, externalReference?,
-   idempotencyKey?, sandbox? }. */
+   publishToDm?, idempotencyKey?, sandbox? }. */
 export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
@@ -237,8 +241,18 @@ export async function POST(request: Request) {
             amountUsdc, amountUsdcMicros, planId,
             interval, intervalSeconds, intervalCount,
             subscriber, beneficiary, title, externalReference, idempotencyKey, sandbox, successUrl, cancelUrl,
+            publishToDm,
         } = body;
         const isSandbox = sandbox === true || auth.mode === "test";
+        if (publishToDm !== undefined && typeof publishToDm !== "boolean") {
+            return NextResponse.json({ error: "Bad Request: publishToDm must be a boolean" }, { status: 400 });
+        }
+        const shouldPublishToDm = publishToDm === true;
+        if (shouldPublishToDm && (typeof idempotencyKey !== "string" || !idempotencyKey.trim())) {
+            return NextResponse.json({
+                error: "Bad Request: idempotencyKey is required when publishToDm is true",
+            }, { status: 400 });
+        }
 
         // 1. Resolve amount + period (a plan supplies both).
         let amountMicros: bigint | null = null;
@@ -310,6 +324,11 @@ export async function POST(request: Request) {
             }
             beneficiaryAddress = beneficiary.toLowerCase();
         }
+        if (shouldPublishToDm && (subscriberAddress || beneficiaryAddress)) {
+            return NextResponse.json({
+                error: "Bad Request: publishToDm is only available for generic checkouts without a subscriber or beneficiary",
+            }, { status: 400 });
+        }
 
         const validateReturnUrl = (label: string, value: unknown) => {
             if (value === undefined || value === null || value === "") return { ok: true as const, value: null };
@@ -342,6 +361,10 @@ export async function POST(request: Request) {
                 if (!meta) {
                     return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
                 }
+                const published = shouldPublishToDm
+                    ? await publishSitePlanFromCheckout(merchantAddress, existing.id)
+                    : null;
+                const canonicalPlanId = published?.plan.id || meta.planId || null;
                 return NextResponse.json({
                     success: true,
                     subscription: {
@@ -355,6 +378,7 @@ export async function POST(request: Request) {
                         intervalSeconds: meta?.intervalSeconds ?? periodSeconds,
                         intervalCount: meta?.intervalCount ?? count,
                         interval: meta?.interval ?? resolvedInterval,
+                        planId: canonicalPlanId,
                         checkoutUrl: buildSubscribeUrl(existing.id),
                         createdAt: existing.createdAt,
                     },
@@ -397,6 +421,14 @@ export async function POST(request: Request) {
             merchantAddress,
         })).catch(() => { /* delivery is best-effort */ });
 
+        /* Publication is opt-in. Persisting the checkout first makes a transient publication
+           failure recoverable: the same idempotency key finds this checkout and retries the
+           unique, atomic publication instead of creating another checkout or plan. */
+        const published = shouldPublishToDm
+            ? await publishSitePlanFromCheckout(merchantAddress, link.id)
+            : null;
+        const canonicalPlanId = published?.plan.id || subMeta.planId || null;
+
         return NextResponse.json({
             success: true,
             subscription: {
@@ -410,12 +442,16 @@ export async function POST(request: Request) {
                 intervalSeconds: periodSeconds,
                 intervalCount: count,
                 interval: resolvedInterval,
+                planId: canonicalPlanId,
                 checkoutUrl: buildSubscribeUrl(link.id),
                 createdAt: link.createdAt,
             },
             sandbox: isSandbox,
         }, { status: 201 });
     } catch (error: any) {
+        if (error instanceof SitePlanPublicationError) {
+            return apiError({ status: error.status, code: error.code.toLowerCase(), message: error.message });
+        }
         /* Never echo error.message — a raw ORM error in a 500 is how a schema gap goes public. */
         console.error("Subscriptions POST error:", error);
         return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });

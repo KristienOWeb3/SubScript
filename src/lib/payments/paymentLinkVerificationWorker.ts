@@ -5,6 +5,7 @@ import { ethers } from "ethers";
 import { ROUTER_DEPOSIT_INTERFACE, USDC_TRANSFER_INTERFACE, receiptUrl } from "@/lib/arc/memo";
 import { SUBSCRIPT_ROUTER_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
+import { buildReceiptDmDescription, safeReceiptPayeeLabel } from "@/lib/dms/receiptPresentation";
 import { sendPaymentReceiptEmails } from "@/lib/email/transactional";
 import { createPaymentSucceededWebhook } from "@/lib/webhooks";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
@@ -326,12 +327,17 @@ async function runPostSettlementEffects(
             .limit(1)
             .maybeSingle();
         if (!existingReceipt) {
-            /* Reads like a receipt a person would write: name the merchant (falling back to a
-               short address, never the raw 42-char one) and let the UI turn the receipt URL
-               into a "View receipt" link. The tx hash lives in tx_hash — the UI renders it as
-               an explorer link, so it isn't repeated as an inscrutable hex line here. */
-            const merchantLabel = job.merchant_name_snapshot?.trim()
-                || `${job.merchant_address.slice(0, 6)}…${job.merchant_address.slice(-4)}`;
+            /* Receipt identity is database-owned. Checkout-supplied merchant_name_snapshot is
+               branding metadata and must not be allowed to impersonate another payee. */
+            const { data: merchantAlias, error: merchantAliasError } = await supabase
+                .from("address_aliases")
+                .select("alias")
+                .eq("address", job.merchant_address)
+                .maybeSingle();
+            if (merchantAliasError) {
+                console.error("[verify-worker] Failed to resolve receipt merchant alias:", merchantAliasError.message);
+            }
+            const merchantLabel = safeReceiptPayeeLabel(merchantAlias?.alias, job.merchant_address);
             await insertSupabaseDmAndNotify(supabase, {
                 sender_address: job.merchant_address,
                 receiver_address: job.payer_address,
@@ -339,10 +345,11 @@ async function runPostSettlementEffects(
                 status: "PENDING",
                 amount_usdc: job.amount_usdc.toString(),
                 title: `Receipt: ${job.payment_title}`,
-                description: [
-                    `Your ${Number(job.amount_usdc) / 1_000_000} USDC payment to ${merchantLabel} has been confirmed.`,
-                    `Receipt: ${shareUrl}`,
-                ].join("\n"),
+                description: buildReceiptDmDescription({
+                    amountUsdcMicros: job.amount_usdc,
+                    payeeLabel: merchantLabel,
+                    receiptId: job.receipt_id,
+                }),
                 tx_hash: job.tx_hash,
                 payment_link_id: job.payment_link_id,
             }).catch((error) => console.error("[verify-worker] Receipt DM notification failed:", error));

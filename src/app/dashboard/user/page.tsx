@@ -34,6 +34,7 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
+import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
 import {
   AlertCircle,
   ArrowDown,
@@ -4383,8 +4384,7 @@ export default function UserDashboard() {
                       )}
                     </div>
 
-                    {/* Managed (server-signed) wallets have no exportable key — hide the card
-                        entirely rather than dangling an "Export Not Available" non-option. */}
+                    {/* Key export exists only for wallet providers that expose a recoverable key. */}
                     {userSettings?.walletBackup?.available && (
                       <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -4396,12 +4396,8 @@ export default function UserDashboard() {
                               Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
                             </p>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                            userSettings.walletBackup.available
-                              ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
-                              : "border border-white/10 bg-white/5 text-white/45"
-                          }`}>
-                            {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                          <span className="rounded-full border border-[#ccff00]/25 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                            Exportable
                           </span>
                         </div>
 
@@ -5676,9 +5672,9 @@ function DmBubble({
               <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
                 {lines.length > 0 ? lines.map((line) => {
-                  /* Receipt URLs read as noise in a chat bubble — show a "View receipt" link
-                     that opens the receipt page in a new tab instead of the raw address. */
-                  const receiptHref = line.match(/https?:\/\/\S*\/receipt\/\S+/)?.[0];
+                  /* Receipt references read as noise in a chat bubble — show a same-origin
+                     "View receipt" action and never trust a host stored in legacy DM text. */
+                  const receiptHref = receiptHrefFromDescriptionLine(line);
                   if (receiptHref) {
                     return (
                       <a

@@ -11,9 +11,8 @@
  */
 import { ethers } from "ethers";
 import { getRpcProviderForWrite } from "@/lib/payments/rpc";
-import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 
-const TOPUP_USDC = process.env.SPONSOR_GAS_TOPUP_USDC || "0.10";
+const SPONSOR_REUSE_WINDOW_MS = 30_000;
 
 export function isGasSponsorshipEnabled() {
     return Boolean(process.env.SPONSOR_PRIVATE_KEY);
@@ -21,20 +20,97 @@ export function isGasSponsorshipEnabled() {
 
 export type SponsorFailureReason =
     | "sponsor_disabled"
+    | "invalid_sponsor_config"
+    | "invalid_topup_config"
     | "invalid_beneficiary"
     | "rpc_unavailable"
     | "sponsor_underfunded"
     | "topup_failed";
 
-export type SponsorResult = { sponsored: boolean; txHash?: string; reason?: string };
+export type SponsorResult = {
+    sponsored: boolean;
+    txHash?: string;
+    reason?: SponsorFailureReason | "recently_sponsored";
+};
 
 const FAILURE_MESSAGES: Record<SponsorFailureReason, string> = {
     sponsor_disabled: "Gas sponsorship is not configured on this deployment.",
+    invalid_sponsor_config: "The gas sponsor wallet configuration is invalid.",
+    invalid_topup_config: "The sponsored gas top-up amount is invalid.",
     invalid_beneficiary: "The wallet receiving sponsored gas is invalid.",
     rpc_unavailable: "The Arc network could not be reached to sponsor gas.",
     sponsor_underfunded: "SubScript's gas sponsor wallet is out of funds.",
     topup_failed: "The sponsored gas top-up transaction failed.",
 };
+
+type ConfirmedSponsorship = {
+    confirmedAt: number;
+    txHash: string;
+};
+
+const sponsorState = globalThis as typeof globalThis & {
+    subscriptConfirmedGasSponsorships?: Map<string, ConfirmedSponsorship>;
+    subscriptGasSponsorshipsInFlight?: Map<string, Promise<SponsorResult>>;
+};
+
+function getConfirmedSponsorships() {
+    if (!sponsorState.subscriptConfirmedGasSponsorships) {
+        sponsorState.subscriptConfirmedGasSponsorships = new Map();
+    }
+    return sponsorState.subscriptConfirmedGasSponsorships;
+}
+
+function getSponsorshipsInFlight() {
+    if (!sponsorState.subscriptGasSponsorshipsInFlight) {
+        sponsorState.subscriptGasSponsorshipsInFlight = new Map();
+    }
+    return sponsorState.subscriptGasSponsorshipsInFlight;
+}
+
+/**
+ * Deduplicate concurrent requests and reuse only a transaction that has already confirmed.
+ * Failed balance checks, RPC calls, and sends are deliberately not cached, so a later request
+ * can retry immediately after the underlying condition is repaired.
+ */
+function runSponsorshipAttempt(
+    beneficiary: string,
+    attempt: () => Promise<SponsorResult>,
+): Promise<SponsorResult> {
+    const confirmed = getConfirmedSponsorships();
+    const cached = confirmed.get(beneficiary);
+    if (cached && Date.now() - cached.confirmedAt < SPONSOR_REUSE_WINDOW_MS) {
+        return Promise.resolve({
+            sponsored: true,
+            txHash: cached.txHash,
+            reason: "recently_sponsored",
+        });
+    }
+    if (cached) confirmed.delete(beneficiary);
+
+    const inFlight = getSponsorshipsInFlight();
+    const existing = inFlight.get(beneficiary);
+    if (existing) return existing;
+
+    const pending = Promise.resolve()
+        .then(attempt)
+        .then((result) => {
+            if (result.sponsored && result.txHash) {
+                confirmed.set(beneficiary, {
+                    confirmedAt: Date.now(),
+                    txHash: result.txHash,
+                });
+            }
+            return result;
+        })
+        .finally(() => {
+            if (inFlight.get(beneficiary) === pending) {
+                inFlight.delete(beneficiary);
+            }
+        });
+
+    inFlight.set(beneficiary, pending);
+    return pending;
+}
 
 /**
  * Credit `beneficiary` with a dedicated native-USDC gas amount before a sponsored action.
@@ -46,54 +122,71 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
     if (!key) return { sponsored: false, reason: "sponsor_disabled" };
     if (!ethers.isAddress(beneficiary)) return { sponsored: false, reason: "invalid_beneficiary" };
 
-    let provider: ethers.JsonRpcProvider;
+    let offlineSponsor: ethers.Wallet;
     try {
-        ({ provider } = await getRpcProviderForWrite());
+        offlineSponsor = new ethers.Wallet(key);
     } catch (error: any) {
-        console.error("[gas-sponsor] no healthy RPC endpoint:", error?.message || error);
-        return { sponsored: false, reason: "rpc_unavailable" };
+        console.error("[gas-sponsor] invalid sponsor wallet configuration:", error?.message || error);
+        return { sponsored: false, reason: "invalid_sponsor_config" };
     }
 
-    /* A single sponsored product action can submit approval + payment transactions.
-       Repeated requests inside 30 seconds reuse the first dedicated gas credit. */
-    const rl = checkProviderRateLimit({ provider: "gas-sponsor", key: beneficiary.toLowerCase(), limit: 1, windowMs: 30_000 });
-    if (!rl.ok) return { sponsored: true, reason: "recently_sponsored" };
-
-    const sponsor = new ethers.Wallet(key, provider);
     /* Arc's native gas currency is USDC with 6 decimals (see ARC_TESTNET/ARC_MAINNET
        nativeCurrency). The tx `value` is denominated in those 6-decimal base units, so the
        top-up must be scaled by 1e6 — parseEther (1e18) would over-send by ~1e12x. */
-    const topupValue = ethers.parseUnits(TOPUP_USDC, 6);
-
+    let topupValue: bigint;
     try {
-        /* Distinguish an empty sponsor wallet from a transient send failure so operators
-           see "fund the sponsor" instead of a generic error. Balance must cover the
-           top-up plus the sponsor's own gas for the transfer, so compare with headroom. */
-        const balance = await sponsor.provider!.getBalance(sponsor.address);
-        if (balance < topupValue * BigInt(2)) {
-            console.error(
-                `[gas-sponsor] sponsor wallet ${sponsor.address} underfunded: ` +
-                `balance=${balance.toString()} needed>=${(topupValue * BigInt(2)).toString()} (6dp USDC base units)`,
-            );
-            return { sponsored: false, reason: "sponsor_underfunded" };
-        }
+        topupValue = ethers.parseUnits(process.env.SPONSOR_GAS_TOPUP_USDC || "0.10", 6);
+        if (topupValue <= BigInt(0)) throw new Error("top-up must be greater than zero");
     } catch (error: any) {
-        console.error("[gas-sponsor] sponsor balance check failed:", error?.message || error);
-        return { sponsored: false, reason: "rpc_unavailable" };
+        console.error("[gas-sponsor] invalid top-up configuration:", error?.message || error);
+        return { sponsored: false, reason: "invalid_topup_config" };
     }
 
-    try {
-        const tx = await sponsor.sendTransaction({ to: beneficiary, value: topupValue });
-        await tx.wait();
-        return { sponsored: true, txHash: tx.hash };
-    } catch (error: any) {
-        const message: string = error?.message || String(error);
-        console.error(`[gas-sponsor] top-up from ${sponsor.address} failed:`, message);
-        if (error?.code === "INSUFFICIENT_FUNDS" || message.toLowerCase().includes("insufficient funds")) {
-            return { sponsored: false, reason: "sponsor_underfunded" };
+    const normalizedBeneficiary = beneficiary.toLowerCase();
+    return runSponsorshipAttempt(normalizedBeneficiary, async () => {
+        let provider: ethers.JsonRpcProvider;
+        try {
+            ({ provider } = await getRpcProviderForWrite());
+        } catch (error: any) {
+            console.error("[gas-sponsor] no healthy RPC endpoint:", error?.message || error);
+            return { sponsored: false, reason: "rpc_unavailable" };
         }
-        return { sponsored: false, reason: "topup_failed" };
-    }
+
+        const sponsor = offlineSponsor.connect(provider);
+        try {
+            /* Distinguish an empty sponsor wallet from a transient send failure so operators
+               see "fund the sponsor" instead of a generic error. Balance must cover the
+               top-up plus the sponsor's own gas for the transfer, so compare with headroom. */
+            const balance = await provider.getBalance(sponsor.address);
+            if (balance < topupValue * BigInt(2)) {
+                console.error(
+                    `[gas-sponsor] sponsor wallet ${sponsor.address} underfunded: ` +
+                    `balance=${balance.toString()} needed>=${(topupValue * BigInt(2)).toString()} (6dp USDC base units)`,
+                );
+                return { sponsored: false, reason: "sponsor_underfunded" };
+            }
+        } catch (error: any) {
+            console.error("[gas-sponsor] sponsor balance check failed:", error?.message || error);
+            return { sponsored: false, reason: "rpc_unavailable" };
+        }
+
+        try {
+            const tx = await sponsor.sendTransaction({ to: beneficiary, value: topupValue });
+            const receipt = await tx.wait();
+            if (!receipt || Number(receipt.status) !== 1) {
+                console.error(`[gas-sponsor] top-up from ${sponsor.address} was not confirmed successfully`);
+                return { sponsored: false, reason: "topup_failed" };
+            }
+            return { sponsored: true, txHash: receipt.hash || tx.hash };
+        } catch (error: any) {
+            const message: string = error?.message || String(error);
+            console.error(`[gas-sponsor] top-up from ${sponsor.address} failed:`, message);
+            if (error?.code === "INSUFFICIENT_FUNDS" || message.toLowerCase().includes("insufficient funds")) {
+                return { sponsored: false, reason: "sponsor_underfunded" };
+            }
+            return { sponsored: false, reason: "topup_failed" };
+        }
+    });
 }
 
 export async function requireGasSponsored(beneficiary: string): Promise<SponsorResult> {
