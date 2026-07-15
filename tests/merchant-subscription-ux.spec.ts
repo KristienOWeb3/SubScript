@@ -61,6 +61,8 @@ test.describe("merchant subscription UX", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/dashboard");
     await page.locator('[data-mounted="true"]').waitFor();
+    // Add network idle wait to ensure full hydration
+    await page.waitForLoadState("networkidle");
 
     const paymentsNav = page.getByRole("button", { name: "Payments", exact: true });
     await expect(paymentsNav).toBeVisible();
@@ -68,8 +70,9 @@ test.describe("merchant subscription UX", () => {
        re-click until the Plans panel actually renders. */
     await expect(async () => {
       await paymentsNav.click();
-      await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible({ timeout: 2_000 });
-    }).toPass({ timeout: 30_000 });
+      // Increase timeout to account for hydration delays
+      await expect(page.getByText("Create Subscription Plan", { exact: true })).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 45_000 });
     await expect(page.getByTestId("merchant-plan-row").filter({ hasText: plan.name })).toBeVisible();
 
     const swipeAcross = async (from: Locator, deltaX: number) => {

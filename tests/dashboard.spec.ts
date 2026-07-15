@@ -240,11 +240,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
       await page.click('button:has-text("Webhooks"):visible');
       
-      // Wait for the webhook content to load - be more defensive about element visibility
-      await page.waitForFunction(() => {
-        const tabs = document.querySelectorAll('[role="tab"]');
-        return Array.from(tabs).some(tab => tab.textContent?.includes('Deliveries'));
-      }, { timeout: 30000 });
+      // Add a fallback check and increase visibility wait
+      await page.waitForSelector('[role="tab"]', { timeout: 10000 });
+      
+      // Add explicit network idle and DOM stability wait
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1000);
+      
+      // Simplified wait - just check if any tab exists with text containing Deliveries
+      await page.locator('[role="tab"]').filter({ hasText: /Deliveries/i }).waitFor({ state: 'visible', timeout: 15000 });
       
       await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 15000 });
       
