@@ -240,9 +240,13 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
       await page.click('button:has-text("Webhooks"):visible');
       
-      // Wait for the webhook content tab to be visible first
-      await page.waitForSelector('[role="tab"]:has-text("Deliveries")', { timeout: 30000 });
-      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
+      // Wait for the webhook content to load - be more defensive about element visibility
+      await page.waitForFunction(() => {
+        const tabs = document.querySelectorAll('[role="tab"]');
+        return Array.from(tabs).some(tab => tab.textContent?.includes('Deliveries'));
+      }, { timeout: 30000 });
+      
+      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 15000 });
       
       // Select payment failed event via its unique ID
       await page.click('button:has-text("evt_03")');
