@@ -61,9 +61,18 @@ BEGIN
     IF v_type = 'text' THEN
         ALTER TABLE public.ledger_entries
             DROP CONSTRAINT IF EXISTS ledger_entries_merchant_address_fkey;
+            
+        -- 1) Drop policy that depends on the column
+        DROP POLICY IF EXISTS "Merchant select own ledger entries" ON public.ledger_entries;
+        
+        -- 2) Alter the column type
         ALTER TABLE public.ledger_entries
             ALTER COLUMN merchant_address TYPE BYTEA
             USING decode(substring(merchant_address FROM 3), 'hex');
+            
+        -- 3) Recreate the policy for bytea comparison
+        CREATE POLICY "Merchant select own ledger entries" ON public.ledger_entries FOR SELECT 
+        USING (merchant_address = decode(substring(auth.jwt() ->> 'wallet_address' FROM 3), 'hex'));
     ELSIF v_type IS DISTINCT FROM 'bytea' THEN
         RAISE EXCEPTION 'Unsupported ledger_entries.merchant_address type: %', v_type;
     END IF;
