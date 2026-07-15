@@ -164,6 +164,15 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     });
 
     test("should inspect webhooks and replay webhook event", async ({ page }) => {
+      // Mock RPC endpoint to prevent rate limiting
+      await page.route("**/rpc.testnet.arc.network/**", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ result: "0x" })
+        });
+      });
+
       // Mock the replay API call to return a successful response instantly
       await page.route("**/api/webhooks/events/replay", async (route) => {
         await route.fulfill({
@@ -179,7 +188,7 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
 
       await page.click('button:has-text("Webhooks"):visible');
       await page.waitForLoadState('networkidle');
-      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
+      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 30000 });
       
       // Select payment failed event via its unique ID
       await page.click('button:has-text("evt_03")');
