@@ -160,17 +160,25 @@ export async function POST(request: Request) {
                carries `amount_usdc_micros` (integer) alongside a human `amount` (decimal). Prefer the
                integer micros field; only fall back to converting the decimal (× 1e6) for legacy
                senders. Writing parseFloat(decimal) straight into this column was 1e6× too small. */
+            /* Preserve the exact micro-USDC value with BigInt/string arithmetic — parseInt and
+               Number()*1e6 both lose precision above 2^53 and would persist a different billing
+               cap. Integer micros pass through as a string; decimals are capped at 6 places. */
             const microsRaw = data.amount_usdc_micros ?? data.amountUsdcMicros;
             let amountMicros: number | string = existingSubscription?.amount_cap_usdc ?? 0;
-            if (microsRaw !== undefined && microsRaw !== null && /^\d+$/.test(String(microsRaw).trim())) {
-                amountMicros = parseInt(String(microsRaw).trim(), 10);
-            } else if (data.amount !== undefined && data.amount !== null && data.amount !== "") {
-                /* Full-string decimal validation — reject "12.5abc" rather than parseFloat-ing it. */
-                const decimalStr = String(data.amount).trim();
-                if (!/^\d+(\.\d+)?$/.test(decimalStr)) {
+            if (microsRaw !== undefined && microsRaw !== null) {
+                const microsText = String(microsRaw).trim();
+                if (!/^\d+$/.test(microsText)) {
                     return NextResponse.json({ error: "Bad Request: malformed subscription amount" }, { status: 400 });
                 }
-                amountMicros = Math.round(Number(decimalStr) * 1_000_000);
+                amountMicros = BigInt(microsText).toString();
+            } else if (data.amount !== undefined && data.amount !== null && data.amount !== "") {
+                /* Full-string decimal validation (≤6 fractional digits) — reject "12.5abc". */
+                const decimalStr = String(data.amount).trim();
+                if (!/^\d+(\.\d{1,6})?$/.test(decimalStr)) {
+                    return NextResponse.json({ error: "Bad Request: malformed subscription amount" }, { status: 400 });
+                }
+                const [whole, fraction = ""] = decimalStr.split(".");
+                amountMicros = BigInt(`${whole}${fraction.padEnd(6, "0")}`).toString();
             }
             /* period/nonce: a malformed value falls back to the stored value rather than becoming
                NaN (parseInt junk) which would corrupt the billing interval / replay nonce. */

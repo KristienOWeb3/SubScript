@@ -29,7 +29,10 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
                 status: "DEAD_LETTER",
                 last_error: endpoint ? "Endpoint is inactive" : "Endpoint no longer exists",
                 updated_at: new Date().toISOString(),
-            }).eq("id", delivery.id).in("status", ["PENDING", "FAILED"]);
+                /* Include PROCESSING: a row left in a stale PROCESSING state by a crashed worker
+                   whose endpoint is since deleted would otherwise never be dead-lettered here,
+                   and the drainer would keep re-selecting it — permanently starving the queue. */
+            }).eq("id", delivery.id).in("status", ["PENDING", "FAILED", "PROCESSING"]);
             continue;
         }
 

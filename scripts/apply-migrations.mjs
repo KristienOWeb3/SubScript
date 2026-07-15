@@ -174,15 +174,18 @@ async function main() {
         const ledgerExists = await client.query(
             "SELECT to_regclass('public._subscript_migrations') IS NOT NULL AS exists"
         );
+        /* Probe the schema independently of the ledger so restart states are recoverable. */
+        const schemaProbe = await client.query(`
+            SELECT
+                to_regclass('public.merchants') IS NOT NULL
+                AND to_regclass('public.payment_sessions') IS NOT NULL
+                AS exists
+        `);
+        const schemaPopulated = schemaProbe.rows[0].exists;
+
         let freshBootstrap = false;
         if (!ledgerExists.rows[0].exists) {
-            const legacySchema = await client.query(`
-                SELECT
-                    to_regclass('public.merchants') IS NOT NULL
-                    AND to_regclass('public.payment_sessions') IS NOT NULL
-                    AS exists
-            `);
-            const adoptingLegacySchema = legacySchema.rows[0].exists;
+            const adoptingLegacySchema = schemaPopulated;
             /* A populated schema with no ledger must NOT be silently baselined in production —
                that could mark un-applied financial hardening as done. The only sanctioned path
                is an explicit operator opt-in (ADOPT_EXISTING_DB_BASELINE=1), used by the isolated
@@ -199,24 +202,45 @@ async function main() {
                     ? "[migrations] Empty database detected — creating ledger and executing the full schema history."
                     : "[migrations] ADOPT_EXISTING_DB_BASELINE=1 — adopting the already-migrated schema as the ledger baseline."
             );
-            await client.query(`
-                CREATE TABLE _subscript_migrations (
-                    filename   text PRIMARY KEY,
-                    applied_at timestamptz NOT NULL DEFAULT now(),
-                    baseline   boolean NOT NULL DEFAULT false
-                );
-            `);
-            if (adoptingLegacySchema) {
-                /* The adopted schema is already fully migrated (every file ran via the tooling that
-                   built it), so record ALL currently-known files as baseline. This prevents any
-                   double-apply against the existing objects; genuinely new files added after this
-                   run still apply normally on the next invocation. */
-                for (const file of await listMigrationFiles()) {
-                    await client.query(
-                        "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT (filename) DO NOTHING",
-                        [file]
+            /* Create the ledger AND record the baseline in ONE transaction. Otherwise a crash
+               between CREATE TABLE and the baseline inserts would leave a partially-populated
+               ledger that the next run treats as authoritative. (The advisory lock is
+               session-level, so it survives this commit.) */
+            try {
+                await client.query("BEGIN");
+                await client.query(`
+                    CREATE TABLE _subscript_migrations (
+                        filename   text PRIMARY KEY,
+                        applied_at timestamptz NOT NULL DEFAULT now(),
+                        baseline   boolean NOT NULL DEFAULT false
                     );
+                `);
+                if (adoptingLegacySchema) {
+                    /* The adopted schema is already fully migrated (every file ran via the tooling
+                       that built it), so record ALL currently-known files as baseline. This prevents
+                       any double-apply against the existing objects; genuinely new files added after
+                       this run still apply normally on the next invocation. */
+                    for (const file of await listMigrationFiles()) {
+                        await client.query(
+                            "INSERT INTO _subscript_migrations (filename, baseline) VALUES ($1, true) ON CONFLICT (filename) DO NOTHING",
+                            [file]
+                        );
+                    }
                 }
+                await client.query("COMMIT");
+            } catch (bootstrapError) {
+                await client.query("ROLLBACK").catch(() => {});
+                throw bootstrapError;
+            }
+        } else {
+            /* Restart safety: an existing but EMPTY ledger on an EMPTY schema means a prior run
+               created the ledger and crashed before applying anything. Resume in fresh-bootstrap
+               order (Supabase schema before the Prisma files that depend on it) rather than the
+               established-deployment order, which would fail against the empty database. */
+            const ledgerCount = await client.query("SELECT count(*)::int AS n FROM _subscript_migrations");
+            if (ledgerCount.rows[0].n === 0 && !schemaPopulated) {
+                freshBootstrap = true;
+                console.log("[migrations] Empty ledger on an empty database — resuming fresh-bootstrap order.");
             }
         }
 

@@ -237,7 +237,7 @@ export async function processPaymentReconciliationEvents(limit: number = 25) {
                     `update public.payment_reconciliation_events
                      set status = 'RESOLVED',
                          last_error = left($3, 4000),
-                         context = context || jsonb_build_object('deadLetteredAt', now()::text, 'deadLetterReason', left($3, 500)),
+                         context = coalesce(context, '{}'::jsonb) || jsonb_build_object('deadLetteredAt', now()::text, 'deadLetterReason', left($3, 500)),
                          resolved_at = now(),
                          updated_at = now()
                      where id = $1::uuid and status = 'PROCESSING' and attempt_count = $2
