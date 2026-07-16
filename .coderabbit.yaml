@@ -1,26 +1,43 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # .coderabbit.yaml
+#
+# These rules used to sit under a top-level `instructions:` key, which is not in the schema —
+# CodeRabbit ignored it and reported "Unrecognized key: instructions" in a fold on every PR, so none
+# of this guidance has ever shaped a review. The persona now lives in tone_instructions (capped at
+# 250 characters, which it fits) and the rules in reviews.path_instructions, scoped to the files each
+# one is actually about. The $schema line above makes the next typo an editor error rather than a
+# silent no-op.
 language: "en-US"
+tone_instructions: "Act as a Principal Web3 Security Auditor and Protocol Engineer. You are auditing the SubScript Protocol, an event-sourced recurring revenue infrastructure built on Next.js, PostgreSQL, and Solidity."
 reviews:
   profile: "assertive"
   request_changes_workflow: true
   high_level_summary: true
   poem: false
+  path_instructions:
+    - path: "**"
+      instructions: |
+        - Flag and request changes for any emojis found in the code, comments, UI text strings, or commit messages.
+    - path: "**/*.sol"
+      instructions: |
+        Strict Security Focus - Solidity:
+        - Scrutinize all Uniswap Permit2 signature consumption logic and allowance transfers.
+        - Strictly flag missing `ReentrancyGuard` implementation on any state-mutating functions.
+        - Ensure 'msg.sender' context is securely maintained during internal/external calls to prevent context-switching exploits.
+        - Verify idempotency constraints within the execution bitmaps.
+    - path: "src/app/api/**"
+      instructions: |
+        Strict Security Focus - Next.js & Backend:
+        - Ensure all Next.js App Router `/api` endpoints explicitly verify the user's wallet session or signature before executing database state changes.
+        - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
+    - path: "src/lib/**"
+      instructions: |
+        Strict Security Focus - Next.js & Backend:
+        - Audit the two-phase batch payout workers and event-sourced ledger updates for race conditions, idempotency failures, or unhandled promise rejections.
+        - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
+    - path: "**/*.{ts,tsx}"
+      instructions: |
+        Mandatory Formatting Constraints (CRITICAL):
+        - Both double-slash (//) and block (/* ... */) comments are permitted in TypeScript and JavaScript scopes. However, inside JSX return blocks, comments must always be wrapped as JSX expressions: {/* comment */}. Raw /* ... */ or // comments inside JSX will render as visible DOM text and must be flagged as a critical UI regression.
 chat:
   auto_reply: true
-instructions: |
-  Act as a Principal Web3 Security Auditor and Protocol Engineer. You are auditing the SubScript Protocol, an event-sourced recurring revenue infrastructure built on Next.js, PostgreSQL, and Solidity.
-
-  Strict Security Focus - Solidity:
-  - Scrutinize all Uniswap Permit2 signature consumption logic and allowance transfers.
-  - Strictly flag missing `ReentrancyGuard` implementation on any state-mutating functions.
-  - Ensure 'msg.sender' context is securely maintained during internal/external calls to prevent context-switching exploits.
-  - Verify idempotency constraints within the execution bitmaps.
-
-  Strict Security Focus - Next.js & Backend:
-  - Ensure all Next.js App Router `/api` endpoints explicitly verify the user's wallet session or signature before executing database state changes.
-  - Audit the two-phase batch payout workers and event-sourced ledger updates for race conditions, idempotency failures, or unhandled promise rejections.
-  - Flag any database queries (Prisma/SQL) that lack proper parameterized sanitation.
-
-  Mandatory Formatting Constraints (CRITICAL):
-  - Both double-slash (//) and block (/* ... */) comments are permitted in TypeScript and JavaScript scopes. However, inside JSX return blocks, comments must always be wrapped as JSX expressions: {/* comment */}. Raw /* ... */ or // comments inside JSX will render as visible DOM text and must be flagged as a critical UI regression.
-  - Flag and request changes for any emojis found in the code, comments, UI text strings, or commit messages.
