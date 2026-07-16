@@ -94,10 +94,11 @@ export async function executeWithRpcFallback<T>(
                 const start = Date.now();
                 const provider = arcProvider(url);
 
-                /* Test connection to prevent executing operation on a dead node. getNetwork() no
-                   longer touches the wire — the pinned network answers it from memory — so probe
-                   with a real call. */
-                await provider.getBlockNumber();
+                /* No liveness probe here: the operation IS the probe. A dead or throttled endpoint
+                   makes operation() throw, which the failover below already handles, so a separate
+                   check would only spend a second call from the quota this file exists to conserve.
+                   (getRpcProviderForWrite still probes — it hands the provider to a caller that
+                   expects a validated endpoint, and never sees the operation's own failure.) */
                 
                 const result = await operation(provider);
                 const latency = Date.now() - start;
@@ -193,7 +194,14 @@ export async function getRpcProviderForWrite(): Promise<{ provider: ethers.JsonR
                 if (isRateLimitError(err) && retryAttempt < MAX_RATE_LIMIT_RETRIES) {
                     const backoffMs = BASE_RATE_LIMIT_DELAY_MS * Math.pow(2, retryAttempt);
                     const jitter = Math.floor(Math.random() * 500);
-                    await sleep(backoffMs + jitter);
+                    const totalDelay = backoffMs + jitter;
+                    /* Say so, like executeWithRpcFallback does. A silent sleep here reads as a slow
+                       sponsor with no cause in the logs — and these logs are the only view of how
+                       this path behaves against a throttled endpoint. */
+                    console.warn(
+                        `[rpc-write] Rate limited on ${url} during acquisition. Retry ${retryAttempt + 1}/${MAX_RATE_LIMIT_RETRIES} after ${totalDelay}ms backoff.`
+                    );
+                    await sleep(totalDelay);
                     continue;
                 }
 
