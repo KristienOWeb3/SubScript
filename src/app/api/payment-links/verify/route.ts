@@ -13,7 +13,7 @@ import {
 } from "@/lib/paymentLinks/beneficiary";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { ProtocolConfig } from "@/lib/payments/config";
-import { processPaymentLinkVerificationJobs } from "@/lib/payments/paymentLinkVerificationWorker";
+import { processPaymentLinkVerificationJob } from "@/lib/payments/paymentLinkVerificationWorker";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
 
 export const maxDuration = 120;
@@ -290,12 +290,12 @@ export async function POST(request: Request) {
         }
 
         if (claimResult?.outcome === "CLAIMED" || claimResult?.outcome === "IN_PROGRESS") {
-            /* The durable job is already committed. `after` is only a low-latency
-               dispatcher; the reconciliation keeper owns crash recovery. */
-            after(async () => {
-                await processPaymentLinkVerificationJobs(supabase, 1)
-                    .catch((error) => console.error("[verify-worker] Immediate durable dispatch failed:", error));
-            });
+            /* Keep the request alive for a targeted worker pass. Production runtimes may
+               discard post-response callbacks, and a batch claim can select an unrelated
+               older checkout. The durable keeper still owns crash recovery if this pass
+               encounters a transient RPC failure or the job is already leased elsewhere. */
+            await processPaymentLinkVerificationJob(supabase, normalizedTx)
+                .catch((error) => console.error("[verify-worker] Immediate durable dispatch failed:", error));
         }
         if (claimResult?.outcome === "IN_PROGRESS") {
             return NextResponse.json(
