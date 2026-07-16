@@ -58,3 +58,24 @@ test("one reason string explains an unpayable link everywhere it surfaces", () =
     const staleTernary = /isLinkExhausted\s*\n?\s*\?\s*"This payment link has reached its usage limit\."/g;
     assert.equal(client.match(staleTernary), null, "no call site re-derives the reason inline");
 });
+
+test("an unpayable link offers no way to start paying it", () => {
+    /* Shipping the banner alone left the checkout arguing with itself: under "this test-mode link
+       can't accept real payments" it still rendered "Connect your browser wallet ... to complete the
+       payment" with a live Connect Wallet button, plus a "Sign in ... to pay from your email wallet"
+       nudge. Both are dead ends — they bottom out at the disabled Pay button. If the link can't take
+       money, don't invite anyone to try. */
+    const client = source(CLIENT);
+    assert.match(client, /\{!isConnected && !cannotPayLink && \(walletConnectors\.length > 1/);
+    assert.match(client, /\{!embeddedPaySession && !cannotPayLink && \(/);
+});
+
+test("the settled-payment view survives the unpayable guards", () => {
+    /* cannotPayLink is ALSO true for a paid single-use link — settling it takes use_count to
+       max_uses. The verification and receipt panels render inside these same payment controls, so
+       blanket-hiding the region on cannotPayLink would erase the confirmation from under whoever had
+       just paid. The guards must sit on the connect/sign-in CTAs only. */
+    const client = source(CLIENT);
+    assert.match(client, /\{pendingVerificationPanel \? pendingVerificationPanel : \(verificationStatus && !verificationError\) \? verificationPanel/);
+    assert.doesNotMatch(client, /\{!cannotPayLink && \(\s*<div ref=\{paymentControlsRef\}/);
+});

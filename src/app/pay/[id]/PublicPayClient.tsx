@@ -1769,9 +1769,14 @@ export default function PublicPayClient({
                                 )}
 
                                 {/* The browser-wallet connect prompt only makes sense when no wallet is
-                                    connected yet. When an embedded user already has an extension connected,
-                                    they pay via the embedded card above — no "Connect Wallet" nag. */}
-                                {!isConnected && (walletConnectors.length > 1 ? (
+                                    connected yet AND the link can actually take a payment. Without the
+                                    cannotPayLink guard the checkout contradicted itself: under a banner
+                                    saying a test-mode link cannot accept payments, it still invited you to
+                                    "connect your browser wallet to complete the payment" — a dead end that
+                                    only bottoms out at the disabled Pay button. When an embedded user
+                                    already has an extension connected, they pay via the embedded card
+                                    above — no "Connect Wallet" nag. */}
+                                {!isConnected && !cannotPayLink && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -1819,7 +1824,9 @@ export default function PublicPayClient({
                                 {!embeddedPaySession && verificationError && (
                                     <p className="text-[10px] font-mono text-red-400 text-center leading-relaxed" role="alert">{verificationError}</p>
                                 )}
-                                {!embeddedPaySession && (
+                                {/* Same reason as the connect prompt above: don't send someone off to sign in
+                                    so they can pay from a wallet, on a link that will refuse them either way. */}
+                                {!embeddedPaySession && !cannotPayLink && (
                                     <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
                                         Have a SubScript account?{" "}
                                         <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
