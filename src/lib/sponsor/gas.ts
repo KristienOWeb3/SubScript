@@ -10,9 +10,11 @@
  * payment amount is never silently reduced by gas.
  */
 import { ethers } from "ethers";
-import { getRpcProviderForWrite } from "@/lib/payments/rpc";
+import { executeWithRpcFallback, getRpcProviderForWrite } from "@/lib/payments/rpc";
 
 const SPONSOR_REUSE_WINDOW_MS = 30_000;
+const TOPUP_RECEIPT_ATTEMPTS = 15;
+const TOPUP_RECEIPT_POLL_MS = 1_000;
 
 export function isGasSponsorshipEnabled() {
     return Boolean(process.env.SPONSOR_PRIVATE_KEY);
@@ -65,6 +67,38 @@ function getSponsorshipsInFlight() {
         sponsorState.subscriptGasSponsorshipsInFlight = new Map();
     }
     return sponsorState.subscriptGasSponsorshipsInFlight;
+}
+
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function confirmSubmittedTopup(txHash: string) {
+    let lastError: unknown = null;
+
+    /* The signed transfer has already been broadcast, so confirmation is read-only and may
+       safely move across RPC providers. Poll the receipt directly instead of tx.wait():
+       ethers' wait path repeatedly calls eth_blockNumber, Arc's most aggressively throttled
+       method, and used to report a successful top-up as failed after it had already mined. */
+    for (let attempt = 1; attempt <= TOPUP_RECEIPT_ATTEMPTS; attempt++) {
+        try {
+            const { result: receipt } = await executeWithRpcFallback(
+                (provider) => provider.getTransactionReceipt(txHash),
+            );
+            if (receipt) return receipt;
+        } catch (error) {
+            lastError = error;
+            console.warn(
+                `[gas-sponsor] receipt lookup ${attempt}/${TOPUP_RECEIPT_ATTEMPTS} failed for ${txHash}:`,
+                error instanceof Error ? error.message : error,
+            );
+        }
+        if (attempt < TOPUP_RECEIPT_ATTEMPTS) {
+            await sleep(TOPUP_RECEIPT_POLL_MS);
+        }
+    }
+
+    throw lastError || new Error(`Sponsored gas top-up ${txHash} was not confirmed before timeout`);
 }
 
 /**
@@ -173,20 +207,33 @@ export async function ensureGasSponsored(beneficiary: string): Promise<SponsorRe
             return { sponsored: false, reason: "rpc_unavailable" };
         }
 
+        let tx: ethers.TransactionResponse;
         try {
-            const tx = await sponsor.sendTransaction({ to: beneficiary, value: topupValue });
-            const receipt = await tx.wait();
+            tx = await sponsor.sendTransaction({ to: beneficiary, value: topupValue });
+            console.log(
+                `[gas-sponsor] top-up submitted from ${sponsor.address} to ${normalizedBeneficiary}: ${tx.hash}`,
+            );
+        } catch (error: any) {
+            const message: string = error?.message || String(error);
+            console.error(`[gas-sponsor] top-up submission from ${sponsor.address} failed:`, message);
+            if (error?.code === "INSUFFICIENT_FUNDS" || message.toLowerCase().includes("insufficient funds")) {
+                return { sponsored: false, reason: "sponsor_underfunded" };
+            }
+            return { sponsored: false, reason: "topup_failed" };
+        }
+
+        try {
+            const receipt = await confirmSubmittedTopup(tx.hash);
             if (!receipt || Number(receipt.status) !== 1) {
-                console.error(`[gas-sponsor] top-up from ${sponsor.address} was not confirmed successfully`);
+                console.error(
+                    `[gas-sponsor] submitted top-up ${tx.hash} from ${sponsor.address} reverted or was not confirmed successfully`,
+                );
                 return { sponsored: false, reason: "topup_failed" };
             }
             return { sponsored: true, txHash: receipt.hash || tx.hash };
         } catch (error: any) {
             const message: string = error?.message || String(error);
-            console.error(`[gas-sponsor] top-up from ${sponsor.address} failed:`, message);
-            if (error?.code === "INSUFFICIENT_FUNDS" || message.toLowerCase().includes("insufficient funds")) {
-                return { sponsored: false, reason: "sponsor_underfunded" };
-            }
+            console.error(`[gas-sponsor] confirmation failed for submitted top-up ${tx.hash}:`, message);
             return { sponsored: false, reason: "topup_failed" };
         }
     });
