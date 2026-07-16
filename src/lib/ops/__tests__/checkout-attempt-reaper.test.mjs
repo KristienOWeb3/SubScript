@@ -48,6 +48,12 @@ test("the live reservation reaps expired attempts link-wide, not per payer", () 
        lock order stops the two reapers deadlocking on overlapping sets. */
     assert.match(reaper, /FOR UPDATE/);
     assert.match(reaper, /ORDER BY attempt_id/);
+
+    /* Reaping link-wide makes the batch unbounded where the payer-scoped version wasn't: on a
+       max_uses IS NULL link, nothing caps how many stale holds accumulate, so one call could lock
+       every one of them. Safe to cap — a link at capacity needs only one hold back to admit the
+       caller, so successive calls converge. */
+    assert.match(reaper, /LIMIT \d+/, "the reap batch is bounded");
 });
 
 test("explicit release stays scoped to the attempt's own payer", () => {

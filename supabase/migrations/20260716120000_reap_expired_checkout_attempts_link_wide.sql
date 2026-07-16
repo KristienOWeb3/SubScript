@@ -53,7 +53,14 @@ BEGIN
     PERFORM pg_advisory_xact_lock(hashtextextended(p_payment_link_id::text || ':' || lower(p_payer_address), 7202));
 
     /* Release every attempt on this link that provably never bound a transaction — not just this
-       payer's. The hold belongs to the link, so any payer's expired hold must come back. */
+       payer's. The hold belongs to the link, so any payer's expired hold must come back.
+       Bounded, because reaping another payer's holds makes the batch unbounded in a way the
+       payer-scoped version never was: concurrent RESERVED attempts can only exceed max_uses when
+       max_uses IS NULL, and on such a link (no capacity to run out of) stale holds accumulate with
+       traffic, so one reservation after a long idle could lock and update every one of them in a
+       single transaction. The cap keeps lock hold and contention flat. It costs nothing in
+       correctness: this runs before the capacity check below, and a link sitting at max_uses needs
+       only ONE hold back to admit the caller, so successive calls converge on a clean count. */
     FOR v_expired IN
         SELECT attempt_id, payment_link_id
         FROM public.payment_link_checkout_attempts
@@ -62,6 +69,7 @@ BEGIN
           AND tx_hash IS NULL
           AND expires_at <= now()
         ORDER BY attempt_id
+        LIMIT 50
         FOR UPDATE
     LOOP
         UPDATE public.payment_link_checkout_attempts
