@@ -19,7 +19,9 @@ function parseUnits(value, decimals) {
         + BigInt((fraction + "0".repeat(decimals)).slice(0, decimals));
 }
 
-function loadGasModule({ getProviderForWrite, sendTransaction }) {
+function loadGasModule({ getProviderForWrite, executeWithFallback, sendTransaction }) {
+    let lastSubmittedTransaction = null;
+
     class MockWallet {
         constructor(key, provider) {
             if (key !== "valid-sponsor-key") throw new Error("invalid private key");
@@ -32,8 +34,9 @@ function loadGasModule({ getProviderForWrite, sendTransaction }) {
             return new MockWallet(this.key, provider);
         }
 
-        sendTransaction(transaction) {
-            return sendTransaction(transaction);
+        async sendTransaction(transaction) {
+            lastSubmittedTransaction = await sendTransaction(transaction);
+            return lastSubmittedTransaction;
         }
     }
 
@@ -47,8 +50,9 @@ function loadGasModule({ getProviderForWrite, sendTransaction }) {
     }).outputText;
     const testModule = { exports: {} };
     const context = vm.createContext({
-        console: { error() {} },
+        console: { error() {}, log() {}, warn() {} },
         process,
+        setTimeout,
     });
     const wrapper = vm.runInContext(
         `(function (require, module, exports) { ${compiled}\n })`,
@@ -66,7 +70,18 @@ function loadGasModule({ getProviderForWrite, sendTransaction }) {
             };
         }
         if (specifier === "@/lib/payments/rpc") {
-            return { getRpcProviderForWrite: getProviderForWrite };
+            return {
+                getRpcProviderForWrite: getProviderForWrite,
+                executeWithRpcFallback: executeWithFallback || (async (operation) => ({
+                    result: await operation({
+                        getTransactionReceipt: async () => {
+                            if (!lastSubmittedTransaction) return null;
+                            return lastSubmittedTransaction.wait();
+                        },
+                    }),
+                    rpcEndpoint: "mock://rpc",
+                })),
+            };
         }
         throw new Error(`Unexpected import: ${specifier}`);
     }, testModule, testModule.exports);
@@ -171,6 +186,45 @@ test("a failed top-up send is not reusable and the next call sends again", async
         assert.equal(retry.sponsored, true);
         assert.equal(retry.txHash, "0xretry-confirmed");
         assert.equal(sends, 2);
+    });
+});
+
+test("a broadcast top-up is confirmed through read-only RPC failover without resubmission", async () => {
+    await withSponsorEnvironment(async () => {
+        let sends = 0;
+        let transactionWaitCalls = 0;
+        let confirmedHash = null;
+        const provider = { getBalance: async () => parseUnits("1", 18) };
+        const gas = loadGasModule({
+            getProviderForWrite: async () => ({ provider }),
+            executeWithFallback: async (operation) => ({
+                result: await operation({
+                    getTransactionReceipt: async (hash) => {
+                        confirmedHash = hash;
+                        return { hash, status: 1 };
+                    },
+                }),
+                rpcEndpoint: "mock://fallback",
+            }),
+            sendTransaction: async () => {
+                sends++;
+                return {
+                    hash: "0xbroadcast-confirmed",
+                    wait: async () => {
+                        transactionWaitCalls++;
+                        throw new Error("request limit reached while polling eth_blockNumber");
+                    },
+                };
+            },
+        });
+
+        const result = await gas.ensureGasSponsored(beneficiary);
+
+        assert.equal(result.sponsored, true);
+        assert.equal(result.txHash, "0xbroadcast-confirmed");
+        assert.equal(confirmedHash, "0xbroadcast-confirmed");
+        assert.equal(sends, 1);
+        assert.equal(transactionWaitCalls, 0);
     });
 });
 
