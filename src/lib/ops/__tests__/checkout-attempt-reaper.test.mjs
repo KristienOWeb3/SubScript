@@ -77,6 +77,7 @@ test("the reservation's other guarantees survive the replacement", () => {
         /'outcome', 'IN_PROGRESS'/,
         /'outcome', 'LINK_UNAVAILABLE'/,
         /'outcome', 'DISABLED'/,
+        /extensions\.gen_random_bytes\(16\)/,
         /AND simulation_only = false/,
         /AND deleted_at IS NULL/,
         /AND \(max_uses IS NULL OR use_count < max_uses\)/,
