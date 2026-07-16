@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
+import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
@@ -30,7 +31,11 @@ export async function POST(request: Request) {
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
         }
-        if (verifiedEmail.provider === "external_wallet" || verifiedEmail.provider === "external_wallet_email_otp") {
+        /* Gate on signing custody rather than the provider label: 'external_wallet_email_otp' is
+           stamped on by /api/user/email whenever a wallet binds an OTP email, including wallets
+           SubScript custodies, so the label rejected Circle accounts from subscribing with a message
+           telling them to sign in the way they already had. */
+        if (!isCustodialWallet(await getWalletCustody(wallet))) {
             return NextResponse.json({
                 error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
                 code: "EMBEDDED_WALLET_REQUIRED",
