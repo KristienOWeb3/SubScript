@@ -113,7 +113,31 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (reservation?.outcome === "IN_PROGRESS") {
             return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
         }
-        if (reservation?.outcome !== "RESERVED" && reservation?.outcome !== "SETTLED") {
+        if (reservation?.outcome === "RELEASED") {
+            /* Terminal attempt UUID — the client must rotate to a fresh one before paying. */
+            return NextResponse.json(
+                { error: "This checkout attempt was released. Start a new payment attempt.", code: "ATTEMPT_RELEASED" },
+                { status: 409 },
+            );
+        }
+        if (reservation?.outcome === "SUBMITTED" || reservation?.outcome === "SETTLED") {
+            /* A transaction is already durably bound to this attempt. Never sign another
+               custody transfer — return the original hash so the client resumes verification. */
+            if (typeof reservation.txHash === "string" && reservation.txHash) {
+                return NextResponse.json({
+                    success: true,
+                    txHash: reservation.txHash,
+                    receiptId: reservation.receiptId,
+                    settlesDirectlyToUser,
+                    resumed: true,
+                }, { status: 200 });
+            }
+            return NextResponse.json(
+                { error: "A payment for this checkout attempt was already submitted." },
+                { status: 409 },
+            );
+        }
+        if (reservation?.outcome !== "RESERVED") {
             return NextResponse.json({ error: "This link cannot accept a payment right now." }, { status: 409 });
         }
 
@@ -194,6 +218,39 @@ export async function POST(request: Request, { params }: RouteContext) {
                 : /insufficient|balance|exceeds/i.test(message) ? 402
                 : 502;
             return NextResponse.json({ error: message }, { status });
+        }
+
+        /* Durably bind the hash and create the verification job server-side, before responding.
+           The browser also calls /api/payment-links/verify, but if the tab closes right here the
+           payment must still settle from durable state — never depend on the client returning. */
+        try {
+            const { data: bindResult, error: bindError } = await supabaseAdmin.rpc(
+                "claim_payment_link_settlement_durable",
+                {
+                    p_execution_key: `verify-payment-link:${txHash.toLowerCase()}`,
+                    p_tx_hash: txHash.toLowerCase(),
+                    p_chain_id: Number(link.settlementChainId ?? 5042002),
+                    p_payment_link_id: id,
+                    p_payer_address: payer,
+                    p_receipt_id: receiptToken,
+                    p_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                    p_create_ledger: !settlesDirectlyToUser,
+                    p_checkout_attempt_id: clientIntentId,
+                    p_request_origin: request.headers.get("origin"),
+                },
+            );
+            if (bindError) throw new Error(bindError.message);
+            if (bindResult?.outcome === "FINGERPRINT_MISMATCH" || bindResult?.outcome === "ATTEMPT_NOT_FOUND") {
+                throw new Error(`durable bind returned ${bindResult.outcome}`);
+            }
+        } catch (bindFailure) {
+            await recordPaymentReconciliationRequired({
+                dedupeKey: `embedded-payment-durable-bind:${txHash.toLowerCase()}`,
+                kind: "EMBEDDED_PAYMENT_DURABLE_BIND",
+                message: "embedded payment confirmed on-chain but the durable verification job was not created",
+                context: { paymentLinkId: id, payer, txHash: txHash.toLowerCase(), checkoutAttemptId: clientIntentId },
+                error: bindFailure,
+            });
         }
 
         /* Mark the claim COMPLETED with the tx hash so an accidental re-submit returns it idempotently. */
