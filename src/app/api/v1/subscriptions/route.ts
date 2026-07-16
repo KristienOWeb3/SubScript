@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
@@ -41,7 +42,7 @@ const SUBSCRIPT_ABI = [
     },
 ] as const;
 
-const publicClient = createPublicClient({ chain: arcTestnet, transport: http() });
+const publicClient = createPublicClient({ chain: arcTestnet, transport: arcHttp() });
 
 const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     daily: 86_400,

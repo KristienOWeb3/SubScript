@@ -6,6 +6,7 @@ import { X, Copy, Check, QrCode, Loader2 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const ERC20_ABI = [
@@ -20,7 +21,7 @@ const ERC20_ABI = [
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
-    transport: http(),
+    transport: arcHttp(),
 });
 
 interface DepositModalProps {

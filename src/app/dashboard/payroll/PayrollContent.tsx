@@ -18,6 +18,7 @@ import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
     USDC_NATIVE_GAS_ADDRESS 
@@ -52,7 +53,7 @@ type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" 
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
-    transport: http(),
+    transport: arcHttp(),
 });
 
 /* Frequency presets in days */

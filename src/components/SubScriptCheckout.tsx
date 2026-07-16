@@ -15,6 +15,7 @@ import {
   parseUnits
 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
   ARC_TESTNET_CHAIN_ID,
   ARC_CCTP_DOMAIN_ID,
@@ -31,7 +32,7 @@ import { sepolia } from "viem/chains";
 /* Initialize standard viem public client targeting Arc Testnet */
 const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(),
+  transport: arcHttp(),
 });
 
 /* Initialize public client for Ethereum Sepolia */
