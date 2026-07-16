@@ -1,10 +1,20 @@
 import { ethers } from "ethers";
 
+const IS_ARC_MAINNET = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet";
+const DEFAULT_ARC_RPC = IS_ARC_MAINNET
+    ? undefined
+    : "https://rpc.testnet.arc.network";
+const ARC_TESTNET_PUBLIC_FALLBACKS = IS_ARC_MAINNET
+    ? []
+    : ["https://rpc.blockdaemon.testnet.arc.network"];
+
 const RPC_ENDPOINTS = Array.from(new Set([
-    process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network",
-    process.env.ARC_RPC_SECONDARY || process.env.RPC_FALLBACK_URL_1 || "https://rpc.testnet.arc.network",
-    process.env.RPC_FALLBACK_URL_2 || "https://rpc.testnet.arc.network"
-].filter(Boolean)));
+    process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || DEFAULT_ARC_RPC,
+    process.env.ARC_RPC_SECONDARY,
+    process.env.RPC_FALLBACK_URL_1,
+    process.env.RPC_FALLBACK_URL_2,
+    ...ARC_TESTNET_PUBLIC_FALLBACKS,
+].filter((url): url is string => Boolean(url))));
 
 /* Maximum number of retry attempts for rate-limited (429) responses */
 const MAX_RATE_LIMIT_RETRIES = 5;
@@ -17,16 +27,35 @@ async function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/* Determines if an error is a rate-limit (HTTP 429) error based on error message content */
+/* Arc returns HTTP 429 with JSON-RPC code -32011 and "request limit reached".
+   ethers wraps that payload inside UNKNOWN_ERROR, so inspect both the wrapper
+   message and nested provider error instead of checking only top-level 429s. */
 function isRateLimitError(err: any): boolean {
-    const message = (err?.message || "").toLowerCase();
-    const code = err?.code || err?.status || 0;
+    const nested = [
+        err,
+        err?.error,
+        err?.info,
+        err?.info?.error,
+        err?.cause,
+        err?.cause?.error,
+    ].filter(Boolean);
+    const messages = nested
+        .map((candidate) => String(candidate?.message || ""))
+        .join(" ")
+        .toLowerCase();
+    const codes = nested.flatMap((candidate) => [
+        candidate?.code,
+        candidate?.status,
+        candidate?.statusCode,
+    ]);
+
     return (
-        message.includes("429") ||
-        message.includes("too many requests") ||
-        message.includes("rate limit") ||
-        message.includes("rate-limit") ||
-        code === 429
+        messages.includes("429") ||
+        messages.includes("too many requests") ||
+        messages.includes("rate limit") ||
+        messages.includes("rate-limit") ||
+        messages.includes("request limit") ||
+        codes.some((code) => Number(code) === 429 || Number(code) === -32011)
     );
 }
 
@@ -67,7 +96,16 @@ export async function executeWithRpcFallback<T>(
             } catch (err: any) {
                 const errorMessage = (err.message || "").toLowerCase();
 
-                /* If this is a rate-limit error and we have retries left, back off and retry */
+                /* A different provider is faster and less likely to share the same quota.
+                   Exhaust distinct endpoints before sleeping on the final provider. */
+                if (isRateLimitError(err) && i < RPC_ENDPOINTS.length - 1) {
+                    console.warn(`[rpc] Rate limited on ${url}. Failing over to the next Arc provider.`);
+                    failoverCount++;
+                    lastError = err;
+                    break;
+                }
+
+                /* If every distinct endpoint has been tried, back off on the final one. */
                 if (isRateLimitError(err) && retryAttempt < MAX_RATE_LIMIT_RETRIES) {
                     const backoffMs = BASE_RATE_LIMIT_DELAY_MS * Math.pow(2, retryAttempt);
                     const jitter = Math.floor(Math.random() * 500);
@@ -123,6 +161,11 @@ export async function getRpcProviderForWrite(): Promise<{ provider: ethers.JsonR
                 return { provider, rpcEndpoint: url };
             } catch (err: any) {
                 lastError = err;
+
+                if (isRateLimitError(err) && RPC_ENDPOINTS.indexOf(url) < RPC_ENDPOINTS.length - 1) {
+                    console.warn(`[rpc-write] Rate limited on ${url}. Selecting the next Arc provider.`);
+                    break;
+                }
 
                 if (isRateLimitError(err) && retryAttempt < MAX_RATE_LIMIT_RETRIES) {
                     const backoffMs = BASE_RATE_LIMIT_DELAY_MS * Math.pow(2, retryAttempt);
