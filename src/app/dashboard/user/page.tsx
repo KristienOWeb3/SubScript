@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useDisconnect, useReadContract, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
   formatUnits, 
   createPublicClient, 
@@ -85,6 +85,10 @@ import { useSwipeTabs } from "@/hooks/useSwipeTabs";
 import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
+
+const ERC20_BALANCE_ABI = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+] as const;
 
 /* Minimal client-side ABIs for external/browser-wallet vault actions (the embedded path is
    signed server-side instead). */
@@ -224,6 +228,19 @@ const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
   return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
+};
+
+/* Display amounts on the overview cards and activity rows, in USDC or in the local-currency estimate
+   beside it. Cents are load-bearing under 1,000: rounding 0.40 to "0" claims an empty wallet rather
+   than forty cents. Past that they're noise, and dropping them keeps these strings as short as they
+   are today — the balance renders at 52px on a 390px viewport, where the mobile audit allows no
+   horizontal protrusion at all. The threshold suits both scales: sub-$1,000 USDC keeps its cents,
+   while a naira estimate is large enough to stay whole. */
+const formatHeadlineAmount = (value: number) => {
+  /* Threshold on the rounded value, or 999.999 picks the cents branch and renders "1,000.00" while
+     1000 renders "1,000". */
+  const digits = Math.abs(Math.round(value * 100) / 100) < 1000 ? 2 : 0;
+  return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
 const formatPlanPeriod = (seconds: string) => {
@@ -795,29 +812,43 @@ export default function UserDashboard() {
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+  /* balanceOf only. useBalance({ token }) also reads decimals() and symbol() on every refetch, so a
+     single balance cost 3 calls against Arc's public RPC — which rate-limits per RPC call (429,
+     ~1/sec/IP), not per HTTP request. The extra reads raced the one we needed, readContracts runs
+     with allowFailure:false, and the whole query rejected. USDC's decimals are fixed at 6 (the
+     formatUnits below has always assumed it) and the symbol was never read, so both were pure cost. */
+  const { data: usdcBalance, refetch: refetchUsdc } = useReadContract({
+    address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: ARC_TESTNET_CHAIN_ID,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useReadContract({
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 11155111,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useReadContract({
+    address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 1,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const sepoliaUsdc = sepoliaUsdcBalance ? Number(formatUnits(sepoliaUsdcBalance.value, 6)) : 0;
-  const mainnetUsdc = mainnetUsdcBalance ? Number(formatUnits(mainnetUsdcBalance.value, 6)) : 0;
+  const sepoliaUsdc = sepoliaUsdcBalance !== undefined ? Number(formatUnits(sepoliaUsdcBalance, 6)) : 0;
+  const mainnetUsdc = mainnetUsdcBalance !== undefined ? Number(formatUnits(mainnetUsdcBalance, 6)) : 0;
   const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
 
-  const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
+  const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
 
   const handleManualRefreshBalances = async () => {
     setIsRefreshingBalances(true);
@@ -2320,7 +2351,7 @@ export default function UserDashboard() {
     ...subscriptions.map((s) => {
       const usdVal = Number(s.amountCapUsdc) / 1_000_000;
       const localVal = usdVal * exchangeRate;
-      const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+      const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
       return {
         id: `sub-${s.subscriptionId}`,
         kind: "recurring" as const,
@@ -2340,7 +2371,7 @@ export default function UserDashboard() {
         const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
-        const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+        const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
         return {
           id: `dm-${d.id}`,
           kind: "one-time" as const,
@@ -2647,10 +2678,10 @@ export default function UserDashboard() {
                         </button>
                       </div>
                       <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
-                        {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
+                        {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                        {balanceVisible ? `${detectedCurrency.symbol}${localBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                        {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                       </p>
                     </section>
 
@@ -2689,7 +2720,7 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
                         <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
                         <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                          {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2704,7 +2735,7 @@ export default function UserDashboard() {
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
                         <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                          {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button

@@ -40,13 +40,36 @@ export const arcTestnet = defineChain({
     },
 });
 
+/* Arc's public RPC rate-limits per RPC *call* — roughly one per second per IP — answering the rest
+   with HTTP 429 and a JSON-RPC body of `{ code: -32011, message: "request limit reached" }`. It
+   counts the calls inside a JSON-RPC batch individually too, so batching buys nothing. Any page that
+   reads more than one thing on mount therefore collides with itself.
+   viem's own retry can't cover this: shouldRetry() keys off the JSON-RPC code whenever the body
+   carries one, and -32011 is not in its retryable set, so the HTTP 429 never reaches its status
+   check and `retryCount` is ignored. Retrying underneath viem, at the fetch layer, sidesteps that.
+   A 429 means the call was rejected rather than executed, so this is safe for writes as well. */
+const rateLimitRetryFetch: typeof fetch = async (input, init) => {
+    let delay = 250;
+    for (let attempt = 0; ; attempt++) {
+        const response = await fetch(input, init);
+        if (response.status !== 429 || attempt >= 5) return response;
+        const retryAfterMs = Number(response.headers.get("retry-after")) * 1000;
+        await new Promise((resolve) =>
+            setTimeout(resolve, retryAfterMs > 0 ? Math.min(retryAfterMs, 8_000) : delay),
+        );
+        delay *= 2;
+    }
+};
+
+const arcTransport = http(arcRpcUrl, { fetchFn: rateLimitRetryFetch, timeout: 20_000 });
+
 export const config = createConfig({
     chains: [arcTestnet, mainnet, base, sepolia, baseSepolia],
     connectors: [injected({ shimDisconnect: true })],
     transports: {
         /* Both Arc chain ids map to the active RPC; only the selected one (arcChainId) is used. */
-        5042002: http(arcRpcUrl),
-        5042001: http(arcRpcUrl),
+        5042002: arcTransport,
+        5042001: arcTransport,
         1: http(),
         8453: http(),
         11155111: http(),
