@@ -500,19 +500,10 @@ async function processClaimedJob(supabase: any, job: PaymentLinkVerificationJob)
     }
 }
 
-export async function processPaymentLinkVerificationJobs(
+async function summarizeClaimedJobs(
     supabase: any,
-    limit = 1,
+    jobs: PaymentLinkVerificationJob[],
 ): Promise<PaymentLinkVerificationBatchResult> {
-    const claimToken = randomUUID();
-    const { data: claimedJobs, error } = await supabase.rpc("claim_payment_link_verification_jobs", {
-        p_batch_size: Math.max(1, Math.min(limit, 25)),
-        p_claim_token: claimToken,
-        p_lease_seconds: JOB_LEASE_SECONDS,
-    });
-    if (error) throw new Error(`Failed to claim durable payment-link verification jobs: ${error.message}`);
-
-    const jobs = (claimedJobs || []) as PaymentLinkVerificationJob[];
     const results = await Promise.all(jobs.map((job) => processClaimedJob(supabase, job)));
     const completedCount = results.filter((result) => result.outcome === "COMPLETED").length;
     const retryCount = results.filter((result) => result.outcome === "RETRY").length;
@@ -526,4 +517,37 @@ export async function processPaymentLinkVerificationJobs(
         failedCount,
         results,
     };
+}
+
+export async function processPaymentLinkVerificationJob(
+    supabase: any,
+    txHash: string,
+): Promise<PaymentLinkVerificationBatchResult> {
+    const claimToken = randomUUID();
+    const { data: claimedJobs, error } = await supabase.rpc(
+        "claim_payment_link_verification_job_by_tx_hash",
+        {
+            p_tx_hash: txHash.toLowerCase(),
+            p_claim_token: claimToken,
+            p_lease_seconds: JOB_LEASE_SECONDS,
+        },
+    );
+    if (error) throw new Error(`Failed to claim durable payment-link verification job: ${error.message}`);
+
+    return summarizeClaimedJobs(supabase, (claimedJobs || []) as PaymentLinkVerificationJob[]);
+}
+
+export async function processPaymentLinkVerificationJobs(
+    supabase: any,
+    limit = 1,
+): Promise<PaymentLinkVerificationBatchResult> {
+    const claimToken = randomUUID();
+    const { data: claimedJobs, error } = await supabase.rpc("claim_payment_link_verification_jobs", {
+        p_batch_size: Math.max(1, Math.min(limit, 25)),
+        p_claim_token: claimToken,
+        p_lease_seconds: JOB_LEASE_SECONDS,
+    });
+    if (error) throw new Error(`Failed to claim durable payment-link verification jobs: ${error.message}`);
+
+    return summarizeClaimedJobs(supabase, (claimedJobs || []) as PaymentLinkVerificationJob[]);
 }

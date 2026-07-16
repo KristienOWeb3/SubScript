@@ -12,6 +12,7 @@ const cron = source("src/app/api/cron/reconcile/route.ts");
 const vercel = JSON.parse(source("vercel.json"));
 const keepersWorkflow = source(".github/workflows/keepers.yml");
 const migration = source("supabase/migrations/20260713192546_durable_payment_link_verification_jobs.sql");
+const targetedClaimMigration = source("supabase/migrations/20260716144500_targeted_payment_link_verification_claim.sql");
 
 test("the payment claim and verification outbox are committed atomically", () => {
     const claimCall = migration.indexOf("v_result := public.claim_payment_link_settlement(");
@@ -46,10 +47,25 @@ test("the reconciliation keeper resumes durable payment-link verification", () =
     assert.match(cron, /processPaymentLinkVerificationJobs/);
     assert.match(cron, /await processPaymentLinkVerificationJobs\(supabase, 5\)/);
     assert.match(cron, /paymentLinkVerification\.success/);
-    assert.match(route, /after\(async \(\) => \{[\s\S]*processPaymentLinkVerificationJobs\(supabase, 1\)/);
-    assert.match(route, /durable job is already committed/i);
+    assert.match(route, /await processPaymentLinkVerificationJob\(supabase, normalizedTx\)/);
+    assert.match(route, /Keep the request alive for a targeted worker pass/i);
+    assert.doesNotMatch(route, /after\(async \(\) => \{[\s\S]*processPaymentLinkVerificationJobs\(supabase, 1\)/);
     assert.equal(vercel.crons.length, 2, "Vercel Hobby supports only the two configured daily crons");
     assert.match(keepersWorkflow, /cron: "\*\/15 \* \* \* \*"[\s\S]*\/api\/cron\/reconcile/);
+});
+
+test("checkout verification claims the submitted transaction instead of an unrelated queue item", () => {
+    assert.match(worker, /export async function processPaymentLinkVerificationJob\(/);
+    assert.match(worker, /"claim_payment_link_verification_job_by_tx_hash"/);
+    assert.match(worker, /p_tx_hash: txHash\.toLowerCase\(\)/);
+    assert.match(targetedClaimMigration, /WHERE job\.tx_hash = lower\(btrim\(p_tx_hash\)\)/i);
+    assert.match(targetedClaimMigration, /FOR UPDATE SKIP LOCKED/i);
+    assert.match(targetedClaimMigration, /attempts = job\.attempts \+ 1/i);
+    assert.match(targetedClaimMigration, /lease_expires_at <= now\(\)/i);
+    assert.match(
+        targetedClaimMigration,
+        /REVOKE EXECUTE ON FUNCTION public\.claim_payment_link_verification_job_by_tx_hash[\s\S]*FROM PUBLIC, anon, authenticated/i,
+    );
 });
 
 test("the verification outbox migration safely converges an existing table", () => {
