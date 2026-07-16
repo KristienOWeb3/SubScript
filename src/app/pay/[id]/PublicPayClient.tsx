@@ -134,10 +134,28 @@ export default function PublicPayClient({
         && Number(initialLinkData?.max_uses) === 1
         && Number(initialLinkData?.use_count || 0) > 0
     );
+    /* Sandbox links are created by a test API key and are refused by reserve_payment_link_checkout_attempt
+       (which additionally requires active, not deleted, unexpired and under max_uses). This page used
+       to model every one of those conditions EXCEPT sandbox_mode, so a test-mode link rendered a live,
+       clickable Pay button and only failed after the payer committed — with a generic "cannot accept a
+       payment right now" that named neither cause nor remedy. Mirror the server's full condition set. */
+    const isLinkSandbox = linkData?.sandbox_mode === true;
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
     const isLinkInactive = linkData?.active === false || isLinkExpired;
-    const cannotPayLink = isLinkInactive || isLinkExhausted || linkData?.hosted_payments_enabled === false;
+    const hostedPaymentsDisabled = linkData?.hosted_payments_enabled === false;
+    const cannotPayLink = isLinkSandbox || isLinkInactive || isLinkExhausted || hostedPaymentsDisabled;
+    /* One reason, told the same way everywhere it surfaces. */
+    const unpayableTitle = !cannotPayLink ? null
+        : isLinkSandbox ? "Test-Mode Link"
+        : isLinkExhausted ? "Payment Link Exhausted"
+        : hostedPaymentsDisabled ? "Payments Paused"
+        : "Payment Link Inactive";
+    const unpayableReason = !cannotPayLink ? null
+        : isLinkSandbox ? "This is a test-mode link, created with a test API key, so it can't accept real payments. Ask the merchant for a live link."
+        : isLinkExhausted ? "This payment link has reached its maximum number of uses and is no longer accepting payments."
+        : hostedPaymentsDisabled ? "Hosted payments are temporarily unavailable. Try again shortly."
+        : "This payment link is inactive or expired.";
 
     /* Derived variables — same peer/user-request predicate as the server (isPeerRequestLink). */
     const isUserRequest = Boolean(
@@ -781,9 +799,7 @@ export default function PublicPayClient({
 
         if (cannotPayLink) {
             paymentSubmissionGuardRef.current = false;
-            setVerificationError(isLinkExhausted
-                ? "This payment link has reached its usage limit."
-                : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             return;
         }
 
@@ -1182,7 +1198,7 @@ export default function PublicPayClient({
             return;
         }
         if (cannotPayLink) {
-            setVerificationError(isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             return;
         }
         if (isRoleMismatch || sessionInfo?.role === "ENTERPRISE") {
@@ -1284,9 +1300,7 @@ export default function PublicPayClient({
         setVerificationError(null);
         setVerificationStatus(null);
         if (cannotPayLink) {
-            setVerificationError(isLinkExhausted
-                ? "This payment link has reached its usage limit."
-                : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             paymentSubmissionGuardRef.current = false;
             return;
         }
@@ -1529,7 +1543,7 @@ export default function PublicPayClient({
                                 </div> : <div className="flex min-h-[352px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-8 text-red-200">
                                     <AlertTriangle className="h-10 w-10" />
                                     <p className="text-xs font-bold uppercase tracking-wider">Checkout unavailable</p>
-                                    <p className="text-[10px] text-white/50">{isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired."}</p>
+                                    <p className="text-[10px] text-white/50">{unpayableReason}</p>
                                 </div>}
                                 <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-400/20 bg-amber-400/[0.05] text-amber-200" : "border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] text-[#00d2b4]"}`} aria-live="polite">
                                     {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d2b4] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#00d2b4]" /></span>}
@@ -1619,12 +1633,14 @@ export default function PublicPayClient({
                             </div>
                         )}
 
-                        {/* Payment Link Exhausted */}
-                        {isLinkExhausted && (
+                        {/* Why this link can't be paid — stated before the payer invests anything,
+                            not after they click. Previously only the exhausted case earned a banner,
+                            so a test-mode link looked payable right up until the server refused it. */}
+                        {cannotPayLink && (
                             <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
                                 <AlertTriangle className="w-8 h-8 text-red-400" />
-                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">Payment Link Exhausted</p>
-                                <p className="text-[10px] text-white/40 leading-relaxed">This payment link has reached its maximum number of uses and is no longer accepting payments.</p>
+                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">{unpayableTitle}</p>
+                                <p className="text-[10px] text-white/40 leading-relaxed">{unpayableReason}</p>
                             </div>
                         )}
 
@@ -1964,7 +1980,7 @@ export default function PublicPayClient({
                                                 disabled={true}
                                                 className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                             >
-                                                {isLinkExhausted ? "Payment Link Exhausted" : "Payment Link Inactive"}
+                                                {unpayableTitle}
                                             </button>
                                         ) : (merchantVerified === false && !unverifiedAccepted && !isUserRequest) ? (
                                             <button

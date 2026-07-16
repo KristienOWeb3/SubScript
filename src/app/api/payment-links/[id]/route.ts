@@ -156,6 +156,11 @@ export async function GET(request: Request, { params }: RouteContext) {
                 description: link.description,
                 amount_usdc: link.amount_usdc,
                 active: link.active,
+                /* The checkout disables Pay for a test-mode link, so it needs this on every refetch
+                   too — omitting it here would let a refresh silently re-enable the button on a link
+                   the reservation will always refuse. Nothing sensitive: it is the payer's answer to
+                   why this link cannot take their money. */
+                sandbox_mode: link.sandbox_mode,
                 status: link.status,
                 expires_at: link.expires_at,
                 max_uses: link.max_uses,
