@@ -8,6 +8,19 @@ const ARC_TESTNET_PUBLIC_FALLBACKS = IS_ARC_MAINNET
     ? []
     : ["https://rpc.blockdaemon.testnet.arc.network"];
 
+/* Arc chain id for the deployment. Pinned onto every provider below so ethers never spends an
+   eth_chainId discovering a chain we already know.
+   Production, 2026-07-16 — every sponsored vault commit failed like this:
+     JsonRpcProvider failed to detect network and cannot start up; retry in 1s
+     [gas-sponsor] sponsor balance check failed: could not coalesce error
+       (error={ "code": -32011, "message": "request limit reached" },
+        payload={ "method": "eth_chainId" }, code=UNKNOWN_ERROR)
+   eth_chainId is the most throttled method on Arc's public RPC (measured, 6 concurrent: 1-2 survive
+   vs 4 for eth_blockNumber) and ethers sends it before anything else, retrying internally and
+   indefinitely when it 429s. The endpoint failover below never got a chance: the provider could not
+   finish starting up, so a reachable chain read as unreachable. */
+const ARC_CHAIN_ID = IS_ARC_MAINNET ? 5042001 : 5042002;
+
 const RPC_ENDPOINTS = Array.from(new Set([
     process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || DEFAULT_ARC_RPC,
     process.env.ARC_RPC_SECONDARY,
@@ -15,6 +28,12 @@ const RPC_ENDPOINTS = Array.from(new Set([
     process.env.RPC_FALLBACK_URL_2,
     ...ARC_TESTNET_PUBLIC_FALLBACKS,
 ].filter((url): url is string => Boolean(url))));
+
+/* The only way to build an Arc provider here: the pinned network means no eth_chainId, which is
+   what made a healthy chain unreachable. */
+function arcProvider(url: string): ethers.JsonRpcProvider {
+    return new ethers.JsonRpcProvider(url, ARC_CHAIN_ID, { staticNetwork: true });
+}
 
 /* Maximum number of retry attempts for rate-limited (429) responses */
 const MAX_RATE_LIMIT_RETRIES = 5;
@@ -73,10 +92,12 @@ export async function executeWithRpcFallback<T>(
         for (let retryAttempt = 0; retryAttempt <= MAX_RATE_LIMIT_RETRIES; retryAttempt++) {
             try {
                 const start = Date.now();
-                const provider = new ethers.JsonRpcProvider(url);
-                
-                /* Test connection to prevent executing operation on a dead node */
-                await provider.getNetwork();
+                const provider = arcProvider(url);
+
+                /* Test connection to prevent executing operation on a dead node. getNetwork() no
+                   longer touches the wire — the pinned network answers it from memory — so probe
+                   with a real call. */
+                await provider.getBlockNumber();
                 
                 const result = await operation(provider);
                 const latency = Date.now() - start;
@@ -156,8 +177,10 @@ export async function getRpcProviderForWrite(): Promise<{ provider: ethers.JsonR
     for (const url of RPC_ENDPOINTS) {
         for (let retryAttempt = 0; retryAttempt <= MAX_RATE_LIMIT_RETRIES; retryAttempt++) {
             try {
-                const provider = new ethers.JsonRpcProvider(url);
-                await provider.getNetwork();
+                const provider = arcProvider(url);
+                /* A real liveness probe: with the network pinned, getNetwork() answers from memory
+                   and would prove nothing about the endpoint. */
+                await provider.getBlockNumber();
                 return { provider, rpcEndpoint: url };
             } catch (err: any) {
                 lastError = err;
