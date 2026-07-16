@@ -91,7 +91,7 @@ Leave any unset to keep the testnet default. A malformed value is ignored and fa
 
 ```bash
 SUBSCRIPT_BASE_URL=https://www.subscriptonarc.com \
-SUBSCRIPT_SECRET_KEY=sk_test_...        # test key keeps it in sandbox \
+SUBSCRIPT_SECRET_KEY=sk_test_...        # test key settles valueless USDC on Arc testnet \
 SUBSCRIPT_WEBHOOK_SECRET=whsec_... \
 CRON_SECRET=... \
 npm run integration:smoke

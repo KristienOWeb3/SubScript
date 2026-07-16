@@ -8,6 +8,7 @@ import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMi
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
@@ -198,10 +199,19 @@ export async function POST(request: Request) {
         } = body;
         /* Settlement mode is credential-owned. A caller cannot label a live/session checkout as
            sandbox to bypass payout-destination enforcement. */
-        if (sandbox !== undefined && sandbox !== (auth.apiKeyMode === "test")) {
+        const isTestMode = auth.apiKeyMode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
             return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
         }
-        const isSandboxRequest = auth.apiKeyMode === "test";
+        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
+            return NextResponse.json({
+                error: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
+                code: "test_mode_requires_testnet",
+            }, { status: 409 });
+        }
+        const isSandboxRequest = isTestMode;
+        const isSimulationOnly = isTestMode && merchantAddress.toLowerCase() === DEMO_MERCHANT_ADDRESS.toLowerCase();
+        const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
@@ -365,6 +375,8 @@ export async function POST(request: Request) {
                     beneficiaryAddress: normalizedBeneficiary,
                     linkKind: "MERCHANT",
                     sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
                     maxUses,
                     expiresAt: normalizedExpiry,
                 };
@@ -380,6 +392,8 @@ export async function POST(request: Request) {
                         : null,
                     linkKind: existingLink.link_kind ?? "MERCHANT",
                     sandboxMode: Boolean(existingLink.sandbox_mode),
+                    simulationOnly: Boolean(existingLink.simulation_only),
+                    settlementChainId: Number(existingLink.settlement_chain_id ?? ARC_TESTNET_CHAIN_ID),
                     maxUses: existingLink.max_uses ?? null,
                     expiresAt: existingLink.expires_at
                         ? new Date(existingLink.expires_at).toISOString()
@@ -390,6 +404,8 @@ export async function POST(request: Request) {
                     || (existingFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
                     || existingFingerprint.linkKind !== requestedFingerprint.linkKind
                     || existingFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                    || existingFingerprint.simulationOnly !== requestedFingerprint.simulationOnly
+                    || existingFingerprint.settlementChainId !== requestedFingerprint.settlementChainId
                     || (existingFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
                     || (existingFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt) {
                     return NextResponse.json(
@@ -475,12 +491,16 @@ export async function POST(request: Request) {
                 payer_email: normalizedPayerEmail,
                 link_kind: "MERCHANT",
                 sandbox_mode: isSandboxRequest,
+                simulation_only: isSimulationOnly,
+                settlement_chain_id: settlementChainId,
                 creation_fingerprint: {
                     merchantAddress: merchantAddress.toLowerCase(),
                     amountUsdc: amountBigInt.toString(),
                     beneficiaryAddress: normalizedBeneficiary,
                     linkKind: "MERCHANT",
                     sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
                     maxUses,
                     expiresAt: normalizedExpiry,
                 },
@@ -496,7 +516,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ link: formatPaymentLinkResponse(newLink), sandbox: isSandboxRequest }, { status: 201 });
+        return NextResponse.json({
+            link: formatPaymentLinkResponse(newLink),
+            sandbox: isSandboxRequest,
+            simulationOnly: isSimulationOnly,
+        }, { status: 201 });
 
     } catch (error: any) {
         console.error("Payment links POST error:", error);

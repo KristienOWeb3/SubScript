@@ -55,7 +55,7 @@ export async function POST(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: "Hosted payments are temporarily unavailable." }, { status: 503 });
     }
     if (data?.outcome === "LINK_UNAVAILABLE") {
-        return NextResponse.json({ error: "Payment link is inactive, expired, sandbox-only, or at its usage limit." }, { status: 409 });
+        return NextResponse.json({ error: "Payment link is inactive, expired, simulation-only, or at its usage limit." }, { status: 409 });
     }
     if (data?.outcome === "IN_PROGRESS") {
         return NextResponse.json({ error: "A payment for this link is already in progress." }, { status: 409 });
@@ -72,6 +72,8 @@ export async function POST(request: Request, { params }: RouteContext) {
         amountUsdc: data.amountUsdc,
         merchantAddress: data.merchantAddress,
         linkKind: data.linkKind,
+        sandbox: data.sandbox === true,
+        settlementChainId: Number(data.settlementChainId),
         settled: data.outcome === "SETTLED",
     });
 }

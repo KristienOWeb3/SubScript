@@ -70,12 +70,12 @@ test("plan changes fingerprint terms and retain paid-proration recovery state", 
 });
 
 test("protocol lifecycle merge preserves billing terms and premium ownership", async () => {
-    const webhook = await source("src/app/api/webhooks/subscript/route.ts");
-    assert.match(webhook, /existingSubscription\?\.amount_cap_usdc/);
-    assert.match(webhook, /existingSubscription\?\.billing_interval_seconds/);
-    assert.match(webhook, /existingSubscription\?\.next_billing_date/);
-    assert.match(webhook, /Ignoring CUSTOMER event for canonical premium subscription/);
-    assert.match(webhook, /incomingKind === "PREMIUM"/);
+    const processor = await source("src/lib/subscriptions/inboundWebhook.ts");
+    assert.match(processor, /existing\?\.amount_cap_usdc/);
+    assert.match(processor, /existing\?\.billing_interval_seconds/);
+    assert.match(processor, /existing\?\.next_billing_date/);
+    assert.match(processor, /existing\?\.kind === "PREMIUM" && incomingKind !== "PREMIUM"/);
+    assert.match(processor, /incomingKind === "PREMIUM"/);
 });
 
 test("billing derives entitlement from chain and persists renewal finality before effects", async () => {

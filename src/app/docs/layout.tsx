@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Integration Docs",
-  description: "Developer-first SubScript integration guide: create a sandbox Checkout Intent in five minutes, verify signed webhooks, understand identifiers and micro-USDC units, test idempotency, and ship Arc USDC payments safely.",
+  description: "Developer-first SubScript integration guide: create an Arc testnet Checkout Intent in five minutes, verify signed webhooks, understand identifiers and micro-USDC units, test idempotency, and ship Arc USDC payments safely.",
   alternates: {
     canonical: "/docs",
   },

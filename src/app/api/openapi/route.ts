@@ -11,7 +11,7 @@ const spec = {
         description:
             "Programmable USDC payments on Arc — one-time intents, subscriptions, metered usage, and signed webhooks. " +
             "Amounts are canonical integer micro-USDC (1 USDC = 1000000). Authenticate with a Bearer secret key " +
-            "(sk_test_… for sandbox, sk_live_… for production).",
+            "(sk_test_… for funded Arc testnet settlement, sk_live_… for production).",
     },
     servers: [{ url: "https://www.subscriptonarc.com" }],
     security: [{ bearerAuth: [] }],
@@ -20,7 +20,7 @@ const spec = {
             bearerAuth: {
                 type: "http",
                 scheme: "bearer",
-                description: "Secret API key: `Authorization: Bearer sk_test_…` (sandbox) or `sk_live_…` (production).",
+                description: "Secret API key: `Authorization: Bearer sk_test_…` (valueless Arc testnet settlement) or `sk_live_…` (production).",
             },
         },
         schemas: {
@@ -66,6 +66,9 @@ const spec = {
                     title: { type: "string" },
                     description: { type: ["string", "null"] },
                     amount_usdc: { type: "string", description: "Integer micro-USDC." },
+                    sandbox_mode: { type: "boolean", description: "True for resources created by an sk_test_ credential." },
+                    simulation_only: { type: "boolean", description: "True only for non-settling shared demo resources." },
+                    settlement_chain_id: { type: "integer", description: "The only chain on which this checkout may settle." },
                     receiptToken: { type: ["string", "null"] },
                     checkoutUrl: { type: "string", format: "uri" },
                     invoiceNumber: { type: ["string", "null"], description: "Invoice v1: shown on the hosted checkout page." },
@@ -318,14 +321,14 @@ const spec = {
                                     successUrl: { type: "string", format: "uri", description: "https URL to return to after payment." },
                                     cancelUrl: { type: "string", format: "uri", description: "https URL to return to on cancel." },
                                     idempotencyKey: { type: "string" },
-                                    sandbox: { type: "boolean" },
+                                    sandbox: { type: "boolean", description: "True for sk_test_ resources. Test mode settles valueless USDC on Arc Testnet; the shared public demo key is simulation-only." },
                                 },
                             },
                         },
                     },
                 },
                 responses: {
-                    "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" }, sandbox: { type: "boolean" } } } } } },
+                    "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" }, sandbox: { type: "boolean" }, simulationOnly: { type: "boolean" } } } } } },
                     "400": { description: "Bad request", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },

@@ -59,6 +59,31 @@ test("unverified public webhook receiver is retired", () => {
     assert.match(route, /status:\s*401/);
 });
 
+test("subscription webhook receipt and lifecycle state commit in one database transaction", () => {
+    const route = source("src/app/api/webhooks/subscript/route.ts");
+    const processor = source("src/lib/subscriptions/inboundWebhook.ts");
+
+    assert.match(route, /processInboundSubscriptionWebhook/);
+    assert.doesNotMatch(route, /createClient/);
+    assert.doesNotMatch(route, /\.from\("subscriptions"\)/);
+    assert.doesNotMatch(route, /\.from\("webhook_events"\)/);
+
+    assert.match(processor, /withPgClient/);
+    assert.match(processor, /client\.query\("begin"\)/i);
+    assert.match(processor, /pg_advisory_xact_lock/);
+    assert.match(processor, /from public\.webhook_events[\s\S]*for update/i);
+    assert.match(processor, /insert into public\.merchants/i);
+    assert.match(processor, /insert into public\.subscriptions/i);
+    assert.match(processor, /insert into public\.webhook_events/i);
+    assert.match(processor, /dbError\.code === "23505"[\s\S]*webhook_events_tx_hash_key/);
+    assert.match(processor, /client\.query\("commit"\)/i);
+    assert.match(processor, /client\.query\("rollback"\)/i);
+    assert.ok(
+        processor.indexOf("insert into public.subscriptions") < processor.indexOf("insert into public.webhook_events"),
+        "the webhook receipt must be the final write inside the transaction",
+    );
+});
+
 test("outbound webhooks never follow redirects", () => {
     const dispatcher = source("src/lib/webhooks.ts");
 
