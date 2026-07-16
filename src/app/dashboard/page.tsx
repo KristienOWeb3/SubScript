@@ -5103,6 +5103,13 @@ Please complete the following implementation tasks:
                 const activeKey = apiKeys.find(k => !k.revoked) || null;
                 const activePublishableKey = activeKey ? activeKey.publishableKey : "";
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
+                /* Secrets are hashed at rest: only secret_key_hash and an "sk_test_1234...2345" hint
+                   are stored, so GET /api/keys can never return a usable key and always reports
+                   secretKeyAvailable: false. It is true only for a key minted in this session.
+                   This flag was returned by the API but never read here, so the hint was rendered
+                   behind the same dots-and-eye affordance as a real secret — revealing it produced a
+                   fingerprint, and Copy silently put that unusable string on the clipboard. */
+                const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
 
                 return (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
@@ -5180,29 +5187,50 @@ Please complete the following implementation tasks:
                                             {copiedText === "Secret Key" && (
                                                 <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                             )}
-                                            <button
-                                                onClick={() => setRevealSecret(!revealSecret)}
-                                                className="text-white/40 hover:text-white transition-colors"
-                                            >
-                                                {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
+                                            {activeSecretAvailable && (
+                                                <button
+                                                    onClick={() => setRevealSecret(!revealSecret)}
+                                                    className="text-white/40 hover:text-white transition-colors"
+                                                >
+                                                    {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
-                                        <code className="text-xs text-white/80 break-all">
-                                            {revealSecret 
-                                                ? activeSecretKey 
-                                                : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-                                            }
-                                        </code>
-                                        <button 
-                                            onClick={() => handleCopy(activeSecretKey, "Secret Key")}
-                                            disabled={!revealSecret}
-                                            className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
-                                        >
-                                            <Copy className="w-4 h-4" />
-                                        </button>
-                                    </div>
+                                    {activeSecretAvailable ? (
+                                        <>
+                                            <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
+                                                <code className="text-xs text-white/80 break-all">
+                                                    {revealSecret
+                                                        ? activeSecretKey
+                                                        : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                                                    }
+                                                </code>
+                                                <button
+                                                    onClick={() => handleCopy(activeSecretKey, "Secret Key")}
+                                                    disabled={!revealSecret}
+                                                    className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                >
+                                                    <Copy className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-yellow-400/80">
+                                                Copy this now. It is only readable while this page stays open — the key is stored
+                                                hashed, so it cannot be shown again.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-black/60 p-3 font-mono">
+                                                <code className="break-all text-xs text-white/45">{activeSecretKey}</code>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                                                This is a fingerprint of the live key, not the key itself — enough to tell which one
+                                                your integration should be using. The secret is stored hashed and is shown only once,
+                                                when it is created. If you no longer have it, roll the key below to issue a new one.
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
 
                                 {/* Roll Keys */}
@@ -5211,6 +5239,7 @@ Please complete the following implementation tasks:
                                         <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-[10px] text-white/40 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
+                                            {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one — the new key is revealed and copied once, here."}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
