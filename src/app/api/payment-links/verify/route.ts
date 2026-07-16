@@ -267,6 +267,15 @@ export async function POST(request: Request) {
                 { status: 409 },
             );
         }
+        if (claimResult?.outcome === "CHAIN_MISMATCH") {
+            return NextResponse.json(
+                {
+                    error: `Payment was submitted on the wrong network. Expected chain ${claimResult.expectedChainId}.`,
+                    expectedChainId: claimResult.expectedChainId,
+                },
+                { status: 409 },
+            );
+        }
         if (claimResult?.outcome === "LINK_UNAVAILABLE") {
             return NextResponse.json(
                 { error: "Payment link is inactive, expired, or at its usage limit" },

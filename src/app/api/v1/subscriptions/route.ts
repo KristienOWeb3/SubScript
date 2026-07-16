@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, formatUnits } from "viem";
+import { createPublicClient, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
-import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
+import {
+    ARC_TESTNET_CHAIN_ID,
+    DEMO_MERCHANT_ADDRESS,
+    STANDARD_CONTRACT_ADDRESS,
+} from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
 import { getSessionWallet } from "@/lib/auth";
 import { hashSecretKey } from "@/lib/apiKeys";
@@ -244,7 +248,18 @@ export async function POST(request: Request) {
             subscriber, beneficiary, title, externalReference, idempotencyKey, sandbox, successUrl, cancelUrl,
             publishToDm,
         } = body;
-        const isSandbox = sandbox === true || auth.mode === "test";
+        const isTestMode = auth.mode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
+            return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
+        }
+        if (isTestMode && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
+            return apiError({
+                status: 403,
+                code: "demo_key_simulation_only",
+                message: "The shared public demo key cannot create a funded subscription. Create your own test key for Arc testnet settlement.",
+            });
+        }
+        const isSandbox = isTestMode;
         if (publishToDm !== undefined && typeof publishToDm !== "boolean") {
             return NextResponse.json({ error: "Bad Request: publishToDm must be a boolean" }, { status: 400 });
         }
@@ -410,6 +425,20 @@ export async function POST(request: Request) {
                 externalReference: externalReference || null,
                 idempotencyKey: (idempotencyKey && String(idempotencyKey).trim()) || null,
                 receiptToken: generateReceiptId("subscription"),
+                sandboxMode: isTestMode,
+                simulationOnly: false,
+                settlementChainId: ARC_TESTNET_CHAIN_ID,
+                creationFingerprint: {
+                    merchantAddress,
+                    amountUsdc: amountMicros.toString(),
+                    beneficiaryAddress,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isTestMode,
+                    simulationOnly: false,
+                    settlementChainId: ARC_TESTNET_CHAIN_ID,
+                    maxUses: null,
+                    expiresAt: null,
+                },
                 stateSnapshot: { subscription: subMeta },
             },
         });

@@ -102,6 +102,8 @@ model PaymentLink {
   stateSnapshot        Json?                @map("state_snapshot")
   linkKind             String               @default("MERCHANT") @map("link_kind")
   sandboxMode          Boolean              @default(false) @map("sandbox_mode")
+  simulationOnly       Boolean              @default(false) @map("simulation_only")
+  settlementChainId    BigInt               @default(5042002) @map("settlement_chain_id")
   creationFingerprint  Json?                @map("creation_fingerprint")
   deletedAt            DateTime?            @map("deleted_at")
   createdAt            DateTime             @default(now()) @map("created_at")

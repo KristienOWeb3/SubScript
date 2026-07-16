@@ -156,11 +156,11 @@ export async function GET(request: Request, { params }: RouteContext) {
                 description: link.description,
                 amount_usdc: link.amount_usdc,
                 active: link.active,
-                /* The checkout disables Pay for a test-mode link, so it needs this on every refetch
-                   too — omitting it here would let a refresh silently re-enable the button on a link
-                   the reservation will always refuse. Nothing sensitive: it is the payer's answer to
-                   why this link cannot take their money. */
+                /* These public settlement-mode fields let the checkout select the correct Arc
+                   network and distinguish funded testnet links from the shared demo simulation. */
                 sandbox_mode: link.sandbox_mode,
+                simulation_only: link.simulation_only,
+                settlement_chain_id: link.settlement_chain_id,
                 status: link.status,
                 expires_at: link.expires_at,
                 max_uses: link.max_uses,

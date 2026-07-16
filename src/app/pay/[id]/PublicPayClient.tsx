@@ -134,25 +134,23 @@ export default function PublicPayClient({
         && Number(initialLinkData?.max_uses) === 1
         && Number(initialLinkData?.use_count || 0) > 0
     );
-    /* Sandbox links are created by a test API key and are refused by reserve_payment_link_checkout_attempt
-       (which additionally requires active, not deleted, unexpired and under max_uses). This page used
-       to model every one of those conditions EXCEPT sandbox_mode, so a test-mode link rendered a live,
-       clickable Pay button and only failed after the payer committed — with a generic "cannot accept a
-       payment right now" that named neither cause nor remedy. Mirror the server's full condition set. */
-    const isLinkSandbox = linkData?.sandbox_mode === true;
+    const isTestMode = linkData?.sandbox_mode === true;
+    const isTestnetLink = isTestMode
+        || Number(linkData?.settlement_chain_id ?? ARC_TESTNET_CHAIN_ID) === ARC_TESTNET_CHAIN_ID;
+    const isSimulationOnly = linkData?.simulation_only === true;
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
     const isLinkInactive = linkData?.active === false || isLinkExpired;
     const hostedPaymentsDisabled = linkData?.hosted_payments_enabled === false;
-    const cannotPayLink = isLinkSandbox || isLinkInactive || isLinkExhausted || hostedPaymentsDisabled;
-    /* One reason, told the same way everywhere it surfaces. */
+    const cannotPayLink = isSimulationOnly || isLinkInactive || isLinkExhausted || hostedPaymentsDisabled;
     const unpayableTitle = !cannotPayLink ? null
-        : isLinkSandbox ? "Test-Mode Link"
+        : isSimulationOnly ? "Simulation-Only Link"
         : isLinkExhausted ? "Payment Link Exhausted"
         : hostedPaymentsDisabled ? "Payments Paused"
         : "Payment Link Inactive";
     const unpayableReason = !cannotPayLink ? null
-        : isLinkSandbox ? "This is a test-mode link, created with a test API key, so it can't accept real payments. Ask the merchant for a live link."
+        : isSimulationOnly
+            ? "This checkout was created with the shared public demo key. It can test the integration flow, but it will not submit an Arc payment. Create your own test key to settle test USDC on Arc Testnet."
         : isLinkExhausted ? "This payment link has reached its maximum number of uses and is no longer accepting payments."
         : hostedPaymentsDisabled ? "Hosted payments are temporarily unavailable. Try again shortly."
         : "This payment link is inactive or expired.";
@@ -581,7 +579,11 @@ export default function PublicPayClient({
     }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
-    const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
+    const expectedChainId = linkData?.settlement_chain_id
+        ? Number(linkData.settlement_chain_id)
+        : linkData?.chain_id
+            ? Number(linkData.chain_id)
+            : defaultArcChainId;
     const expectedChainName = expectedChainId === 5042001 ? "Arc Mainnet" : expectedChainId === 5042002 ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
     const { data: arcBalanceData } = useBalance({
@@ -740,7 +742,8 @@ export default function PublicPayClient({
            release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
            a single-use link consumed even though no transaction was sent. */
         if (String(data.amountUsdc) !== String(linkData.amount_usdc)
-            || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()) {
+            || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()
+            || Number(data.settlementChainId) !== expectedChainId) {
             await releaseUnbroadcastAttempt();
             throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
         }
@@ -1516,9 +1519,13 @@ export default function PublicPayClient({
                         {checkoutUrl && (
                             <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
                                 <div className="space-y-1">
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">Pay on mobile</p>
+                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                        {cannotPayLink ? "Checkout status" : "Pay on mobile"}
+                                    </p>
                                     <p className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
-                                        Scan with your phone's wallet browser to complete this payment on mobile.
+                                        {cannotPayLink
+                                            ? "Payment controls are hidden because this link cannot submit a settlement."
+                                            : "Scan with your phone's wallet browser to complete this payment on mobile."}
                                     </p>
                                 </div>
                                 {!cannotPayLink ? <div className="bg-white rounded-2xl p-4 w-full flex items-center justify-center overflow-hidden">
@@ -1633,14 +1640,19 @@ export default function PublicPayClient({
                             </div>
                         )}
 
-                        {/* Why this link can't be paid — stated before the payer invests anything,
-                            not after they click. Previously only the exhausted case earned a banner,
-                            so a test-mode link looked payable right up until the server refused it. */}
                         {cannotPayLink && (
                             <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
                                 <AlertTriangle className="w-8 h-8 text-red-400" />
                                 <p className="text-xs font-bold text-red-300 uppercase tracking-wide">{unpayableTitle}</p>
                                 <p className="text-[10px] text-white/40 leading-relaxed">{unpayableReason}</p>
+                            </div>
+                        )}
+                        {isTestnetLink && !isSimulationOnly && (
+                            <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-center">
+                                <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Arc Testnet Payment</p>
+                                <p className="mt-2 text-[10px] leading-relaxed text-white/50">
+                                    This payment moves test USDC on Arc Testnet. Test USDC has no monetary value.
+                                </p>
                             </div>
                         )}
 
@@ -1705,7 +1717,7 @@ export default function PublicPayClient({
                                 {/* Embedded (Circle/email) wallet: pay on-page from the SubScript wallet
                                     balance — no browser wallet to connect, and no DM detour for one-time
                                     merchant payments. */}
-                                {embeddedPaySession && (
+                                {embeddedPaySession && !cannotPayLink && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
@@ -1733,7 +1745,7 @@ export default function PublicPayClient({
                                 {/* Peer (user-to-user) requests are conversational, so a signed-in user may
                                     open them in DMs. One-time MERCHANT payments never route to DMs — they are
                                     paid on this page. */}
-                                {isUserRequest && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
+                                {isUserRequest && !cannotPayLink && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             You're already signed in to SubScript
@@ -1760,7 +1772,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {embeddedPaySession && !isConnected && (
+                                {embeddedPaySession && !isConnected && !cannotPayLink && (
                                     <div className="flex items-center gap-3 pt-1">
                                         <span className="h-px flex-1 bg-white/10" />
                                         <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
@@ -1771,7 +1783,7 @@ export default function PublicPayClient({
                                 {/* The browser-wallet connect prompt only makes sense when no wallet is
                                     connected yet. When an embedded user already has an extension connected,
                                     they pay via the embedded card above — no "Connect Wallet" nag. */}
-                                {!isConnected && (walletConnectors.length > 1 ? (
+                                {!isConnected && !cannotPayLink && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -1819,7 +1831,7 @@ export default function PublicPayClient({
                                 {!embeddedPaySession && verificationError && (
                                     <p className="text-[10px] font-mono text-red-400 text-center leading-relaxed" role="alert">{verificationError}</p>
                                 )}
-                                {!embeddedPaySession && (
+                                {!embeddedPaySession && !cannotPayLink && (
                                     <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
                                         Have a SubScript account?{" "}
                                         <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
@@ -2033,7 +2045,7 @@ export default function PublicPayClient({
 
                         {/* Inline QR toggle for mobile/tablet. On desktop (lg+) the large QR shows in the
                             left panel beside the checkout, so this redundant toggle is hidden there. */}
-                        {checkoutUrl && (
+                        {checkoutUrl && !cannotPayLink && (
                             <div className="border-t border-white/5 pt-4 space-y-3 lg:hidden">
                                 <button
                                     type="button"

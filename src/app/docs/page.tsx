@@ -842,7 +842,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       ["externalReference", "string ≤ 256", "Recommended", "Your user, order, or invoice ID. Returned in the webhook."],
                       ["idempotencyKey", "string", "Recommended", "Stable key for one logical checkout. Reuse it only when retrying that checkout."],
                       ["description", "string", "No", "Customer-facing context for the payment."],
-                      ["sandbox", "boolean", "No", "Set true while testing. sk_test_ keys imply sandbox behavior."],
+                      ["sandbox", "boolean", "No", "Credential-owned test mode. sk_test_ keys set this true and settle valueless USDC on Arc Testnet."],
                       ["successUrl", "HTTPS URL", "No", "Where checkout sends the payer after success. Not proof of payment."],
                       ["cancelUrl", "HTTPS URL", "No", "Where checkout sends the payer after cancellation."],
                       ["expiresAt", "ISO date or Unix time", "No", "When the hosted checkout should stop accepting payment."],
@@ -1042,7 +1042,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 </p>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Test, observe, and go live deliberately</h2>
                 <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
-                  Build the complete test flow before swapping credentials. Sandbox and live use the same API shape, so your code should change configuration—not logic.
+                  Build the complete test flow before swapping credentials. Test and live modes use the same API shape, so your code should change configuration—not logic.
                 </p>
               </div>
 
@@ -1058,10 +1058,10 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                   </thead>
                   <tbody className="divide-y divide-white/5 text-white/65">
                     <tr>
-                      <td className="px-4 py-3 font-semibold text-[#00d2b4]">Sandbox</td>
+                      <td className="px-4 py-3 font-semibold text-[#00d2b4]">Arc Testnet</td>
                       <td className="px-4 py-3 font-mono">sk_test_…</td>
-                      <td className="px-4 py-3">Implies <span className="font-mono">sandbox: true</span>; no live payout destination required.</td>
-                      <td className="px-4 py-3">Local development, CI, end-to-end tests.</td>
+                      <td className="px-4 py-3">Implies <span className="font-mono">sandbox: true</span> and settles valueless test USDC on Arc Testnet. The shared public demo key is simulation-only.</td>
+                      <td className="px-4 py-3">Funded testnet integration, CI, and end-to-end settlement tests.</td>
                     </tr>
                     <tr>
                       <td className="px-4 py-3 font-semibold text-white">Live</td>
@@ -1113,7 +1113,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       "Configure and verify the merchant payout destination.",
                       "Use a distinct live webhook endpoint secret.",
                       "Alert on webhook 5xx responses and aged PENDING intents.",
-                      "Keep the sandbox path available for release regression tests.",
+                      "Keep the funded Arc testnet path available for release regression tests.",
                     ].map((item) => (
                       <li key={item} className="flex gap-3">
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#00d2b4]" />
@@ -1201,7 +1201,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <h2 className="text-2xl font-bold tracking-tight text-white">FAQ</h2>
               {[
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
-                ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
+                ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key to settle valueless test USDC on Arc Testnet. The shared public demo key remains simulation-only. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
                 ["Can SubScript handle usage-based products?", "Yes. Commit vaults let a customer escrow a merchant-set amount once; the merchant reports API calls, tokens, sessions, or per-item access via the usage API, which accrues the charges and gates access. SubScript draws the accrued total from escrow at the end of each 30-day cycle."],
                 ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate. Dedicated sponsor records, spending caps, and revocation policies are still deployment-scoped."],
                 ["Can users export their wallet key?", "Legacy email wallets can be exported only after fresh OTP step-up verification. Circle developer-controlled MPC wallets do not expose a raw private key. Google sign-in is paused until its identity and custody flow is verified server-side."],

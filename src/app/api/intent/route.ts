@@ -8,7 +8,7 @@ import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
-import { DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
@@ -102,10 +102,21 @@ export async function POST(request: Request) {
             cancelUrl,
             sandbox
         } = body;
-        if (sandbox !== undefined && sandbox !== (apiKeyMode === "test")) {
+        const isTestMode = apiKeyMode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
             return apiError({ status: 400, code: "invalid_sandbox_mode", requestId, message: "Bad Request: sandbox mode is determined by the API key" });
         }
-        const isSandboxRequest = apiKeyMode === "test";
+        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
+            return apiError({
+                status: 409,
+                code: "test_mode_requires_testnet",
+                requestId,
+                message: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
+            });
+        }
+        const isSandboxRequest = isTestMode;
+        const isSimulationOnly = isTestMode && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase();
+        const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return apiError({ status: 400, code: "missing_title", requestId, message: "Bad Request: title is required (a short product/plan name shown on the hosted checkout page)" });
@@ -180,16 +191,25 @@ export async function POST(request: Request) {
                     beneficiaryAddress: null,
                     linkKind: "MERCHANT",
                     sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
                     maxUses: parsedMaxUses,
                     expiresAt: parsedExpiresAt?.toISOString() ?? null,
                 };
-                const existingCreationFingerprint = (existing as any).creationFingerprint;
+                const storedFingerprint = (existing as any).creationFingerprint;
+                const existingCreationFingerprint = storedFingerprint ? {
+                    ...storedFingerprint,
+                    simulationOnly: storedFingerprint.simulationOnly ?? (existing as any).simulationOnly,
+                    settlementChainId: Number(storedFingerprint.settlementChainId ?? (existing as any).settlementChainId),
+                } : null;
                 if (existingCreationFingerprint
                     && (existingCreationFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
                         || existingCreationFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
                         || (existingCreationFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
                         || existingCreationFingerprint.linkKind !== requestedFingerprint.linkKind
                         || existingCreationFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                        || existingCreationFingerprint.simulationOnly !== requestedFingerprint.simulationOnly
+                        || existingCreationFingerprint.settlementChainId !== requestedFingerprint.settlementChainId
                         || (existingCreationFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
                         || (existingCreationFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt)) {
                     return apiError({ status: 409, code: "idempotency_key_conflict", requestId, message: "Conflict: idempotencyKey was used with different financial terms" });
@@ -266,12 +286,16 @@ export async function POST(request: Request) {
                 status: "PENDING",
                 linkKind: "MERCHANT",
                 sandboxMode: isSandboxRequest,
+                simulationOnly: isSimulationOnly,
+                settlementChainId,
                 creationFingerprint: {
                     merchantAddress,
                     amountUsdc: amountBigInt.toString(),
                     beneficiaryAddress: null,
                     linkKind: "MERCHANT",
                     sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
                     maxUses: parsedMaxUses,
                     expiresAt: parsedExpiresAt?.toISOString() ?? null,
                 },
@@ -298,7 +322,8 @@ export async function POST(request: Request) {
                 usdcAddress: settlement.usdcAddress,
                 ...(hasReturnUrls ? { returnUrls } : {})
             },
-            sandbox: isSandboxRequest
+            sandbox: isSandboxRequest,
+            simulationOnly: isSimulationOnly,
         }, { status: 201 });
 
     } catch (error: any) {
