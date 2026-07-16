@@ -28,6 +28,7 @@ import {
     parseUnits,
 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
@@ -58,7 +59,7 @@ const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
-    transport: http(),
+    transport: arcHttp(),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;
@@ -502,62 +503,80 @@ export default function DashboardPage() {
 
 
 
+    /* Tier and confidentiality come from the database, and must not sit downstream of the chain
+       reads. All of this used to share ONE try block, with the API fetches sequenced after a
+       Promise.all of four Arc calls — and Arc's public RPC rate-limits per call while viem does not
+       retry its 429s (see lib/arc/transport). A single collision rejected the Promise.all and threw
+       before setIsPremium ever ran, so isPremium stayed false and a paying merchant was shown the
+       upgrade lock over their own API keys, checkout and webhooks. The retrying transport makes that
+       far less likely; independence makes it harmless. A chain hiccup may cost you a balance — it
+       must never cost you your tier. */
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
-        try {
-            const [tierRaw, vaultRaw, payoutRaw, walletRaw] = await Promise.all([
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantTiers",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantBalances",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantPayoutDestination",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: ERC20_ABI,
-                    functionName: "balanceOf",
-                    args: [address as `0x${string}`],
-                }),
-            ]);
 
-            setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
-            setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
-            setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
-
-            const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
-            if (tierRes.ok) {
+        const loadTier = async () => {
+            try {
+                const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
+                if (!tierRes.ok) return;
                 const tierData = await tierRes.json();
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
-                /* SBT state update removed */
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
                 setDbSubscriptionStatus(tierData.status || null);
                 setDowngradeFailures(tierData.downgradeFailures ? Number(tierData.downgradeFailures) : 0);
+            } catch (error) {
+                console.error("Error loading merchant tier:", error);
             }
+        };
 
-            const confidentialityRes = await fetch("/api/merchant/confidentiality");
-            if (confidentialityRes.ok) {
+        const loadConfidentiality = async () => {
+            try {
+                const confidentialityRes = await fetch("/api/merchant/confidentiality");
+                if (!confidentialityRes.ok) return;
                 const confData = await confidentialityRes.json();
                 setShieldedEnabled(!!confData.shielded_payouts_enabled);
                 setIsViewKeyRegistered(!!confData.view_key_hash);
+            } catch (error) {
+                console.error("Error loading confidentiality settings:", error);
             }
-        } catch (error) {
-            console.error("Error reading contract data in background:", error);
-        }
+        };
+
+        const loadChainState = async () => {
+            try {
+                /* merchantTiers was read here too and never used — the tier below is the DB's. It was
+                   a fourth call into the limiter for nothing. */
+                const [vaultRaw, payoutRaw, walletRaw] = await Promise.all([
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantBalances",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantPayoutDestination",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: USDC_NATIVE_GAS_ADDRESS,
+                        abi: ERC20_ABI,
+                        functionName: "balanceOf",
+                        args: [address as `0x${string}`],
+                    }),
+                ]);
+
+                setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
+                setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
+                setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
+            } catch (error) {
+                console.error("Error reading contract data in background:", error);
+            }
+        };
+
+        await Promise.all([loadTier(), loadConfidentiality(), loadChainState()]);
     }, [address]);
 
     const handleDepositSuccess = () => {

@@ -6,6 +6,7 @@ import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
 const WALLET_PLACEHOLDER = "0xYOUR_CONNECTED_WALLET_ADDRESS";
@@ -22,7 +23,7 @@ const ERC20_ABI = [
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
-    transport: http(),
+    transport: arcHttp(),
 });
 
 interface DashboardHeaderProps {

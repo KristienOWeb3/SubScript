@@ -15,6 +15,7 @@ import {
     getContract,
 } from "viem";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import { 
@@ -32,7 +33,7 @@ import { STANDARD_SUBSCRIPT_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
-    transport: http(),
+    transport: arcHttp(),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;

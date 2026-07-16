@@ -18,6 +18,7 @@ import {
 } from "viem";
 import { sepolia } from "viem/chains";
 import { arcTestnet } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
   ARC_TESTNET_CHAIN_ID, 
   ARC_CCTP_DOMAIN_ID,
@@ -104,7 +105,7 @@ const VAULT_CONTRACT_ABI = [
 
 const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(),
+  transport: arcHttp(),
 });
 
 const sepoliaClient = createPublicClient({
