@@ -55,10 +55,16 @@ async function getPaymentLink(id: string) {
        checkout-intent internals and must never be forwarded to the browser (see the strip in
        PublicPayPage). Everything else here is the checkout-facing whitelist, mirroring the
        anonymous GET /api/payment-links/[id] payload. */
+    /* sandbox_mode is part of the whitelist because the checkout has to know a test-mode link cannot
+       be paid BEFORE offering a Pay button — reserve_payment_link_checkout_attempt refuses it, and
+       without this the page could only discover that by failing the payer's click.
+       deleted_at is filtered rather than selected: the reservation refuses soft-deleted links, so a
+       checkout page for one is never payable and should read as gone, exactly like an unknown id. */
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot, paid_at, verified_tx_hash")
+        .select("id, merchant_address, title, description, amount_usdc, active, sandbox_mode, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot, paid_at, verified_tx_hash")
         .eq("id", id)
+        .is("deleted_at", null)
         .maybeSingle();
 
     if (error) {
