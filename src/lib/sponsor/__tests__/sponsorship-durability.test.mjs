@@ -318,5 +318,6 @@ test("financial routes sponsor gas strictly before submitting the financial tran
     /* An impossible commit cannot farm top-ups: the request key is bound to the exact
        (request, wallet, merchant, amount) identity, so repeats reuse one durable record and
        fresh keys are throttled by the per-action daily limit. */
-    assert.match(vaultCommit, /requestKey: `vault-commit:\$\{requestId\}:\$\{wallet\.toLowerCase\(\)\}:\$\{merchantAddress\.toLowerCase\(\)\}:\$\{amount\.toString\(\)\}`/);
+    assert.match(vaultCommit, /const sponsorRequestKey = `vault-commit:\$\{requestId\}:\$\{normalizedWallet\}:\$\{normalizedMerchant\}:\$\{amount\.toString\(\)\}`/);
+    assert.match(vaultCommit, /requestKey: sponsorRequestKey/);
 });
