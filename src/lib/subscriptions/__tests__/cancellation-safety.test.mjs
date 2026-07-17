@@ -54,8 +54,12 @@ test("external wallets are never told the cancellation is safely scheduled", () 
 test("a failed revocation can never fall outside every worker query", () => {
     assert.match(migration, /ADD COLUMN IF NOT EXISTS revocation_pending BOOLEAN NOT NULL DEFAULT false/);
     assert.match(migration, /WHERE revocation_pending = true/);
-    assert.match(migration, /CREATE INDEX CONCURRENTLY IF NOT EXISTS subscriptions_revocation_pending_idx/);
-    assert.match(migration, /-- subscript:no-transaction/);
+    /* The retry-queue index must build in-transaction: CONCURRENTLY is illegal in the Supabase
+       CLI pipeline used by `supabase start` (CI + local), so it can never appear in a portable
+       migration, and this file must NOT carry the non-transactional marker. */
+    assert.match(migration, /CREATE INDEX IF NOT EXISTS subscriptions_revocation_pending_idx/);
+    assert.doesNotMatch(migration, /CREATE INDEX CONCURRENTLY/);
+    assert.doesNotMatch(migration, /^\s*--\s*subscript:no-transaction/m);
     assert.match(schema, /revocationPending\s+Boolean\s+@default\(false\) @map\("revocation_pending"\)/);
 
     /* The database claims eligible rows oldest-first with leases and backoff, independent of

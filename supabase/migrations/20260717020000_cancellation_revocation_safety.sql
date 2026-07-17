@@ -1,4 +1,3 @@
--- subscript:no-transaction
 /*
  * Cancellation revocation safety.
  *
@@ -23,8 +22,11 @@ ALTER TABLE public.subscriptions
     ADD COLUMN IF NOT EXISTS revocation_attempts INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS revocation_last_error TEXT;
 
-/* Keep revocation scans available while this index is built on the live subscriptions table. */
-CREATE INDEX CONCURRENTLY IF NOT EXISTS subscriptions_revocation_pending_idx
+/* Partial index over the retry queue. Built in-transaction (NOT CONCURRENTLY): CONCURRENTLY is
+   illegal inside the pipeline the Supabase CLI applier uses for `supabase start` — CI and every
+   local stack — so it can never be part of a portable migration. On the testnet subscriptions
+   table a plain build is milliseconds and blocks writes only briefly, never reads. */
+CREATE INDEX IF NOT EXISTS subscriptions_revocation_pending_idx
     ON public.subscriptions (revocation_next_attempt_at, subscription_id)
     WHERE revocation_pending = true;
 
