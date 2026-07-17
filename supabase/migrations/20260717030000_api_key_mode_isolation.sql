@@ -43,7 +43,27 @@ CREATE TRIGGER api_keys_enforce_mode
 ALTER TABLE public.metered_vaults
     ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'TEST'
         CHECK (environment IN ('TEST', 'LIVE')),
-    ADD COLUMN IF NOT EXISTS settlement_chain_id BIGINT NOT NULL DEFAULT 5042002;
+    ADD COLUMN IF NOT EXISTS settlement_chain_id BIGINT NOT NULL DEFAULT 5042002,
+    ADD COLUMN IF NOT EXISTS disputed BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.metered_vaults
+    DROP CONSTRAINT IF EXISTS metered_vaults_environment_chain_check;
+ALTER TABLE public.metered_vaults
+    ADD CONSTRAINT metered_vaults_environment_chain_check
+    CHECK (
+        (environment = 'TEST' AND settlement_chain_id = 5042002)
+        OR (environment = 'LIVE' AND settlement_chain_id = 5042001)
+    ) NOT VALID;
+ALTER TABLE public.metered_vaults
+    VALIDATE CONSTRAINT metered_vaults_environment_chain_check;
+
+/* A wallet pair may exist on both Arc environments, but never twice on the same chain. */
+ALTER TABLE public.metered_vaults
+    DROP CONSTRAINT IF EXISTS metered_vaults_user_address_merchant_address_key,
+    DROP CONSTRAINT IF EXISTS metered_vaults_identity_key;
+ALTER TABLE public.metered_vaults
+    ADD CONSTRAINT metered_vaults_identity_key
+    UNIQUE (user_address, merchant_address, environment, settlement_chain_id);
 
 /* metered_usage_reports.environment is added by
    prisma/migrations/20260717030001_metered_usage_report_environment.sql — that table is

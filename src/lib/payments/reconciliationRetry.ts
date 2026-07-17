@@ -205,6 +205,34 @@ function parsePlanChangeClaimKey(changeClaimKey: string) {
     };
 }
 
+async function waitForConfirmedPlanTerms({
+    subscriptionId,
+    subscriber,
+    amount,
+    period,
+}: {
+    subscriptionId: string;
+    subscriber: string;
+    amount: bigint;
+    period: bigint;
+}) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const current = await getSubscriptionOnChain(subscriptionId);
+        if (
+            current?.isActive
+            && current.subscriber === subscriber
+            && current.amount === amount
+            && current.period === period
+        ) {
+            return current;
+        }
+        if (attempt < 5) {
+            await new Promise((resolve) => setTimeout(resolve, 2_000));
+        }
+    }
+    throw new Error("Modified subscription terms are not confirmed on-chain");
+}
+
 async function retrySubscriptionPlanChangeReconciliation(context: Record<string, unknown>) {
     const changeClaimKey = requiredString(context, "changeClaimKey");
     const parsed = parsePlanChangeClaimKey(changeClaimKey);
@@ -220,7 +248,9 @@ async function retrySubscriptionPlanChangeReconciliation(context: Record<string,
         throw new Error("Plan-change subscription is not discoverable on-chain");
     }
 
-    const hasNewTerms = onChain.amount === parsed.newAmount && onChain.period === parsed.newPeriod;
+    const hasNewTerms = onChain.isActive
+        && onChain.amount === parsed.newAmount
+        && onChain.period === parsed.newPeriod;
     const hasOldTerms = onChain.amount === parsed.oldAmount && onChain.period === parsed.oldPeriod;
 
     if (!hasNewTerms) {
@@ -238,6 +268,12 @@ async function retrySubscriptionPlanChangeReconciliation(context: Record<string,
             parsed.newPeriod,
             deterministicIdempotencyKey(`sub-change-modify:${parsed.fingerprint}`),
         );
+        await waitForConfirmedPlanTerms({
+            subscriptionId: parsed.subscriptionId,
+            subscriber: parsed.subscriber,
+            amount: parsed.newAmount,
+            period: parsed.newPeriod,
+        });
     }
 
     await mirrorSubscriptionModified({
@@ -252,30 +288,31 @@ async function retrySubscriptionPlanChangeReconciliation(context: Record<string,
         "select merchant_address from subscriptions where subscription_id = $1 limit 1",
         [parsed.subscriptionId],
     );
-    if (merchant?.merchant_address) {
-        await dispatchDurableSubscriptionWebhook(merchant.merchant_address, "subscription.updated", {
-            ...subscriptionWebhookData({
-                subscriptionId: parsed.subscriptionId,
-                status: "updated",
-                amountUsdcMicros: parsed.newAmount,
-                subscriber: parsed.subscriber,
-                merchantAddress: merchant.merchant_address,
-                txHash: modifyTxHash ?? undefined,
-            }),
-            plan_id: parsed.planId,
-            planId: parsed.planId,
-            previous_amount_usdc_micros: parsed.oldAmount.toString(),
-            previousAmountUsdcMicros: parsed.oldAmount.toString(),
-            new_period_seconds: Number(parsed.newPeriod),
-            newPeriodSeconds: Number(parsed.newPeriod),
-            prorated_tx_hash: proratedTxHash,
-            proratedTxHash,
-            reconciled: true,
-        }, `updated:${parsed.subscriptionId}:${(modifyTxHash || "reconciled").toLowerCase()}`);
+    if (!merchant?.merchant_address) {
+        throw new Error("Mirrored subscription merchant is unavailable");
     }
+    await dispatchDurableSubscriptionWebhook(merchant.merchant_address, "subscription.updated", {
+        ...subscriptionWebhookData({
+            subscriptionId: parsed.subscriptionId,
+            status: "updated",
+            amountUsdcMicros: parsed.newAmount,
+            subscriber: parsed.subscriber,
+            merchantAddress: merchant.merchant_address,
+            txHash: modifyTxHash ?? undefined,
+        }),
+        plan_id: parsed.planId,
+        planId: parsed.planId,
+        previous_amount_usdc_micros: parsed.oldAmount.toString(),
+        previousAmountUsdcMicros: parsed.oldAmount.toString(),
+        new_period_seconds: Number(parsed.newPeriod),
+        newPeriodSeconds: Number(parsed.newPeriod),
+        prorated_tx_hash: proratedTxHash,
+        proratedTxHash,
+        reconciled: true,
+    }, `updated:${parsed.subscriptionId}:${(modifyTxHash || "reconciled").toLowerCase()}`);
 
     /* Complete the claim so a user retry replays this result instead of re-charging. */
-    await prisma.idempotencyKey.updateMany({
+    const completed = await prisma.idempotencyKey.updateMany({
         where: { executionKey: changeClaimKey, status: { not: "COMPLETED" } },
         data: {
             status: "COMPLETED",
@@ -288,6 +325,12 @@ async function retrySubscriptionPlanChangeReconciliation(context: Record<string,
             },
         },
     });
+    if (completed.count !== 1) {
+        const claim = await prisma.idempotencyKey.findUnique({ where: { executionKey: changeClaimKey } });
+        if (claim?.status !== "COMPLETED") {
+            throw new Error("Plan-change idempotency claim could not be completed");
+        }
+    }
 }
 
 /* An embedded checkout payment confirmed on-chain but the durable verification job was not
@@ -332,7 +375,7 @@ async function retryEmbeddedPaymentDurableBind(context: Record<string, unknown>)
         ],
     );
     const outcome = result?.result?.outcome;
-    if (!outcome || ["FINGERPRINT_MISMATCH", "ATTEMPT_NOT_FOUND", "CHAIN_MISMATCH"].includes(outcome)) {
+    if (!outcome || !["CLAIMED", "IN_PROGRESS", "COMPLETED"].includes(outcome)) {
         throw new Error(`Durable bind claim returned ${outcome || "no outcome"}`);
     }
 }

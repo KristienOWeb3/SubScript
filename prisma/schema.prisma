@@ -639,6 +639,7 @@ model MeteredVault {
   // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
   environment       String   @default("TEST")
   settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
+  disputed          Boolean  @default(false)
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
@@ -647,7 +648,7 @@ model MeteredVault {
   customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
   usageReports      MeteredUsageReport[]
 
-  @@unique([userAddress, merchantAddress])
+  @@unique([userAddress, merchantAddress, environment, settlementChainId])
   @@index([userAddress])
   @@index([merchantAddress])
   @@map("metered_vaults")

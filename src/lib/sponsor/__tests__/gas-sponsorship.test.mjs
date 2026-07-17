@@ -66,6 +66,7 @@ function loadGasModule({ getProviderForWrite, executeWithFallback, sendTransacti
                     Wallet: MockWallet,
                     isAddress: (value) => /^0x[0-9a-fA-F]{40}$/.test(value),
                     parseUnits,
+                    keccak256: () => "0x" + "aa".repeat(32),
                 },
             };
         }
@@ -288,6 +289,28 @@ test("only a confirmed transaction is reused inside the sponsorship window", asy
         assert.equal(providerCalls, 1);
         assert.equal(sends, 1);
     });
+});
+
+test("a reverted prepared transfer is definitive instead of submitted-unconfirmed", async () => {
+    const hash = "0x" + "aa".repeat(32);
+    const gas = loadGasModule({
+        getProviderForWrite: async () => {
+            throw new Error("a mined receipt must not rebroadcast");
+        },
+        executeWithFallback: async (operation) => ({
+            result: await operation({
+                getTransactionReceipt: async () => ({ hash, status: 0 }),
+            }),
+            rpcEndpoint: "mock://fallback",
+        }),
+        sendTransaction: async () => {
+            throw new Error("unused");
+        },
+    });
+
+    const result = await gas.submitPreparedSponsorTransfer("0x02abcdef", hash);
+    assert.equal(result.outcome, "reverted");
+    assert.equal(result.txHash, hash);
 });
 
 test("invalid sponsor and top-up configuration fail closed before RPC", async () => {

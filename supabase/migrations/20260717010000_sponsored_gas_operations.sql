@@ -19,9 +19,14 @@ CREATE TABLE IF NOT EXISTS public.sponsored_gas_operations (
     custody_type TEXT NOT NULL CHECK (custody_type IN ('CIRCLE_SCA', 'CIRCLE_EOA', 'LEGACY_EOA')),
     requested_topup_wei NUMERIC(38, 0) NOT NULL DEFAULT 0 CHECK (requested_topup_wei >= 0),
     sponsor_tx_hash TEXT UNIQUE CHECK (sponsor_tx_hash IS NULL OR sponsor_tx_hash ~ '^0x[0-9a-f]{64}$'),
+    prepared_transaction TEXT CHECK (
+        prepared_transaction IS NULL
+        OR (char_length(prepared_transaction) BETWEEN 4 AND 8192 AND prepared_transaction ~ '^0x[0-9a-f]+$')
+    ),
     financial_tx_hash TEXT,
     status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN (
-        'PENDING', 'SUBMITTED', 'CONFIRMED', 'SKIPPED_GAS_STATION', 'SKIPPED_SUFFICIENT_BALANCE', 'FAILED'
+        'PENDING', 'PREPARED', 'SUBMITTED', 'CONFIRMED',
+        'SKIPPED_GAS_STATION', 'SKIPPED_SUFFICIENT_BALANCE', 'FAILED'
     )),
     failure_reason TEXT,
     lease_token UUID,
@@ -44,7 +49,8 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.sponsored_gas_operations TO service
  *
  * Outcomes:
  *   REUSED           — a terminal record exists (CONFIRMED / SKIPPED_*); its hash is returned.
- *   RECONCILE        — a transfer was submitted earlier; reconcile by hash, never resubmit.
+ *   RECONCILE        — a transaction was prepared or submitted earlier; reconcile or
+ *                      rebroadcast that exact signed transaction, never create another.
  *   IN_PROGRESS      — another instance holds a live lease.
  *   KEY_CONFLICT     — the request key exists for a different wallet/action.
  *   WALLET_LIMIT     — the wallet hit its daily sponsorship count.
@@ -80,6 +86,9 @@ BEGIN
         RAISE EXCEPTION 'invalid sponsorship claim parameters';
     END IF;
 
+    /* Every claimant, regardless of wallet, passes one serialized global budget gate.
+       The wallet lock remains second so wallet-local limits and request reuse stay ordered. */
+    PERFORM pg_advisory_xact_lock(hashtextextended('gas-sponsor:global-budget', 7301));
     PERFORM pg_advisory_xact_lock(hashtextextended(lower(p_wallet) || ':gas-sponsor', 7301));
 
     SELECT * INTO v_existing
@@ -88,44 +97,66 @@ BEGIN
     FOR UPDATE;
     IF FOUND THEN
         IF lower(v_existing.wallet_address) IS DISTINCT FROM lower(p_wallet)
-           OR v_existing.action IS DISTINCT FROM p_action THEN
+           OR v_existing.action IS DISTINCT FROM p_action
+           OR v_existing.custody_type IS DISTINCT FROM p_custody THEN
             RETURN jsonb_build_object('outcome', 'KEY_CONFLICT');
         END IF;
         IF v_existing.status IN ('CONFIRMED', 'SKIPPED_GAS_STATION', 'SKIPPED_SUFFICIENT_BALANCE') THEN
             RETURN jsonb_build_object('outcome', 'REUSED', 'status', v_existing.status,
                 'sponsorTxHash', v_existing.sponsor_tx_hash);
         END IF;
-        IF v_existing.status = 'SUBMITTED' THEN
-            RETURN jsonb_build_object('outcome', 'RECONCILE',
-                'sponsorTxHash', v_existing.sponsor_tx_hash);
+        IF v_existing.status = 'FAILED' AND v_existing.sponsor_tx_hash IS NOT NULL THEN
+            RETURN jsonb_build_object('outcome', 'REUSED', 'status', v_existing.status,
+                'sponsorTxHash', v_existing.sponsor_tx_hash, 'failureReason', v_existing.failure_reason);
+        END IF;
+        IF v_existing.status IN ('PREPARED', 'SUBMITTED') THEN
+            IF v_existing.lease_expires_at > now() THEN
+                RETURN jsonb_build_object(
+                    'outcome', 'IN_PROGRESS',
+                    'status', v_existing.status,
+                    'sponsorTxHash', v_existing.sponsor_tx_hash
+                );
+            END IF;
+            v_lease := extensions.gen_random_uuid();
+            UPDATE public.sponsored_gas_operations
+            SET lease_token = v_lease,
+                lease_expires_at = now() + make_interval(secs => greatest(30, least(COALESCE(p_lease_seconds, 120), 300))),
+                updated_at = now()
+            WHERE request_key = p_request_key;
+            RETURN jsonb_build_object(
+                'outcome', 'RECONCILE',
+                'status', v_existing.status,
+                'leaseToken', v_lease,
+                'sponsorTxHash', v_existing.sponsor_tx_hash,
+                'preparedTransaction', v_existing.prepared_transaction
+            );
         END IF;
         IF v_existing.status = 'PENDING' AND v_existing.lease_expires_at > now() THEN
             RETURN jsonb_build_object('outcome', 'IN_PROGRESS');
         END IF;
-        /* PENDING with an expired lease, or a pre-broadcast FAILED row: re-claim it. */
-        v_lease := extensions.gen_random_uuid();
-        UPDATE public.sponsored_gas_operations
-        SET status = 'PENDING', lease_token = v_lease,
-            lease_expires_at = now() + make_interval(secs => greatest(30, least(COALESCE(p_lease_seconds, 120), 300))),
-            requested_topup_wei = COALESCE(p_requested_wei, requested_topup_wei),
-            failure_reason = NULL, updated_at = now()
-        WHERE request_key = p_request_key;
-        RETURN jsonb_build_object('outcome', 'CLAIMED', 'leaseToken', v_lease);
     END IF;
 
     IF p_custody = 'CIRCLE_SCA' THEN
         INSERT INTO public.sponsored_gas_operations (
             request_key, wallet_address, action, custody_type, requested_topup_wei, status
         ) VALUES (p_request_key, lower(p_wallet), p_action, p_custody, 0, 'SKIPPED_GAS_STATION')
-        ON CONFLICT (request_key) DO NOTHING;
+        ON CONFLICT (request_key) DO UPDATE
+        SET status = 'SKIPPED_GAS_STATION',
+            requested_topup_wei = 0,
+            failure_reason = NULL,
+            lease_token = NULL,
+            lease_expires_at = NULL,
+            updated_at = now();
         RETURN jsonb_build_object('outcome', 'GAS_STATION');
     END IF;
 
-    /* Daily abuse limits count every record that held or may hold funds. */
+    /* Daily abuse limits count every other record that held or may hold funds. A reclaimed
+       row is excluded from aggregates, then its newly requested reservation is added once. */
     SELECT count(*) INTO v_wallet_count
     FROM public.sponsored_gas_operations
     WHERE lower(wallet_address) = lower(p_wallet)
-      AND status IN ('PENDING', 'SUBMITTED', 'CONFIRMED')
+      AND request_key IS DISTINCT FROM p_request_key
+      AND status IN ('PENDING', 'PREPARED', 'SUBMITTED', 'CONFIRMED')
       AND created_at >= now() - interval '1 day';
     IF v_wallet_count >= COALESCE(p_wallet_daily_limit, 10) THEN
         RETURN jsonb_build_object('outcome', 'WALLET_LIMIT');
@@ -135,7 +166,8 @@ BEGIN
     FROM public.sponsored_gas_operations
     WHERE lower(wallet_address) = lower(p_wallet)
       AND action = p_action
-      AND status IN ('PENDING', 'SUBMITTED', 'CONFIRMED')
+      AND request_key IS DISTINCT FROM p_request_key
+      AND status IN ('PENDING', 'PREPARED', 'SUBMITTED', 'CONFIRMED')
       AND created_at >= now() - interval '1 day';
     IF v_action_count >= COALESCE(p_action_daily_limit, 5) THEN
         RETURN jsonb_build_object('outcome', 'ACTION_LIMIT');
@@ -143,13 +175,30 @@ BEGIN
 
     SELECT COALESCE(sum(requested_topup_wei), 0) INTO v_spent
     FROM public.sponsored_gas_operations
-    WHERE status IN ('PENDING', 'SUBMITTED', 'CONFIRMED')
+    WHERE request_key IS DISTINCT FROM p_request_key
+      AND status IN ('PENDING', 'PREPARED', 'SUBMITTED', 'CONFIRMED')
       AND created_at >= now() - interval '1 day';
     IF v_spent + COALESCE(p_requested_wei, 0) > COALESCE(p_global_daily_budget_wei, 0) THEN
         RETURN jsonb_build_object('outcome', 'BUDGET_EXHAUSTED');
     END IF;
 
     v_lease := extensions.gen_random_uuid();
+    IF v_existing.request_key IS NOT NULL THEN
+        /* PENDING with an expired lease, or a pre-broadcast FAILED row: re-claim only
+           after the same wallet/action/global gates as a new operation. */
+        UPDATE public.sponsored_gas_operations
+        SET status = 'PENDING',
+            lease_token = v_lease,
+            lease_expires_at = now() + make_interval(secs => greatest(30, least(COALESCE(p_lease_seconds, 120), 300))),
+            requested_topup_wei = COALESCE(p_requested_wei, requested_topup_wei),
+            sponsor_tx_hash = NULL,
+            prepared_transaction = NULL,
+            failure_reason = NULL,
+            updated_at = now()
+        WHERE request_key = p_request_key;
+        RETURN jsonb_build_object('outcome', 'CLAIMED', 'leaseToken', v_lease);
+    END IF;
+
     INSERT INTO public.sponsored_gas_operations (
         request_key, wallet_address, action, custody_type, requested_topup_wei,
         status, lease_token, lease_expires_at
@@ -163,8 +212,9 @@ END;
 $$;
 
 /*
- * Record the result of a claimed sponsorship. A row that ever carried a transaction hash can
- * never be marked FAILED — an ambiguous transfer stays SUBMITTED until reconciled by hash.
+ * Record the result of a claimed sponsorship. PREPARED persists the exact signed transaction
+ * before broadcast. A definitive reverted receipt may transition that hash-bound row to FAILED;
+ * ambiguous outcomes stay PREPARED/SUBMITTED until reconciled by hash.
  */
 CREATE OR REPLACE FUNCTION public.update_sponsored_gas_operation(
     p_request_key TEXT,
@@ -172,7 +222,8 @@ CREATE OR REPLACE FUNCTION public.update_sponsored_gas_operation(
     p_status TEXT,
     p_sponsor_tx_hash TEXT DEFAULT NULL,
     p_failure_reason TEXT DEFAULT NULL,
-    p_financial_tx_hash TEXT DEFAULT NULL
+    p_financial_tx_hash TEXT DEFAULT NULL,
+    p_prepared_transaction TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -182,7 +233,7 @@ AS $$
 DECLARE
     v_row public.sponsored_gas_operations%ROWTYPE;
 BEGIN
-    IF p_status NOT IN ('SUBMITTED', 'CONFIRMED', 'SKIPPED_SUFFICIENT_BALANCE', 'FAILED') THEN
+    IF p_status NOT IN ('PREPARED', 'SUBMITTED', 'CONFIRMED', 'SKIPPED_SUFFICIENT_BALANCE', 'FAILED') THEN
         RAISE EXCEPTION 'invalid sponsorship status transition';
     END IF;
 
@@ -194,7 +245,8 @@ BEGIN
     IF v_row.lease_token IS DISTINCT FROM p_lease_token THEN
         RETURN jsonb_build_object('outcome', 'LEASE_MISMATCH');
     END IF;
-    IF v_row.status IN ('CONFIRMED', 'SKIPPED_GAS_STATION', 'SKIPPED_SUFFICIENT_BALANCE') THEN
+    IF v_row.status IN ('CONFIRMED', 'SKIPPED_GAS_STATION', 'SKIPPED_SUFFICIENT_BALANCE')
+       OR (v_row.status = 'FAILED' AND v_row.sponsor_tx_hash IS NOT NULL) THEN
         RETURN jsonb_build_object('outcome', 'ALREADY_TERMINAL');
     END IF;
     IF v_row.sponsor_tx_hash IS NOT NULL
@@ -202,14 +254,24 @@ BEGIN
        AND lower(v_row.sponsor_tx_hash) IS DISTINCT FROM lower(p_sponsor_tx_hash) THEN
         RETURN jsonb_build_object('outcome', 'HASH_CONFLICT');
     END IF;
-    IF p_status = 'FAILED' AND (v_row.sponsor_tx_hash IS NOT NULL OR p_sponsor_tx_hash IS NOT NULL) THEN
-        /* A broadcast transfer is never failed — it must reconcile by hash. */
-        RETURN jsonb_build_object('outcome', 'HASH_BOUND');
+    IF v_row.prepared_transaction IS NOT NULL
+       AND p_prepared_transaction IS NOT NULL
+       AND v_row.prepared_transaction IS DISTINCT FROM lower(p_prepared_transaction) THEN
+        RETURN jsonb_build_object('outcome', 'PREPARED_TRANSACTION_CONFLICT');
+    END IF;
+    IF p_status IN ('PREPARED', 'SUBMITTED', 'CONFIRMED')
+       AND COALESCE(p_sponsor_tx_hash, v_row.sponsor_tx_hash) IS NULL THEN
+        RETURN jsonb_build_object('outcome', 'HASH_REQUIRED');
+    END IF;
+    IF p_status = 'PREPARED'
+       AND COALESCE(p_prepared_transaction, v_row.prepared_transaction) IS NULL THEN
+        RETURN jsonb_build_object('outcome', 'PREPARED_TRANSACTION_REQUIRED');
     END IF;
 
     UPDATE public.sponsored_gas_operations
     SET status = p_status,
         sponsor_tx_hash = COALESCE(lower(p_sponsor_tx_hash), sponsor_tx_hash),
+        prepared_transaction = COALESCE(lower(p_prepared_transaction), prepared_transaction),
         financial_tx_hash = COALESCE(p_financial_tx_hash, financial_tx_hash),
         failure_reason = left(p_failure_reason, 500),
         lease_token = CASE WHEN p_status IN ('CONFIRMED', 'FAILED', 'SKIPPED_SUFFICIENT_BALANCE') THEN NULL ELSE lease_token END,
@@ -224,7 +286,7 @@ REVOKE EXECUTE ON FUNCTION public.claim_sponsored_gas_operation(TEXT, TEXT, TEXT
     FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_sponsored_gas_operation(TEXT, TEXT, TEXT, TEXT, NUMERIC, INTEGER, INTEGER, NUMERIC, INTEGER)
     TO service_role, postgres;
-REVOKE EXECUTE ON FUNCTION public.update_sponsored_gas_operation(TEXT, UUID, TEXT, TEXT, TEXT, TEXT)
+REVOKE EXECUTE ON FUNCTION public.update_sponsored_gas_operation(TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT)
     FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.update_sponsored_gas_operation(TEXT, UUID, TEXT, TEXT, TEXT, TEXT)
+GRANT EXECUTE ON FUNCTION public.update_sponsored_gas_operation(TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT)
     TO service_role, postgres;

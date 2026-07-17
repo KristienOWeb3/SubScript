@@ -18,9 +18,10 @@ import { pgMaybeOne } from "@/lib/serverPg";
 import { executeWithRpcFallback } from "@/lib/payments/rpc";
 import { configuredAccountType } from "@/lib/circle/devWallets";
 import {
-    confirmSponsorTransferByHash,
     isGasSponsorshipEnabled,
-    sendSponsorTransfer,
+    prepareSponsorTransfer,
+    reconcileSponsorTransferByHash,
+    submitPreparedSponsorTransfer,
 } from "@/lib/sponsor/gas";
 
 export type SponsorCustody = "CIRCLE_SCA" | "CIRCLE_EOA" | "LEGACY_EOA";
@@ -60,6 +61,27 @@ export interface SponsoredGasResult {
     /** True when a transfer was broadcast but not yet confirmed — reconcile, never resubmit. */
     ambiguous?: boolean;
     reason?: string;
+}
+
+export type SponsoredGasFailureKind = "definitive" | "ambiguous";
+
+/** Structured fail-closed outcome for routes that must distinguish a retryable durable
+ * transaction from a definitive failure known to have happened before financial submission. */
+export class SponsoredGasError extends Error {
+    readonly name = "SponsoredGasError";
+
+    constructor(
+        message: string,
+        readonly kind: SponsoredGasFailureKind,
+        readonly reason?: string,
+        readonly txHash?: string,
+    ) {
+        super(message);
+    }
+}
+
+export function isSponsoredGasError(error: unknown): error is SponsoredGasError {
+    return error instanceof SponsoredGasError;
 }
 
 const DEFAULTS = {
@@ -112,8 +134,22 @@ async function claimOperation(params: {
     action: SponsoredGasAction;
     custody: SponsorCustody;
     requestedWei: bigint;
-}): Promise<{ outcome: string; leaseToken?: string; sponsorTxHash?: string; status?: string }> {
-    const row = await pgMaybeOne<{ result: { outcome: string; leaseToken?: string; sponsorTxHash?: string; status?: string } }>(
+}): Promise<{
+    outcome: string;
+    leaseToken?: string;
+    sponsorTxHash?: string;
+    preparedTransaction?: string;
+    status?: string;
+    failureReason?: string;
+}> {
+    const row = await pgMaybeOne<{ result: {
+        outcome: string;
+        leaseToken?: string;
+        sponsorTxHash?: string;
+        preparedTransaction?: string;
+        status?: string;
+        failureReason?: string;
+    } }>(
         `select public.claim_sponsored_gas_operation($1, $2, $3, $4, $5, $6, $7, $8) as result`,
         [
             params.requestKey,
@@ -133,12 +169,13 @@ async function claimOperation(params: {
 async function updateOperation(params: {
     requestKey: string;
     leaseToken: string;
-    status: "SUBMITTED" | "CONFIRMED" | "SKIPPED_SUFFICIENT_BALANCE" | "FAILED";
+    status: "PREPARED" | "SUBMITTED" | "CONFIRMED" | "SKIPPED_SUFFICIENT_BALANCE" | "FAILED";
     sponsorTxHash?: string;
+    preparedTransaction?: string;
     failureReason?: string;
 }): Promise<void> {
-    await pgMaybeOne(
-        `select public.update_sponsored_gas_operation($1, $2, $3, $4, $5, $6) as result`,
+    const row = await pgMaybeOne<{ result?: { outcome?: string } }>(
+        `select public.update_sponsored_gas_operation($1, $2, $3, $4, $5, $6, $7) as result`,
         [
             params.requestKey,
             params.leaseToken,
@@ -146,8 +183,13 @@ async function updateOperation(params: {
             params.sponsorTxHash ?? null,
             params.failureReason ?? null,
             null,
+            params.preparedTransaction ?? null,
         ],
     );
+    const outcome = row?.result?.outcome;
+    if (outcome !== "UPDATED" && outcome !== "ALREADY_TERMINAL") {
+        throw new Error(`gas sponsorship state update failed: ${outcome || "no outcome"}`);
+    }
 }
 
 async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGasResult> {
@@ -165,11 +207,16 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
 
     if (custody === "CIRCLE_SCA") {
         /* Gas Station pays SCA gas inside Circle's pipeline — a direct EOA top-up would be
-           free money the account contract never uses for fees. Record it for metrics. */
-        try {
-            await claimOperation({ ...requestIdentity(request, wallet), custody, requestedWei: BigInt(0) });
-        } catch (error) {
-            console.warn("[gas-sponsor] SCA gas-station record failed (non-blocking):", error instanceof Error ? error.message : error);
+           free money the account contract never uses for fees. The terminal Gas Station row is
+           required before success so metrics and request-key custody binding cannot disappear. */
+        const gasStationClaim = await claimOperation({
+            ...requestIdentity(request, wallet),
+            custody,
+            requestedWei: BigInt(0),
+        });
+        if (gasStationClaim.outcome !== "GAS_STATION"
+            && !(gasStationClaim.outcome === "REUSED" && gasStationClaim.status === "SKIPPED_GAS_STATION")) {
+            return { sponsored: false, custody, reason: gasStationClaim.outcome.toLowerCase() };
         }
         return { sponsored: true, method: "gas_station", custody };
     }
@@ -201,6 +248,14 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
 
     switch (claim.outcome) {
         case "REUSED":
+            if (claim.status === "FAILED") {
+                return {
+                    sponsored: false,
+                    custody,
+                    txHash: claim.sponsorTxHash,
+                    reason: claim.failureReason || "topup_reverted",
+                };
+            }
             return {
                 sponsored: true,
                 method: claim.status === "SKIPPED_SUFFICIENT_BALANCE" ? "sufficient_balance" : "reused_topup",
@@ -208,17 +263,50 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
                 txHash: claim.sponsorTxHash,
             };
         case "RECONCILE": {
-            /* A transfer was already broadcast for this operation. Reconcile by hash. */
-            if (claim.sponsorTxHash && await confirmSponsorTransferByHash(claim.sponsorTxHash)) {
-                return { sponsored: true, method: "reused_topup", custody, txHash: claim.sponsorTxHash };
+            /* A transaction identity is already durable. Confirm it first; if it was only
+               prepared, rebroadcast those exact signed bytes, never prepare a replacement. */
+            const leaseToken = claim.leaseToken;
+            const txHash = claim.sponsorTxHash;
+            if (!leaseToken || !txHash) {
+                return { sponsored: false, custody, ambiguous: true, reason: "reconciliation_state_incomplete" };
+            }
+            let reconciliation = await reconcileSponsorTransferByHash(txHash);
+            if (reconciliation === "pending" && claim.preparedTransaction) {
+                const submitted = await submitPreparedSponsorTransfer(claim.preparedTransaction, txHash);
+                reconciliation = submitted.outcome === "submitted_unconfirmed" ? "pending" : submitted.outcome;
+            }
+            if (reconciliation === "confirmed") {
+                await updateOperation({
+                    requestKey: request.requestKey,
+                    leaseToken,
+                    status: "CONFIRMED",
+                    sponsorTxHash: txHash,
+                });
+                return { sponsored: true, method: "reused_topup", custody, txHash };
+            }
+            if (reconciliation === "reverted") {
+                await updateOperation({
+                    requestKey: request.requestKey,
+                    leaseToken,
+                    status: "FAILED",
+                    sponsorTxHash: txHash,
+                    failureReason: "topup_reverted",
+                });
+                return { sponsored: false, custody, txHash, reason: "topup_reverted" };
             }
             console.warn("[gas-sponsor] submitted top-up still unconfirmed; refusing to resubmit", {
-                wallet, action: request.action, txHash: claim.sponsorTxHash,
+                wallet, action: request.action, txHash,
             });
-            return { sponsored: false, custody, txHash: claim.sponsorTxHash, ambiguous: true, reason: "topup_unconfirmed" };
+            return { sponsored: false, custody, txHash, ambiguous: true, reason: "topup_unconfirmed" };
         }
         case "IN_PROGRESS":
-            return { sponsored: false, custody, reason: "in_progress" };
+            return {
+                sponsored: false,
+                custody,
+                txHash: claim.sponsorTxHash,
+                ambiguous: Boolean(claim.sponsorTxHash),
+                reason: "in_progress",
+            };
         case "WALLET_LIMIT":
         case "ACTION_LIMIT":
         case "BUDGET_EXHAUSTED":
@@ -239,22 +327,58 @@ async function runSponsorship(request: SponsoredGasRequest): Promise<SponsoredGa
         return { sponsored: true, method: "sufficient_balance", custody };
     }
 
-    const transfer = await sendSponsorTransfer(wallet, requestedWei);
-    if (transfer.outcome === "failed_pre_broadcast") {
+    const prepared = await prepareSponsorTransfer(wallet, requestedWei);
+    if (prepared.outcome === "failed_pre_broadcast") {
         await updateOperation({
-            requestKey: request.requestKey, leaseToken, status: "FAILED", failureReason: transfer.reason,
-        }).catch(() => { /* the expired lease lets a later attempt re-claim */ });
-        return { sponsored: false, custody, reason: transfer.reason };
+            requestKey: request.requestKey, leaseToken, status: "FAILED", failureReason: prepared.reason,
+        });
+        return { sponsored: false, custody, reason: prepared.reason };
+    }
+    /* This write is the broadcast gate: failure leaves funds untouched and must propagate. */
+    await updateOperation({
+        requestKey: request.requestKey,
+        leaseToken,
+        status: "PREPARED",
+        sponsorTxHash: prepared.txHash,
+        preparedTransaction: prepared.preparedTransaction,
+    });
+
+    const transfer = await submitPreparedSponsorTransfer(prepared.preparedTransaction, prepared.txHash);
+    if (transfer.outcome === "reverted") {
+        await updateOperation({
+            requestKey: request.requestKey,
+            leaseToken,
+            status: "FAILED",
+            sponsorTxHash: transfer.txHash,
+            failureReason: "topup_reverted",
+        });
+        return { sponsored: false, custody, txHash: transfer.txHash, reason: "topup_reverted" };
     }
     if (transfer.outcome === "submitted_unconfirmed") {
-        await updateOperation({
-            requestKey: request.requestKey, leaseToken, status: "SUBMITTED", sponsorTxHash: transfer.txHash,
-        }).catch((error) => console.error("[gas-sponsor] CRITICAL: submitted top-up not recorded durably:", error));
+        try {
+            await updateOperation({
+                requestKey: request.requestKey, leaseToken, status: "SUBMITTED", sponsorTxHash: transfer.txHash,
+            });
+        } catch (error) {
+            /* PREPARED with the same signed bytes is already durable, so retry remains safe. */
+            console.error("[gas-sponsor] submitted top-up state advance failed; prepared outbox retained:", error);
+        }
         return { sponsored: false, custody, txHash: transfer.txHash, ambiguous: true, reason: "topup_unconfirmed" };
     }
-    await updateOperation({
-        requestKey: request.requestKey, leaseToken, status: "CONFIRMED", sponsorTxHash: transfer.txHash,
-    }).catch((error) => console.error("[gas-sponsor] CRITICAL: confirmed top-up not recorded durably:", error));
+    try {
+        await updateOperation({
+            requestKey: request.requestKey, leaseToken, status: "CONFIRMED", sponsorTxHash: transfer.txHash,
+        });
+    } catch (error) {
+        console.error("[gas-sponsor] confirmed top-up state advance failed; prepared outbox retained:", error);
+        return {
+            sponsored: false,
+            custody,
+            txHash: transfer.txHash,
+            ambiguous: true,
+            reason: "confirmation_persistence_failed",
+        };
+    }
     return { sponsored: true, method: "sponsor_topup", custody, txHash: transfer.txHash };
 }
 
@@ -292,9 +416,19 @@ export async function requireSponsoredGas(request: SponsoredGasRequest): Promise
     if (result.ambiguous) {
         /* A sponsor transfer may still confirm. Do NOT claim anything about fund movement —
            just stop before the financial operation and let the retry reconcile by hash. */
-        throw new Error("Gas sponsorship is still confirming a previous top-up. Please retry in a moment; do not submit a duplicate payment.");
+        throw new SponsoredGasError(
+            "Gas sponsorship is still confirming a previous top-up. Please retry in a moment; do not submit a duplicate payment.",
+            "ambiguous",
+            result.reason,
+            result.txHash,
+        );
     }
-    throw new Error(sponsorFailureMessage(result.reason));
+    throw new SponsoredGasError(
+        sponsorFailureMessage(result.reason),
+        "definitive",
+        result.reason,
+        result.txHash,
+    );
 }
 
 function sponsorFailureMessage(reason?: string): string {

@@ -131,8 +131,12 @@ export async function sendWebhookRequest(
        the same host for the same event — they shouldn't each burn a token). */
     const urlValidation = await validateWebhookUrl(url);
     if (!urlValidation.ok) {
-        return { status: 400, responseText: urlValidation.error };
+        return {
+            status: "transient" in urlValidation && urlValidation.transient === true ? 503 : 400,
+            responseText: urlValidation.error,
+        };
     }
+    const destination = new URL(urlValidation.url).origin;
     try {
         const destinationHost = new URL(urlValidation.url).host.toLowerCase();
         assertProviderRateLimit({
@@ -186,7 +190,7 @@ export async function sendWebhookRequest(
                 last = { status: response.status, responseText };
                 if (!isRetryableStatus(response.status)) return last;
             } catch (err: any) {
-                console.warn(`Webhook delivery failure to ${url} (attempt ${attempt + 1}/${maxAttempts}):`, err);
+                console.warn(`Webhook delivery failure to ${destination} (attempt ${attempt + 1}/${maxAttempts}):`, err);
                 last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
             }
 

@@ -24,7 +24,10 @@ ALTER TABLE public.payment_link_checkout_attempts
     DROP CONSTRAINT IF EXISTS payment_link_checkout_attempts_status_check;
 ALTER TABLE public.payment_link_checkout_attempts
     ADD CONSTRAINT payment_link_checkout_attempts_status_check
-    CHECK (status IN ('RESERVED', 'SUBMITTED', 'SETTLED', 'RELEASED', 'FAILED_TERMINAL'));
+    CHECK (status IN ('RESERVED', 'SUBMITTED', 'SETTLED', 'RELEASED', 'FAILED_TERMINAL'))
+    NOT VALID;
+ALTER TABLE public.payment_link_checkout_attempts
+    VALIDATE CONSTRAINT payment_link_checkout_attempts_status_check;
 
 CREATE OR REPLACE FUNCTION public.reserve_payment_link_checkout_attempt(
     p_attempt_id UUID,

@@ -2959,7 +2959,7 @@ Please complete the following implementation tasks:
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
-                                                                                                        href={`https://testnet.arcscan.app/tx/${p.tx_hash}`} 
+                                                                                                        href={`${activeArcChain.blockExplorers.default.url}/tx/${p.tx_hash}`}
                                                                                                         target="_blank" 
                                                                                                         rel="noopener noreferrer"
                                                                                                     >
@@ -3826,7 +3826,7 @@ Please complete the following implementation tasks:
                                                             Grant access
                                                         </a>
                                                         <a
-                                                            href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"

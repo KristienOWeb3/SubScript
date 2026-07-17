@@ -262,7 +262,7 @@ describe("SubScript", function () {
       /* Renewal becomes due BEFORE the cancellation request. */
       await time.increase(PERIOD + 1);
 
-      /* User requests cancellation → immediate on-chain revocation. */
+      /* User requests cancellation, causing immediate on-chain revocation. */
       await subScript.connect(subscriber).cancelSubscription(1);
 
       /* Permissionless charge attempt right at the boundary must fail. */

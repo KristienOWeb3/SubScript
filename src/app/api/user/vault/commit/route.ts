@@ -9,7 +9,7 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
-import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { isSponsoredGasError, requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
@@ -18,14 +18,13 @@ export const maxDuration = 120;
 
 export async function POST(request: Request) {
     try {
-        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
-           routes (never silently fall back to a testnet address). No-op on testnet. */
-        assertFinancialNetworkReady();
-
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        /* Fail-closed after authentication so deployment diagnostics are not exposed to
+           unauthenticated probes. Never silently fall back to a testnet address. */
+        assertFinancialNetworkReady();
         const roleCheck = await requireAccountRole(wallet, "USER");
         if (!roleCheck.ok) {
             return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
@@ -131,20 +130,43 @@ export async function POST(request: Request) {
                     },
                 }, { status: 200 });
             }
-            /* PENDING/SUBMITTED/FAILED: fall through — the deterministic custody key makes the
-               resubmission below dedupe at Circle (SUBMITTED/ambiguous PENDING) or genuinely
-               retry (FAILED), and the mirror sync completes any half-finished attempt. */
+            if (intent.status === "FAILED") {
+                return NextResponse.json({
+                    error: intent.lastError || "The previous commit failed before submission. Start a new commit with a new request id.",
+                    code: "COMMIT_FAILED",
+                    requestId,
+                }, { status: 409 });
+            }
+            /* PENDING/SUBMITTED: fall through — the deterministic custody key makes the
+               resubmission below dedupe at Circle, and mirror sync completes a half-finished
+               attempt. FAILED is terminal and requires a fresh user operation. */
         }
 
         /* Pay For Me: custody-aware, durable and budget-bounded. The commit amount is declared
            as principal so it is never reclassified as sponsored gas, and a retried request
            (same x-request-id) reuses the durable sponsorship instead of farming a new top-up. */
-        await requireSponsoredGas({
-            wallet: normalizedWallet,
-            action: "vault_commit",
-            requestKey: sponsorRequestKey,
-            principalRequiredWei: amount * BigInt(1_000_000_000_000),
-        });
+        try {
+            await requireSponsoredGas({
+                wallet: normalizedWallet,
+                action: "vault_commit",
+                requestKey: sponsorRequestKey,
+                principalRequiredWei: amount * BigInt(1_000_000_000_000),
+            });
+        } catch (sponsorError: unknown) {
+            /* Structured definitive failures occurred before any financial submission, so the
+               intent can close safely. Ambiguous sponsor hashes and unknown infrastructure
+               failures stay PENDING for same-id reconciliation. */
+            if (isSponsoredGasError(sponsorError) && sponsorError.kind === "definitive") {
+                await prisma.vaultCommitIntent.update({
+                    where: { requestId },
+                    data: {
+                        status: "FAILED",
+                        lastError: String(sponsorError.message || sponsorError.reason || "Gas sponsorship failed").slice(0, 500),
+                    },
+                });
+            }
+            throw sponsorError;
+        }
 
         let txHash: string;
         try {

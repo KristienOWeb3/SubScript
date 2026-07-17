@@ -248,7 +248,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      * @notice The user contests this cycle's reported usage. While the dispute is open,
      *         neither keeper settlement nor user reclaim can move the escrow.
      */
-    function raiseDispute(address merchant) external {
+    function raiseDispute(address merchant) external nonReentrant {
         Vault storage v = vaults[msg.sender][merchant];
         require(v.active, "inactive");
         require(!disputeHold[msg.sender][merchant], "already disputed");
@@ -262,15 +262,17 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      *         the resolution outcome (a keeper draw bounded as always, or an eventual user
      *         reclaim) is actually reachable.
      */
-    function resolveDispute(address user, address merchant, bool reopenSettlement) external onlyOwner {
+    function resolveDispute(address user, address merchant, bool reopenSettlement) external onlyOwner nonReentrant {
         require(disputeHold[user][merchant], "no dispute");
         disputeHold[user][merchant] = false;
         Vault storage v = vaults[user][merchant];
+        bool settlementReopened;
         if (reopenSettlement && v.active && v.lockedUntil != 0
             && block.timestamp >= uint256(v.lockedUntil) + RECLAIM_GRACE) {
             v.lockedUntil = uint64(block.timestamp);
+            settlementReopened = true;
         }
-        emit DisputeResolved(user, merchant, reopenSettlement);
+        emit DisputeResolved(user, merchant, settlementReopened);
     }
 
     /* ──────────────────────────── Settlement (keeper only) ───────── */

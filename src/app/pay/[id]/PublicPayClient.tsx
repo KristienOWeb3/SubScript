@@ -800,9 +800,9 @@ export default function PublicPayClient({
     };
 
     type ReservationResult =
-        | { kind: "reserved"; receiptId: string }
-        | { kind: "resume"; txHash: `0x${string}`; receiptId: string | null }
-        | { kind: "settled"; receiptId: string | null };
+        | { kind: "reserved"; attemptId: string; receiptId: string }
+        | { kind: "resume"; attemptId: string; txHash: `0x${string}`; receiptId: string | null }
+        | { kind: "settled"; attemptId: string; receiptId: string | null };
 
     const reserveCheckoutAttempt = async (payer: string, attemptOverride?: string): Promise<ReservationResult> => {
         const attemptId = attemptOverride || clientIntentId;
@@ -825,6 +825,7 @@ export default function PublicPayClient({
             if (/^0x[0-9a-f]{64}$/i.test(data.txHash || "")) {
                 return {
                     kind: "resume",
+                    attemptId,
                     txHash: data.txHash as `0x${string}`,
                     receiptId: isReceiptId(data.receiptId) ? data.receiptId : null,
                 };
@@ -835,7 +836,7 @@ export default function PublicPayClient({
             throw new Error(data.error || "Unable to reserve this checkout attempt.");
         }
         if (data.settled === true) {
-            return { kind: "settled", receiptId: data.receiptId };
+            return { kind: "settled", attemptId, receiptId: data.receiptId };
         }
         /* Past this point the server has RESERVED capacity. Any validation failure below must
            release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
@@ -843,21 +844,21 @@ export default function PublicPayClient({
         if (String(data.amountUsdc) !== String(linkData.amount_usdc)
             || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()
             || Number(data.settlementChainId) !== expectedChainId) {
-            await releaseUnbroadcastAttempt();
+            await releaseUnbroadcastAttempt(attemptId);
             throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
         }
         if (!payer) {
-            await releaseUnbroadcastAttempt();
+            await releaseUnbroadcastAttempt(attemptId);
             throw new Error("The paying wallet is unavailable.");
         }
         setReceiptId(data.receiptId);
-        return { kind: "reserved", receiptId: data.receiptId };
+        return { kind: "reserved", attemptId, receiptId: data.receiptId };
     };
 
-    const releaseUnbroadcastAttempt = async () => {
-        if (!linkData?.id || !clientIntentId || paymentBroadcastRef.current) return;
+    const releaseUnbroadcastAttempt = async (attemptId: string) => {
+        if (!linkData?.id || !attemptId || paymentBroadcastRef.current) return;
         try {
-            const response = await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(clientIntentId)}`, {
+            const response = await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(attemptId)}`, {
                 method: "DELETE",
             });
             const data = await response.json().catch(() => ({}));
@@ -960,7 +961,7 @@ export default function PublicPayClient({
                 receiptId: reservation.receiptId,
                 payer: address,
                 chainId: expectedChainId,
-                attemptId: clientIntentId,
+                attemptId: reservation.attemptId,
                 submittedAt: new Date().toISOString(),
                 source: "wallet",
                 phase: "confirmed",
@@ -970,7 +971,7 @@ export default function PublicPayClient({
             setIsPaying(false);
             setVerificationStatus("Payment submitted; resuming verification…");
             setVerifiedHash(reservation.txHash);
-            startVerification(reservation.txHash, reservation.receiptId, address, expectedChainId);
+            startVerification(reservation.txHash, reservation.receiptId, address, expectedChainId, reservation.attemptId);
             return;
         }
         if (reservation.kind === "settled") {
@@ -979,6 +980,7 @@ export default function PublicPayClient({
             setVerificationStatus("Payment confirmed and settled successfully!");
             return;
         }
+        const activeAttemptId = reservation.attemptId;
         const checkoutReceiptId = reservation.receiptId;
 
         if (isCctpChain && chainId) {
@@ -1045,7 +1047,7 @@ export default function PublicPayClient({
                 setIsPaying(false);
 
             } catch (err: any) {
-                await releaseUnbroadcastAttempt();
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "CCTP payment execution failed"));
                 setIsPaying(false);
@@ -1073,7 +1075,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -1086,7 +1088,7 @@ export default function PublicPayClient({
                     setVerificationStatus("Direct transfer submitted. Waiting for confirmation on the Arc Network...");
                     /* Durably bind the hash server-side the moment it exists. The server worker
                        owns confirmation polling from here; local receipt watching is only UI. */
-                    startVerification(hash, nextReceiptId, address, expectedChainId);
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 } else {
                     const currentAllowance = publicClient
                         ? await publicClient.readContract({
@@ -1133,7 +1135,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -1146,11 +1148,11 @@ export default function PublicPayClient({
                     setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
                     /* Durably bind the hash server-side the moment it exists. The server worker
                        owns confirmation polling from here; local receipt watching is only UI. */
-                    startVerification(hash, nextReceiptId, address, expectedChainId);
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 }
 
             } catch (err: any) {
-                await releaseUnbroadcastAttempt();
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "Payment transaction failed"));
                 setIsPaying(false);
@@ -1163,7 +1165,7 @@ export default function PublicPayClient({
     /* Submit the verification job and stream settlement status. Shared by the browser-wallet flow
        (driven by the wagmi receipt effect below) and the embedded-wallet flow (handleEmbeddedPay),
        so both settle through the identical /api/payment-links/verify pipeline. */
-    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number) => {
+    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number, attemptId: string) => {
         if (verificationInFlightRef.current === hash) return;
         verificationInFlightRef.current = hash;
         paymentSubmissionGuardRef.current = true;
@@ -1180,7 +1182,7 @@ export default function PublicPayClient({
                         payerAddress: payer || "",
                         receiptId: rid,
                         chainId: chain,
-                        checkoutAttemptId: clientIntentId,
+                        checkoutAttemptId: attemptId,
                     })
                 });
 
@@ -1280,7 +1282,7 @@ export default function PublicPayClient({
             }
         };
         run();
-    }, [clearPendingVerification, clientIntentId, friendlyError, linkData]);
+    }, [clearPendingVerification, friendlyError, linkData]);
 
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && verifiedHash !== txHash) {
@@ -1303,20 +1305,21 @@ export default function PublicPayClient({
             }
             const matchingPending = pendingVerification?.txHash === txHash ? pendingVerification : null;
             const payer = matchingPending?.payer || address || "";
-            if (!payer || !clientIntentId) return;
+            const activeAttemptId = matchingPending?.attemptId || clientIntentId;
+            if (!payer || !activeAttemptId) return;
             const confirmedRecord: PendingCheckoutVerification = {
                 txHash,
                 receiptId: matchingPending?.receiptId ?? receiptId,
                 payer,
                 chainId: matchingPending?.chainId ?? chainId,
-                attemptId: matchingPending?.attemptId || clientIntentId,
+                attemptId: activeAttemptId,
                 submittedAt: matchingPending?.submittedAt || new Date().toISOString(),
                 source: matchingPending?.source || "wallet",
                 phase: "confirmed",
             };
             persistPendingVerification(confirmedRecord);
             setVerifiedHash(txHash);
-            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId);
+            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId, confirmedRecord.attemptId);
         }
     }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, rotateAttemptId, startVerification, txHash, txReceipt, verifiedHash]);
 
@@ -1331,6 +1334,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     }, [clientIntentId, isPaymentSettled, linkData?.id, pendingVerification, startVerification, verifiedHash]);
 
@@ -1498,7 +1502,7 @@ export default function PublicPayClient({
             setPaymentStep("verifying");
             setVerificationStatus("Payment sent. Confirming settlement...");
             setVerifiedHash(hash);
-            startVerification(hash, rid, payer, expectedChainId);
+            startVerification(hash, rid, payer, expectedChainId, submittedRecord.attemptId);
         } catch (err: any) {
             setVerificationStatus(null);
             setVerificationError(friendlyError(err.message || "Payment failed"));
@@ -1518,6 +1522,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     };
 

@@ -120,7 +120,7 @@ test("a payment completed from the desktop QR updates the anonymous checkout", (
     assert.match(client, /void poll\(\)/);
     assert.match(client, /data\?\.attemptSettled === true/);
     assert.doesNotMatch(client, /data\?\.verifiedTxHash/);
-    assert.match(client, /checkoutAttemptId: clientIntentId/);
+    assert.match(client, /checkoutAttemptId: attemptId/);
     assert.match(status, /checkout_attempt_id/);
     assert.match(status, /attemptSettled: result\.attempt_settled === true/);
     assert.doesNotMatch(status, /verifiedTxHash:/);

@@ -23,6 +23,7 @@ export const VAULT_ABI = [
     "function merchantClaim()",
     "function merchantClaimable(address merchant) view returns (uint256)",
     "function getVault(address user, address merchant) view returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded, uint64 lockedUntil)",
+    "function disputeHold(address user, address merchant) view returns (bool)",
 ];
 
 const USDC_ABI = [
@@ -37,6 +38,7 @@ export type VaultState = {
     active: boolean;
     commitNeeded: bigint;
     lockedUntil: bigint;
+    disputed: boolean;
 };
 
 function readProvider(): ethers.JsonRpcProvider {
@@ -50,7 +52,10 @@ export function vaultReadContract(provider?: ethers.Provider) {
 
 export async function readVault(user: string, merchant: string): Promise<VaultState> {
     const c = vaultReadContract();
-    const v = await c.getVault(user, merchant);
+    const [v, disputed] = await Promise.all([
+        c.getVault(user, merchant),
+        c.disputeHold(user, merchant),
+    ]);
     return {
         balance: BigInt(v.balance ?? v[0]),
         owed: BigInt(v.owed ?? v[1]),
@@ -58,6 +63,7 @@ export async function readVault(user: string, merchant: string): Promise<VaultSt
         active: Boolean(v.active ?? v[3]),
         commitNeeded: BigInt(v.commitNeeded ?? v[4]),
         lockedUntil: BigInt(v.lockedUntil ?? v[5] ?? 0),
+        disputed: Boolean(disputed),
     };
 }
 
@@ -66,6 +72,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     const normalizedUser = user.toLowerCase();
     const normalizedMerchant = merchant.toLowerCase();
     const v = await readVault(normalizedUser, normalizedMerchant);
+    const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
 
     const cycleStart = v.cycleStart > BigInt(0) ? new Date(Number(v.cycleStart) * 1000) : null;
     const lockedUntil = v.lockedUntil > BigInt(0) ? new Date(Number(v.lockedUntil) * 1000) : null;
@@ -84,6 +91,9 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
             locked_until,
             active,
             vault_chain_id,
+            environment,
+            settlement_chain_id,
+            disputed,
             updated_at
         ) VALUES (
             ${normalizedUser},
@@ -95,9 +105,12 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
             ${lockedUntil},
             ${v.active},
             ${SUBSCRIPT_VAULT_CHAIN_ID},
+            ${environment},
+            ${SUBSCRIPT_VAULT_CHAIN_ID},
+            ${v.disputed},
             now()
         )
-        ON CONFLICT (user_address, merchant_address)
+        ON CONFLICT (user_address, merchant_address, environment, settlement_chain_id)
         DO UPDATE SET
             balance_usdc = EXCLUDED.balance_usdc,
             owed_usdc = EXCLUDED.owed_usdc,
@@ -106,6 +119,7 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
             locked_until = EXCLUDED.locked_until,
             active = EXCLUDED.active,
             vault_chain_id = EXCLUDED.vault_chain_id,
+            disputed = EXCLUDED.disputed,
             accrued_usage_usdc = CASE
                 WHEN public.metered_vaults.cycle_start IS DISTINCT FROM EXCLUDED.cycle_start
                     OR EXCLUDED.active = false

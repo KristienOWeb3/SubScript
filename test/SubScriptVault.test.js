@@ -38,6 +38,41 @@ describe("SubScriptVault", function () {
     return { vault, impl, usdc, owner, user, merchant, keeper, treasury, stranger };
   }
 
+  async function deployUpgradeFixture() {
+    const [owner, user, merchant, keeper, treasury, stranger] = await ethers.getSigners();
+
+    const MockUSDC = await ethers.getContractFactory("MockUSDC");
+    const usdc = await MockUSDC.deploy();
+    const Predecessor = await ethers.getContractFactory("SubScriptVaultPredecessor");
+    const predecessorImpl = await Predecessor.deploy();
+    const initData = Predecessor.interface.encodeFunctionData("initialize", [
+      await usdc.getAddress(),
+      owner.address,
+    ]);
+    const Proxy = await ethers.getContractFactory("MockERC1967Proxy");
+    const proxy = await Proxy.deploy(await predecessorImpl.getAddress(), initData);
+    const predecessor = Predecessor.attach(await proxy.getAddress());
+
+    await usdc.mint(user.address, 10_000_000n);
+    await usdc.connect(user).approve(await predecessor.getAddress(), ethers.MaxUint256);
+    await predecessor.connect(merchant).setRequiredCommit(STANDARD_COMMIT);
+    await predecessor.connect(user).commit(merchant.address, 3_000_000n);
+    await predecessor.connect(owner).setAuthorizedDrawer(keeper.address, true);
+    await predecessor.connect(owner).setTreasury(treasury.address);
+
+    return {
+      predecessor,
+      predecessorImpl,
+      usdc,
+      owner,
+      user,
+      merchant,
+      keeper,
+      treasury,
+      stranger,
+    };
+  }
+
   describe("platform-fixed 2 USDC policy", function () {
     it("activates at the standard commitment and reports it as the required commit", async function () {
       const { vault, user, merchant } = await loadFixture(deployFixture);
@@ -141,9 +176,25 @@ describe("SubScriptVault", function () {
         vault.connect(user).reclaimAbandonedEscrow(merchant.address)
       ).to.be.revertedWith("disputed");
 
-      await vault.connect(owner).resolveDispute(user.address, merchant.address, true);
+      await expect(
+        vault.connect(owner).resolveDispute(user.address, merchant.address, true)
+      ).to.emit(vault, "DisputeResolved").withArgs(user.address, merchant.address, true);
       await vault.connect(keeper).drawUsageFor(merchant.address, user.address, 1_000_000n);
       expect(await vault.merchantClaimable(merchant.address)).to.equal(1_000_000n);
+    });
+
+    it("reports whether dispute resolution actually reopened settlement", async function () {
+      const { vault, owner, user, merchant } = await loadFixture(deployFixture);
+      await vault.connect(user).commit(merchant.address, STANDARD_COMMIT);
+      await vault.connect(user).raiseDispute(merchant.address);
+      const [, , , , , lockedUntilBefore] = await vault.getVault(user.address, merchant.address);
+
+      await expect(
+        vault.connect(owner).resolveDispute(user.address, merchant.address, true)
+      ).to.emit(vault, "DisputeResolved").withArgs(user.address, merchant.address, false);
+
+      const [, , , , , lockedUntilAfter] = await vault.getVault(user.address, merchant.address);
+      expect(lockedUntilAfter).to.equal(lockedUntilBefore);
     });
 
     it("only the owner can resolve a dispute", async function () {
@@ -182,25 +233,75 @@ describe("SubScriptVault", function () {
   });
 
   describe("upgrade safety", function () {
-    it("initializers are locked and upgrades are owner-only", async function () {
-      const { vault, impl, usdc, owner, stranger } = await loadFixture(deployFixture);
+    it("locks initializers, restricts upgrades, and preserves predecessor storage", async function () {
+      const {
+        predecessor,
+        predecessorImpl,
+        usdc,
+        owner,
+        user,
+        merchant,
+        keeper,
+        treasury,
+        stranger,
+      } = await loadFixture(deployUpgradeFixture);
+
+      const proxyAddress = await predecessor.getAddress();
+      const ownerBefore = await predecessor.owner();
+      const tokenBefore = await predecessor.paymentToken();
+      const treasuryBefore = await predecessor.treasury();
+      const vaultBefore = await predecessor.vaults(user.address, merchant.address);
+      const drawerBefore = await predecessor.authorizedDrawers(keeper.address);
+      const cycleLengthBefore = await predecessor.cycleLength();
+      const legacyCommitSlot = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ["address", "uint256"],
+          [merchant.address, 2n]
+        )
+      );
+      const requiredCommitBefore = await ethers.provider.getStorage(
+        proxyAddress,
+        legacyCommitSlot
+      );
 
       /* Proxy: initialize cannot rerun; reinitializer(2) is owner-gated. */
-      await expect(vault.initialize(await usdc.getAddress(), owner.address)).to.be.reverted;
-      await expect(vault.connect(stranger).initializeV2(stranger.address)).to.be.reverted;
+      await expect(
+        predecessor.initialize(await usdc.getAddress(), owner.address)
+      ).to.be.reverted;
 
-      /* The raw implementation is bricked (`_disableInitializers`). */
-      await expect(impl.initialize(await usdc.getAddress(), owner.address)).to.be.reverted;
+      /* The deployed predecessor implementation is bricked (`_disableInitializers`). */
+      await expect(
+        predecessorImpl.initialize(await usdc.getAddress(), owner.address)
+      ).to.be.reverted;
 
-      /* Only the owner may authorize a UUPS upgrade. */
+      /* Upgrade the real predecessor layout to V3; only the owner may authorize it. */
       const Vault = await ethers.getContractFactory("SubScriptVault");
       const nextImpl = await Vault.deploy();
       await expect(
-        vault.connect(stranger).upgradeToAndCall(await nextImpl.getAddress(), "0x")
+        nextImpl.initialize(await usdc.getAddress(), owner.address)
       ).to.be.reverted;
-      await vault.connect(owner).upgradeToAndCall(await nextImpl.getAddress(), "0x");
-      /* State survives the upgrade (proxy storage untouched). */
-      expect(await vault.STANDARD_COMMIT()).to.equal(STANDARD_COMMIT);
+      await expect(
+        predecessor.connect(stranger).upgradeToAndCall(await nextImpl.getAddress(), "0x")
+      ).to.be.reverted;
+      await predecessor.connect(owner).upgradeToAndCall(await nextImpl.getAddress(), "0x");
+
+      const vault = Vault.attach(proxyAddress);
+      await expect(vault.connect(stranger).initializeV2(stranger.address)).to.be.reverted;
+      expect(await vault.owner()).to.equal(ownerBefore);
+      expect(await vault.paymentToken()).to.equal(tokenBefore);
+      expect(await vault.treasury()).to.equal(treasuryBefore);
+      expect(await vault.treasury()).to.equal(treasury.address);
+      expect(await vault.authorizedDrawers(keeper.address)).to.equal(drawerBefore);
+      expect(await vault.cycleLength()).to.equal(cycleLengthBefore);
+      expect(await ethers.provider.getStorage(proxyAddress, legacyCommitSlot))
+        .to.equal(requiredCommitBefore);
+
+      const vaultAfter = await vault.vaults(user.address, merchant.address);
+      expect(vaultAfter.balance).to.equal(vaultBefore.balance);
+      expect(vaultAfter.owed).to.equal(vaultBefore.owed);
+      expect(vaultAfter.cycleStart).to.equal(vaultBefore.cycleStart);
+      expect(vaultAfter.active).to.equal(vaultBefore.active);
+      expect(vaultAfter.lockedUntil).to.equal(vaultBefore.lockedUntil);
     });
   });
 });

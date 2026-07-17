@@ -33,6 +33,26 @@ CREATE TABLE IF NOT EXISTS public.vault_commit_intents (
 CREATE INDEX IF NOT EXISTS vault_commit_intents_user_idx
     ON public.vault_commit_intents (user_address, created_at DESC);
 
+CREATE OR REPLACE FUNCTION public.enforce_vault_commit_intent_terminal_state()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    IF OLD.status IN ('MIRRORED', 'FAILED') AND NEW.status IS DISTINCT FROM OLD.status THEN
+        RAISE EXCEPTION 'vault commit intent terminal state cannot be reopened';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS vault_commit_intents_terminal_state
+    ON public.vault_commit_intents;
+CREATE TRIGGER vault_commit_intents_terminal_state
+    BEFORE UPDATE ON public.vault_commit_intents
+    FOR EACH ROW
+    EXECUTE FUNCTION public.enforce_vault_commit_intent_terminal_state();
+
 ALTER TABLE public.vault_commit_intents ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.vault_commit_intents FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.vault_commit_intents TO service_role, postgres;

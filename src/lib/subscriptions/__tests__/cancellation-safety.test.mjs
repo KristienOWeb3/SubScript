@@ -38,6 +38,9 @@ test("authorization state and entitlement state are separate webhook events", ()
     assert.match(cancelRoute, /customer-cancel-scheduled:\$\{subscriptionId\}/);
     assert.match(keeper, /"subscription\.canceled"/);
     assert.match(keeper, /Canceled at period end/);
+    /* Outbox failure cannot turn an already committed cancellation into an HTTP 500. */
+    assert.match(cancelRoute, /catch \(webhookError\)/);
+    assert.match(cancelRoute, /\[ALERT\] cancellation webhook enqueue failed after state committed/);
 });
 
 test("external wallets are never told the cancellation is safely scheduled", () => {
@@ -51,21 +54,31 @@ test("external wallets are never told the cancellation is safely scheduled", () 
 test("a failed revocation can never fall outside every worker query", () => {
     assert.match(migration, /ADD COLUMN IF NOT EXISTS revocation_pending BOOLEAN NOT NULL DEFAULT false/);
     assert.match(migration, /WHERE revocation_pending = true/);
+    assert.match(migration, /CREATE INDEX CONCURRENTLY IF NOT EXISTS subscriptions_revocation_pending_idx/);
+    assert.match(migration, /-- subscript:no-transaction/);
     assert.match(schema, /revocationPending\s+Boolean\s+@default\(false\) @map\("revocation_pending"\)/);
 
-    /* The retry worker selects on the flag alone — no status filter and no next_billing_date
-       gate, so ACTIVE, PAST_DUE and even locally-CANCELED rows all stay in the queue. */
-    const retryPass = keeper.slice(
-        keeper.indexOf('.eq("revocation_pending", true)') - 400,
-        keeper.indexOf("REVOCATION_RETRY_FAILED") + 200,
-    );
-    assert.match(retryPass, /\.eq\("revocation_pending", true\)/);
-    assert.doesNotMatch(retryPass, /\.lte\("next_billing_date"/);
-    assert.doesNotMatch(retryPass, /\.eq\("status"/);
-    /* Failure never clears the flag. */
-    assert.match(retryPass, /Never clear revocation_pending on failure/);
-    /* Success clears it only after the chain reported inactive or the revoke confirmed. */
-    assert.match(retryPass, /revocation_pending: false/);
+    /* The database claims eligible rows oldest-first with leases and backoff, independent of
+       local status/next billing date. This prevents parallel workers and starvation. */
+    assert.match(migration, /CREATE OR REPLACE FUNCTION public\.claim_pending_subscription_revocations/);
+    assert.match(migration, /ORDER BY sub\.revocation_next_attempt_at ASC NULLS FIRST, sub\.subscription_id ASC/);
+    assert.match(migration, /FOR UPDATE SKIP LOCKED/);
+    assert.match(migration, /revocation_lease_expires_at/);
+    assert.match(migration, /power\(2, greatest\(0, least\(revocation_attempts - 1, 7\)\)\)/);
+    assert.match(keeper, /"claim_pending_subscription_revocations"/);
+    assert.match(keeper, /"complete_subscription_revocation_claim"/);
+    assert.match(keeper, /"fail_subscription_revocation_claim"/);
+    assert.doesNotMatch(keeper, /\.eq\("revocation_pending", true\)\s*\n\s*\.limit\(100\)/);
+});
+
+test("every cancellation path persists whether revocation remains pending", () => {
+    const zombie = keeper.slice(keeper.indexOf("Zombie kill:"), keeper.indexOf("Charge."));
+    assert.match(zombie, /revocation_pending: !revokedOnChain/);
+    assert.match(zombie, /revocation_tx_hash: revocationTxHash\.toLowerCase\(\)/);
+
+    const periodEnd = keeper.slice(keeper.indexOf("Deferred cancellations:"), keeper.indexOf("Only a genuine execution error"));
+    assert.match(periodEnd, /revocation_pending: false/);
+    assert.match(periodEnd, /revocation_pending: true/);
 });
 
 test("period-end finalization also covers PAST_DUE cancellations", () => {

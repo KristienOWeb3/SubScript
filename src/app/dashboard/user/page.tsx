@@ -1564,12 +1564,18 @@ export default function UserDashboard() {
           functionName: "reclaimAbandonedEscrow",
           args: [vault.merchantAddress as `0x${string}`],
         });
-        await publicClient.waitForTransactionReceipt({ hash: reclaimHash });
-        await fetch("/api/user/vault/sync", {
+        const reclaimReceipt = await publicClient.waitForTransactionReceipt({ hash: reclaimHash });
+        if (reclaimReceipt.status !== "success") {
+          throw new Error("The reclaim transaction reverted. Your vault remains unchanged.");
+        }
+        const syncRes = await fetch("/api/user/vault/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
-        }).catch(() => undefined);
+        });
+        if (!syncRes.ok) {
+          throw new Error("Reclaim confirmed on-chain, but the vault could not be refreshed. Retry to synchronize it.");
+        }
       }
       await loadVaults();
     } catch (err: any) {
@@ -1643,11 +1649,22 @@ export default function UserDashboard() {
           try { storedIntent = JSON.parse(localStorage.getItem(intentStorageKey) || "null"); } catch { storedIntent = null; }
           if (storedIntent?.requestId
               && (storedIntent.merchantAddress !== merchantAddress || storedIntent.amountUsdc !== vaultActionAmount)) {
-            const prior = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
-              .then((r) => r.json())
+            const priorResponse = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
               .catch(() => null);
+            if (!priorResponse?.ok) {
+              throw new Error("Unable to verify the previous vault commit. Retry after its status can be confirmed.");
+            }
+            const prior = await priorResponse.json().catch(() => null);
+            if (!prior || typeof prior.exists !== "boolean") {
+              throw new Error("The previous vault commit returned an invalid status. Retry before starting a new commit.");
+            }
             if (prior?.exists && (prior.status === "PENDING" || prior.status === "SUBMITTED")) {
               throw new Error("A previous vault commit is still resolving. Retry that exact commit (same merchant and amount), or wait for it to finish before starting a new one.");
+            }
+            const terminal = prior.exists === false
+              || (prior.exists === true && (prior.status === "MIRRORED" || prior.status === "FAILED"));
+            if (!terminal) {
+              throw new Error("The previous vault commit has an unknown status. Retry before starting a new commit.");
             }
             try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
             storedIntent = null;
@@ -5224,8 +5241,8 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
               </ul>
             </div>
             <p className="text-[11px] leading-relaxed text-white/40">
-              The merchant sets the commit amount. At the end of each 30-day cycle they draw the period's
-              usage cost from your vault; you top the vault back up to keep the service running.
+              SubScript fixes the commitment at 2 USDC for each user–merchant relationship per cycle.
+              At cycle end the keeper settles reported usage and closes the vault; commit again to start the next cycle.
             </p>
             <button type="button" onClick={onClose} className="subscript-primary-button">
               Got it
@@ -7314,6 +7331,7 @@ function MeteredVaultRow({
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
+  const disputed = vault.disputed === true;
   const cycleStartDate = vault.cycleStart ? new Date(vault.cycleStart) : null;
   const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
   const RECLAIM_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -7326,14 +7344,14 @@ function MeteredVaultRow({
        7-day grace) lapsed without keeper settlement;
      - an active matured vault inside the grace is simply awaiting settlement. */
   const canWithdraw = balance > 0 && blocked && !locked;
-  const awaitingSettlement = !blocked && lockedUntilDate !== null
+  const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
     && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
-  const canReclaim = !blocked && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
+  const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
   /* Merchant-drawable exposure is the platform cap, never the surplus. */
   const STANDARD_COMMIT_MICROS = 2_000_000;
   const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
   const shortDate = (date: Date | null) => date
-    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
     : "—";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
@@ -7349,8 +7367,8 @@ function MeteredVaultRow({
             </p>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : awaitingSettlement ? "Settling" : "Active"}
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Inactive" : disputed ? "Disputed" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 

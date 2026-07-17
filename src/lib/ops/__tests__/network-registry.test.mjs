@@ -110,7 +110,7 @@ test("financial routes call the fail-closed gate", () => {
 
 test("premium checkout and verification follow the ACTIVE configured chain", () => {
     assert.match(source("src/app/api/premium/checkout/route.ts"), /p_chain_id: ProtocolConfig\.CHAIN_ID/);
-    assert.match(source("src/lib/payments/verifyTransaction.ts"), /Number\(tx\.chainId\) !== ProtocolConfig\.CHAIN_ID/);
+    assert.match(source("src/lib/payments/verifyTransaction.ts"), /BigInt\(tx\.chainId\) !== BigInt\(ProtocolConfig\.CHAIN_ID\)/);
     assert.match(source("src/lib/payments/processPremiumUpgrade.ts"), /network\.chainId !== BigInt\(ProtocolConfig\.CHAIN_ID\)/);
     assert.match(source("src/lib/payments/activateSubscription.ts"), /chain_id: ProtocolConfig\.CHAIN_ID/);
     /* Test-mode resources stay pinned to Arc testnet. */

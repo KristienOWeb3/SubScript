@@ -163,15 +163,20 @@ test("Supabase TLS is verified against the supplied root CA, never disabled", as
 });
 
 test("contract escape windows and payment-token liabilities fail closed", async () => {
-    const [vault, router] = await Promise.all([
+    const [vault, router, vaultTests] = await Promise.all([
         source("contracts/SubScriptVault.sol"),
         source("contracts/SubScriptRouter.sol"),
+        source("test/SubScriptVault.test.js"),
     ]);
     assert.match(vault, /block\.timestamp < uint256\(v\.lockedUntil\) \+ RECLAIM_GRACE/);
     /* V3: settlement is keeper-only. The guarded entry point is drawUsageFor; a direct
        merchant drawUsage must NOT exist at all. */
     assert.match(vault, /function drawUsageFor\(address merchant, address user, uint256 amount\) external nonReentrant whenNotPaused/);
     assert.doesNotMatch(vault, /function drawUsage\(address user/);
+    /* The compiled-interface Hardhat regression also proves the legacy selector is absent and
+       an unauthorized merchant call reverts at runtime. */
+    assert.match(vaultTests, /vault\.interface\.getFunction\("drawUsage"\)/);
+    assert.match(vaultTests, /vault\.connect\(merchant\)\.drawUsageFor[\s\S]{0,180}revertedWith\("not drawer"\)/);
     assert.match(router, /token != address\(paymentToken\), "Payment token rescue disabled"/);
 });
 

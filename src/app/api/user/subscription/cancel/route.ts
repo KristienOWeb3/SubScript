@@ -96,17 +96,23 @@ export async function POST(request: Request) {
 
             /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
                expiry from the keeper. */
-            await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.cancel_scheduled", subscriptionWebhookData({
-                subscriptionId,
-                status: "cancel_scheduled",
-                amountUsdcMicros: sub.amount,
-                subscriber: wallet.toLowerCase(),
-                merchantAddress: sub.merchant,
-                txHash: revocationTxHash ?? undefined,
-                reason: revocationTxHash
-                    ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
-                    : "Cancellation requested; on-chain revocation is retrying",
-            }), `customer-cancel-scheduled:${subscriptionId}`);
+            try {
+                await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.cancel_scheduled", subscriptionWebhookData({
+                    subscriptionId,
+                    status: "cancel_scheduled",
+                    amountUsdcMicros: sub.amount,
+                    subscriber: wallet.toLowerCase(),
+                    merchantAddress: sub.merchant,
+                    txHash: revocationTxHash ?? undefined,
+                    reason: revocationTxHash
+                        ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
+                        : "Cancellation requested; on-chain revocation is retrying",
+                }), `customer-cancel-scheduled:${subscriptionId}`);
+            } catch (webhookError) {
+                /* Revocation and the cancellation mirror are already durable. A delivery-outbox
+                   outage must not turn the completed cancellation into an ambiguous HTTP 500. */
+                console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
+            }
 
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
@@ -133,15 +139,19 @@ export async function POST(request: Request) {
         /* Reflect the cancellation in the dashboard mirror (best-effort). */
         await mirrorSubscriptionCanceled(subscriptionId);
 
-        await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.canceled", subscriptionWebhookData({
-            subscriptionId,
-            status: "canceled",
-            amountUsdcMicros: sub.amount,
-            subscriber: wallet.toLowerCase(),
-            merchantAddress: sub.merchant,
-            txHash,
-            reason: "Canceled by subscriber",
-        }), `customer-canceled:${subscriptionId}:${txHash.toLowerCase()}`);
+        try {
+            await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.canceled", subscriptionWebhookData({
+                subscriptionId,
+                status: "canceled",
+                amountUsdcMicros: sub.amount,
+                subscriber: wallet.toLowerCase(),
+                merchantAddress: sub.merchant,
+                txHash,
+                reason: "Canceled by subscriber",
+            }), `customer-canceled:${subscriptionId}:${txHash.toLowerCase()}`);
+        } catch (webhookError) {
+            console.error("[ALERT] cancellation webhook enqueue failed after state committed:", webhookError);
+        }
 
         /* Fire the merchant's exit survey (no-op if the merchant disabled it). */
         await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>

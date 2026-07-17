@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveSecretKeyMode } from "@/lib/apiKeys";
 
 function normalizePublicUrl(value: string | undefined) {
     if (!value) return "";
@@ -52,7 +53,6 @@ export function isConfiguredPayoutDestination(value: string | null | undefined) 
 }
 
 export function getSecretKeyMode(secretKey: string) {
-    if (secretKey.startsWith("sk_test_")) return "test";
-    if (secretKey.startsWith("sk_live_")) return "live";
-    return "unknown";
+    const mode = resolveSecretKeyMode(secretKey);
+    return mode === "TEST" ? "test" : mode === "LIVE" ? "live" : "unknown";
 }

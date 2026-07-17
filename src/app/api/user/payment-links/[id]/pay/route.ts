@@ -12,7 +12,7 @@ import { deterministicIdempotencyKey } from "@/lib/custody";
 import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { payMerchantLinkFromEmbedded, payPeerLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
-import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
+import { enqueuePaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type RouteContext = {
@@ -240,11 +240,14 @@ export async function POST(request: Request, { params }: RouteContext) {
                 },
             );
             if (bindError) throw new Error(bindError.message);
-            if (bindResult?.outcome === "FINGERPRINT_MISMATCH" || bindResult?.outcome === "ATTEMPT_NOT_FOUND") {
-                throw new Error(`durable bind returned ${bindResult.outcome}`);
+            if (!["CLAIMED", "IN_PROGRESS", "COMPLETED"].includes(bindResult?.outcome)) {
+                throw new Error(`durable bind returned ${bindResult?.outcome || "no outcome"}`);
             }
         } catch (bindFailure) {
-            await recordPaymentReconciliationRequired({
+            /* The payment has already moved. A strict reconciliation enqueue is the durable
+               fallback when the atomic bind failed; if this enqueue also fails, propagate the
+               error instead of acknowledging a payment with no recoverable server-side record. */
+            await enqueuePaymentReconciliationRequired({
                 dedupeKey: `embedded-payment-durable-bind:${txHash.toLowerCase()}`,
                 kind: "EMBEDDED_PAYMENT_DURABLE_BIND",
                 message: "embedded payment confirmed on-chain but the durable verification job was not created",
@@ -260,7 +263,7 @@ export async function POST(request: Request, { params }: RouteContext) {
                 data: { status: "COMPLETED", responsePayload: { txHash } },
             });
         } catch (reconciliationError) {
-            await recordPaymentReconciliationRequired({
+            await enqueuePaymentReconciliationRequired({
                 dedupeKey: `embedded-payment-idempotency:${claimKey}`,
                 kind: "EMBEDDED_PAYMENT_IDEMPOTENCY_COMPLETION",
                 message: "on-chain payment confirmed but the idempotency record was not completed",

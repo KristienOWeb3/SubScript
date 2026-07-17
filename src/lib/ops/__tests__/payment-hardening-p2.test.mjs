@@ -25,9 +25,11 @@ test("withdrawal audits are confirmed by canonical events, never by transaction 
     /* Only router-emitted logs count, and both events must name THIS merchant. */
     assert.match(audit, /log\.address\.toLowerCase\(\) !== SUBSCRIPT_ROUTER_ADDRESS\.toLowerCase\(\)/);
     assert.match(audit, /missing_withdrawal_event/);
+    assert.match(audit, /withdrawAmount !== payout\.netAmount \+ payout\.fee/);
     /* Request-body amount/destination are overridden by decoded event data. */
     assert.match(audit, /auditedDestination = decoded\.destination/);
-    assert.match(audit, /auditedAmount = Number\(decoded\.grossAmount\)/);
+    assert.match(audit, /auditedAmount = decoded\.grossAmount\.toString\(\)/);
+    assert.doesNotMatch(audit, /Number\(decoded\.grossAmount\)/);
     assert.doesNotMatch(audit, /targetContract === SUBSCRIPT_ROUTER_ADDRESS\.toLowerCase\(\)[\s\S]{0,80}status = "CONFIRMED"/);
 });
 
@@ -87,7 +89,7 @@ test("the vault UI mirrors contract withdrawal/reclaim conditions and shows the 
     /* Withdraw only when INACTIVE + lock elapsed (withdrawSurplus's actual guards). */
     assert.match(page, /const canWithdraw = balance > 0 && blocked && !locked;/);
     /* Reclaim only after lockedUntil + grace on a still-active vault. */
-    assert.match(page, /const canReclaim = !blocked && balance > 0 && reclaimDate !== null && now >= reclaimDate\.getTime\(\);/);
+    assert.match(page, /const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate\.getTime\(\);/);
     assert.match(page, /Reclaim escrow/);
     for (const label of ["Cycle started", "Cycle matures", "Reported usage", "Max drawable", "Settlement due by", "Reclaimable from"]) {
         assert.ok(page.includes(label), `vault row shows "${label}"`);

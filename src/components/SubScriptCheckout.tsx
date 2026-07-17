@@ -18,6 +18,7 @@ import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
   ARC_CCTP_DOMAIN_ID,
+  ARC_TESTNET_CHAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
@@ -140,8 +141,17 @@ export default function SubScriptCheckout({
     setErrorMessage(null);
     setLoadingState("Preparing Secure Payment");
     try {
+      if (activeArcChain.id !== ARC_TESTNET_CHAIN_ID) {
+        throw new Error("Sandbox CCTP funding is available only when the destination is Arc Testnet.");
+      }
       const requiredAmount = parseUnits((Number(amountCap) - arcBalance).toString(), 6);
-      const sepoliaConfig = CCTP_CONFIG[11155111];
+      const sepoliaConfig = CCTP_CONFIG[sepolia.id];
+      if (!sepoliaConfig
+          || sepoliaConfig.domain !== 7
+          || Number(ARC_CCTP_DOMAIN_ID) !== 26
+          || ARC_MESSAGE_TRANSMITTER_ADDRESS.toLowerCase() !== sepoliaConfig.tokenMessenger.toLowerCase()) {
+        throw new Error("Sandbox CCTP configuration is unavailable or inconsistent.");
+      }
 
       // Step 1: Switch to Sepolia
       setStatusMessage("Switching network to Ethereum Sepolia...");
@@ -234,9 +244,9 @@ export default function SubScriptCheckout({
         throw new Error("Timeout waiting for Circle attestation signature.");
       }
 
-      // Step 5: Switch back to Arc Testnet
+      // Step 5: Switch back to the validated Arc Testnet destination
       setStatusMessage("Switching network back to Arc Testnet...");
-      await switchChainAsync({ chainId: activeArcChain.id });
+      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
 
       // Step 6: Mint USDC on Arc
       setStatusMessage("Minting USDC on Arc Network...");
@@ -329,7 +339,7 @@ export default function SubScriptCheckout({
 
     try {
       if (chainId !== activeArcChain.id) {
-        setStatusMessage("Switching to Arc Testnet...");
+        setStatusMessage(`Switching to ${activeArcChain.name}...`);
         await switchChainAsync({ chainId: activeArcChain.id });
       }
 

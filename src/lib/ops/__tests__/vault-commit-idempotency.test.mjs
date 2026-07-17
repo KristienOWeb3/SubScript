@@ -57,6 +57,9 @@ test("the UI distinguishes submitted, mirrored and failed states durably", () =>
     assert.match(migration, /CHECK \(status IN \('PENDING', 'SUBMITTED', 'MIRRORED', 'FAILED'\)\)/);
     assert.match(route, /status: "SUBMITTED", txHash: txHash\.toLowerCase\(\)/);
     assert.match(route, /status: "MIRRORED"/);
+    assert.match(migration, /OLD\.status IN \('MIRRORED', 'FAILED'\)[\s\S]{0,160}terminal state cannot be reopened/);
+    assert.match(route, /intent\.status === "FAILED"/);
+    assert.match(route, /code: "COMMIT_FAILED"/);
     /* Read-only resolver for reloads. */
     assert.match(route, /export async function GET/);
     assert.match(route, /intent\.userAddress !== wallet\.toLowerCase\(\)/);
@@ -68,8 +71,21 @@ test("the browser persists the operation id in localStorage until terminal resol
     /* A prior unresolved intent must be resolved before a new commit is allowed. */
     assert.match(client, /A previous vault commit is still resolving/);
     assert.match(client, /prior\.status === "PENDING" \|\| prior\.status === "SUBMITTED"/);
+    /* Non-2xx, malformed, and unknown resolver responses retain the prior operation id. */
+    assert.match(client, /if \(!priorResponse\?\.ok\)/);
+    assert.match(client, /typeof prior\.exists !== "boolean"/);
+    assert.match(client, /prior\.status === "MIRRORED" \|\| prior\.status === "FAILED"/);
+    const verifyAt = client.indexOf("if (!priorResponse?.ok)");
+    const clearAt = client.indexOf("localStorage.removeItem(intentStorageKey)", verifyAt);
+    assert.ok(verifyAt !== -1 && clearAt > verifyAt, "the browser verifies a successful terminal response before clearing");
     /* Cleared only on success. */
     assert.match(client, /vaultCommitRequestKey\.current = null;\s*\n\s*try \{ localStorage\.removeItem\(intentStorageKey\); \}/);
     /* The reload-safe id is preferred over a fresh one. */
     assert.match(client, /storedIntent\?\.requestId \|\| vaultCommitRequestKey\.current \|\| crypto\.randomUUID\(\)/);
+});
+
+test("definitive sponsor failures close the intent while ambiguous outcomes remain resumable", () => {
+    assert.match(route, /isSponsoredGasError\(sponsorError\) && sponsorError\.kind === "definitive"/);
+    assert.match(route, /status: "FAILED"/);
+    assert.match(route, /Ambiguous sponsor hashes and unknown infrastructure[\s\S]{0,80}stay PENDING/);
 });

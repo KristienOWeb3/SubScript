@@ -48,11 +48,6 @@ export async function POST(request: Request) {
         if (!plan || !plan.active) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
 
         const subscriber = wallet.toLowerCase();
-        await requireSponsoredGas({
-            wallet: subscriber,
-            action: "subscription_change",
-            requestKey: `subscription-change:${subscriber}:${fromSubscriptionId || "current"}:${planId}`,
-        });
 
         /* Resolve the current subscription (must belong to caller, be active, and be with the
            same merchant — you can only switch between a merchant's own plans). */
@@ -159,6 +154,15 @@ export async function POST(request: Request) {
                 throw e;
             }
         }
+
+        /* Authorization, merchant compatibility, upgrade direction, and the durable plan-change
+           claim must all succeed before consuming sponsor budget. Bind sponsorship to the exact
+           financial fingerprint so changed terms or mode cannot reuse an earlier top-up. */
+        await requireSponsoredGas({
+            wallet: subscriber,
+            action: "subscription_change",
+            requestKey: `sponsor:${changeFingerprint}`,
+        });
 
         /* Immediate upgrade: charge only the prorated difference for the rest of the current
            period now. */

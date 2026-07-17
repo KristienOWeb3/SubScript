@@ -79,6 +79,8 @@ test("the bound transaction hash is returned only for SUBMITTED and SETTLED atte
 
 test("FAILED_TERMINAL exists and capacity is released exactly once", () => {
     assert.match(stateMachineMigration, /CHECK \(status IN \('RESERVED', 'SUBMITTED', 'SETTLED', 'RELEASED', 'FAILED_TERMINAL'\)\)/);
+    assert.match(stateMachineMigration, /CHECK \(status IN \([^)]+\)\)\s+NOT VALID;/);
+    assert.match(stateMachineMigration, /VALIDATE CONSTRAINT payment_link_checkout_attempts_status_check;/);
 
     /* Terminal verification failure marks FAILED_TERMINAL, not RELEASED, and returns capacity
        through release_payment_link_settlement's reservation_active gate — the single decrement
@@ -143,6 +145,9 @@ test("the embedded pay route never signs a second custody transfer for a bound a
        immediately after payment still settles from durable state. */
     assert.match(embeddedRoute, /claim_payment_link_settlement_durable/);
     assert.match(embeddedRoute, /EMBEDDED_PAYMENT_DURABLE_BIND/);
+    assert.match(embeddedRoute, /!\["CLAIMED", "IN_PROGRESS", "COMPLETED"\]\.includes\(bindResult\?\.outcome\)/);
+    assert.match(embeddedRoute, /enqueuePaymentReconciliationRequired\(\{/);
+    assert.doesNotMatch(embeddedRoute, /recordPaymentReconciliationRequired\(\{/);
 });
 
 test("the browser rotates the attempt UUID after any confirmed release", () => {
@@ -171,17 +176,32 @@ test("the browser resumes a submitted payment instead of offering Pay again", ()
     assert.match(client, /if \(data\.status === "RELEASED"\) \{\s*rotateAttemptId\(\);/);
 });
 
+test("the browser threads the active attempt UUID after a released attempt rotates", () => {
+    assert.match(client, /\{ kind: "reserved"; attemptId: string;/);
+    assert.match(client, /\{ kind: "resume"; attemptId: string;/);
+    assert.match(client, /\{ kind: "settled"; attemptId: string;/);
+    assert.match(client, /return \{ kind: "reserved", attemptId, receiptId: data\.receiptId \}/);
+    assert.match(client, /const activeAttemptId = reservation\.attemptId/);
+    assert.match(client, /releaseUnbroadcastAttempt\(activeAttemptId\)/);
+    assert.match(client, /attemptId: activeAttemptId/);
+    assert.match(client, /checkoutAttemptId: attemptId/);
+    assert.doesNotMatch(
+        client.slice(client.indexOf("const startVerification = useCallback"), client.indexOf("useEffect(() =>", client.indexOf("const startVerification = useCallback"))),
+        /checkoutAttemptId: clientIntentId/,
+    );
+});
+
 test("the transaction hash is durably bound at broadcast, not after browser receipt confirmation", () => {
     /* Scenario locked: browser broadcasts and closes immediately; settlement completes from
        durable state because /verify (which binds the hash and creates the durable verification
        job atomically) is called the moment writeContractAsync returns. */
-    const broadcasts = client.match(/persistPendingVerification\(\{[\s\S]{0,400}?phase: "broadcast",[\s\S]{0,700}?startVerification\(hash, nextReceiptId, address, expectedChainId\);/g) || [];
+    const broadcasts = client.match(/persistPendingVerification\(\{[\s\S]{0,400}?phase: "broadcast",[\s\S]{0,700}?startVerification\(hash, nextReceiptId, address, expectedChainId, activeAttemptId\);/g) || [];
     assert.equal(broadcasts.length, 2, "both browser-wallet broadcast paths bind the hash immediately");
     /* A settled reservation never broadcasts. */
     assert.match(client, /reservation\.kind === "settled"/);
     /* A resumed reservation re-enters verification with the server's bound hash. */
     assert.match(client, /reservation\.kind === "resume"/);
-    assert.match(client, /startVerification\(reservation\.txHash, reservation\.receiptId, address, expectedChainId\);/);
+    assert.match(client, /startVerification\(reservation\.txHash, reservation\.receiptId, address, expectedChainId, reservation\.attemptId\);/);
 });
 
 test("concurrent reservations still serialize per (link, payer) with one active hold", () => {

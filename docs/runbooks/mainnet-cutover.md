@@ -31,7 +31,7 @@ testnet, so nothing changes until you set these.
 
 ### Mainnet contract addresses (override the testnet defaults)
 
-> 🔒 **Mainnet is fail-closed.** With `NEXT_PUBLIC_ENVIRONMENT=mainnet`, financial routes call
+> **Mainnet is fail-closed.** With `NEXT_PUBLIC_ENVIRONMENT=mainnet`, financial routes call
 > `assertFinancialNetworkReady()` (`src/lib/network/registry.ts`) and **refuse to serve** until
 > every one of these is explicitly set and well-formed: the four contract addresses below,
 > `NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS`, `NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID` (=5042001),

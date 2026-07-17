@@ -33,9 +33,13 @@ function loadSponsorshipModule({
     transferOutcome,
     confirmByHash = async () => false,
     sponsorEnabled = true,
+    updateOutcomes = [],
 }) {
     const calls = { transfers: [], updates: [], claims: [], custodyLookups: 0, confirmLookups: [] };
     const claimQueue = [...claims];
+    const updateQueue = [...updateOutcomes];
+    const preparedHash = "0x" + "ab".repeat(32);
+    const preparedTransaction = "0x02abcdef";
 
     const compiled = ts.transpileModule(sponsorshipSource, {
         compilerOptions: {
@@ -71,11 +75,14 @@ function loadSponsorshipModule({
                         calls.claims.push(params);
                         const next = claimQueue.shift();
                         if (!next) throw new Error("unexpected extra claim");
+                        if (next instanceof Error) throw next;
                         return { result: next };
                     }
                     if (sql.includes("update_sponsored_gas_operation")) {
                         calls.updates.push(params);
-                        return { result: { outcome: "UPDATED" } };
+                        const next = updateQueue.shift();
+                        if (next instanceof Error) throw next;
+                        return { result: { outcome: next || "UPDATED" } };
                     }
                     throw new Error(`Unexpected SQL: ${sql}`);
                 },
@@ -95,13 +102,20 @@ function loadSponsorshipModule({
         if (specifier === "@/lib/sponsor/gas") {
             return {
                 isGasSponsorshipEnabled: () => sponsorEnabled,
-                sendSponsorTransfer: async (beneficiary, valueWei) => {
-                    calls.transfers.push({ beneficiary, valueWei });
-                    return transferOutcome || { outcome: "confirmed", txHash: "0x" + "ab".repeat(32) };
+                prepareSponsorTransfer: async (beneficiary, valueWei) => ({
+                    outcome: "prepared",
+                    txHash: preparedHash,
+                    preparedTransaction,
+                    beneficiary,
+                    valueWei,
+                }),
+                submitPreparedSponsorTransfer: async (rawTransaction, txHash) => {
+                    calls.transfers.push({ rawTransaction, txHash });
+                    return transferOutcome || { outcome: "confirmed", txHash: preparedHash };
                 },
-                confirmSponsorTransferByHash: async (hash) => {
+                reconcileSponsorTransferByHash: async (hash) => {
                     calls.confirmLookups.push(hash);
-                    return confirmByHash(hash);
+                    return await confirmByHash(hash) ? "confirmed" : "pending";
                 },
             };
         }
@@ -146,8 +160,11 @@ test("legacy EOA wallets receive one bounded, durably recorded top-up", async ()
     assert.equal(result.method, "sponsor_topup");
     assert.equal(calls.transfers.length, 1);
     /* Terminal state recorded with the transfer hash. */
-    assert.equal(calls.updates.length, 1);
-    assert.equal(calls.updates[0][2], "CONFIRMED");
+    assert.equal(calls.updates.length, 2);
+    assert.equal(calls.updates[0][2], "PREPARED");
+    assert.equal(calls.updates[0][3], "0x" + "ab".repeat(32));
+    assert.equal(calls.updates[0][6], "0x02abcdef");
+    assert.equal(calls.updates[1][2], "CONFIRMED");
 });
 
 test("the top-up is the bounded deficit, never a fixed amount on top of principal", async () => {
@@ -164,7 +181,7 @@ test("the top-up is the bounded deficit, never a fixed amount on top of principa
         principalRequiredWei: principal,
     });
     assert.equal(result.sponsored, true);
-    assert.equal(calls.transfers[0].valueWei, halfTarget);
+    assert.equal(calls.claims[0][4], halfTarget.toString());
 });
 
 test("a wallet already holding gas beyond its principal is not topped up at all", async () => {
@@ -195,12 +212,13 @@ test("a receipt timeout never sends another top-up; the retry reconciles by hash
     assert.equal(ambiguous.sponsored, false);
     assert.equal(ambiguous.ambiguous, true);
     assert.equal(ambiguous.txHash, hash);
-    assert.equal(first.calls.updates[0][2], "SUBMITTED");
+    assert.equal(first.calls.updates[0][2], "PREPARED");
+    assert.equal(first.calls.updates[1][2], "SUBMITTED");
 
     /* A different serverless instance retries: the durable record answers RECONCILE. */
     const second = loadSponsorshipModule({
         custodyRow: LEGACY_ROW,
-        claims: [{ outcome: "RECONCILE", sponsorTxHash: hash }],
+        claims: [{ outcome: "RECONCILE", leaseToken: "lease-2", sponsorTxHash: hash }],
         confirmByHash: async () => true,
     });
     const reconciled = await second.module.ensureSponsoredGas({ wallet, action: "execute_tx", requestKey: "execute-tx:test-6" });
@@ -256,12 +274,14 @@ test("concurrent same-instance attempts share one sponsorship", async () => {
 test("requireSponsoredGas never claims funds were untouched while a transfer is ambiguous", async () => {
     const { module } = loadSponsorshipModule({
         custodyRow: LEGACY_ROW,
-        claims: [{ outcome: "RECONCILE", sponsorTxHash: "0x" + "11".repeat(32) }],
+        claims: [{ outcome: "RECONCILE", leaseToken: "lease-2", sponsorTxHash: "0x" + "11".repeat(32) }],
         confirmByHash: async () => false,
     });
     await assert.rejects(
         module.requireSponsoredGas({ wallet, action: "vault_commit", requestKey: "vault-commit:test-10" }),
         (error) => {
+            assert.equal(error.name, "SponsoredGasError");
+            assert.equal(error.kind, "ambiguous");
             assert.doesNotMatch(error.message, /funds were not touched/);
             assert.match(error.message, /do not submit a duplicate payment/i);
             return true;
@@ -298,10 +318,61 @@ test("the durable claim enforces limits and lease semantics inside the database"
     assert.match(migrationSource, /SET search_path = ''/);
     assert.match(migrationSource, /REVOKE ALL ON TABLE public\.sponsored_gas_operations FROM PUBLIC, anon, authenticated/);
     /* Abuse-relevant statuses count toward daily limits; only real movement counts. */
-    assert.match(migrationSource, /status IN \('PENDING', 'SUBMITTED', 'CONFIRMED'\)/);
-    /* A broadcast transfer can never be flipped to FAILED — it must reconcile by hash. */
-    assert.match(migrationSource, /'HASH_BOUND'/);
+    assert.match(migrationSource, /status IN \('PENDING', 'PREPARED', 'SUBMITTED', 'CONFIRMED'\)/);
+    assert.match(migrationSource, /gas-sponsor:global-budget/);
+    assert.match(migrationSource, /request_key IS DISTINCT FROM p_request_key/);
+    assert.match(migrationSource, /v_existing\.custody_type IS DISTINCT FROM p_custody/);
+    assert.match(migrationSource, /prepared_transaction/);
+    /* A definitive revert is terminal but remains bound to the persisted transaction hash. */
+    assert.match(migrationSource, /v_row\.status = 'FAILED' AND v_row\.sponsor_tx_hash IS NOT NULL/);
     assert.match(migrationSource, /HASH_CONFLICT/);
+});
+
+test("the signed transaction is durable before broadcast and persistence failure moves no funds", async () => {
+    const { module, calls } = loadSponsorshipModule({
+        custodyRow: LEGACY_ROW,
+        claims: [{ outcome: "CLAIMED", leaseToken: "lease-1" }],
+        updateOutcomes: [new Error("database offline")],
+    });
+
+    await assert.rejects(
+        module.ensureSponsoredGas({ wallet, action: "execute_tx", requestKey: "execute-tx:test-prepared-gate" }),
+        /database offline/,
+    );
+    assert.equal(calls.updates[0][2], "PREPARED");
+    assert.equal(calls.transfers.length, 0, "broadcast must remain behind the durable PREPARED write");
+});
+
+test("a reverted prepared top-up is terminal and surfaced as a definitive sponsorship error", async () => {
+    const hash = "0x" + "ab".repeat(32);
+    const { module, calls } = loadSponsorshipModule({
+        custodyRow: LEGACY_ROW,
+        claims: [{ outcome: "CLAIMED", leaseToken: "lease-1" }],
+        transferOutcome: { outcome: "reverted", txHash: hash },
+    });
+
+    await assert.rejects(
+        module.requireSponsoredGas({ wallet, action: "execute_tx", requestKey: "execute-tx:test-revert" }),
+        (error) => error.name === "SponsoredGasError"
+            && error.kind === "definitive"
+            && error.reason === "topup_reverted"
+            && error.txHash === hash,
+    );
+    assert.equal(calls.updates.at(-1)[2], "FAILED");
+    assert.equal(calls.updates.at(-1)[3], hash);
+});
+
+test("Gas Station sponsorship never succeeds when its durable terminal row cannot be recorded", async () => {
+    const { module, calls } = loadSponsorshipModule({
+        custodyRow: CIRCLE_ROW,
+        accountType: "SCA",
+        claims: [new Error("database offline")],
+    });
+    await assert.rejects(
+        module.ensureSponsoredGas({ wallet, action: "vault_commit", requestKey: "vault-commit:test-sca-persist" }),
+        /database offline/,
+    );
+    assert.equal(calls.transfers.length, 0);
 });
 
 test("financial routes sponsor gas strictly before submitting the financial transaction", () => {
@@ -315,6 +386,9 @@ test("financial routes sponsor gas strictly before submitting the financial tran
     assert.ok(subscribe.indexOf("requireSponsoredGas") < subscribe.indexOf("subscribeFromEmbedded("),
         "subscribe sponsors before charging");
     assert.match(change, /requireSponsoredGas\(\{/);
+    assert.ok(change.indexOf("changeClaimKey = `subscription-change:${changeFingerprint}`")
+        < change.indexOf("requestKey: `sponsor:${changeFingerprint}`"),
+    "plan-change claim must precede sponsorship");
     /* An impossible commit cannot farm top-ups: the request key is bound to the exact
        (request, wallet, merchant, amount) identity, so repeats reuse one durable record and
        fresh keys are throttled by the per-action daily limit. */

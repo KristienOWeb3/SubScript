@@ -10,6 +10,7 @@ function source(path) {
 
 const retry = source("src/lib/payments/reconciliationRetry.ts");
 const changeRoute = source("src/app/api/user/subscription/change/route.ts");
+const mirror = source("src/lib/subscriptions/mirror.ts");
 
 /** Every reconciliation event kind ever recorded anywhere in src. */
 function emittedKinds() {
@@ -67,6 +68,17 @@ test("plan-change recovery converges every crash point without a second proratio
     assert.doesNotMatch(handler, /transferUsdcFromEmbedded/);
     /* Mirror, merchant webhook (idempotent event id) and claim completion all converge. */
     assert.match(handler, /mirrorSubscriptionModified\(\{/);
+    assert.match(handler, /waitForConfirmedPlanTerms\(\{/);
+    assert.ok(
+        handler.indexOf("await waitForConfirmedPlanTerms") < handler.indexOf("await mirrorSubscriptionModified"),
+        "modified terms must be confirmed before mirroring",
+    );
+    const modifiedMirror = mirror.slice(
+        mirror.indexOf("export async function mirrorSubscriptionModified"),
+        mirror.indexOf("export async function mirrorSubscriptionCanceled"),
+    );
+    assert.match(modifiedMirror, /await prisma\.subscription\.update/);
+    assert.doesNotMatch(modifiedMirror, /catch\s*\(/, "plan-change mirroring must propagate persistence failures");
     assert.match(handler, /dispatchDurableSubscriptionWebhook\(merchant\.merchant_address, "subscription\.updated"/);
     assert.match(handler, /`updated:\$\{parsed\.subscriptionId\}:\$\{\(modifyTxHash \|\| "reconciled"\)\.toLowerCase\(\)\}`/);
     assert.match(handler, /status: \{ not: "COMPLETED" \}/);
@@ -77,8 +89,8 @@ test("plan-change recovery converges every crash point without a second proratio
 test("the durable-bind handler rebuilds settlement from the attempt snapshot idempotently", () => {
     assert.match(retry, /event\.kind === "EMBEDDED_PAYMENT_DURABLE_BIND"/);
     assert.match(retry, /claim_payment_link_settlement_durable/);
-    /* Mismatch outcomes are failures — never silently resolved. */
-    assert.match(retry, /\["FINGERPRINT_MISMATCH", "ATTEMPT_NOT_FOUND", "CHAIN_MISMATCH"\]\.includes\(outcome\)/);
+    /* Only explicit success outcomes resolve; every unknown/new outcome stays retryable. */
+    assert.match(retry, /!\["CLAIMED", "IN_PROGRESS", "COMPLETED"\]\.includes\(outcome\)/);
 });
 
 test("unresolved money is never marked resolved silently", () => {

@@ -51,7 +51,7 @@ export async function verifyTransaction(
 ): Promise<{ valid: boolean; error?: string; subscriber?: string; subId?: string }> {
     /* 1. Verify chain ID against the ACTIVE configured chain (testnet today; the same
        validation follows a mainnet cutover with no code change). */
-    if (Number(tx.chainId) !== ProtocolConfig.CHAIN_ID) {
+    if (BigInt(tx.chainId) !== BigInt(ProtocolConfig.CHAIN_ID)) {
         console.error(`[tx_invalid_chain] Expected ${ProtocolConfig.CHAIN_ID}, got ${tx.chainId}`);
         return { valid: false, error: `Invalid chain ID: ${tx.chainId}` };
     }

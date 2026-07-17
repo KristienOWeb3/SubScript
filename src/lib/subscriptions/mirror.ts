@@ -84,20 +84,15 @@ export async function mirrorSubscriptionModified({
     amountUsdc: bigint;
     periodSeconds: bigint;
 }) {
-    try {
-        await prisma.subscription.update({
-            where: { subscriptionId: BigInt(subscriptionId) },
-            data: {
-                amountCapUsdc: amountUsdc.toString(),
-                billingIntervalSeconds: BigInt(periodSeconds),
-                kind: "CUSTOMER",
-                updatedAt: new Date(),
-            },
-        });
-    } catch (err) {
-        /* Row may predate the mirror; that's fine — nothing to update. */
-        console.error("[mirror] subscription modify skipped:", err instanceof Error ? err.message : err);
-    }
+    await prisma.subscription.update({
+        where: { subscriptionId: BigInt(subscriptionId) },
+        data: {
+            amountCapUsdc: amountUsdc.toString(),
+            billingIntervalSeconds: BigInt(periodSeconds),
+            kind: "CUSTOMER",
+            updatedAt: new Date(),
+        },
+    });
 }
 
 export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {

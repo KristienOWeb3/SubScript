@@ -44,7 +44,9 @@ function decodeWithdrawalEvents(receipt: { logs?: ReadonlyArray<{ address: strin
             };
         }
     }
-    if (withdrawAmount === null || !payout) return null;
+    if (withdrawAmount === null || !payout || withdrawAmount !== payout.netAmount + payout.fee) {
+        return null;
+    }
     return {
         merchant,
         destination: payout.destination,
@@ -112,7 +114,7 @@ export async function POST(request: Request) {
         /* Canonical values from the decoded events; request-body amount/destination are only
            advisory input and are OVERRIDDEN whenever event data exists. */
         let auditedDestination = destinationAddress.toLowerCase();
-        let auditedAmount = Number(amount);
+        let auditedAmount = String(amount);
 
         if (txHash) {
             try {
@@ -139,7 +141,7 @@ export async function POST(request: Request) {
                             status = "CONFIRMED";
                             completedAt = new Date().toISOString();
                             auditedDestination = decoded.destination;
-                            auditedAmount = Number(decoded.grossAmount);
+                            auditedAmount = decoded.grossAmount.toString();
                             console.log(
                                 `[metric] withdrawals_successful: ${merchantAddress}, gross: ${decoded.grossAmount}, net: ${decoded.netAmount}, fee: ${decoded.fee}, destination: ${decoded.destination}`,
                             );

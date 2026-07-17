@@ -70,6 +70,10 @@ export async function validateWebhookUrl(value: string) {
             addresses: addresses.map(({ address, family }) => ({ address, family })),
         };
     } catch {
-        return { ok: false as const, error: "Webhook hostname could not be resolved" };
+        return {
+            ok: false as const,
+            error: "Webhook hostname could not be resolved",
+            transient: true as const,
+        };
     }
 }

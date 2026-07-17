@@ -106,9 +106,12 @@ async function accrueUsageAtomically(
                 `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
                         environment, settlement_chain_id
                    from metered_vaults
-                  where user_address = $1 and merchant_address = $2
+                  where user_address = $1
+                    and merchant_address = $2
+                    and environment = $3
+                    and settlement_chain_id = $4
                   for update`,
-                [userAddress, merchantAddress],
+                [userAddress, merchantAddress, "TEST", ARC_TESTNET_CHAIN_ID],
             );
             if (selected.rowCount === 0) {
                 await client.query("commit");
@@ -177,8 +180,8 @@ async function accrueUsageAtomically(
             await client.query(
                 `insert into metered_usage_reports
                      (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, 'TEST')`,
-                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId],
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId, vaultEnvironment],
             );
 
             const exhausted = nextAccrued === balance;

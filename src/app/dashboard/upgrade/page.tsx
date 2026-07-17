@@ -216,7 +216,7 @@ export default function UpgradePage() {
         }
 
         if (chainId !== activeArcChain.id) {
-            setCheckoutStatus("Switching network to Arc Testnet...");
+            setCheckoutStatus(`Switching network to ${activeArcChain.name}...`);
             await switchChainAsync({ chainId: activeArcChain.id });
         }
 
@@ -324,9 +324,9 @@ export default function UpgradePage() {
         try {
             const userAddress = getAddress(address) as `0x${string}`;
 
-            /* 1. Ensure connected browser wallets are on Arc Testnet. Embedded wallets are server-signed. */
+            /* 1. Ensure connected browser wallets are on the active Arc chain. Embedded wallets are server-signed. */
             if (!embeddedWallet && chainId !== activeArcChain.id) {
-                setCheckoutStatus("Switching network to Arc Testnet...");
+                setCheckoutStatus(`Switching network to ${activeArcChain.name}...`);
                 await switchChainAsync({ chainId: activeArcChain.id });
             }
 

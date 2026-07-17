@@ -5,12 +5,12 @@ import crypto from "crypto";
 type SupabaseLike = any;
 
 /* Delivery outcome classification:
-   - 2xx                          → SUCCESS
-   - 408 / 429 / 5xx / transport  → transient: FAILED, retried until WEBHOOK_MAX_RETRIES,
-                                    then DEAD_LETTER (exhausted)
-   - other 4xx                    → permanent: DEAD_LETTER immediately — the endpoint
-                                    understood the request and refused it; retrying the
-                                    identical payload cannot succeed.
+   - 2xx                          becomes SUCCESS
+   - 408 / 429 / 5xx / transport becomes transient: FAILED, retried until WEBHOOK_MAX_RETRIES,
+                                     then DEAD_LETTER (exhausted)
+   - other 4xx                    becomes permanent: DEAD_LETTER immediately — the endpoint
+                                     understood the request and refused it; retrying the
+                                     identical payload cannot succeed.
    DEAD_LETTER rows stay merchant-visible (last_error/response_body) and can be re-sent
    manually via /api/webhooks/events/replay. */
 function isTransientWebhookStatus(status: number): boolean {

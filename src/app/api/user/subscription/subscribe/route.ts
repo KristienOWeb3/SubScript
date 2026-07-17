@@ -24,10 +24,6 @@ export const maxDuration = 120;
 
 export async function POST(request: Request) {
     try {
-        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
-           routes (never silently fall back to a testnet address). No-op on testnet. */
-        assertFinancialNetworkReady();
-
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");
@@ -45,6 +41,17 @@ export async function POST(request: Request) {
                 error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
                 code: "EMBEDDED_WALLET_REQUIRED",
             }, { status: 409 });
+        }
+        /* Authenticate before inspecting deployment readiness so anonymous probes cannot receive
+           environment-key diagnostics. Authenticated financial requests still fail closed. */
+        try {
+            assertFinancialNetworkReady();
+        } catch (networkError) {
+            console.error("[subscription/subscribe] financial network is not ready:", networkError);
+            return NextResponse.json(
+                { error: "Subscription payments are temporarily unavailable." },
+                { status: 503 },
+            );
         }
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
