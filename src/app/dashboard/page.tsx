@@ -27,7 +27,7 @@ import {
     formatUnits,
     parseUnits,
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
@@ -44,7 +44,6 @@ import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import {
-    ARC_TESTNET_CHAIN_ID,
     PREMIUM_PLAN_ID,
     SUBSCRIPT_ROUTER_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
@@ -58,7 +57,7 @@ import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 
@@ -335,11 +334,11 @@ export default function DashboardPage() {
             }
             return data.txHash as string;
         } else {
-            if (chainId !== ARC_TESTNET_CHAIN_ID) {
+            if (chainId !== activeArcChain.id) {
                 if (switchChainAsync) {
-                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                    await switchChainAsync({ chainId: activeArcChain.id });
                 } else if (switchChain) {
-                    switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+                    switchChain({ chainId: activeArcChain.id });
                 }
             }
             return await writeContractAsync({
@@ -2436,7 +2435,7 @@ Please complete the following implementation tasks:
                 args: ["-y", "@subscriptonarc/mcp"],
                 env: {
                     SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
-                    SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
+                    SUBSCRIPT_CHAIN_ID: String(activeArcChain.id),
                     SUBSCRIPT_ROUTER_ADDRESS,
                     SUBSCRIPT_USDC_NATIVE_GAS_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
                 },
@@ -2960,7 +2959,7 @@ Please complete the following implementation tasks:
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
-                                                                                                        href={`https://testnet.arcscan.app/tx/${p.tx_hash}`} 
+                                                                                                        href={`${activeArcChain.blockExplorers.default.url}/tx/${p.tx_hash}`}
                                                                                                         target="_blank" 
                                                                                                         rel="noopener noreferrer"
                                                                                                     >
@@ -3827,7 +3826,7 @@ Please complete the following implementation tasks:
                                                             Grant access
                                                         </a>
                                                         <a
-                                                            href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"

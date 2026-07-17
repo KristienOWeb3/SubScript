@@ -1,19 +1,18 @@
-/* Merchant sets / reads the commit required to use their metered service.
-   Set is server-signed from the merchant's embedded wallet (on-chain setRequiredCommit).
-
-   Auth: a dashboard SESSION cookie OR a Bearer API key (sk_...), matching the documented
-   `POST /api/merchant/vault/commit-config` step and its companion `/api/user/vault/report-usage`
-   (which is also API-key authed). Setting the commit signs an on-chain tx from the merchant's
-   server-held embedded wallet, so the API-key path works for embedded-wallet merchants; an
-   external-wallet merchant must set it from the dashboard with their connected wallet. */
+/* Merchant reads the vault commitment policy.
+ *
+ * The commitment is a PLATFORM CONSTANT (2 USDC per user→merchant relationship per cycle)
+ * — it is not merchant-configurable, on-chain or off. The old setRequiredCommit lever was
+ * removed from SubScriptVault: a merchant must not be able to raise the cheque a user's
+ * escrow writes, and a user's surplus never expands what the merchant can draw.
+ *
+ * Auth: a dashboard SESSION cookie OR a Bearer API key (sk_...), matching the companion
+ * `/api/user/vault/report-usage`. The merchant identity always comes from the credential. */
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
-import { parseUsdcToMicros } from "@/lib/dms/system";
-import { sanitizeInput } from "@/utils/security";
-import { setRequiredCommitFromEmbedded, vaultReadContract } from "@/lib/vault/onchain";
+import { VAULT_STANDARD_COMMIT_MICROS } from "@/lib/vault/onchain";
 import { prisma } from "@/lib/prisma";
-import { hashSecretKey } from "@/lib/apiKeys";
+import { hashSecretKey, resolveSecretKeyMode } from "@/lib/apiKeys";
 
 export const maxDuration = 120;
 
@@ -27,14 +26,16 @@ async function resolveMerchant(request: Request): Promise<string | null> {
     const authHeader = request.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
         const secretKey = authHeader.slice(7).trim();
-        if (secretKey) {
+        if (secretKey && resolveSecretKeyMode(secretKey) === "TEST") {
             const apiKeyRecord = await prisma.apiKey.findFirst({
                 where: {
                     revoked: false,
                     secretKeyHash: hashSecretKey(secretKey),
                 },
             });
-            if (apiKeyRecord) return apiKeyRecord.walletAddress.toLowerCase();
+            if (apiKeyRecord && apiKeyRecord.mode === "TEST") {
+                return apiKeyRecord.walletAddress.toLowerCase();
+            }
         }
     }
     return null;
@@ -57,42 +58,23 @@ export async function GET(request: Request) {
         if (!merchant || merchant.tier !== "PREMIUM") {
             return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium (Tier 3) merchants." }, { status: 403 });
         }
-        const commit: bigint = await vaultReadContract().requiredCommit(wallet);
-        return NextResponse.json({ success: true, commitUsdc: commit.toString() }, { status: 200 });
+        return NextResponse.json({
+            success: true,
+            commitUsdc: VAULT_STANDARD_COMMIT_MICROS.toString(),
+            policy: "PLATFORM_FIXED",
+            note: "The vault commitment and per-cycle drawable exposure are fixed at 2 USDC per user by the platform.",
+        }, { status: 200 });
     } catch (error: any) {
-        console.error("Read required commit failed:", error);
+        console.error("Read commit policy failed:", error);
         return NextResponse.json({ error: error.message || "Failed to read commit" }, { status: 500 });
     }
 }
 
-export async function POST(request: Request) {
-    try {
-        const wallet = await resolveMerchant(request);
-        if (!wallet) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const roleCheck = await requireAccountRole(wallet, "ENTERPRISE");
-        if (!roleCheck.ok) {
-            return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
-        }
-        const merchant = await prisma.merchant.findUnique({
-            where: { walletAddress: wallet },
-            select: { tier: true }
-        });
-        if (!merchant || merchant.tier !== "PREMIUM") {
-            return NextResponse.json({ error: "Forbidden: Vault configurations are only available for Premium (Tier 3) merchants." }, { status: 403 });
-        }
-
-        const body = sanitizeInput(await request.json().catch(() => null));
-        const amount = parseUsdcToMicros(body?.amountUsdc);
-        if (amount < BigInt(0)) {
-            return NextResponse.json({ error: "Commit must be zero or greater" }, { status: 400 });
-        }
-
-        const txHash = await setRequiredCommitFromEmbedded(wallet, amount);
-        return NextResponse.json({ success: true, txHash, commitUsdc: amount.toString() }, { status: 200 });
-    } catch (error: any) {
-        console.error("Set required commit failed:", error);
-        return NextResponse.json({ error: error.message || "Failed to set commit" }, { status: 500 });
-    }
+export async function POST() {
+    /* Explicit contract for integrators that still call the old setter. */
+    return NextResponse.json({
+        error: "The vault commitment is platform-fixed at 2 USDC per user and can no longer be configured by merchants.",
+        code: "COMMIT_POLICY_PLATFORM_FIXED",
+        commitUsdc: VAULT_STANDARD_COMMIT_MICROS.toString(),
+    }, { status: 410 });
 }

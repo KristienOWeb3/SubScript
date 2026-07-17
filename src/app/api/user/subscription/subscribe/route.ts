@@ -7,7 +7,8 @@ import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
@@ -40,6 +41,17 @@ export async function POST(request: Request) {
                 error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
                 code: "EMBEDDED_WALLET_REQUIRED",
             }, { status: 409 });
+        }
+        /* Authenticate before inspecting deployment readiness so anonymous probes cannot receive
+           environment-key diagnostics. Authenticated financial requests still fail closed. */
+        try {
+            assertFinancialNetworkReady();
+        } catch (networkError) {
+            console.error("[subscription/subscribe] financial network is not ready:", networkError);
+            return NextResponse.json(
+                { error: "Subscription payments are temporarily unavailable." },
+                { status: 503 },
+            );
         }
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
@@ -217,7 +229,6 @@ export async function POST(request: Request) {
                     checkoutClaimed = true;
                 }
 
-                await requireGasSponsored(subscriber);
                 /* createSubscription charges the first payment, so a retry after a timed-out
                    response must reuse the SAME Circle idempotency key or it double-charges.
                    Checkout sessions are single-use → durable key on the session id. Direct plan
@@ -230,6 +241,17 @@ export async function POST(request: Request) {
                     [subscriber, merchant],
                 );
                 const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
+                /* Custody-aware sponsorship, keyed on the same stable identity as the Circle
+                   idempotency key so a retried subscribe reuses the durable record. The first
+                   period's charge is declared as principal — never reclassified as gas. */
+                await requireSponsoredGas({
+                    wallet: subscriber,
+                    action: "subscribe",
+                    requestKey: checkoutSessionId
+                        ? `subscribe-checkout:${checkoutSessionId}`
+                        : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`,
+                    principalRequiredWei: BigInt(plan.amountUsdc) * BigInt(1_000_000_000_000),
+                });
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
                     merchant,

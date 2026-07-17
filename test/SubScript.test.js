@@ -247,6 +247,30 @@ describe("SubScript", function () {
       ).to.be.revertedWithCustomError(subScript, "SubscriptionNotActive");
     });
 
+    it("must reject the charge when cancellation was requested at the period boundary", async function () {
+      /* The exact race behind cancel-at-period-end: the renewal is already DUE, the user
+         requests cancellation, and a permissionless keeper (or anyone) calls executePayment
+         immediately after. Because SubScript now revokes the authorization on-chain at
+         cancellation time, the charge must fail even though the payment was due first. */
+      const { subScript, subscriber, merchant, keeper, AMOUNT, PERIOD } =
+        await loadFixture(deployFixture);
+
+      await subScript
+        .connect(subscriber)
+        .createSubscription(merchant.address, AMOUNT, PERIOD);
+
+      /* Renewal becomes due BEFORE the cancellation request. */
+      await time.increase(PERIOD + 1);
+
+      /* User requests cancellation, causing immediate on-chain revocation. */
+      await subScript.connect(subscriber).cancelSubscription(1);
+
+      /* Permissionless charge attempt right at the boundary must fail. */
+      await expect(
+        subScript.connect(keeper).executePayment(1, 1)
+      ).to.be.revertedWithCustomError(subScript, "SubscriptionNotActive");
+    });
+
     it("should revert if subscriber has insufficient allowance", async function () {
       const { subScript, usdc, subscriber, merchant, AMOUNT, PERIOD } =
         await loadFixture(deployFixture);

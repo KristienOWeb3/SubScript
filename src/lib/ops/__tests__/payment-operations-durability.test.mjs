@@ -62,7 +62,7 @@ test("vault sync clears cycle-local usage and queues post-draw mirror repair", a
         source("src/lib/payments/reconciliationRetry.ts"),
     ]);
 
-    assert.match(vault, /ON CONFLICT \(user_address, merchant_address\)/);
+    assert.match(vault, /ON CONFLICT \(user_address, merchant_address, environment, settlement_chain_id\)/);
     assert.match(vault, /cycle_start IS DISTINCT FROM EXCLUDED\.cycle_start/);
     assert.match(vault, /accrued_usage_usdc = CASE/);
     assert.match(draw, /VAULT_DRAW_MIRROR_SYNC/);
@@ -81,6 +81,9 @@ test("migration runner never fabricates a baseline or hides privilege failures",
        (used by the isolated E2E stack). It must never happen silently — the gate is the guarantee. */
     assert.match(runner, /ADOPT_EXISTING_DB_BASELINE !== "1"/);
     assert.match(runner, /if \(adoptingLegacySchema\)[\s\S]*?INSERT INTO _subscript_migrations \(filename, baseline\)/);
+    assert.match(runner, /subscript:no-transaction/);
+    assert.match(runner, /if \(nonTransactional\)[\s\S]*?await client\.query\(sql\)[\s\S]*?INSERT INTO _subscript_migrations/);
+    assert.match(runner, /if \(!nonTransactional\)[\s\S]*?ROLLBACK/);
     assert.doesNotMatch(runner, /Warning: failed to grant privileges/);
     assert.match(runner, /Up to date[\s\S]*Granting public schema privileges/);
     assert.doesNotMatch(ledgerMigration, /DROP TABLE IF EXISTS ledger_entries/i);

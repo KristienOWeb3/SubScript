@@ -254,18 +254,33 @@ async function main() {
         } else {
             for (const file of pending) {
                 const sql = await readFile(path.join(REPO_ROOT, file), "utf8");
+                const nonTransactional = /^\s*--\s*subscript:no-transaction\b/m.test(sql);
                 console.log(`[migrations] Applying ${file}...`);
                 try {
-                    await client.query("BEGIN");
-                    await client.query(sql);
-                    await client.query(
-                        "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
-                        [file]
-                    );
-                    await client.query("COMMIT");
+                    if (nonTransactional) {
+                        /* PostgreSQL forbids operations such as CREATE INDEX CONCURRENTLY inside
+                           a transaction. These migrations must be idempotent: if the ledger write
+                           fails after the SQL succeeds, the advisory-locked retry runs the SQL
+                           safely before recording it. */
+                        await client.query(sql);
+                        await client.query(
+                            "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
+                            [file]
+                        );
+                    } else {
+                        await client.query("BEGIN");
+                        await client.query(sql);
+                        await client.query(
+                            "INSERT INTO _subscript_migrations (filename) VALUES ($1)",
+                            [file]
+                        );
+                        await client.query("COMMIT");
+                    }
                     console.log(`[migrations] Applied ${file}.`);
                 } catch (err) {
-                    await client.query("ROLLBACK").catch(() => {});
+                    if (!nonTransactional) {
+                        await client.query("ROLLBACK").catch(() => {});
+                    }
                     throw new Error(`Migration ${file} failed: ${err.message}`);
                 }
             }

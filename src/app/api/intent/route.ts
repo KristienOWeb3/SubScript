@@ -9,6 +9,7 @@ import { hashSecretKey } from "@/lib/apiKeys";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
     /* One request ID for every error this request can produce — clients quote it, logs carry it. */
     const requestId = crypto.randomUUID();
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
         let merchantAddress: string | null = null;
         let apiKeyMode: ReturnType<typeof getSecretKeyMode> | null = null;
 

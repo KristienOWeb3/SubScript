@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
-import { ARC_TESTNET_CHAIN_ID, PREMIUM_PRICE } from "@/lib/payments/constants";
+import { PREMIUM_PRICE } from "@/lib/payments/constants";
+import { ProtocolConfig } from "@/lib/payments/config";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import crypto from "crypto";
 
 const parseBody = async (request: Request) => {
@@ -16,6 +18,9 @@ export async function POST(request: Request) {
     const requestId = crypto.randomUUID();
     let body: any = null;
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
         const walletAddress = await getSessionWallet(request.headers);
         if (!walletAddress) {
             return NextResponse.json({ error: "Unauthorized: Please connect your wallet first." }, { status: 401 });
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
             .rpc("get_or_create_premium_payment_session", {
                 p_merchant_address: userWallet,
                 p_amount_expected: PREMIUM_PRICE,
-                p_chain_id: ARC_TESTNET_CHAIN_ID,
+                p_chain_id: ProtocolConfig.CHAIN_ID,
                 p_ttl_seconds: 30 * 60,
             })
             .single();

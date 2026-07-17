@@ -209,20 +209,27 @@ export async function transferUsdcFromEmbedded(walletAddress: string, to: string
 }
 
 /**
- * Prorated upgrade charge for the remainder of the current period:
- *   (newAmount - oldAmount) * (secondsRemaining / period), clamped to a single period.
- * Returns 0n for downgrades or once the period has lapsed.
+ * Prorated upgrade charge for the remainder of the current period, computed on the
+ * RECURRING RATE difference so interval changes price correctly:
+ *   delta = remaining * (newAmount/newPeriod - oldAmount/oldPeriod)
+ * A nominal newAmount - oldAmount is wrong the moment periods differ (e.g. 10 USDC/month
+ * → 100 USDC/year is a rate DECREASE, not a 90 USDC charge). Integer math throughout;
+ * remaining time is clamped to the old period. Returns 0n for rate downgrades/equal rates
+ * or once the period has lapsed.
  */
 export function proratedUpgradeDelta(
     oldAmount: bigint,
     newAmount: bigint,
-    period: bigint,
+    oldPeriod: bigint,
+    newPeriod: bigint,
     nextPayment: bigint,
     nowSeconds: bigint,
 ): bigint {
-    if (newAmount <= oldAmount || period <= BigInt(0)) return BigInt(0);
+    if (oldPeriod <= BigInt(0) || newPeriod <= BigInt(0)) return BigInt(0);
     let remaining = nextPayment - nowSeconds;
     if (remaining <= BigInt(0)) return BigInt(0);
-    if (remaining > period) remaining = period;
-    return ((newAmount - oldAmount) * remaining) / period;
+    if (remaining > oldPeriod) remaining = oldPeriod;
+    const rateNumerator = newAmount * oldPeriod - oldAmount * newPeriod;
+    if (rateNumerator <= BigInt(0)) return BigInt(0);
+    return (remaining * rateNumerator) / (newPeriod * oldPeriod);
 }

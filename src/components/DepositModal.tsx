@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, QrCode, Loader2 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
@@ -20,7 +20,7 @@ const ERC20_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 
@@ -163,7 +163,7 @@ export default function DepositModal({
                                 </div>
 
                                 <p id="deposit-usdc-description" className="text-white/70 text-center text-xs mb-4 leading-relaxed max-w-[280px]">
-                                    Top up your SubScript balance by sending native USDC to this address on <span className="text-white font-semibold">Arc Testnet only</span>.
+                                    Top up your SubScript balance by sending native USDC to this address on <span className="text-white font-semibold">{activeArcChain.name} only</span>.
                                 </p>
                                 <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.05] p-3 text-center text-[10px] leading-relaxed text-amber-200/75">Do not send another token or use another network; it may not credit this balance.</p>
 

@@ -31,7 +31,10 @@ export const USDC_NATIVE_GAS_ADDRESS = envAddress(process.env.NEXT_PUBLIC_USDC_A
 /* SubScriptVault escrow proxy (commit/draw/owed vault economics). Env-overridable. */
 export const SUBSCRIPT_VAULT_ADDRESS = (process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS
   || "0x853581e119dDED32DB886a4533A11789cF60bBFc") as `0x${string}`;
-export const SUBSCRIPT_VAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID || ARC_TESTNET_CHAIN_ID);
+export const SUBSCRIPT_VAULT_CHAIN_ID = Number(
+  process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID
+  || (isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID),
+);
 
 export const ARC_MEMO_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS, "0x5294E9927c3306DcBaDb03fe70b92e01cCede505");
 export const ARC_MESSAGE_TRANSMITTER_ADDRESS = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as const;

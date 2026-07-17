@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { ProtocolConfig } from "@/lib/payments/config";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { arcHttp } from "@/lib/arc/transport";
 import {
     ARC_TESTNET_CHAIN_ID,
@@ -46,7 +48,7 @@ const SUBSCRIPT_ABI = [
     },
 ] as const;
 
-const publicClient = createPublicClient({ chain: arcTestnet, transport: arcHttp() });
+const publicClient = createPublicClient({ chain: activeArcChain, transport: arcHttp() });
 
 const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     daily: 86_400,
@@ -73,11 +75,19 @@ async function authenticateMerchant(request: Request): Promise<
     if (mode !== "test" && mode !== "live") {
         return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
     }
+    if (mode === "live") {
+        /* This deployment is testnet-only: live credentials are refused before any lookup
+           (and cannot exist — the database rejects LIVE-mode key insertion). */
+        return { ok: false, status: 401, error: "Unauthorized: sk_live_ keys are not enabled on this deployment" };
+    }
     const keyRecord = await prisma.apiKey.findFirst({
         where: { revoked: false, secretKeyHash: hashSecretKey(secretKey) },
     });
     if (!keyRecord) {
         return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };
+    }
+    if (keyRecord.mode !== "TEST") {
+        return { ok: false, status: 403, error: "Forbidden: this API key's mode cannot settle on this deployment" };
     }
     return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
 }
@@ -427,7 +437,7 @@ export async function POST(request: Request) {
                 receiptToken: generateReceiptId("subscription"),
                 sandboxMode: isTestMode,
                 simulationOnly: false,
-                settlementChainId: ARC_TESTNET_CHAIN_ID,
+                settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
                 creationFingerprint: {
                     merchantAddress,
                     amountUsdc: amountMicros.toString(),
@@ -435,7 +445,7 @@ export async function POST(request: Request) {
                     linkKind: "MERCHANT",
                     sandboxMode: isTestMode,
                     simulationOnly: false,
-                    settlementChainId: ARC_TESTNET_CHAIN_ID,
+                    settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
                     maxUses: null,
                     expiresAt: null,
                 },

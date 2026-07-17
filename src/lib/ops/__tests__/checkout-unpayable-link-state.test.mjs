@@ -64,7 +64,8 @@ test("test keys settle on Arc testnet and only the shared demo key is simulation
     assert.match(subscriptions, /const isTestMode = auth\.mode === "test"/);
     assert.match(subscriptions, /demo_key_simulation_only/);
     assert.match(subscriptions, /sandboxMode:\s*isTestMode/);
-    assert.match(subscriptions, /settlementChainId:\s*ARC_TESTNET_CHAIN_ID/);
+    /* Test-mode checkouts stay pinned to Arc testnet; others follow the ACTIVE configured chain. */
+    assert.match(subscriptions, /settlementChainId:\s*isTestMode \? ARC_TESTNET_CHAIN_ID : ProtocolConfig\.CHAIN_ID/);
 });
 
 test("checkout copy distinguishes testnet settlement from public demo simulation", () => {

@@ -24,7 +24,7 @@ import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
 export const maxDuration = 300;
@@ -343,23 +343,32 @@ export async function POST(request: Request) {
                            prevent), revoke it on-chain for server-held wallets, mark it stopped so
                            the keeper stops attempting, and tell the user. External wallets can't be
                            revoked for the user, but marking it stopped still ends all charge attempts. */
-                        let revokedOnChain = false;
+                        let revocationTxHash: string | null = null;
                         try {
-                            await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
-                            await cancelFromEmbedded(subscriber, BigInt(subId));
-                            revokedOnChain = true;
+                            await ensureSponsoredGas({
+                                wallet: subscriber.toLowerCase(),
+                                action: "billing_renewal",
+                                requestKey: `cancel-zombie:${subId}`,
+                            }).catch(() => { /* best-effort */ });
+                            revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
                         } catch (killErr: any) {
                             console.warn(`[customer-billing] zombie on-chain revoke skipped for sub ${subId}:`, killErr?.message || killErr);
                         }
 
-                        await supabase
+                        const revokedOnChain = Boolean(revocationTxHash);
+                        const { error: zombieStateError } = await supabase
                             .from("subscriptions")
                             .update({
                                 status: revokedOnChain ? "CANCELED" : "PAST_DUE",
                                 downgrade_failures: newFailures,
+                                revocation_pending: !revokedOnChain,
+                                ...(revocationTxHash ? { revocation_tx_hash: revocationTxHash.toLowerCase() } : {}),
                                 updated_at: new Date().toISOString(),
                             })
                             .eq("subscription_id", subId);
+                        if (zombieStateError) {
+                            throw new Error(`Failed to persist zombie revocation state: ${zombieStateError.message}`);
+                        }
 
                         await createBillingDm({
                             supabase,
@@ -469,11 +478,77 @@ export async function POST(request: Request) {
            elapsed. Perform the on-chain cancel (server-signed from the subscriber's embedded wallet)
            so access ends exactly when their paid days run out. */
         const cancelResults: any[] = [];
+
+        /* Revocation retry: cancellations whose immediate on-chain revoke did not confirm.
+           These rows are chargeable on-chain regardless of local status (executePayment is
+           permissionless), so they are retried on EVERY run — independent of next_billing_date
+           and of status (ACTIVE, PAST_DUE or already CANCELED locally) — until the chain
+           reports inactive or an operator resolves them. */
+        const revocationClaimId = crypto.randomUUID();
+        const { data: pendingRevocations, error: pendingRevocationError } = await supabase.rpc(
+            "claim_pending_subscription_revocations",
+            {
+                p_claim_id: revocationClaimId,
+                p_limit: 100,
+                p_lease_seconds: 180,
+            },
+        );
+        if (pendingRevocationError) {
+            console.error("[customer-billing] revocation-retry query failed:", pendingRevocationError.message);
+        } else {
+            for (const sub of pendingRevocations || []) {
+                const subId = Number(sub.subscription_id);
+                try {
+                    const onChain = await standardContract.subscriptions(subId);
+                    const subscriber: string = onChain[0];
+                    const isActiveOnChain: boolean = onChain[5];
+                    let revocationTxHash: string | null = null;
+                    if (isActiveOnChain) {
+                        await ensureSponsoredGas({
+                            wallet: subscriber.toLowerCase(),
+                            action: "billing_renewal",
+                            requestKey: `cancel-revocation-retry:${subId}`,
+                        }).catch(() => { /* best-effort */ });
+                        /* Throws for external wallets — those rows stay pending and visible. */
+                        revocationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
+                    }
+                    const { data: completed, error: completeError } = await supabase.rpc(
+                        "complete_subscription_revocation_claim",
+                        {
+                            p_subscription_id: subId,
+                            p_claim_id: revocationClaimId,
+                            p_tx_hash: revocationTxHash?.toLowerCase() || null,
+                        },
+                    );
+                    if (completeError || completed !== true) {
+                        throw new Error(`Failed to complete revocation claim: ${completeError?.message || "claim ownership changed"}`);
+                    }
+                    cancelResults.push({ subId, action: "REVOCATION_COMPLETED", success: true, txHash: revocationTxHash });
+                } catch (err: any) {
+                    /* Release the lease with bounded exponential backoff. revocation_pending stays
+                       true, so later eligible rows cannot be starved by this failure. */
+                    const { error: failClaimError } = await supabase.rpc(
+                        "fail_subscription_revocation_claim",
+                        {
+                            p_subscription_id: subId,
+                            p_claim_id: revocationClaimId,
+                            p_error: String(err?.message || err).slice(0, 500),
+                        },
+                    );
+                    if (failClaimError) {
+                        console.error(`[ALERT] revocation claim release for sub ${subId} failed:`, failClaimError.message);
+                    }
+                    console.error(`[customer-billing] revocation retry for sub ${subId} failed:`, err?.message || err);
+                    cancelResults.push({ subId, action: "REVOCATION_RETRY_FAILED", success: false, error: err?.message || "Unknown error" });
+                }
+            }
+        }
+
         const { data: dueCancels, error: dueCancelError } = await supabase
             .from("subscriptions")
             .select("subscription_id, merchant_address")
             .eq("kind", "CUSTOMER")
-            .eq("status", "ACTIVE")
+            .in("status", ["ACTIVE", "PAST_DUE"])
             .eq("cancel_at_period_end", true)
             .lte("next_billing_date", new Date().toISOString());
 
@@ -482,6 +557,7 @@ export async function POST(request: Request) {
         } else {
             for (const sub of dueCancels || []) {
                 const subId = Number(sub.subscription_id);
+                let cancellationTxHash: string | null = null;
                 try {
                     const onChain = await standardContract.subscriptions(subId);
                     const subscriber: string = onChain[0];
@@ -489,14 +565,26 @@ export async function POST(request: Request) {
                     const isActiveOnChain: boolean = onChain[5];
 
                     if (isActiveOnChain) {
-                        await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
-                        await cancelFromEmbedded(subscriber, BigInt(subId));
+                        await ensureSponsoredGas({
+                            wallet: subscriber.toLowerCase(),
+                            action: "billing_renewal",
+                            requestKey: `cancel-period-end:${subId}`,
+                        }).catch(() => { /* best-effort */ });
+                        cancellationTxHash = await cancelFromEmbedded(subscriber, BigInt(subId));
                     }
 
-                    await supabase
+                    const { error: cancelStateError } = await supabase
                         .from("subscriptions")
-                        .update({ status: "CANCELED", updated_at: new Date().toISOString() })
+                        .update({
+                            status: "CANCELED",
+                            revocation_pending: false,
+                            ...(cancellationTxHash ? { revocation_tx_hash: cancellationTxHash.toLowerCase() } : {}),
+                            updated_at: new Date().toISOString(),
+                        })
                         .eq("subscription_id", subId);
+                    if (cancelStateError) {
+                        throw new Error(`Failed to persist period-end cancellation: ${cancelStateError.message}`);
+                    }
 
                     await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
@@ -512,6 +600,16 @@ export async function POST(request: Request) {
                     /* Keep the subscription ACTIVE with cancel_at_period_end set so the next run
                        retries. Reporting CANCELED while authorization remains active on-chain can
                        hide a chargeable subscription from both the user and operations. */
+                    const { error: pendingStateError } = await supabase
+                        .from("subscriptions")
+                        .update({
+                            revocation_pending: true,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq("subscription_id", subId);
+                    if (pendingStateError) {
+                        console.error(`[ALERT] failed to persist pending period-end revocation for sub ${subId}:`, pendingStateError.message);
+                    }
                     console.error(`[customer-billing] period-end cancel for sub ${subId} failed:`, err?.message || err);
                     cancelResults.push({ subId, action: "CANCEL_AT_PERIOD_END_FAILED", success: false, error: err?.message || "Unknown error" });
                 }

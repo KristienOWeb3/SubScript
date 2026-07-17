@@ -11,13 +11,13 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import {
     modifyFromEmbedded,
-    transferUsdcFromEmbedded,
     getSubscriptionOnChain,
     proratedUpgradeDelta,
 } from "@/lib/subscriptions/onchain";
+import { payMerchantLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
@@ -48,7 +48,6 @@ export async function POST(request: Request) {
         if (!plan || !plan.active) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
 
         const subscriber = wallet.toLowerCase();
-        await requireGasSponsored(subscriber);
 
         /* Resolve the current subscription (must belong to caller, be active, and be with the
            same merchant — you can only switch between a merchant's own plans). */
@@ -156,6 +155,15 @@ export async function POST(request: Request) {
             }
         }
 
+        /* Authorization, merchant compatibility, upgrade direction, and the durable plan-change
+           claim must all succeed before consuming sponsor budget. Bind sponsorship to the exact
+           financial fingerprint so changed terms or mode cannot reuse an earlier top-up. */
+        await requireSponsoredGas({
+            wallet: subscriber,
+            action: "subscription_change",
+            requestKey: `sponsor:${changeFingerprint}`,
+        });
+
         /* Immediate upgrade: charge only the prorated difference for the rest of the current
            period now. */
         let proratedChargeMicros = BigInt(0);
@@ -166,16 +174,20 @@ export async function POST(request: Request) {
                 current.amount,
                 plan.amountUsdc,
                 current.period,
+                plan.periodSeconds,
                 current.nextPayment,
                 nowSeconds,
             );
             if (proratedChargeMicros > BigInt(0)) {
                 /* Deterministic key so a retry/concurrent request re-uses the SAME on-chain transfer
-                   at the custody layer instead of charging the prorated amount twice. */
-                proratedTxHash = await transferUsdcFromEmbedded(
+                   at the custody layer instead of charging the prorated amount twice. Routed through
+                   the router's fee-accounted depositForMerchant (memo-tagged) — a direct wallet
+                   transfer would silently bypass the 1% protocol fee. */
+                proratedTxHash = await payMerchantLinkFromEmbedded(
                     subscriber,
                     plan.merchantAddress,
                     proratedChargeMicros,
+                    `sub-proration:${fromSubscriptionId}:${planId}`,
                     deterministicIdempotencyKey(`sub-upgrade-proration:${changeFingerprint}`),
                 );
                 proratedTxHashForRecovery = proratedTxHash;

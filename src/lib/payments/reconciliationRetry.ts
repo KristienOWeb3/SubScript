@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { pgMaybeOne, pgQuery } from "@/lib/serverPg";
-import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
+import { deterministicIdempotencyKey } from "@/lib/custody";
+import { mirrorSubscriptionCreated, mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import {
     findActiveOnChainSubscriptionId,
     getSubscriptionOnChain,
+    modifyFromEmbedded,
 } from "@/lib/subscriptions/onchain";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 import { syncVaultMirror } from "@/lib/vault/onchain";
 
 export type RetryablePaymentReconciliationEvent = {
@@ -160,10 +164,236 @@ async function retryVaultDrawMirrorSync(context: Record<string, unknown>) {
     await syncVaultMirror(userAddress, merchantAddress);
 }
 
+/* Dedicated plan-change recovery. The event context is intentionally tiny —
+   { changeClaimKey, proratedTxHash, modifyTxHash } — but the claim key embeds the complete
+   v2 financial fingerprint:
+   subscription-change:v2:{subId}:{subscriber}:{oldAmount}:{oldPeriod}:{planId}:{newAmount}:{newPeriod}:{mode}
+   The handler converges every crash point WITHOUT ever transferring the proration again:
+     - proration transferred, modify not submitted  → modify with the deterministic custody key
+     - proration transferred, modify submitted      → verify on-chain terms, then mirror
+     - modify confirmed, mirror failed              → mirror
+     - mirror done, idempotency completion failed   → complete the claim
+     - webhook/DM failed after a successful change  → re-dispatch the durable webhook (idempotent id)
+   Only modifyFromEmbedded may be (re)issued — its key is deterministic on the fingerprint so
+   Circle dedupes; transferUsdcFromEmbedded is deliberately never called from recovery. */
+function parsePlanChangeClaimKey(changeClaimKey: string) {
+    const prefix = "subscription-change:";
+    if (!changeClaimKey.startsWith(prefix)) {
+        throw new Error("Plan-change claim key has an unknown prefix");
+    }
+    const fingerprint = changeClaimKey.slice(prefix.length);
+    const parts = fingerprint.split(":");
+    if (parts.length !== 9 || parts[0] !== "v2") {
+        throw new Error("Plan-change claim key is not a v2 fingerprint");
+    }
+    const [, subscriptionId, subscriber, oldAmount, oldPeriod, planId, newAmount, newPeriod, mode] = parts;
+    if (!/^\d+$/.test(subscriptionId)) throw new Error("Plan-change fingerprint has an invalid subscription id");
+    if (!ADDRESS_PATTERN.test(subscriber)) throw new Error("Plan-change fingerprint has an invalid subscriber");
+    if (!/^\d+$/.test(oldAmount) || !/^\d+$/.test(oldPeriod) || !/^\d+$/.test(newAmount) || !/^\d+$/.test(newPeriod)) {
+        throw new Error("Plan-change fingerprint has invalid amounts");
+    }
+    return {
+        fingerprint,
+        subscriptionId,
+        subscriber: subscriber.toLowerCase(),
+        oldAmount: BigInt(oldAmount),
+        oldPeriod: BigInt(oldPeriod),
+        planId,
+        newAmount: BigInt(newAmount),
+        newPeriod: BigInt(newPeriod),
+        mode,
+    };
+}
+
+async function waitForConfirmedPlanTerms({
+    subscriptionId,
+    subscriber,
+    amount,
+    period,
+}: {
+    subscriptionId: string;
+    subscriber: string;
+    amount: bigint;
+    period: bigint;
+}) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const current = await getSubscriptionOnChain(subscriptionId);
+        if (
+            current?.isActive
+            && current.subscriber === subscriber
+            && current.amount === amount
+            && current.period === period
+        ) {
+            return current;
+        }
+        if (attempt < 5) {
+            await new Promise((resolve) => setTimeout(resolve, 2_000));
+        }
+    }
+    throw new Error("Modified subscription terms are not confirmed on-chain");
+}
+
+async function retrySubscriptionPlanChangeReconciliation(context: Record<string, unknown>) {
+    const changeClaimKey = requiredString(context, "changeClaimKey");
+    const parsed = parsePlanChangeClaimKey(changeClaimKey);
+    const proratedTxHash = typeof context.proratedTxHash === "string" && TX_HASH_PATTERN.test(context.proratedTxHash)
+        ? context.proratedTxHash.toLowerCase()
+        : null;
+    let modifyTxHash = typeof context.modifyTxHash === "string" && TX_HASH_PATTERN.test(context.modifyTxHash)
+        ? context.modifyTxHash.toLowerCase()
+        : null;
+
+    const onChain = await getSubscriptionOnChain(parsed.subscriptionId);
+    if (!onChain || onChain.subscriber !== parsed.subscriber) {
+        throw new Error("Plan-change subscription is not discoverable on-chain");
+    }
+
+    const hasNewTerms = onChain.isActive
+        && onChain.amount === parsed.newAmount
+        && onChain.period === parsed.newPeriod;
+    const hasOldTerms = onChain.amount === parsed.oldAmount && onChain.period === parsed.oldPeriod;
+
+    if (!hasNewTerms) {
+        if (!hasOldTerms || !onChain.isActive) {
+            /* Neither fingerprint side matches (a later change or cancellation intervened).
+               Converging automatically could clobber newer state — leave for the operator. */
+            throw new Error("On-chain subscription matches neither the old nor the new plan terms");
+        }
+        /* Modify never submitted (or never mined): (re)submit with the SAME deterministic key —
+           Circle dedupes an already-accepted modify instead of applying it twice. */
+        modifyTxHash = await modifyFromEmbedded(
+            parsed.subscriber,
+            parsed.subscriptionId,
+            parsed.newAmount,
+            parsed.newPeriod,
+            deterministicIdempotencyKey(`sub-change-modify:${parsed.fingerprint}`),
+        );
+        await waitForConfirmedPlanTerms({
+            subscriptionId: parsed.subscriptionId,
+            subscriber: parsed.subscriber,
+            amount: parsed.newAmount,
+            period: parsed.newPeriod,
+        });
+    }
+
+    await mirrorSubscriptionModified({
+        subscriptionId: parsed.subscriptionId,
+        amountUsdc: parsed.newAmount,
+        periodSeconds: parsed.newPeriod,
+    });
+
+    /* The merchant webhook is the piece plan-change previously had no recovery for. The
+       lifecycle event id is deterministic, so a duplicate dispatch dedupes downstream. */
+    const merchant = await pgMaybeOne<{ merchant_address: string }>(
+        "select merchant_address from subscriptions where subscription_id = $1 limit 1",
+        [parsed.subscriptionId],
+    );
+    if (!merchant?.merchant_address) {
+        throw new Error("Mirrored subscription merchant is unavailable");
+    }
+    await dispatchDurableSubscriptionWebhook(merchant.merchant_address, "subscription.updated", {
+        ...subscriptionWebhookData({
+            subscriptionId: parsed.subscriptionId,
+            status: "updated",
+            amountUsdcMicros: parsed.newAmount,
+            subscriber: parsed.subscriber,
+            merchantAddress: merchant.merchant_address,
+            txHash: modifyTxHash ?? undefined,
+        }),
+        plan_id: parsed.planId,
+        planId: parsed.planId,
+        previous_amount_usdc_micros: parsed.oldAmount.toString(),
+        previousAmountUsdcMicros: parsed.oldAmount.toString(),
+        new_period_seconds: Number(parsed.newPeriod),
+        newPeriodSeconds: Number(parsed.newPeriod),
+        prorated_tx_hash: proratedTxHash,
+        proratedTxHash,
+        reconciled: true,
+    }, `updated:${parsed.subscriptionId}:${(modifyTxHash || "reconciled").toLowerCase()}`);
+
+    /* Complete the claim so a user retry replays this result instead of re-charging. */
+    const completed = await prisma.idempotencyKey.updateMany({
+        where: { executionKey: changeClaimKey, status: { not: "COMPLETED" } },
+        data: {
+            status: "COMPLETED",
+            responsePayload: {
+                success: true,
+                txHash: modifyTxHash,
+                subscriptionId: parsed.subscriptionId,
+                proratedTxHash,
+                reconciled: true,
+            },
+        },
+    });
+    if (completed.count !== 1) {
+        const claim = await prisma.idempotencyKey.findUnique({ where: { executionKey: changeClaimKey } });
+        if (claim?.status !== "COMPLETED") {
+            throw new Error("Plan-change idempotency claim could not be completed");
+        }
+    }
+}
+
+/* An embedded checkout payment confirmed on-chain but the durable verification job was not
+   created before the response. Rebuild the claim from the attempt row (the authoritative
+   snapshot) — the claim RPC is idempotent by execution key and refuses mismatched hashes. */
+async function retryEmbeddedPaymentDurableBind(context: Record<string, unknown>) {
+    const txHash = requiredString(context, "txHash").toLowerCase();
+    if (!TX_HASH_PATTERN.test(txHash)) throw new Error("Durable-bind context has an invalid txHash");
+    const paymentLinkId = requiredString(context, "paymentLinkId");
+    if (!UUID_PATTERN.test(paymentLinkId)) throw new Error("Durable-bind context has an invalid paymentLinkId");
+    const checkoutAttemptId = requiredString(context, "checkoutAttemptId");
+    if (!UUID_PATTERN.test(checkoutAttemptId)) throw new Error("Durable-bind context has an invalid checkoutAttemptId");
+    const payer = requiredAddress(context, "payer");
+
+    const attempt = await pgMaybeOne<{
+        receipt_id: string;
+        settlement_chain_id: string;
+        link_kind: string;
+    }>(
+        `select receipt_id, settlement_chain_id, link_kind
+           from payment_link_checkout_attempts
+          where attempt_id = $1 and payment_link_id = $2 and lower(payer_address) = $3`,
+        [checkoutAttemptId, paymentLinkId, payer],
+    );
+    if (!attempt) throw new Error("Checkout attempt for the durable bind no longer exists");
+
+    const result = await pgMaybeOne<{ result: { outcome?: string } }>(
+        `select public.claim_payment_link_settlement_durable(
+            $1, $2, $3, $4::uuid, $5, $6, $7::timestamptz, $8, $9::uuid, $10
+        ) as result`,
+        [
+            `verify-payment-link:${txHash}`,
+            txHash,
+            attempt.settlement_chain_id,
+            paymentLinkId,
+            payer,
+            attempt.receipt_id,
+            new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            attempt.link_kind !== "PEER_REQUEST",
+            checkoutAttemptId,
+            "reconciliation-worker",
+        ],
+    );
+    const outcome = result?.result?.outcome;
+    if (!outcome || !["CLAIMED", "IN_PROGRESS", "COMPLETED"].includes(outcome)) {
+        throw new Error(`Durable bind claim returned ${outcome || "no outcome"}`);
+    }
+}
+
 /** Executes the real, idempotent repair behind the admin retry action. */
 export async function retryPaymentReconciliationEvent(event: RetryablePaymentReconciliationEvent) {
     if (event.kind === "EMBEDDED_PAYMENT_IDEMPOTENCY_COMPLETION") {
         await retryEmbeddedIdempotencyCompletion(event.context);
+        return;
+    }
+    if (event.kind === "EMBEDDED_PAYMENT_DURABLE_BIND") {
+        await retryEmbeddedPaymentDurableBind(event.context);
+        return;
+    }
+    if (event.kind === "SUBSCRIPTION_PLAN_CHANGE_RECONCILIATION") {
+        /* Plan-change events carry only { changeClaimKey, txHashes } — the generic
+           subscription handler's required context does not exist for them. */
+        await retrySubscriptionPlanChangeReconciliation(event.context);
         return;
     }
     if (event.kind.startsWith("SUBSCRIPTION_")) {
@@ -244,7 +474,7 @@ export async function processPaymentReconciliationEvents(limit: number = 25) {
                      returning id`,
                     [event.id, event.attempt_count, message],
                 );
-                console.error("[payment-reconciliation] DEAD-LETTERED after exhausting retries — manual review required", { id: event.id, kind: event.kind, attempts: event.attempt_count, error });
+                console.error("[ALERT] [payment-reconciliation] DEAD-LETTERED after exhausting retries — manual review required", { id: event.id, kind: event.kind, attempts: event.attempt_count, error });
                 results.push({ id: event.id, success: true, deadLettered: true, error: message });
                 continue;
             }

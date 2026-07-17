@@ -17,10 +17,9 @@ import {
   fallback
 } from "viem";
 import { sepolia } from "viem/chains";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID, 
   ARC_CCTP_DOMAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   CCTP_CONFIG 
@@ -104,7 +103,7 @@ const VAULT_CONTRACT_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
+  chain: activeArcChain,
   transport: arcHttp(),
 });
 
@@ -823,7 +822,7 @@ export default function UserDashboard() {
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
     args: userWallet ? [userWallet as `0x${string}`] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: activeArcChain.id,
     query: { enabled: Boolean(userWallet) },
   });
 
@@ -1334,8 +1333,8 @@ export default function UserDashboard() {
           throw new Error("Connect your wallet to pay this request.");
         }
         /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -1538,6 +1537,58 @@ export default function UserDashboard() {
     setVaultActionOpen(true);
   };
 
+  /* Liveness escape hatch: reclaim the full escrow from a matured-but-never-settled vault
+     once the contract's 7-day grace has elapsed. Embedded wallets sign server-side; external
+     wallets sign reclaimAbandonedEscrow directly. */
+  const [vaultReclaimBusyId, setVaultReclaimBusyId] = useState<string | null>(null);
+  const handleVaultReclaim = async (vault: any) => {
+    if (vaultReclaimBusyId) return;
+    setVaultReclaimBusyId(String(vault.id || vault.merchantAddress));
+    try {
+      if (isEmbeddedWalletSession) {
+        const res = await fetch("/api/user/vault/reclaim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Reclaim failed.");
+      } else {
+        if (!accountAddress) throw new Error("Connect your browser wallet to reclaim.");
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
+        }
+        const reclaimHash = await writeContractAsync({
+          address: SUBSCRIPT_VAULT_ADDRESS,
+          abi: [{ type: "function", name: "reclaimAbandonedEscrow", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }], outputs: [] }] as const,
+          functionName: "reclaimAbandonedEscrow",
+          args: [vault.merchantAddress as `0x${string}`],
+        });
+        const reclaimReceipt = await publicClient.waitForTransactionReceipt({ hash: reclaimHash });
+        if (reclaimReceipt.status !== "success") {
+          throw new Error("The reclaim transaction reverted. Your vault remains unchanged.");
+        }
+        const syncRes = await fetch("/api/user/vault/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        if (!syncRes.ok) {
+          throw new Error("Reclaim confirmed on-chain, but the vault could not be refreshed. Retry to synchronize it.");
+        }
+      }
+      await loadVaults();
+    } catch (err: any) {
+      setVaultActionError(err?.message || "Reclaim failed.");
+      setVaultActionOpen(true);
+      setVaultActionMode("withdraw");
+      setVaultActionMerchant(vault.merchantAddress);
+      setVaultActionMerchantLocked(true);
+    } finally {
+      setVaultReclaimBusyId(null);
+    }
+  };
+
   /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
      server-side Circle idempotency key dedupes instead of escrowing the amount twice. */
   const vaultCommitRequestKey = useRef<string | null>(null);
@@ -1589,7 +1640,44 @@ export default function UserDashboard() {
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current ||= crypto.randomUUID();
+        const intentStorageKey = "subscript_vault_commit_intent";
+        if (vaultActionMode === "commit") {
+          /* Durable money-moving operation id: persisted in localStorage until terminal
+             resolution, so a reload cannot mint a fresh id for the same commit. Any prior
+             unresolved intent is resolved server-side BEFORE a new commit is allowed. */
+          let storedIntent: { requestId?: string; merchantAddress?: string; amountUsdc?: string } | null = null;
+          try { storedIntent = JSON.parse(localStorage.getItem(intentStorageKey) || "null"); } catch { storedIntent = null; }
+          if (storedIntent?.requestId
+              && (storedIntent.merchantAddress !== merchantAddress || storedIntent.amountUsdc !== vaultActionAmount)) {
+            const priorResponse = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
+              .catch(() => null);
+            if (!priorResponse?.ok) {
+              throw new Error("Unable to verify the previous vault commit. Retry after its status can be confirmed.");
+            }
+            const prior = await priorResponse.json().catch(() => null);
+            if (!prior || typeof prior.exists !== "boolean") {
+              throw new Error("The previous vault commit returned an invalid status. Retry before starting a new commit.");
+            }
+            if (prior?.exists && (prior.status === "PENDING" || prior.status === "SUBMITTED")) {
+              throw new Error("A previous vault commit is still resolving. Retry that exact commit (same merchant and amount), or wait for it to finish before starting a new one.");
+            }
+            const terminal = prior.exists === false
+              || (prior.exists === true && (prior.status === "MIRRORED" || prior.status === "FAILED"));
+            if (!terminal) {
+              throw new Error("The previous vault commit has an unknown status. Retry before starting a new commit.");
+            }
+            try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+            storedIntent = null;
+          }
+          vaultCommitRequestKey.current = storedIntent?.requestId || vaultCommitRequestKey.current || crypto.randomUUID();
+          try {
+            localStorage.setItem(intentStorageKey, JSON.stringify({
+              requestId: vaultCommitRequestKey.current,
+              merchantAddress,
+              amountUsdc: vaultActionAmount,
+            }));
+          } catch { /* the in-memory ref still guards this tab */ }
+        }
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -1601,13 +1689,20 @@ export default function UserDashboard() {
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current = null;
+        if (!res.ok || !data.success) {
+          /* An ambiguous commit stays persisted — the retry reuses the same request id and
+             dedupes at Circle instead of escrowing twice. */
+          throw new Error(data.error || "Vault action failed.");
+        }
+        if (vaultActionMode === "commit") {
+          vaultCommitRequestKey.current = null;
+          try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+        }
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         const amountMicros = parseUnits(limitDecimals(vaultActionAmount, 6), 6);
 
@@ -1936,8 +2031,8 @@ export default function UserDashboard() {
       ] as const;
 
       /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
@@ -2904,6 +2999,8 @@ export default function UserDashboard() {
                           vault={vault}
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                          onReclaim={handleVaultReclaim}
+                          reclaimBusy={vaultReclaimBusyId !== null}
                           balanceVisible={balanceVisible}
                         />
                       ))}
@@ -5144,8 +5241,8 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
               </ul>
             </div>
             <p className="text-[11px] leading-relaxed text-white/40">
-              The merchant sets the commit amount. At the end of each 30-day cycle they draw the period's
-              usage cost from your vault; you top the vault back up to keep the service running.
+              SubScript fixes the commitment at 2 USDC for each user–merchant relationship per cycle.
+              At cycle end the keeper settles reported usage and closes the vault; commit again to start the next cycle.
             </p>
             <button type="button" onClick={onClose} className="subscript-primary-button">
               Got it
@@ -6299,7 +6396,7 @@ function DepositModal({
 
     setCctpStatus("claiming");
     setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
-    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+    await switchChainAsync({ chainId: activeArcChain.id });
     const mintHash = await writeContractAsync({
       address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
       abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],
@@ -7220,22 +7317,42 @@ function MeteredVaultRow({
   vault,
   onCommit,
   onWithdraw,
+  onReclaim,
+  reclaimBusy,
   balanceVisible,
 }: {
   vault: any;
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
+  onReclaim: (vault: any) => void;
+  reclaimBusy: boolean;
   balanceVisible: boolean;
 }) {
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
+  const disputed = vault.disputed === true;
+  const cycleStartDate = vault.cycleStart ? new Date(vault.cycleStart) : null;
   const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
-  const locked = lockedUntilDate ? Date.now() < lockedUntilDate.getTime() : false;
-  const canWithdraw = balance > 0 && !locked;
-  const lockLabel = lockedUntilDate
-    ? lockedUntilDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : null;
+  const RECLAIM_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+  const reclaimDate = lockedUntilDate ? new Date(lockedUntilDate.getTime() + RECLAIM_GRACE_MS) : null;
+  const now = Date.now();
+  const locked = lockedUntilDate ? now < lockedUntilDate.getTime() : false;
+  /* Contract truth, mirrored in the UI:
+     - withdrawSurplus requires the vault to be INACTIVE and the lock elapsed;
+     - reclaimAbandonedEscrow requires an ACTIVE vault whose settle window (lockedUntil +
+       7-day grace) lapsed without keeper settlement;
+     - an active matured vault inside the grace is simply awaiting settlement. */
+  const canWithdraw = balance > 0 && blocked && !locked;
+  const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
+    && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
+  const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
+  /* Merchant-drawable exposure is the platform cap, never the surplus. */
+  const STANDARD_COMMIT_MICROS = 2_000_000;
+  const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
+  const shortDate = (date: Date | null) => date
+    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : "—";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
       <div className="flex items-start justify-between gap-3">
@@ -7250,8 +7367,8 @@ function MeteredVaultRow({
             </p>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : "Active"}
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Inactive" : disputed ? "Disputed" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 
@@ -7270,21 +7387,50 @@ function MeteredVaultRow({
           >
             {blocked ? "Re-commit" : "Add commit"}
           </button>
-          {balance > 0 && (
+          {canWithdraw && (
             <button
               type="button"
-              onClick={() => canWithdraw && onWithdraw(vault)}
-              disabled={!canWithdraw}
-              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${canWithdraw ? "bg-white/5 border-white/10 text-white/80 hover:bg-white/15" : "cursor-not-allowed border-white/5 bg-black/20 text-white/30"}`}
+              onClick={() => onWithdraw(vault)}
+              className="rounded-xl border bg-white/5 border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
             >
-              {locked ? "Locked" : "Withdraw"}
+              Withdraw
+            </button>
+          )}
+          {canReclaim && (
+            <button
+              type="button"
+              onClick={() => !reclaimBusy && onReclaim(vault)}
+              disabled={reclaimBusy}
+              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
+            >
+              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
         </div>
       </div>
-      {locked && lockLabel && (
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/45 sm:grid-cols-3">
+        <p>Cycle started <span className="font-bold text-white/60">{shortDate(cycleStartDate)}</span></p>
+        <p>Cycle matures <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span></p>
+        <p>Reported usage <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+        <p>Max drawable <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+        <p>Settlement due by <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+        <p>Reclaimable from <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+      </div>
+
+      {locked && !blocked && (
         <p className="text-[10px] leading-relaxed text-white/40">
-          Committed funds are locked for this cycle — withdrawable from <span className="font-bold text-white/60">{lockLabel}</span>.
+          Committed funds are locked while the cycle runs — the keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+        </p>
+      )}
+      {awaitingSettlement && (
+        <p className="text-[10px] leading-relaxed text-sky-200/70">
+          This cycle has matured and is awaiting keeper settlement. Unused escrow returns automatically; if nothing settles by <span className="font-bold">{shortDate(reclaimDate)}</span>, a Reclaim button appears here.
+        </p>
+      )}
+      {canReclaim && (
+        <p className="text-[10px] leading-relaxed text-amber-200/70">
+          Settlement never arrived for this matured cycle. You can reclaim your full escrow now.
         </p>
       )}
       {blocked && commitNeeded > 0 && (

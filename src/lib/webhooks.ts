@@ -131,8 +131,12 @@ export async function sendWebhookRequest(
        the same host for the same event — they shouldn't each burn a token). */
     const urlValidation = await validateWebhookUrl(url);
     if (!urlValidation.ok) {
-        return { status: 400, responseText: urlValidation.error };
+        return {
+            status: "transient" in urlValidation && urlValidation.transient === true ? 503 : 400,
+            responseText: urlValidation.error,
+        };
     }
+    const destination = new URL(urlValidation.url).origin;
     try {
         const destinationHost = new URL(urlValidation.url).host.toLowerCase();
         assertProviderRateLimit({
@@ -145,41 +149,60 @@ export async function sendWebhookRequest(
         return { status: 429, responseText: err?.message || "Webhook destination rate limit exceeded" };
     }
 
+    /* DNS-rebinding defense: dial the exact vetted IP while TLS keeps verifying the original
+       hostname (SNI/cert come from the URL). A resolver that answered public for validation
+       cannot swap in a private address for the actual connection, because the connection
+       never resolves again. */
+    const pinned = urlValidation.addresses[0];
+    const { Agent: UndiciAgent, fetch: undiciFetch } = await import("undici");
+    const pinnedDispatcher = new UndiciAgent({
+        connect: {
+            lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, address: string, family: number) => void) => {
+                callback(null, pinned.address, pinned.family);
+            },
+        },
+    });
+
     const BACKOFF_MS = [500, 1500];
     const maxAttempts = BACKOFF_MS.length + 1;
     let last: { status: number; responseText: string } = { status: 0, responseText: "" };
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const timestamp = Math.floor(Date.now() / 1000);
-        const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
-        const signatureHeader = `t=${timestamp},v1=${signature}`;
+    try {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${serializedPayload}`).digest("hex");
+            const signatureHeader = `t=${timestamp},v1=${signature}`;
 
-        try {
-            const response = await fetch(urlValidation.url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-subscript-signature": signatureHeader,
-                    "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
-                },
-                body: serializedPayload,
-                signal: AbortSignal.timeout(10000),
-                redirect: "manual",
-            });
-            const responseText = (await response.text().catch(() => "")).slice(0, 1000);
-            last = { status: response.status, responseText };
-            if (!isRetryableStatus(response.status)) return last;
-        } catch (err: any) {
-            console.warn(`Webhook delivery failure to ${url} (attempt ${attempt + 1}/${maxAttempts}):`, err);
-            last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
+            try {
+                const response = await undiciFetch(urlValidation.url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-subscript-signature": signatureHeader,
+                        "User-Agent": "SubScript-Webhook-Dispatcher/1.0",
+                    },
+                    body: serializedPayload,
+                    signal: AbortSignal.timeout(10000),
+                    redirect: "manual",
+                    dispatcher: pinnedDispatcher,
+                });
+                const responseText = (await response.text().catch(() => "")).slice(0, 1000);
+                last = { status: response.status, responseText };
+                if (!isRetryableStatus(response.status)) return last;
+            } catch (err: any) {
+                console.warn(`Webhook delivery failure to ${destination} (attempt ${attempt + 1}/${maxAttempts}):`, err);
+                last = { status: 504, responseText: `Delivery failed: ${err.message || String(err)}` };
+            }
+
+            if (attempt < maxAttempts - 1) {
+                await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
+            }
         }
 
-        if (attempt < maxAttempts - 1) {
-            await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS[attempt]));
-        }
+        return last;
+    } finally {
+        await pinnedDispatcher.close().catch(() => { /* connection cleanup is best-effort */ });
     }
-
-    return last;
 }
 
 /**

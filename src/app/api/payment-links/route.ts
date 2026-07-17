@@ -9,6 +9,7 @@ import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
@@ -163,6 +164,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });

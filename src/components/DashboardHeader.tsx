@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Wallet, Copy, Check, PlugZap, Loader2, Shield, Eye, EyeOff, User } from "@/components/icons";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
@@ -22,7 +22,7 @@ const ERC20_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 

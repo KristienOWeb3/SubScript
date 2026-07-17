@@ -21,7 +21,7 @@
 import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
@@ -114,7 +114,11 @@ export async function healSubscriptionDrift(
             if (sub.status === "CANCELED" && isActiveOnChain) {
                 /* Case 2: DB cancelled but the authorization is still live — revoke it. */
                 try {
-                    await ensureGasSponsored(subscriber).catch(() => { /* best-effort */ });
+                    await ensureSponsoredGas({
+                        wallet: subscriber,
+                        action: "drift_heal",
+                        requestKey: `drift-revoke:${subId}`,
+                    }).catch(() => { /* best-effort */ });
                     const txHash = await cancelFromEmbedded(subscriber, BigInt(subId));
                     healed.push({ subId, action: "REVOKED_STALE_AUTHORIZATION", detail: txHash });
                 } catch (revokeErr: any) {

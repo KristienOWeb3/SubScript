@@ -66,6 +66,7 @@ function loadGasModule({ getProviderForWrite, executeWithFallback, sendTransacti
                     Wallet: MockWallet,
                     isAddress: (value) => /^0x[0-9a-fA-F]{40}$/.test(value),
                     parseUnits,
+                    keccak256: () => "0x" + "aa".repeat(32),
                 },
             };
         }
@@ -290,6 +291,28 @@ test("only a confirmed transaction is reused inside the sponsorship window", asy
     });
 });
 
+test("a reverted prepared transfer is definitive instead of submitted-unconfirmed", async () => {
+    const hash = "0x" + "aa".repeat(32);
+    const gas = loadGasModule({
+        getProviderForWrite: async () => {
+            throw new Error("a mined receipt must not rebroadcast");
+        },
+        executeWithFallback: async (operation) => ({
+            result: await operation({
+                getTransactionReceipt: async () => ({ hash, status: 0 }),
+            }),
+            rpcEndpoint: "mock://fallback",
+        }),
+        sendTransaction: async () => {
+            throw new Error("unused");
+        },
+    });
+
+    const result = await gas.submitPreparedSponsorTransfer("0x02abcdef", hash);
+    assert.equal(result.outcome, "reverted");
+    assert.equal(result.txHash, hash);
+});
+
 test("invalid sponsor and top-up configuration fail closed before RPC", async () => {
     await withSponsorEnvironment(async () => {
         let providerCalls = 0;
@@ -316,8 +339,8 @@ test("invalid sponsor and top-up configuration fail closed before RPC", async ()
     });
 });
 
-test("user-initiated legacy wallet execution aborts unless sponsorship succeeds", () => {
-    assert.match(executeRouteSource, /import \{ requireGasSponsored \} from "@\/lib\/sponsor\/gas"/);
-    assert.match(executeRouteSource, /await requireGasSponsored\(wallet\.toLowerCase\(\)\)/);
-    assert.doesNotMatch(executeRouteSource, /await ensureGasSponsored\(wallet\.toLowerCase\(\)\)/);
+test("user-initiated wallet execution aborts unless durable sponsorship succeeds", () => {
+    assert.match(executeRouteSource, /import \{ requireSponsoredGas \} from "@\/lib\/sponsor\/sponsorship"/);
+    assert.match(executeRouteSource, /await requireSponsoredGas\(\{/);
+    assert.doesNotMatch(executeRouteSource, /requireGasSponsored|ensureGasSponsored/);
 });

@@ -27,6 +27,8 @@ model ApiKey {
   secretKeyPlain String?  @map("secret_key_plain")
   secretKeyHash  String?  @unique @map("secret_key_hash")
   secretKeyHint  String?  @map("secret_key_hint")
+  // Immutable environment: "TEST" (sk_test_) or "LIVE" (future sk_live_ — DB-refused today).
+  mode           String   @default("TEST")
   createdAt      DateTime @default(now()) @map("created_at")
   revoked        Boolean  @default(false)
 
@@ -203,6 +205,10 @@ model Subscription {
   subscriber              String?   @map("subscriber")
   cancelAtPeriodEnd       Boolean   @default(false) @map("cancel_at_period_end")
   cancelRequestedAt       DateTime? @map("cancel_requested_at")
+  // True while the on-chain PSA authorization may still be active after a cancellation
+  // request. The retry worker keeps revoking until the chain reports inactive.
+  revocationPending       Boolean   @default(false) @map("revocation_pending")
+  revocationTxHash        String?   @map("revocation_tx_hash")
   downgradeFailures       Int       @default(0) @map("downgrade_failures")
   // "PREMIUM" (merchant -> SubScript, billed by the in-app cron) or "CUSTOMER"
   // (customer -> merchant plan, billed on-chain). See subscriptions/mirror.ts.
@@ -630,6 +636,10 @@ model MeteredVault {
   active            Boolean  @default(false)
   vaultChainId      Int?     @map("vault_chain_id")
   lastSyncedBlock   BigInt?  @map("last_synced_block")
+  // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
+  environment       String   @default("TEST")
+  settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
+  disputed          Boolean  @default(false)
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
@@ -638,7 +648,7 @@ model MeteredVault {
   customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
   usageReports      MeteredUsageReport[]
 
-  @@unique([userAddress, merchantAddress])
+  @@unique([userAddress, merchantAddress, environment, settlementChainId])
   @@index([userAddress])
   @@index([merchantAddress])
   @@map("metered_vaults")
@@ -656,6 +666,7 @@ model MeteredUsageReport {
   balanceUsdc      BigInt   @map("balance_usdc")
   note             String?
   requestId        String?  @map("request_id")
+  environment      String   @default("TEST")
   createdAt        DateTime @default(now()) @map("created_at")
   vault            MeteredVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
 
@@ -663,6 +674,27 @@ model MeteredUsageReport {
   @@index([merchantAddress, createdAt])
   @@index([vaultId, createdAt])
   @@map("metered_usage_reports")
+}
+
+// Durable vault-commit intent: persisted BEFORE custody submission so a reload or retry
+// resolves the prior money-moving attempt (same Circle idempotency key) instead of escrowing
+// twice. See supabase/migrations/20260717040000_vault_commit_intents.sql.
+model VaultCommitIntent {
+  requestId             String   @id @map("request_id")
+  userAddress           String   @map("user_address")
+  merchantAddress       String   @map("merchant_address")
+  amountUsdc            Decimal  @map("amount_usdc")
+  environment           String   @default("TEST")
+  custodyIdempotencyKey String   @map("custody_idempotency_key")
+  sponsorRequestKey     String?  @map("sponsor_request_key")
+  txHash                String?  @map("tx_hash")
+  status                String   @default("PENDING")
+  lastError             String?  @map("last_error")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userAddress, createdAt(sort: Desc)])
+  @@map("vault_commit_intents")
 }
 
 // User-filed scam reports against a commit (metered-vault) merchant. Surfaced for SubScript ops

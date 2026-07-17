@@ -15,23 +15,34 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @author SubScript Protocol
  * @notice Escrowed prepaid "commit" vaults for metered services.
  *
- * DRAFT — for review. Not deployed, not audited. See docs/vault-economics.md.
+ * STATUS: an earlier revision of this contract is DEPLOYED on Arc testnet behind a UUPS
+ * proxy (see NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS / docs/redeploy-runbook.md). This source
+ * is the V3 implementation candidate. Do NOT upgrade the live proxy until the storage
+ * layout check, the Foundry + Hardhat vault suites, and the implementation review pass —
+ * see docs/vault-economics.md for the upgrade gate.
  *
- * Model:
- *  - A merchant sets the commit amount required to use their metered service.
- *  - A user commits (escrows) USDC. While the vault is active, the merchant renders
- *    the service for the cycle (~30 days).
- *  - Only at cycle end, the merchant (or an authorized SubScript drawer) settles the
- *    period's usage cost from escrow. Usage is capped at the committed balance.
- *  - Every unused unit is returned to the user during settlement. The vault is then
- *    inactive and must receive a fresh minimum commitment before service resumes.
+ * Economic model (platform-fixed 2 USDC policy):
+ *  - The standard commitment AND the maximum merchant-drawable exposure for every
+ *    (user → merchant) relationship is STANDARD_COMMIT = 2 USDC per cycle. It is a
+ *    platform constant: merchants cannot configure it, and a user depositing surplus
+ *    never expands what the merchant can draw.
+ *  - A user commits (escrows) USDC. Once the escrow reaches 2 USDC the service
+ *    activates for the cycle (~30 days).
+ *  - Only the authorized SubScript settlement keeper finalizes usage at cycle end.
+ *    The draw is bounded by the exposure cap, the current escrow, and the accepted
+ *    usage-ledger amount the keeper submits. Merchants have NO direct draw authority:
+ *    their usage reports are evidence for the off-chain ledger, not contract authority.
+ *  - Every unused unit returns to the user during settlement. The vault then goes
+ *    inactive and needs a fresh commitment before service resumes.
+ *  - An open user dispute blocks settlement (and reclaim) until the owner resolves it.
  *  - Merchant claims are charged the protocol's flat 1% treasury fee.
  *
- * Trust notes:
- *  - On-chain escrow guarantees the merchant is paid up to the committed balance.
+ * Trust boundary:
+ *  - On-chain escrow guarantees the merchant is paid up to min(escrow, 2 USDC).
  *    The protocol never creates debt or pulls from the user's main wallet.
- *  - `drawUsage` trusts the merchant's reported amount. SubScript reports usage off
- *    chain; this contract only enforces the escrow accounting and gating.
+ *  - The keeper's `amount` is the accepted off-chain usage ledger total. The contract
+ *    cannot read PostgreSQL; it bounds the keeper instead of trusting it: at most
+ *    2 USDC per cycle, at most the escrow, only in the settle window, never disputed.
  */
 contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuard, PausableUpgradeable {
     using SafeERC20 for IERC20;
@@ -44,20 +55,25 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         uint256 balance;     // escrowed USDC currently held
         uint256 owed;        // legacy/unused: no debt is ever created in this model
         uint64 cycleStart;   // unix seconds; start of the current paid cycle
-        bool active;         // service usable: balance >= requiredCommit
+        bool active;         // service usable: balance >= STANDARD_COMMIT
         uint64 lockedUntil;  // escrow is withdrawable only at/after this time (commit + cycle)
     }
 
     /* user => merchant => vault */
     mapping(address => mapping(address => Vault)) public vaults;
 
-    /* merchant => USDC required to commit before their service activates */
-    mapping(address => uint256) public requiredCommit;
+    /*
+     * LEGACY SLOT — merchant-configured commitment, retired by the platform-fixed
+     * 2 USDC policy. The mapping stays declared to preserve the UUPS storage layout;
+     * nothing reads or writes it anymore.
+     */
+    /// @custom:oz-renamed-from requiredCommit
+    mapping(address => uint256) private legacyRequiredCommit;
 
     /* merchant => claimable settlement (pull-payment ledger, like SubScriptRouter) */
     mapping(address => uint256) public merchantClaimable;
 
-    /* addresses allowed to draw on a merchant's behalf (SubScript keeper) */
+    /* addresses allowed to settle usage (SubScript settlement keeper) */
     mapping(address => bool) public authorizedDrawers;
 
     /* cycle length in seconds (default 30 days) */
@@ -69,20 +85,31 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      */
     address public treasury;
 
+    /*
+     * V3 (append-only): open user disputes. While true, neither settlement nor reclaim
+     * can move the escrow; only the owner resolves.
+     */
+    mapping(address => mapping(address => bool)) public disputeHold;
+
     uint256 public constant PROTOCOL_FEE_BPS = 100; // 1%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
     /*
-     * Liveness grace after a cycle matures. If the merchant/keeper never settles a matured
-     * cycle within lockedUntil + RECLAIM_GRACE, the user may reclaim their full escrow. The
-     * merchant still had the entire cycle plus this grace to draw usage, so pay-after-service
-     * is preserved; this only removes the permanent-lock risk if a drawer goes dark.
+     * Platform-fixed standard commitment and per-cycle merchant exposure cap:
+     * 2 USDC (2,000,000 micro-USDC at 6 decimals). Not merchant-configurable.
+     */
+    uint256 public constant STANDARD_COMMIT = 2_000_000;
+
+    /*
+     * Liveness grace after a cycle matures. If the keeper never settles a matured cycle
+     * within lockedUntil + RECLAIM_GRACE, the user may reclaim their full escrow. The
+     * keeper still had the entire cycle plus this grace to settle usage, so pay-after-
+     * service is preserved; this only removes the permanent-lock risk if it goes dark.
      */
     uint64 public constant RECLAIM_GRACE = 7 days;
 
     /* ──────────────────────────── Events ─────────────────────────── */
 
-    event RequiredCommitSet(address indexed merchant, uint256 amount);
     event Committed(address indexed user, address indexed merchant, uint256 amount, uint256 balance, uint256 owedCleared, bool active);
     event UsageDrawn(address indexed user, address indexed merchant, uint256 requested, uint256 drawn, uint256 owed, bool active);
     event SurplusWithdrawn(address indexed user, address indexed merchant, uint256 amount, bool active);
@@ -99,6 +126,8 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         uint256 drawn,
         uint256 refunded
     );
+    event DisputeRaised(address indexed user, address indexed merchant);
+    event DisputeResolved(address indexed user, address indexed merchant, bool settlementReopened);
 
     /* ──────────────────────────── Init ───────────────────────────── */
 
@@ -126,22 +155,14 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    /* ──────────────────────────── Merchant config ────────────────── */
-
-    /// @notice Merchant sets the commit required to use their metered service.
-    function setRequiredCommit(uint256 amount) external {
-        requiredCommit[msg.sender] = amount;
-        emit RequiredCommitSet(msg.sender, amount);
-    }
-
     /* ──────────────────────────── User actions ───────────────────── */
 
     /**
-     * @notice Deposit `amount` USDC into the (msg.sender, merchant) vault and activate the
-     *         service for the cycle once escrow >= requiredCommit. The escrow is locked from
-     *         withdrawal for one cycle (~30 days) from a fresh commit. Caller must approve
-     *         `amount` to this contract first. No debt is ever created — usage is capped at
-     *         the committed escrow off-chain.
+     * @notice Deposit `amount` USDC into the (msg.sender, merchant) vault. The service
+     *         activates for the cycle once escrow >= STANDARD_COMMIT (2 USDC). The escrow
+     *         is locked from withdrawal for one cycle (~30 days) from a fresh activation.
+     *         Caller must approve `amount` to this contract first. No debt is ever
+     *         created, and surplus above 2 USDC never raises the merchant's exposure.
      */
     function commit(address merchant, uint256 amount) external nonReentrant whenNotPaused {
         require(merchant != address(0), "merchant=0");
@@ -163,7 +184,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         bool wasActive = v.active;
         v.balance += amount;
 
-        if (v.owed == 0 && v.balance >= requiredCommit[merchant]) {
+        if (v.owed == 0 && v.balance >= STANDARD_COMMIT) {
             v.active = true;
             // Start the cycle + lock only on a fresh activation, not on a top-up.
             if (!wasActive) {
@@ -179,7 +200,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      * @notice Withdraw unused escrow back to the user's wallet. Only possible while the
      *         vault is inactive — i.e. before a commit ever activated it, or after the
      *         cycle was settled/closed — and once the lock has elapsed. Re-committing at
-     *         least the required amount is what reactivates the service.
+     *         least the standard amount is what reactivates the service.
      */
     function withdrawSurplus(address merchant, uint256 amount) external nonReentrant {
         Vault storage v = vaults[msg.sender][merchant];
@@ -195,14 +216,17 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     }
 
     /**
-     * @notice Reclaim the full escrow when a matured cycle was never settled by the merchant
-     *         or an authorized drawer within the liveness grace. Unlike withdrawSurplus (which
-     *         requires the vault to already be inactive), this is the user's escape hatch for an
-     *         *active* vault whose drawer has gone dark, so escrow can never be permanently locked.
+     * @notice Reclaim the full escrow when a matured cycle was never settled by the
+     *         authorized keeper within the liveness grace. Unlike withdrawSurplus (which
+     *         requires the vault to already be inactive), this is the user's escape hatch
+     *         for an *active* vault whose keeper has gone dark, so escrow can never be
+     *         permanently locked. Blocked while the user's own dispute is open — a dispute
+     *         freezes the escrow for BOTH parties until the owner resolves it.
      */
     function reclaimAbandonedEscrow(address merchant) external nonReentrant {
         Vault storage v = vaults[msg.sender][merchant];
         require(v.active, "inactive");
+        require(!disputeHold[msg.sender][merchant], "disputed");
         require(v.lockedUntil != 0 && block.timestamp >= uint256(v.lockedUntil) + RECLAIM_GRACE, "not abandoned");
 
         uint256 amount = v.balance;
@@ -218,14 +242,47 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         emit EscrowReclaimed(msg.sender, merchant, amount);
     }
 
-    /* ──────────────────────────── Draw (cycle settlement) ────────── */
+    /* ──────────────────────────── Disputes ───────────────────────── */
 
-    /// @notice Merchant draws this cycle's usage cost from a user's vault.
-    function drawUsage(address user, uint256 amount) external nonReentrant whenNotPaused {
-        _draw(msg.sender, user, amount);
+    /**
+     * @notice The user contests this cycle's reported usage. While the dispute is open,
+     *         neither keeper settlement nor user reclaim can move the escrow.
+     */
+    function raiseDispute(address merchant) external nonReentrant {
+        Vault storage v = vaults[msg.sender][merchant];
+        require(v.active, "inactive");
+        require(!disputeHold[msg.sender][merchant], "already disputed");
+        disputeHold[msg.sender][merchant] = true;
+        emit DisputeRaised(msg.sender, merchant);
     }
 
-    /// @notice SubScript keeper draws on a merchant's behalf at cycle end.
+    /**
+     * @notice Owner resolves an open dispute. When `reopenSettlement` is true and the
+     *         original settle window has already passed, a fresh window opens from now so
+     *         the resolution outcome (a keeper draw bounded as always, or an eventual user
+     *         reclaim) is actually reachable.
+     */
+    function resolveDispute(address user, address merchant, bool reopenSettlement) external onlyOwner nonReentrant {
+        require(disputeHold[user][merchant], "no dispute");
+        disputeHold[user][merchant] = false;
+        Vault storage v = vaults[user][merchant];
+        bool settlementReopened;
+        if (reopenSettlement && v.active && v.lockedUntil != 0
+            && block.timestamp >= uint256(v.lockedUntil) + RECLAIM_GRACE) {
+            v.lockedUntil = uint64(block.timestamp);
+            settlementReopened = true;
+        }
+        emit DisputeResolved(user, merchant, settlementReopened);
+    }
+
+    /* ──────────────────────────── Settlement (keeper only) ───────── */
+
+    /**
+     * @notice The authorized SubScript settlement keeper finalizes a matured cycle.
+     *         `amount` is the accepted off-chain usage-ledger total; the actual draw is
+     *         bounded by the per-cycle exposure cap (2 USDC) and the current escrow.
+     *         Merchants cannot call this — reports are evidence, not authority.
+     */
     function drawUsageFor(address merchant, address user, uint256 amount) external nonReentrant whenNotPaused {
         require(authorizedDrawers[msg.sender], "not drawer");
         _draw(merchant, user, amount);
@@ -234,12 +291,16 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function _draw(address merchant, address user, uint256 amount) internal {
         Vault storage v = vaults[user][merchant];
         require(v.active, "inactive");
+        require(!disputeHold[user][merchant], "disputed");
         require(v.lockedUntil != 0 && block.timestamp >= v.lockedUntil, "cycle not mature");
         require(block.timestamp < uint256(v.lockedUntil) + RECLAIM_GRACE, "reclaim window opened");
 
-        // Never create debt: the merchant can only draw up to the escrowed balance.
-        // Usage is gated off-chain so it should not exceed the commit in the first place.
-        uint256 drawn = amount <= v.balance ? amount : v.balance;
+        // Never create debt, and never let a cycle draw exceed the platform exposure cap:
+        // drawn = min(accepted ledger amount, escrow, 2 USDC). Surplus the user deposited
+        // above the cap is theirs and is refunded, not drawable.
+        uint256 exposureCap = STANDARD_COMMIT;
+        uint256 drawable = v.balance < exposureCap ? v.balance : exposureCap;
+        uint256 drawn = amount <= drawable ? amount : drawable;
         uint256 refunded = v.balance - drawn;
 
         // Close the cycle before either party receives funds. A fresh commit is required.
@@ -284,7 +345,7 @@ contract SubScriptVault is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded, uint64 lockedUntil)
     {
         Vault storage v = vaults[user][merchant];
-        return (v.balance, v.owed, v.cycleStart, v.active, requiredCommit[merchant], v.lockedUntil);
+        return (v.balance, v.owed, v.cycleStart, v.active, STANDARD_COMMIT, v.lockedUntil);
     }
 
     function isActive(address user, address merchant) external view returns (bool) {

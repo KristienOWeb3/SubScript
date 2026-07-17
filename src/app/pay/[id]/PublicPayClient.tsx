@@ -266,6 +266,32 @@ export default function PublicPayClient({
         }
     }, [id]);
 
+    /* A RELEASED attempt UUID is terminal server-side and can never be reserved again. Mint a
+       fresh attempt, replace the sessionStorage copy and the ?attempt= URL parameter, and drop
+       pending-verification state so the next payment starts from a clean reservation. */
+    const rotateAttemptId = useCallback(() => {
+        const fresh = crypto.randomUUID();
+        paymentBroadcastRef.current = false;
+        setPendingVerification(null);
+        setReceiptId(null);
+        try {
+            sessionStorage.setItem(`subscript_checkout_attempt:${id}`, fresh);
+            sessionStorage.removeItem(`subscript_pending_verification:${id}`);
+        } catch {
+            /* In-memory state still rotates when browser storage is denied. */
+        }
+        setClientIntentId(fresh);
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("attempt", fresh);
+            window.history.replaceState(null, "", url.toString());
+            setCheckoutUrl(url.toString());
+        } catch {
+            /* URL rotation is cosmetic once sessionStorage has rotated. */
+        }
+        return fresh;
+    }, [id]);
+
     useEffect(() => {
         if (!clientIntentId) return;
         if (hasInitialSingleUseSettlement) {
@@ -592,6 +618,52 @@ export default function PublicPayClient({
         chainId: expectedChainId,
     });
 
+    /* Server-authoritative resume: if this attempt UUID (from the URL or sessionStorage) already
+       has a transaction bound but the browser lost its local pending-verification record — new
+       device, cleared storage, crashed tab — recover from the server instead of offering Pay
+       again. A terminal (released) attempt UUID rotates immediately. */
+    const serverResumeCheckedRef = useRef(false);
+    useEffect(() => {
+        if (serverResumeCheckedRef.current) return;
+        if (!clientIntentId || !linkData?.id || !pendingVerificationHydrated) return;
+        if (pendingVerification || isPaymentSettled || !sessionInfo?.loggedIn) return;
+        serverResumeCheckedRef.current = true;
+        const controller = new AbortController();
+        (async () => {
+            try {
+                const res = await fetch(
+                    `/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(clientIntentId)}`,
+                    { cache: "no-store", signal: controller.signal },
+                );
+                if (!res.ok) return;
+                const data = await res.json().catch(() => null);
+                if (!data?.exists) return;
+                if (data.status === "RELEASED") {
+                    rotateAttemptId();
+                    return;
+                }
+                if (data.status === "SUBMITTED" && /^0x[0-9a-f]{64}$/i.test(data.txHash || "")) {
+                    persistPendingVerification({
+                        txHash: data.txHash as `0x${string}`,
+                        receiptId: isReceiptId(data.receiptId) ? data.receiptId : null,
+                        payer: sessionInfo?.wallet || "",
+                        chainId: Number(data.settlementChainId) || expectedChainId,
+                        attemptId: clientIntentId,
+                        submittedAt: new Date().toISOString(),
+                        source: "wallet",
+                        phase: "confirmed",
+                    });
+                    setSuccessTxHash(data.txHash);
+                    if (isReceiptId(data.receiptId)) setReceiptId(data.receiptId);
+                    setVerificationStatus("Payment submitted; resuming verification…");
+                }
+            } catch {
+                /* Best-effort; the reservation path reports the same state on the next Pay click. */
+            }
+        })();
+        return () => controller.abort();
+    }, [clientIntentId, expectedChainId, isPaymentSettled, linkData?.id, pendingVerification, pendingVerificationHydrated, persistPendingVerification, rotateAttemptId, sessionInfo?.loggedIn, sessionInfo?.wallet]);
+
     const arcUsdcBalance = arcBalanceData ? arcBalanceData.value : BigInt(0);
     const invoiceAmount = linkData ? (linkData.amount_usdc ? BigInt(linkData.amount_usdc) : BigInt(linkData.amount || 0)) : BigInt(0);
     const requiredAmount = invoiceAmount;
@@ -727,16 +799,44 @@ export default function PublicPayClient({
         }
     };
 
-    const reserveCheckoutAttempt = async (payer: string) => {
-        if (!linkData?.id || !clientIntentId) throw new Error("Checkout attempt is not ready.");
+    type ReservationResult =
+        | { kind: "reserved"; attemptId: string; receiptId: string }
+        | { kind: "resume"; attemptId: string; txHash: `0x${string}`; receiptId: string | null }
+        | { kind: "settled"; attemptId: string; receiptId: string | null };
+
+    const reserveCheckoutAttempt = async (payer: string, attemptOverride?: string): Promise<ReservationResult> => {
+        const attemptId = attemptOverride || clientIntentId;
+        if (!linkData?.id || !attemptId) throw new Error("Checkout attempt is not ready.");
         const response = await fetch(`/api/payment-links/${linkData.id}/attempt`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ attemptId: clientIntentId }),
+            body: JSON.stringify({ attemptId }),
         });
         const data = await response.json().catch(() => ({}));
+        if (response.status === 409 && data.code === "ATTEMPT_RELEASED") {
+            /* Terminal attempt UUID: rotate once and reserve a fresh attempt in the same click. */
+            const fresh = rotateAttemptId();
+            if (!attemptOverride) return reserveCheckoutAttempt(payer, fresh);
+            throw new Error("This checkout attempt expired. Please try again.");
+        }
+        if (response.status === 409 && data.code === "ALREADY_SUBMITTED") {
+            /* A transaction hash is durably bound server-side. The only safe path is to resume
+               verification of THAT transaction — never broadcast another payment. */
+            if (/^0x[0-9a-f]{64}$/i.test(data.txHash || "")) {
+                return {
+                    kind: "resume",
+                    attemptId,
+                    txHash: data.txHash as `0x${string}`,
+                    receiptId: isReceiptId(data.receiptId) ? data.receiptId : null,
+                };
+            }
+            throw new Error("This payment was already submitted. Continue verification below; do not pay again.");
+        }
         if (!response.ok || !data.success || !isReceiptId(data.receiptId)) {
             throw new Error(data.error || "Unable to reserve this checkout attempt.");
+        }
+        if (data.settled === true) {
+            return { kind: "settled", attemptId, receiptId: data.receiptId };
         }
         /* Past this point the server has RESERVED capacity. Any validation failure below must
            release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
@@ -744,22 +844,31 @@ export default function PublicPayClient({
         if (String(data.amountUsdc) !== String(linkData.amount_usdc)
             || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()
             || Number(data.settlementChainId) !== expectedChainId) {
-            await releaseUnbroadcastAttempt();
+            await releaseUnbroadcastAttempt(attemptId);
             throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
         }
         if (!payer) {
-            await releaseUnbroadcastAttempt();
+            await releaseUnbroadcastAttempt(attemptId);
             throw new Error("The paying wallet is unavailable.");
         }
         setReceiptId(data.receiptId);
-        return data.receiptId as string;
+        return { kind: "reserved", attemptId, receiptId: data.receiptId };
     };
 
-    const releaseUnbroadcastAttempt = async () => {
-        if (!linkData?.id || !clientIntentId || paymentBroadcastRef.current) return;
-        await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(clientIntentId)}`, {
-            method: "DELETE",
-        }).catch(() => undefined);
+    const releaseUnbroadcastAttempt = async (attemptId: string) => {
+        if (!linkData?.id || !attemptId || paymentBroadcastRef.current) return;
+        try {
+            const response = await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(attemptId)}`, {
+                method: "DELETE",
+            });
+            const data = await response.json().catch(() => ({}));
+            /* A confirmed release makes this UUID terminal server-side — rotate immediately so
+               the next Pay click reserves a fresh attempt instead of replaying a dead one. */
+            if (data?.released === true) rotateAttemptId();
+        } catch {
+            /* Keep the UUID; the server-side reaper reclaims the hold and the next reservation
+               reports the terminal state, which also rotates. */
+        }
     };
 
     const handlePay = async () => {
@@ -835,15 +944,44 @@ export default function PublicPayClient({
 
         setIsPaying(true);
 
-        let checkoutReceiptId: string;
+        let reservation: ReservationResult;
         try {
-            checkoutReceiptId = await reserveCheckoutAttempt(address || "");
+            reservation = await reserveCheckoutAttempt(address || "");
         } catch (error) {
             paymentSubmissionGuardRef.current = false;
             setIsPaying(false);
             setVerificationError(friendlyError(error instanceof Error ? error.message : "Unable to reserve checkout."));
             return;
         }
+        if (reservation.kind === "resume") {
+            /* Server-authoritative recovery: a hash is already bound to this attempt. Resume the
+               existing transaction; broadcasting another payment here would double-charge. */
+            persistPendingVerification({
+                txHash: reservation.txHash,
+                receiptId: reservation.receiptId,
+                payer: address,
+                chainId: expectedChainId,
+                attemptId: reservation.attemptId,
+                submittedAt: new Date().toISOString(),
+                source: "wallet",
+                phase: "confirmed",
+            });
+            setSuccessTxHash(reservation.txHash);
+            if (reservation.receiptId) setReceiptId(reservation.receiptId);
+            setIsPaying(false);
+            setVerificationStatus("Payment submitted; resuming verification…");
+            setVerifiedHash(reservation.txHash);
+            startVerification(reservation.txHash, reservation.receiptId, address, expectedChainId, reservation.attemptId);
+            return;
+        }
+        if (reservation.kind === "settled") {
+            setIsPaying(false);
+            if (reservation.receiptId) setReceiptId(reservation.receiptId);
+            setVerificationStatus("Payment confirmed and settled successfully!");
+            return;
+        }
+        const activeAttemptId = reservation.attemptId;
+        const checkoutReceiptId = reservation.receiptId;
 
         if (isCctpChain && chainId) {
             /* CCTP Payment Flow */
@@ -909,7 +1047,7 @@ export default function PublicPayClient({
                 setIsPaying(false);
 
             } catch (err: any) {
-                await releaseUnbroadcastAttempt();
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "CCTP payment execution failed"));
                 setIsPaying(false);
@@ -937,7 +1075,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -948,6 +1086,9 @@ export default function PublicPayClient({
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
                     setVerificationStatus("Direct transfer submitted. Waiting for confirmation on the Arc Network...");
+                    /* Durably bind the hash server-side the moment it exists. The server worker
+                       owns confirmation polling from here; local receipt watching is only UI. */
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 } else {
                     const currentAllowance = publicClient
                         ? await publicClient.readContract({
@@ -994,7 +1135,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -1005,10 +1146,13 @@ export default function PublicPayClient({
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
                     setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
+                    /* Durably bind the hash server-side the moment it exists. The server worker
+                       owns confirmation polling from here; local receipt watching is only UI. */
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 }
 
             } catch (err: any) {
-                await releaseUnbroadcastAttempt();
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "Payment transaction failed"));
                 setIsPaying(false);
@@ -1021,7 +1165,7 @@ export default function PublicPayClient({
     /* Submit the verification job and stream settlement status. Shared by the browser-wallet flow
        (driven by the wagmi receipt effect below) and the embedded-wallet flow (handleEmbeddedPay),
        so both settle through the identical /api/payment-links/verify pipeline. */
-    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number) => {
+    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number, attemptId: string) => {
         if (verificationInFlightRef.current === hash) return;
         verificationInFlightRef.current = hash;
         paymentSubmissionGuardRef.current = true;
@@ -1038,7 +1182,7 @@ export default function PublicPayClient({
                         payerAddress: payer || "",
                         receiptId: rid,
                         chainId: chain,
-                        checkoutAttemptId: clientIntentId,
+                        checkoutAttemptId: attemptId,
                     })
                 });
 
@@ -1138,12 +1282,16 @@ export default function PublicPayClient({
             }
         };
         run();
-    }, [clearPendingVerification, clientIntentId, friendlyError, linkData]);
+    }, [clearPendingVerification, friendlyError, linkData]);
 
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && verifiedHash !== txHash) {
             if (txReceipt.status !== "success") {
                 clearPendingVerification();
+                /* The reverted hash is bound to this attempt server-side; the durable worker
+                   marks it FAILED_TERMINAL and returns capacity. Rotate now so the retry
+                   reserves a fresh attempt instead of replaying a dead UUID. */
+                rotateAttemptId();
                 paymentSubmissionGuardRef.current = false;
                 verificationInFlightRef.current = null;
                 setTxHash(undefined);
@@ -1157,22 +1305,23 @@ export default function PublicPayClient({
             }
             const matchingPending = pendingVerification?.txHash === txHash ? pendingVerification : null;
             const payer = matchingPending?.payer || address || "";
-            if (!payer || !clientIntentId) return;
+            const activeAttemptId = matchingPending?.attemptId || clientIntentId;
+            if (!payer || !activeAttemptId) return;
             const confirmedRecord: PendingCheckoutVerification = {
                 txHash,
                 receiptId: matchingPending?.receiptId ?? receiptId,
                 payer,
                 chainId: matchingPending?.chainId ?? chainId,
-                attemptId: matchingPending?.attemptId || clientIntentId,
+                attemptId: activeAttemptId,
                 submittedAt: matchingPending?.submittedAt || new Date().toISOString(),
                 source: matchingPending?.source || "wallet",
                 phase: "confirmed",
             };
             persistPendingVerification(confirmedRecord);
             setVerifiedHash(txHash);
-            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId);
+            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId, confirmedRecord.attemptId);
         }
-    }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, startVerification, txHash, txReceipt, verifiedHash]);
+    }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, rotateAttemptId, startVerification, txHash, txReceipt, verifiedHash]);
 
     useEffect(() => {
         if (!pendingVerification || pendingVerification.phase !== "confirmed" || isPaymentSettled) return;
@@ -1185,6 +1334,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     }, [clientIntentId, isPaymentSettled, linkData?.id, pendingVerification, startVerification, verifiedHash]);
 
@@ -1322,6 +1472,11 @@ export default function PublicPayClient({
                 body: JSON.stringify({ clientIntentId })
             });
             const data = await res.json().catch(() => ({}));
+            if (res.status === 409 && data.code === "ATTEMPT_RELEASED") {
+                /* Terminal attempt UUID — rotate so the next click reserves a fresh attempt. */
+                rotateAttemptId();
+                throw new Error("This checkout attempt expired. Press Pay again to start a fresh attempt.");
+            }
             if (!res.ok || !data.success || !data.txHash) {
                 throw new Error(data.error || "Payment could not be completed.");
             }
@@ -1347,7 +1502,7 @@ export default function PublicPayClient({
             setPaymentStep("verifying");
             setVerificationStatus("Payment sent. Confirming settlement...");
             setVerifiedHash(hash);
-            startVerification(hash, rid, payer, expectedChainId);
+            startVerification(hash, rid, payer, expectedChainId, submittedRecord.attemptId);
         } catch (err: any) {
             setVerificationStatus(null);
             setVerificationError(friendlyError(err.message || "Payment failed"));
@@ -1367,6 +1522,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     };
 

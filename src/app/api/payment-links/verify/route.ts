@@ -15,6 +15,7 @@ import { isPeerRequestLink } from "@/lib/paymentLinks/classification";
 import { ProtocolConfig } from "@/lib/payments/config";
 import { processPaymentLinkVerificationJob } from "@/lib/payments/paymentLinkVerificationWorker";
 import { deliverWebhookOutboxEvent } from "@/lib/webhookOutbox";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 
 export const maxDuration = 120;
 
@@ -32,6 +33,10 @@ function isUserPaymentLink(link: any) {
 
 export async function POST(request: Request) {
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
         const requesterIp = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
         let rateLimit;
         try {

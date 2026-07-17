@@ -84,20 +84,15 @@ export async function mirrorSubscriptionModified({
     amountUsdc: bigint;
     periodSeconds: bigint;
 }) {
-    try {
-        await prisma.subscription.update({
-            where: { subscriptionId: BigInt(subscriptionId) },
-            data: {
-                amountCapUsdc: amountUsdc.toString(),
-                billingIntervalSeconds: BigInt(periodSeconds),
-                kind: "CUSTOMER",
-                updatedAt: new Date(),
-            },
-        });
-    } catch (err) {
-        /* Row may predate the mirror; that's fine — nothing to update. */
-        console.error("[mirror] subscription modify skipped:", err instanceof Error ? err.message : err);
-    }
+    await prisma.subscription.update({
+        where: { subscriptionId: BigInt(subscriptionId) },
+        data: {
+            amountCapUsdc: amountUsdc.toString(),
+            billingIntervalSeconds: BigInt(periodSeconds),
+            kind: "CUSTOMER",
+            updatedAt: new Date(),
+        },
+    });
 }
 
 export async function mirrorSubscriptionCanceled(subscriptionId: string | bigint) {
@@ -125,6 +120,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc,
     periodSeconds,
     nextPaymentSeconds,
+    revocationTxHash = null,
+    revocationPending = false,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -132,6 +129,11 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc: bigint;
     periodSeconds: bigint;
     nextPaymentSeconds: bigint;
+    /* On-chain authorization revocation, performed at cancellation time. When the revoke could
+       not be confirmed, revocationPending keeps the row inside the retry worker's queue — the
+       subscription remains chargeable on-chain until the chain reports inactive. */
+    revocationTxHash?: string | null;
+    revocationPending?: boolean;
 }): Promise<boolean> {
     try {
         const merchant = merchantAddress.toLowerCase();
@@ -156,6 +158,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 kind: "CUSTOMER",
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
                 lastSettlementTimestamp: periodStart,
                 nextBillingDate: nextBilling,
                 updatedAt: now,
@@ -173,6 +177,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 nextBillingDate: nextBilling,
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
             },
         });
         return true;

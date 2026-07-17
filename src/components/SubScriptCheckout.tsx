@@ -14,11 +14,11 @@ import {
   parseEventLogs,
   parseUnits
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID,
   ARC_CCTP_DOMAIN_ID,
+  ARC_TESTNET_CHAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS, 
@@ -31,7 +31,7 @@ import { sepolia } from "viem/chains";
 
 /* Initialize standard viem public client targeting Arc Testnet */
 const publicClient = createPublicClient({
-  chain: arcTestnet,
+  chain: activeArcChain,
   transport: arcHttp(),
 });
 
@@ -141,8 +141,17 @@ export default function SubScriptCheckout({
     setErrorMessage(null);
     setLoadingState("Preparing Secure Payment");
     try {
+      if (activeArcChain.id !== ARC_TESTNET_CHAIN_ID) {
+        throw new Error("Sandbox CCTP funding is available only when the destination is Arc Testnet.");
+      }
       const requiredAmount = parseUnits((Number(amountCap) - arcBalance).toString(), 6);
-      const sepoliaConfig = CCTP_CONFIG[11155111];
+      const sepoliaConfig = CCTP_CONFIG[sepolia.id];
+      if (!sepoliaConfig
+          || sepoliaConfig.domain !== 7
+          || Number(ARC_CCTP_DOMAIN_ID) !== 26
+          || ARC_MESSAGE_TRANSMITTER_ADDRESS.toLowerCase() !== sepoliaConfig.tokenMessenger.toLowerCase()) {
+        throw new Error("Sandbox CCTP configuration is unavailable or inconsistent.");
+      }
 
       // Step 1: Switch to Sepolia
       setStatusMessage("Switching network to Ethereum Sepolia...");
@@ -235,7 +244,7 @@ export default function SubScriptCheckout({
         throw new Error("Timeout waiting for Circle attestation signature.");
       }
 
-      // Step 5: Switch back to Arc Testnet
+      // Step 5: Switch back to the validated Arc Testnet destination
       setStatusMessage("Switching network back to Arc Testnet...");
       await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
 
@@ -329,9 +338,9 @@ export default function SubScriptCheckout({
     setStatusMessage("Checking USDC allowance...");
 
     try {
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
-        setStatusMessage("Switching to Arc Testnet...");
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      if (chainId !== activeArcChain.id) {
+        setStatusMessage(`Switching to ${activeArcChain.name}...`);
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
 
       const userAddress = getAddress(userWallet) as `0x${string}`;

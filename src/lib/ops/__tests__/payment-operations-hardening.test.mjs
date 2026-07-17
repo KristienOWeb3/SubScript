@@ -77,7 +77,8 @@ test("partial payment failures create durable deduplicated reconciliation events
     assert.match(helper, /on conflict \(dedupe_key\)/);
     assert.match(helper, /createHash\("sha256"\)/);
     assert.match(helper, /RECONCILIATION_REQUIRED \(durable record failed\)/);
-    assert.match(embeddedPay, /recordPaymentReconciliationRequired/);
+    assert.match(embeddedPay, /enqueuePaymentReconciliationRequired/);
+    assert.doesNotMatch(embeddedPay, /recordPaymentReconciliationRequired/);
     assert.match(embeddedPay, /embedded-payment-idempotency:/);
     assert.ok((subscribe.match(/recordPaymentReconciliationRequired/g) || []).length >= 6);
     assert.match(subscribe, /subscription-checkout-finalize:/);
