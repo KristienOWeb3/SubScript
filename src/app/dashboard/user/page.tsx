@@ -1130,6 +1130,27 @@ export default function UserDashboard() {
     ) || null;
   };
 
+  /* Mirror-gap self-heal: a subscription can be live on-chain (the user was charged and
+     has the SUBSCRIPTION_STARTED DM) while the local mirror row is missing, which hides
+     the Manage/Cancel controls. When a merchant thread is opened and we know of no active
+     subscription with them, ask the server to reconcile from the chain once per peer. */
+  const reconciledPeersRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedDmPeer || !userWallet) return;
+    const peer = selectedDmPeer.toLowerCase();
+    if (reconciledPeersRef.current.has(peer)) return;
+    const hasActive = subscriptions.some(
+      (sub) => sub.merchantAddress.toLowerCase() === peer && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
+    );
+    if (hasActive) return;
+    reconciledPeersRef.current.add(peer);
+    fetch(`/api/user/subscriptions?reconcileMerchant=${encodeURIComponent(peer)}`)
+      .then((res) => res.json())
+      .then((data) => { if (data.success) setSubscriptions(data.subscriptions); })
+      .catch(() => { /* best-effort; the normal list already loaded */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDmPeer, userWallet]);
+
   const loadPlansForMerchant = async (merchantAddress: string) => {
     setIsThreadPlansLoading(true);
     setPlanManagerError(null);

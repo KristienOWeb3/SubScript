@@ -9,9 +9,12 @@ import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contra
 
 const SUB_ABI = [
     "function createSubscription(address merchant, uint256 amount, uint256 period) returns (uint256)",
+    "function createSubscriptionWithIntroductoryTerms(address merchant, uint256 amount, uint256 period, uint256 introductoryAmount, uint256 introductoryCycles) returns (uint256)",
     "function cancelSubscription(uint256 subId)",
     "function modifySubscription(uint256 subId, uint256 newAmount, uint256 newPeriod)",
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive, address settlementToken, address paymentToken)",
+    "function introductoryTerms(uint256) view returns (uint256 amount, uint256 cycles)",
+    "function chargeAmountFor(uint256 subId, uint256 sequenceId) view returns (uint256)",
     "event SubscriptionCreated(uint256 indexed subId, address indexed subscriber, address indexed merchant, uint256 amount, uint256 period)",
 ];
 
@@ -47,6 +50,24 @@ export async function getSubscriptionOnChain(subId: string | bigint): Promise<On
             isActive: Boolean(s.isActive ?? s[5]),
         };
     } catch {
+        return null;
+    }
+}
+
+/* Introductory terms recorded on-chain at creation (cycles = 0 => none). Used by the
+   recovery paths to rebuild the subscription's promo snapshot from the authoritative
+   source when the original request context is gone. Null on RPC error. */
+export async function getIntroductoryTermsOnChain(
+    subId: string | bigint,
+): Promise<{ introAmountUsdc: bigint; introCycles: number } | null> {
+    try {
+        const c = new ethers.Contract(STANDARD_CONTRACT_ADDRESS, SUB_ABI, readProvider());
+        const terms = await c.introductoryTerms(BigInt(subId));
+        const cycles = Number(terms.cycles ?? terms[1]);
+        if (!Number.isFinite(cycles) || cycles <= 0) return null;
+        return { introAmountUsdc: BigInt(terms.amount ?? terms[0]), introCycles: cycles };
+    } catch {
+        /* Older deployed contract without introductoryTerms, or transient RPC error. */
         return null;
     }
 }
@@ -114,14 +135,28 @@ async function fetchReceipt(txHash: string): Promise<ethers.TransactionReceipt |
    legitimately distinct create and a relationship key would make Circle return the old
    (cancelled) transaction. The subscribe route's DB advisory-lock + on-chain active-sub scan
    guard against duplicate active subs on top of this. */
-export async function subscribeFromEmbedded(walletAddress: string, merchant: string, amount: bigint, period: bigint, idempotencyKey?: string) {
+export async function subscribeFromEmbedded(
+    walletAddress: string,
+    merchant: string,
+    amount: bigint,
+    period: bigint,
+    idempotencyKey?: string,
+    /* Introductory terms the subscriber is authorizing alongside the regular price.
+       `introAmountUsdc` (0 = free trial) applies for `introCycles` billing sequences,
+       then `amount` applies forever — both enforced by the contract per sequence. */
+    introTerms?: { introAmountUsdc: bigint; introCycles: number } | null,
+) {
     const custody = await getWalletCustody(walletAddress);
+    /* Allowance is sized on the REGULAR amount: intro charges are strictly lower, and the
+       keeper needs headroom for full-price renewals after the promotion ends. */
     await ensureUsdcAllowance(custody, STANDARD_CONTRACT_ADDRESS, horizonAllowance(amount, period));
     const { txHash } = await custody.executeContract({
         contractAddress: STANDARD_CONTRACT_ADDRESS,
         abi: SUB_ABI,
-        functionName: "createSubscription",
-        args: [merchant.toLowerCase(), amount, period],
+        functionName: introTerms ? "createSubscriptionWithIntroductoryTerms" : "createSubscription",
+        args: introTerms
+            ? [merchant.toLowerCase(), amount, period, introTerms.introAmountUsdc, BigInt(introTerms.introCycles)]
+            : [merchant.toLowerCase(), amount, period],
         ...(idempotencyKey ? { idempotencyKey } : {}),
     });
 

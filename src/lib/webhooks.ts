@@ -76,12 +76,38 @@ export function subscriptionWebhookData(args: {
     /* Sponsored subscriptions: the wallet receiving the service when it differs from the
        paying subscriber. Merchants key entitlements off this when present. */
     beneficiary?: string | null;
+    /* Introductory-pricing phase for this event, derived from the subscription's immutable
+       promo snapshot (lib/subscriptions/promotions.pricingPhaseFor). Present only when the
+       subscription was created under a promotion. */
+    pricing?: {
+        phase: "introductory" | "regular";
+        chargedAmountUsdcMicros: bigint;
+        regularAmountUsdcMicros: bigint;
+        introductoryCyclesRemaining: number;
+        nextPaymentAmountUsdcMicros: bigint;
+    } | null;
 }): Record<string, unknown> {
     const micros = args.amountUsdcMicros != null
         ? (typeof args.amountUsdcMicros === "bigint" ? args.amountUsdcMicros : BigInt(args.amountUsdcMicros)).toString()
         : null;
     const settlement = args.txHash ? arcReconciliation(args.txHash, args.chainId) : null;
+    const pricing = args.pricing
+        ? {
+            phase: args.pricing.phase,
+            charged_amount_usdc: formatUsdc(args.pricing.chargedAmountUsdcMicros),
+            chargedAmountUsdc: formatUsdc(args.pricing.chargedAmountUsdcMicros),
+            charged_amount_usdc_micros: args.pricing.chargedAmountUsdcMicros.toString(),
+            regular_amount_usdc: formatUsdc(args.pricing.regularAmountUsdcMicros),
+            regularAmountUsdc: formatUsdc(args.pricing.regularAmountUsdcMicros),
+            regular_amount_usdc_micros: args.pricing.regularAmountUsdcMicros.toString(),
+            introductory_cycles_remaining: args.pricing.introductoryCyclesRemaining,
+            introductoryCyclesRemaining: args.pricing.introductoryCyclesRemaining,
+            next_payment_amount_usdc: formatUsdc(args.pricing.nextPaymentAmountUsdcMicros),
+            nextPaymentAmountUsdc: formatUsdc(args.pricing.nextPaymentAmountUsdcMicros),
+        }
+        : null;
     return {
+        ...(pricing ? { pricing } : {}),
         subscription_id: `sub_${args.subscriptionId}`,
         subscriptionId: `sub_${args.subscriptionId}`,
         status: args.status,

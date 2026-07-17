@@ -12,6 +12,8 @@ export async function mirrorSubscriptionCreated({
     periodSeconds,
     beneficiaryAddress,
     minCommitmentSeconds,
+    promotion,
+    anchorNextPaymentSeconds,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -23,17 +25,43 @@ export async function mirrorSubscriptionCreated({
     beneficiaryAddress?: string | null;
     /* Plan commitment window snapshot (<= one period). NULL/0 = no commitment. */
     minCommitmentSeconds?: bigint | null;
+    /* Immutable snapshot of the introductory terms the subscriber authorized. Merchant
+       edits to the promotion never touch these. promotionId may be null when the terms
+       were recovered from the chain and the originating offer is unknown. */
+    promotion?: { promotionId: string | null; introAmountUsdc: bigint; introCycles: number } | null;
+    /* When reconciling an existing on-chain subscription (rather than mirroring a create
+       that just happened), the chain's nextPayment is authoritative — anchor billing to
+       it instead of "now + period" so the keeper neither drifts late nor re-bills early. */
+    anchorNextPaymentSeconds?: bigint | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
         const id = BigInt(subscriptionId);
         const period = BigInt(periodSeconds);
         const now = new Date();
-        const nextBilling = new Date(now.getTime() + Number(period) * 1000);
+        /* Fresh creates bill one period from now; reconciled subs bill at the chain's
+           recorded nextPayment. lastSettlement is anchored one period earlier so the DB
+           trigger derives the identical next_billing_date. */
+        const nextBilling = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+            ? new Date(Number(anchorNextPaymentSeconds) * 1000)
+            : new Date(now.getTime() + Number(period) * 1000);
+        const settlementAnchor = anchorNextPaymentSeconds && anchorNextPaymentSeconds > BigInt(0)
+            ? new Date(Number(anchorNextPaymentSeconds - period) * 1000)
+            : now;
         const beneficiary = beneficiaryAddress ? beneficiaryAddress.toLowerCase() : null;
         const commitmentUntil = minCommitmentSeconds && minCommitmentSeconds > BigInt(0)
             ? new Date(now.getTime() + Number(minCommitmentSeconds) * 1000)
             : null;
+        /* Sequence 0 (signup) is the first introductory cycle, so full price begins
+           after `introCycles` whole periods. */
+        const promoSnapshot = promotion
+            ? {
+                promotionId: promotion.promotionId,
+                introAmountUsdc: promotion.introAmountUsdc,
+                introCycles: promotion.introCycles,
+                firstRegularPaymentAt: new Date(now.getTime() + promotion.introCycles * Number(period) * 1000),
+            }
+            : {};
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
         await prisma.merchant.upsert({
@@ -52,10 +80,11 @@ export async function mirrorSubscriptionCreated({
                 amountCapUsdc: amountUsdc.toString(),
                 billingIntervalSeconds: period,
                 nextBillingDate: nextBilling,
-                lastSettlementTimestamp: now,
+                lastSettlementTimestamp: settlementAnchor,
                 cancelAtPeriodEnd: false,
                 beneficiaryAddress: beneficiary,
                 minCommitmentUntil: commitmentUntil,
+                ...promoSnapshot,
                 updatedAt: now,
             },
             create: {
@@ -68,9 +97,10 @@ export async function mirrorSubscriptionCreated({
                 amountCapUsdc: amountUsdc.toString(),
                 billingIntervalSeconds: period,
                 nextBillingDate: nextBilling,
-                lastSettlementTimestamp: now,
+                lastSettlementTimestamp: settlementAnchor,
                 beneficiaryAddress: beneficiary,
                 minCommitmentUntil: commitmentUntil,
+                ...promoSnapshot,
             },
     });
 }

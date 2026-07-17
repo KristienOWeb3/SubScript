@@ -10,9 +10,8 @@ import {
     STANDARD_CONTRACT_ADDRESS,
 } from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
-import { getSessionWallet } from "@/lib/auth";
-import { hashSecretKey } from "@/lib/apiKeys";
-import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
+import { apiError } from "@/lib/apiErrors";
+import { authenticateMerchant } from "@/lib/v1/merchantAuth";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
@@ -57,41 +56,9 @@ const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     yearly: 31_536_000,
 };
 
-/* Accepts a session cookie or a Bearer sk_test_/sk_live_ key. Returns the merchant wallet
-   (lowercased) plus whether the request is in test/sandbox mode. */
-async function authenticateMerchant(request: Request): Promise<
-    { ok: true; merchantAddress: string; mode: "test" | "live" | "session" } | { ok: false; status: number; error: string }
-> {
-    const sessionWallet = await getSessionWallet(request.headers);
-    if (sessionWallet) {
-        return { ok: true, merchantAddress: sessionWallet.toLowerCase(), mode: "session" };
-    }
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return { ok: false, status: 401, error: "Unauthorized: Missing or invalid Authorization header" };
-    }
-    const secretKey = authHeader.substring(7).trim();
-    const mode = getSecretKeyMode(secretKey);
-    if (mode !== "test" && mode !== "live") {
-        return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
-    }
-    if (mode === "live") {
-        /* This deployment is testnet-only: live credentials are refused before any lookup
-           (and cannot exist — the database rejects LIVE-mode key insertion). */
-        return { ok: false, status: 401, error: "Unauthorized: sk_live_ keys are not enabled on this deployment" };
-    }
-    const keyRecord = await prisma.apiKey.findFirst({
-        where: { revoked: false, secretKeyHash: hashSecretKey(secretKey) },
-    });
-    if (!keyRecord) {
-        return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };
-    }
-    if (keyRecord.mode !== "TEST") {
-        return { ok: false, status: 403, error: "Forbidden: this API key's mode cannot settle on this deployment" };
-    }
-    return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
-}
-
+/* authenticateMerchant lives in @/lib/v1/merchantAuth (imported above) so /api/v1/plans and
+   /api/v1/subscriptions share one implementation — including the TEST/LIVE mode isolation
+   from PR #70 (sk_live_ refused, non-TEST keys rejected). */
 function microsToDecimal(micros: bigint) {
     return formatUnits(micros, 6);
 }

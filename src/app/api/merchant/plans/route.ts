@@ -13,6 +13,7 @@ import {
     publishSitePlanFromCheckout,
     SitePlanPublicationError,
 } from "@/lib/subscriptions/sitePlans";
+import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subscriptions/promotions";
 
 const MAX_DESCRIPTION_LEN = 300;
 
@@ -71,13 +72,28 @@ export async function GET(request: Request) {
         }
         const merchantParam = new URL(request.url).searchParams.get("merchantAddress");
 
-        // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only.
+        // A user fetching a specific merchant's plans (the DM picker) sees ACTIVE plans only,
+        // each carrying its live introductory promotion (if any) so checkout can disclose
+        // both the due-today price and the recurring price before authorization.
         if (merchantParam && ethers.isAddress(merchantParam)) {
             const plans = await prisma.merchantPlan.findMany({
                 where: { merchantAddress: merchantParam.toLowerCase(), active: true },
                 orderBy: { amountUsdc: "asc" },
             });
-            return NextResponse.json({ success: true, plans: plans.map(formatPlan) }, { status: 200 });
+            const promotions = plans.length > 0
+                ? await prisma.merchantPlanPromotion.findMany({
+                    where: { planId: { in: plans.map((p) => p.id) }, active: true },
+                })
+                : [];
+            const liveByPlan = new Map(
+                promotions
+                    .filter((promo) => isPromotionLive(promo as PromotionRow))
+                    .map((promo) => [promo.planId, formatPromotion(promo as PromotionRow)]),
+            );
+            return NextResponse.json({
+                success: true,
+                plans: plans.map((p) => ({ ...formatPlan(p), promotion: liveByPlan.get(p.id) ?? null })),
+            }, { status: 200 });
         }
 
         // Otherwise the merchant lists their own plans (all states).

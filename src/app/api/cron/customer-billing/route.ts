@@ -23,6 +23,7 @@ import { STANDARD_CONTRACT_ADDRESS, USDC_NATIVE_GAS_ADDRESS } from "@/lib/contra
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { pricingPhaseFor } from "@/lib/subscriptions/promotions";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
 import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
@@ -34,6 +35,7 @@ const STANDARD_ABI = [
     "function executePayment(uint256 _subId, uint256 _sequenceId) external",
     "function isPaymentDue(uint256 _subId, uint256 _sequenceId) view returns (bool)",
     "function isSequenceExecuted(uint256 _subId, uint256 _sequenceId) view returns (bool)",
+    "function chargeAmountFor(uint256 _subId, uint256 _sequenceId) view returns (uint256)",
 ];
 
 /* Consecutive failed renewal attempts before we park the sub as PAST_DUE and stop retrying.
@@ -229,6 +231,32 @@ export async function POST(request: Request) {
                     continue;
                 }
                 const sequenceId = Number((nowSeconds - nextPaymentOnChain) / periodOnChain) + 1;
+
+                /* What THIS sequence charges. Introductory-priced subscriptions bill a lower
+                   (possibly zero) amount for their first cycles; the contract derives it from
+                   the sequence number. Fall back to the flat amount if the deployed contract
+                   predates chargeAmountFor. */
+                let chargeAmount: bigint = amountOnChain;
+                try {
+                    chargeAmount = BigInt(await standardContract.chargeAmountFor(subId, sequenceId));
+                } catch {
+                    /* pre-promotions contract deployment */
+                }
+                /* Pricing metadata for merchant webhooks, from the immutable snapshot taken at
+                   subscribe time (never from the editable promotion row). */
+                const introCyclesSnapshot = Number(sub.intro_cycles || 0);
+                const pricingBlock = introCyclesSnapshot > 0 && sub.intro_amount_usdc != null
+                    ? {
+                        ...pricingPhaseFor({
+                            sequenceId,
+                            regularAmountUsdc: amountOnChain,
+                            introAmountUsdc: BigInt(sub.intro_amount_usdc),
+                            introCycles: introCyclesSnapshot,
+                        }),
+                        regularAmountUsdcMicros: amountOnChain,
+                    }
+                    : null;
+
                 const settlementTimestampIso = new Date(
                     Number((nextPaymentOnChain + BigInt(sequenceId - 1) * periodOnChain) * BigInt(1000)),
                 ).toISOString();
@@ -276,20 +304,21 @@ export async function POST(request: Request) {
                         senderAddress: merchantAddress,
                         receiverAddress: subscriber,
                         messageType: "DEBIT_SUCCESS",
-                        amountUsdc: amountOnChain,
+                        amountUsdc: chargeAmount,
                         title: "Subscription renewed",
-                        description: `Your subscription was renewed successfully.\nAmount: ${Number(amountOnChain) / 1_000_000} USDC\nSubscription ID: ${subId}`,
+                        description: `Your subscription was renewed successfully.\nAmount: ${Number(chargeAmount) / 1_000_000} USDC\nSubscription ID: ${subId}`,
                         txHash: settlementTxHash,
                         dedupeKey: `customer-renewal:${subId}:${sequenceId}`,
                     });
                     await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "active",
-                        amountUsdcMicros: amountOnChain,
+                        amountUsdcMicros: chargeAmount,
                         subscriber,
                         merchantAddress,
                         txHash: settlementTxHash,
                         beneficiary: sub.beneficiary_address || null,
+                        pricing: pricingBlock,
                     }), `customer-renewed:${subId}:${sequenceId}:${settlementTxHash || "chain-confirmed"}`);
                     if (!await completeBillingClaim(settlementTxHash)) throw new Error("Customer renewal repair claim completion failed");
                     results.push({ subId, subscriber, action: "ALREADY_SETTLED_ON_CHAIN_REPAIRED", success: true, txHash: settlementTxHash });
@@ -304,10 +333,13 @@ export async function POST(request: Request) {
                     continue;
                 }
 
-                /* Fail fast (no gas) if the subscriber can't pay. */
-                const balance: bigint = BigInt(await usdcContract.balanceOf(subscriber));
-                const allowance: bigint = BigInt(await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS));
-                if (balance < amountOnChain || allowance < amountOnChain) {
+                /* Fail fast (no gas) if the subscriber can't pay THIS sequence's charge. A
+                   zero-charge cycle (free-trial period) always "pays": executing it advances
+                   the schedule without moving funds, so an unfunded wallet can't stall a
+                   trial and get surprise-billed a burst later. */
+                const balance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.balanceOf(subscriber)) : BigInt(0);
+                const allowance: bigint = chargeAmount > BigInt(0) ? BigInt(await usdcContract.allowance(subscriber, STANDARD_CONTRACT_ADDRESS)) : BigInt(0);
+                if (chargeAmount > BigInt(0) && (balance < chargeAmount || allowance < chargeAmount)) {
                     const failures = Number(sub.downgrade_failures || 0);
                     const newFailures = failures + 1;
 
@@ -318,7 +350,7 @@ export async function POST(request: Request) {
                             senderAddress: merchantAddress,
                             receiverAddress: subscriber,
                             messageType: "EXPIRY_WARNING",
-                            amountUsdc: amountOnChain,
+                            amountUsdc: chargeAmount,
                             title: "Subscription renewal needs attention",
                             description: [
                                 "SubScript could not renew your subscription.",
@@ -329,10 +361,11 @@ export async function POST(request: Request) {
                         await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.payment_failed", subscriptionWebhookData({
                             subscriptionId: subId,
                             status: "past_due",
-                            amountUsdcMicros: amountOnChain,
+                            amountUsdcMicros: chargeAmount,
                             subscriber,
                             merchantAddress,
                             reason: "Insufficient balance or allowance",
+                            pricing: pricingBlock,
                         }), `customer-payment-failed:${subId}:${newFailures}`);
                     }
 
@@ -444,11 +477,16 @@ export async function POST(request: Request) {
                     senderAddress: merchantAddress,
                     receiverAddress: subscriber,
                     messageType: "DEBIT_SUCCESS",
-                    amountUsdc: amountOnChain,
+                    amountUsdc: chargeAmount,
                     title: "Subscription renewed",
                     description: [
                         "Your subscription was renewed successfully.",
-                        `Amount: ${Number(amountOnChain) / 1_000_000} USDC`,
+                        `Amount: ${Number(chargeAmount) / 1_000_000} USDC`,
+                        ...(pricingBlock && pricingBlock.phase === "introductory"
+                            ? [pricingBlock.introductoryCyclesRemaining > 0
+                                ? `Introductory price — ${pricingBlock.introductoryCyclesRemaining} discounted cycle(s) remain before the regular price of ${Number(amountOnChain) / 1_000_000} USDC.`
+                                : `This was your last discounted cycle — your next renewal will be at the regular price of ${Number(amountOnChain) / 1_000_000} USDC. Cancel anytime before then from your dashboard.`]
+                            : []),
                         `Subscription ID: ${subId}`,
                     ].join("\n"),
                     txHash: tx.hash,
@@ -458,11 +496,12 @@ export async function POST(request: Request) {
                 await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.renewed", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "active",
-                    amountUsdcMicros: amountOnChain,
+                    amountUsdcMicros: chargeAmount,
                     subscriber,
                     merchantAddress,
                     txHash: tx.hash,
                     beneficiary: sub.beneficiary_address || null,
+                    pricing: pricingBlock,
                 }), `customer-renewed:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
 
                 if (!await completeBillingClaim(tx.hash)) throw new Error("Customer renewal claim completion failed");

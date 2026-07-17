@@ -14,6 +14,9 @@ const keysRoute = source("src/app/api/keys/route.ts");
 const merchantKeysRoute = source("src/app/api/merchant/api-keys/route.ts");
 const reportUsage = source("src/app/api/user/vault/report-usage/route.ts");
 const v1Subscriptions = source("src/app/api/v1/subscriptions/route.ts");
+/* /api/v1/subscriptions and /api/v1/plans share one authenticator; the mode isolation lives
+   in this lib (introductory-discounts extracted it so both routes carry PR #70's checks). */
+const merchantAuth = source("src/lib/v1/merchantAuth.ts");
 const vaultStatus = source("src/app/api/user/vault/status/route.ts");
 const apiErrors = source("src/lib/apiErrors.ts");
 const schema = source("prisma/schema.prisma");
@@ -35,8 +38,10 @@ test("sk_live_ credentials are rejected before any lookup on API-key routes", ()
     assert.match(apiKeysLib, /if \(secretKey\.startsWith\("sk_live_"\)\) return "LIVE";/);
     assert.match(apiKeysLib, /export function isLiveModeEnabled\(\): boolean \{\s*\n\s*return false;/);
     assert.match(reportUsage, /resolveSecretKeyMode\(secretKey\) !== "TEST"/);
-    assert.match(v1Subscriptions, /sk_live_ keys are not enabled on this deployment/);
-    assert.match(v1Subscriptions, /keyRecord\.mode !== "TEST"/);
+    /* The v1 routes delegate to the shared authenticator, which carries the mode isolation. */
+    assert.match(v1Subscriptions, /authenticateMerchant\b/);
+    assert.match(merchantAuth, /sk_live_ keys are not enabled on this deployment/);
+    assert.match(merchantAuth, /keyRecord\.mode !== "TEST"/);
     assert.match(apiErrors, /resolveSecretKeyMode\(secretKey\)/);
     for (const [name, routeSource, lookup] of [
         ["usage reporting", reportUsage, "prisma.apiKey.findFirst"],

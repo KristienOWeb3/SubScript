@@ -190,6 +190,44 @@ model MerchantPlan {
   @@map("merchant_plans")
 }
 
+model MerchantPlanPromotion {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress        String    @map("merchant_address")
+  planId                 String    @map("plan_id") @db.Uuid
+  name                   String
+  // 'PERCENT' | 'FIXED_PRICE' | 'FREE_TRIAL'
+  discountType           String    @map("discount_type")
+  // Basis points OFF the regular price (4000 = 40% off => customer pays 60%).
+  discountBps            Int?      @map("discount_bps")
+  regularAmountUsdc      BigInt    @map("regular_amount_usdc")
+  // Exact integer micro-USDC per introductory cycle (0 = free trial).
+  introductoryAmountUsdc BigInt    @map("introductory_amount_usdc")
+  introductoryCycles     Int       @default(1) @map("introductory_cycles")
+  startsAt               DateTime? @map("starts_at")
+  expiresAt              DateTime? @map("expires_at")
+  maxRedemptions         Int?      @map("max_redemptions")
+  redemptionCount        Int       @default(0) @map("redemption_count")
+  newCustomersOnly       Boolean   @default(true) @map("new_customers_only")
+  active                 Boolean   @default(true)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([merchantAddress])
+  @@map("merchant_plan_promotions")
+}
+
+model PromotionRedemption {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  promotionId       String   @map("promotion_id") @db.Uuid
+  subscriberAddress String   @map("subscriber_address")
+  subscriptionId    BigInt?  @map("subscription_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([promotionId, subscriberAddress], map: "promotion_redemptions_once_per_customer")
+  @@index([subscriberAddress])
+  @@map("promotion_redemptions")
+}
+
 model Subscription {
   subscriptionId          BigInt    @id @map("subscription_id")
   merchantAddress         String    @map("merchant_address")
@@ -218,6 +256,13 @@ model Subscription {
   beneficiaryAddress      String?   @map("beneficiary_address")
   // Snapshot of the plan's commitment window at subscribe time (<= one period by constraint).
   minCommitmentUntil      DateTime? @map("min_commitment_until")
+  // Immutable snapshot of introductory terms the subscriber authorized (see
+  // merchant_plan_promotions). Billing phase is derived from these, never from the
+  // editable promotion row.
+  promotionId             String?   @map("promotion_id") @db.Uuid
+  introAmountUsdc         BigInt?   @map("intro_amount_usdc")
+  introCycles             Int?      @map("intro_cycles")
+  firstRegularPaymentAt   DateTime? @map("first_regular_payment_at")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
