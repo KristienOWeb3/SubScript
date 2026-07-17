@@ -30,6 +30,7 @@ export type SponsoredGasAction =
     | "vault_commit"
     | "subscribe"
     | "subscription_change"
+    | "subscription_cancel"
     | "billing_renewal"
     | "drift_heal";
 

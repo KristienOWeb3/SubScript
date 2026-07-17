@@ -203,6 +203,10 @@ model Subscription {
   subscriber              String?   @map("subscriber")
   cancelAtPeriodEnd       Boolean   @default(false) @map("cancel_at_period_end")
   cancelRequestedAt       DateTime? @map("cancel_requested_at")
+  // True while the on-chain PSA authorization may still be active after a cancellation
+  // request. The retry worker keeps revoking until the chain reports inactive.
+  revocationPending       Boolean   @default(false) @map("revocation_pending")
+  revocationTxHash        String?   @map("revocation_tx_hash")
   downgradeFailures       Int       @default(0) @map("downgrade_failures")
   // "PREMIUM" (merchant -> SubScript, billed by the in-app cron) or "CUSTOMER"
   // (customer -> merchant plan, billed on-chain). See subscriptions/mirror.ts.

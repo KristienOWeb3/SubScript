@@ -125,6 +125,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc,
     periodSeconds,
     nextPaymentSeconds,
+    revocationTxHash = null,
+    revocationPending = false,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -132,6 +134,11 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
     amountUsdc: bigint;
     periodSeconds: bigint;
     nextPaymentSeconds: bigint;
+    /* On-chain authorization revocation, performed at cancellation time. When the revoke could
+       not be confirmed, revocationPending keeps the row inside the retry worker's queue — the
+       subscription remains chargeable on-chain until the chain reports inactive. */
+    revocationTxHash?: string | null;
+    revocationPending?: boolean;
 }): Promise<boolean> {
     try {
         const merchant = merchantAddress.toLowerCase();
@@ -156,6 +163,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 kind: "CUSTOMER",
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
                 lastSettlementTimestamp: periodStart,
                 nextBillingDate: nextBilling,
                 updatedAt: now,
@@ -173,6 +182,8 @@ export async function mirrorSubscriptionCancelAtPeriodEnd({
                 nextBillingDate: nextBilling,
                 cancelAtPeriodEnd: true,
                 cancelRequestedAt: now,
+                revocationPending,
+                revocationTxHash: revocationTxHash?.toLowerCase() ?? null,
             },
         });
         return true;

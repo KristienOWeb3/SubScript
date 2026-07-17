@@ -5,6 +5,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { cancelFromEmbedded, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from "@/lib/subscriptions/mirror";
 import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
@@ -34,11 +35,32 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "This subscription is already inactive" }, { status: 409 });
         }
 
-        /* Keep the user's already-paid days: if the current period hasn't ended, don't kill the
-           sub on-chain now. Flag cancel-at-period-end (stops future billing) and let the
-           customer-billing keeper do the on-chain cancel when the paid period ends. */
+        /* Authorization and entitlement are separate concerns. The on-chain PSA authorization is
+           revoked IMMEDIATELY — executePayment is permissionless, so anything left isActive stays
+           chargeable no matter what the database says. The user's already-paid access survives
+           off-chain: the mirror row stays ACTIVE with cancel_at_period_end until nextPayment, and
+           the keeper finalizes the local status and final webhook when that paid period ends. */
         const nowSec = BigInt(Math.floor(Date.now() / 1000));
         if (sub.nextPayment > nowSec) {
+            let revocationTxHash: string | null = null;
+            let requiresWalletCancellation = false;
+            try {
+                await ensureSponsoredGas({
+                    wallet: wallet.toLowerCase(),
+                    action: "subscription_cancel",
+                    requestKey: `cancel:${subscriptionId}`,
+                }).catch(() => { /* Circle SCA needs no top-up; legacy failure surfaces below */ });
+                revocationTxHash = await cancelFromEmbedded(wallet, subscriptionId);
+            } catch (revokeError: any) {
+                const message = String(revokeError?.message || revokeError);
+                if (/no server-held key|connect a browser wallet/i.test(message)) {
+                    /* External wallet: only the subscriber's own key can sign the revocation. */
+                    requiresWalletCancellation = true;
+                } else {
+                    console.error(`[subscription/cancel] immediate revocation failed for sub ${subscriptionId}:`, message);
+                }
+            }
+
             const recorded = await mirrorSubscriptionCancelAtPeriodEnd({
                 subscriptionId,
                 merchantAddress: sub.merchant,
@@ -46,33 +68,65 @@ export async function POST(request: Request) {
                 amountUsdc: sub.amount,
                 periodSeconds: sub.period,
                 nextPaymentSeconds: sub.nextPayment,
+                revocationTxHash,
+                /* While the authorization may still be live on-chain, the row must stay inside
+                   the retry worker's queue — it is never terminal while chargeable. */
+                revocationPending: !revocationTxHash,
             });
             /* This mirror row is the only record that stops future billing; if it didn't persist we
                must not tell the user the cancellation is booked. */
             if (!recorded) {
                 return NextResponse.json({ error: "We couldn't record the cancellation. Please try again." }, { status: 500 });
             }
+
+            const accessUntil = new Date(Number(sub.nextPayment) * 1000).toISOString();
+
+            if (requiresWalletCancellation) {
+                /* Do NOT claim the cancellation is safely scheduled: the connected wallet must
+                   sign cancelSubscription itself. The revocation_pending row keeps the retry
+                   worker watching until the chain reports inactive. */
+                return NextResponse.json({
+                    success: false,
+                    requiresWalletCancellation: true,
+                    subscriptionId,
+                    error: "Your connected wallet must sign the on-chain cancellation. Until that transaction confirms, this subscription remains chargeable on-chain.",
+                    accessUntil,
+                }, { status: 409 });
+            }
+
+            /* Distinct scheduled event now; the final subscription.canceled fires at entitlement
+               expiry from the keeper. */
+            await dispatchDurableSubscriptionWebhook(sub.merchant, "subscription.cancel_scheduled", subscriptionWebhookData({
+                subscriptionId,
+                status: "cancel_scheduled",
+                amountUsdcMicros: sub.amount,
+                subscriber: wallet.toLowerCase(),
+                merchantAddress: sub.merchant,
+                txHash: revocationTxHash ?? undefined,
+                reason: revocationTxHash
+                    ? "Cancellation requested; on-chain authorization revoked, access continues until period end"
+                    : "Cancellation requested; on-chain revocation is retrying",
+            }), `customer-cancel-scheduled:${subscriptionId}`);
+
             await triggerExitSurvey(sub.merchant, wallet.toLowerCase(), subscriptionId).catch((err) =>
                 console.error("[subscription/cancel] survey trigger failed:", err)
             );
             return NextResponse.json({
                 success: true,
                 cancelAtPeriodEnd: true,
-                accessUntil: new Date(Number(sub.nextPayment) * 1000).toISOString(),
+                revoked: Boolean(revocationTxHash),
+                revocationPending: !revocationTxHash,
+                txHash: revocationTxHash,
+                accessUntil,
             }, { status: 200 });
         }
 
-        /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately.
-           Gas: legacy embedded wallets need a SubScript-funded top-up; Circle wallets are covered
-           by Gas Station and need no sponsor EOA (mirrors the execute-tx custody-kind gate). */
-        const gas = { sponsored: true as const };
-
-        /* If gas can't be sponsored we cannot submit the on-chain cancel — but a cancellation has
-           no payment principal to protect, so failing closed just traps the user in a subscription
-           they've asked to end. Degrade to the same deferred path used for in-period cancels: flag
-           cancel-at-period-end (stops future billing now) and let the customer-billing keeper finalize
-           the on-chain cancel once gas is available. */
-
+        /* Period already lapsed — no remaining days to preserve, so cancel on-chain immediately. */
+        await ensureSponsoredGas({
+            wallet: wallet.toLowerCase(),
+            action: "subscription_cancel",
+            requestKey: `cancel:${subscriptionId}`,
+        }).catch(() => { /* Circle SCA needs no top-up; a legacy failure surfaces from the cancel below */ });
 
         const txHash = await cancelFromEmbedded(wallet, subscriptionId);
 
