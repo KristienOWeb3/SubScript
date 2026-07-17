@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 function source(path) {
@@ -7,6 +7,8 @@ function source(path) {
 }
 
 const migration = source("supabase/migrations/20260717030000_api_key_mode_isolation.sql");
+const usageReportMigration = source("prisma/migrations/20260717030001_metered_usage_report_environment.sql");
+const prismaMigrationNames = readdirSync(new URL("../../../../prisma/migrations/", import.meta.url)).sort();
 const apiKeysLib = source("src/lib/apiKeys.ts");
 const keysRoute = source("src/app/api/keys/route.ts");
 const merchantKeysRoute = source("src/app/api/merchant/api-keys/route.ts");
@@ -52,9 +54,31 @@ test("vault usage reporting verifies key mode, vault environment, settlement cha
 test("financial objects persist their settlement environment", () => {
     assert.match(migration, /ALTER TABLE public\.metered_vaults[\s\S]{0,200}environment TEXT NOT NULL DEFAULT 'TEST'/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS settlement_chain_id BIGINT NOT NULL DEFAULT 5042002/);
-    assert.match(migration, /ALTER TABLE public\.metered_usage_reports[\s\S]{0,200}environment TEXT NOT NULL DEFAULT 'TEST'/);
     assert.match(migration, /ALTER TABLE public\.payment_reconciliation_events[\s\S]{0,200}environment TEXT NOT NULL DEFAULT 'TEST'/);
+    assert.match(usageReportMigration, /ALTER TABLE public\.metered_usage_reports[\s\S]{0,200}environment TEXT NOT NULL DEFAULT 'TEST'/);
     assert.match(schema, /settlementChainId BigInt\s+@default\(5042002\) @map\("settlement_chain_id"\)/);
+});
+
+test("no supabase/ migration depends on a table that only prisma/ migrations create", () => {
+    /* `supabase start` (CI, local) applies ONLY supabase/migrations; scripts/apply-migrations.mjs
+       applies prisma/migrations first and then supabase/migrations. So a supabase/ file touching a
+       prisma/-owned table dies under `supabase start` — which is exactly how this pair broke CI.
+       metered_usage_reports is created in prisma/migrations, so its ALTER belongs there too. */
+    assert.doesNotMatch(migration, /metered_usage_reports\s*\n?\s*(ADD|ALTER)/,
+        "the supabase/ migration must not ALTER the prisma/-owned metered_usage_reports");
+    assert.match(prismaMigrationNames.join(","), /20260710000000_metered_usage_ledger_and_reports/,
+        "the creating migration is prisma-owned");
+    assert.ok(
+        prismaMigrationNames.indexOf("20260717030001_metered_usage_report_environment.sql")
+        > prismaMigrationNames.indexOf("20260710000000_metered_usage_ledger_and_reports.sql"),
+        "the environment ALTER runs after the table that owns it",
+    );
+
+    /* A table-existence guard here would be worse than the failure: apply-migrations.mjs would
+       record the file as applied while the column is absent, and it could never re-run — leaving
+       the usage-report insert writing a column that does not exist. Fail loudly instead. */
+    assert.doesNotMatch(usageReportMigration, /information_schema\.tables/,
+        "missing preconditions must fail loudly, never silently skip");
 });
 
 test("key rotation creates the replacement before revoking, in one transaction", () => {

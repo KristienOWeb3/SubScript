@@ -45,9 +45,10 @@ ALTER TABLE public.metered_vaults
         CHECK (environment IN ('TEST', 'LIVE')),
     ADD COLUMN IF NOT EXISTS settlement_chain_id BIGINT NOT NULL DEFAULT 5042002;
 
-ALTER TABLE public.metered_usage_reports
-    ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'TEST'
-        CHECK (environment IN ('TEST', 'LIVE'));
+/* metered_usage_reports.environment is added by
+   prisma/migrations/20260717030001_metered_usage_report_environment.sql — that table is
+   created in prisma/migrations, and `supabase start` (CI/local) never applies that
+   directory. A supabase/ migration must not depend on a prisma/-owned table. */
 
 ALTER TABLE public.payment_reconciliation_events
     ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'TEST'
