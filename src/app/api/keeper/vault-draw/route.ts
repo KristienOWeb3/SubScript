@@ -43,19 +43,39 @@ async function runVaultDraw(request: Request) {
             try {
                 const now = new Date();
                 const cutoff = new Date(Date.now() - CYCLE_SECONDS * 1000);
+                const dueWhere = {
+                    cycleStart: { not: null, lte: cutoff },
+                    /* The contract reverts drawUsageFor until block.timestamp >= lockedUntil,
+                       so only attempt vaults whose lock has already elapsed. */
+                    lockedUntil: { not: null, lte: now },
+                    active: true,
+                } as const;
+                /* Oldest lock first: the contract's user reclaim opens at lockedUntil + 7 days,
+                   so the vault closest to losing its settle window is always drawn first. A
+                   daily run must never let a matured vault age past that window because newer
+                   vaults happened to sort ahead of it. */
                 const due = await prisma.meteredVault.findMany({
-                    where: {
-                        cycleStart: { not: null, lte: cutoff },
-                        /* The contract reverts drawUsageFor until block.timestamp >= lockedUntil,
-                           so only attempt vaults whose lock has already elapsed. */
-                        lockedUntil: { not: null, lte: now },
-                        active: true,
-                    },
+                    where: dueWhere,
+                    orderBy: { lockedUntil: "asc" },
                     take: 200,
                 });
 
+                /* Backlog observability: how much matured work exists beyond this batch, and how
+                   close the oldest pending vault is to its reclaim deadline. */
+                const totalDue = await prisma.meteredVault.count({ where: dueWhere });
+                const oldest = due[0]?.lockedUntil ?? null;
+                const oldestPendingAgeSeconds = oldest ? Math.floor((now.getTime() - oldest.getTime()) / 1000) : 0;
+                console.log(`[metric] vault_draw_backlog: ${totalDue}, batch: ${due.length}, oldest_pending_age_seconds: ${oldestPendingAgeSeconds}`);
+                const RECLAIM_GRACE_SECONDS = 7 * 24 * 60 * 60;
+                if (oldestPendingAgeSeconds > RECLAIM_GRACE_SECONDS - 2 * 24 * 60 * 60) {
+                    console.error(`[ALERT] vault-draw: oldest matured vault is within 2 days of its user-reclaim deadline (age ${oldestPendingAgeSeconds}s)`);
+                }
+                if (totalDue > due.length) {
+                    console.error(`[ALERT] vault-draw: backlog of ${totalDue - due.length} matured vaults beyond this batch — run the keeper again until drained`);
+                }
+
                 if (due.length === 0) {
-                    return NextResponse.json({ success: true, drawn: 0, vaults: [] }, { status: 200 });
+                    return NextResponse.json({ success: true, drawn: 0, backlog: 0, vaults: [] }, { status: 200 });
                 }
 
                 const signer = getKeeperSigner();
@@ -126,6 +146,8 @@ async function runVaultDraw(request: Request) {
                     drawn: results.filter((r) => r.txHash).length,
                     reconciled: results.filter((r) => r.reconciled).length,
                     failed: results.filter((r) => r.error).length,
+                    backlog: Math.max(0, totalDue - due.length),
+                    oldestPendingAgeSeconds,
                     vaults: results,
                 }, { status: 200 });
             } finally {

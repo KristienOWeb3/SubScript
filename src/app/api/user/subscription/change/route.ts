@@ -14,10 +14,10 @@ import { sanitizeInput } from "@/utils/security";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import {
     modifyFromEmbedded,
-    transferUsdcFromEmbedded,
     getSubscriptionOnChain,
     proratedUpgradeDelta,
 } from "@/lib/subscriptions/onchain";
+import { payMerchantLinkFromEmbedded } from "@/lib/paymentLinks/embeddedPay";
 import { createSubscriptionStartedDm, formatUsdcFromMicros } from "@/lib/dms/system";
 import { mirrorSubscriptionModified } from "@/lib/subscriptions/mirror";
 import { compareRecurringRates } from "@/lib/subscriptions/planComparison";
@@ -170,16 +170,20 @@ export async function POST(request: Request) {
                 current.amount,
                 plan.amountUsdc,
                 current.period,
+                plan.periodSeconds,
                 current.nextPayment,
                 nowSeconds,
             );
             if (proratedChargeMicros > BigInt(0)) {
                 /* Deterministic key so a retry/concurrent request re-uses the SAME on-chain transfer
-                   at the custody layer instead of charging the prorated amount twice. */
-                proratedTxHash = await transferUsdcFromEmbedded(
+                   at the custody layer instead of charging the prorated amount twice. Routed through
+                   the router's fee-accounted depositForMerchant (memo-tagged) — a direct wallet
+                   transfer would silently bypass the 1% protocol fee. */
+                proratedTxHash = await payMerchantLinkFromEmbedded(
                     subscriber,
                     plan.merchantAddress,
                     proratedChargeMicros,
+                    `sub-proration:${fromSubscriptionId}:${planId}`,
                     deterministicIdempotencyKey(`sub-upgrade-proration:${changeFingerprint}`),
                 );
                 proratedTxHashForRecovery = proratedTxHash;

@@ -1,7 +1,21 @@
 import { sendWebhookRequest } from "@/lib/webhooks";
+import { ProtocolConfig } from "@/lib/payments/config";
 import crypto from "crypto";
 
 type SupabaseLike = any;
+
+/* Delivery outcome classification:
+   - 2xx                          → SUCCESS
+   - 408 / 429 / 5xx / transport  → transient: FAILED, retried until WEBHOOK_MAX_RETRIES,
+                                    then DEAD_LETTER (exhausted)
+   - other 4xx                    → permanent: DEAD_LETTER immediately — the endpoint
+                                    understood the request and refused it; retrying the
+                                    identical payload cannot succeed.
+   DEAD_LETTER rows stay merchant-visible (last_error/response_body) and can be re-sent
+   manually via /api/webhooks/events/replay. */
+function isTransientWebhookStatus(status: number): boolean {
+    return status === 408 || status === 429 || status >= 500 || status <= 0;
+}
 
 export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId: string) {
     const { data: deliveries, error } = await supabase
@@ -56,9 +70,20 @@ export async function deliverWebhookOutboxEvent(supabase: SupabaseLike, eventId:
 
         const result = await sendWebhookRequest(endpoint.url, delivery.payload, endpoint.secret);
         const success = result.status >= 200 && result.status < 300;
+        const maxRetries = Number(process.env.WEBHOOK_MAX_RETRIES) > 0
+            ? Number(process.env.WEBHOOK_MAX_RETRIES)
+            : ProtocolConfig.WEBHOOK_MAX_RETRIES;
+        const permanent = !success && !isTransientWebhookStatus(result.status);
+        const exhausted = !success && attempts >= maxRetries;
+        const nextStatus = success ? "SUCCESS"
+            : permanent || exhausted ? "DEAD_LETTER"
+            : "FAILED";
+        if (nextStatus === "DEAD_LETTER") {
+            console.error(`[ALERT] [webhook-outbox] DEAD_LETTER delivery ${delivery.id} (${delivery.event}): ${permanent ? `permanent HTTP ${result.status}` : `exhausted ${attempts}/${maxRetries} attempts`}`);
+        }
         const { data: finalized, error: updateError } = await supabase.from("webhook_deliveries").update({
-            status: success ? "SUCCESS" : "FAILED",
-            last_error: success ? null : result.responseText,
+            status: nextStatus,
+            last_error: success ? null : `HTTP ${result.status}${permanent ? " (permanent)" : exhausted ? ` (exhausted after ${attempts} attempts)` : ""}: ${result.responseText || ""}`.slice(0, 2000),
             response_body: result.responseText,
             updated_at: new Date().toISOString(),
         })

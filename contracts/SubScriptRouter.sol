@@ -204,8 +204,10 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
      */
     function withdraw() external nonReentrant whenNotPaused {
         uint256 balance = merchantBalances[msg.sender];
+        /* Any positive balance is withdrawable. Payment links accept sub-1-USDC amounts, so a
+           1 USDC minimum stranded small merchants' funds in the router forever. The 1% fee
+           floors to zero on dust (< 100 micro-USDC) — an accepted rounding loss. */
         require(balance > 0, "No balance to withdraw");
-        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
 
         merchantBalances[msg.sender] = 0;
         _reduceLiabilities(balance);
@@ -236,8 +238,8 @@ contract SubScriptRouter is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
            configurePayoutDestination. Standard-tier merchants withdraw to themselves via withdraw(). */
         require(merchantTiers[msg.sender] >= 1, "Only Premium tier can withdraw to a custom address");
         uint256 balance = merchantBalances[msg.sender];
+        /* Same dust policy as withdraw(): every positive balance is withdrawable. */
         require(balance > 0, "No balance to withdraw");
-        require(balance >= 1000000, "Minimum withdrawal is 1 USDC");
         require(_recipient != address(0), "Invalid recipient address");
 
         merchantBalances[msg.sender] = 0;

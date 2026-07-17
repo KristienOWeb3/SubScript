@@ -58,12 +58,18 @@ export async function validateWebhookUrl(value: string) {
         if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
             return { ok: false as const, error: "Webhook URL cannot resolve to a private or reserved network address" };
         }
+        parsed.hash = "";
+        parsed.username = "";
+        parsed.password = "";
+        /* Return the vetted addresses so dispatch can PIN one through the actual connection.
+           Validating here and letting fetch re-resolve later is a DNS-rebinding window: a
+           hostile resolver answers public for the check and private for the request. */
+        return {
+            ok: true as const,
+            url: parsed.toString(),
+            addresses: addresses.map(({ address, family }) => ({ address, family })),
+        };
     } catch {
         return { ok: false as const, error: "Webhook hostname could not be resolved" };
     }
-
-    parsed.hash = "";
-    parsed.username = "";
-    parsed.password = "";
-    return { ok: true as const, url: parsed.toString() };
 }
