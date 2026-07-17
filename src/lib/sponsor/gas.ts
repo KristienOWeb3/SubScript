@@ -248,3 +248,101 @@ export async function requireGasSponsored(beneficiary: string): Promise<SponsorR
     }
     return result;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Low-level primitives for the durable, custody-aware sponsorship orchestrator
+ * (@/lib/sponsor/sponsorship). These carry no caching or dedupe of their own — the orchestrator
+ * owns idempotency through sponsored_gas_operations rows shared across serverless instances.
+ * ---------------------------------------------------------------------------------------------- */
+
+export type SponsorTransferOutcome =
+    | { outcome: "confirmed"; txHash: string }
+    /* Broadcast happened but the receipt did not arrive in time. The transfer may still mine —
+       it must be reconciled by hash, never resubmitted. */
+    | { outcome: "submitted_unconfirmed"; txHash: string }
+    | { outcome: "failed_pre_broadcast"; reason: SponsorFailureReason };
+
+/**
+ * Submit one sponsor transfer of exactly `valueWei` (Arc native 18-decimal units) and wait for
+ * its receipt through read-only RPC failover. No fixed amount, no reuse window: the caller
+ * decides the bounded deficit and records the outcome durably.
+ */
+export async function sendSponsorTransfer(beneficiary: string, valueWei: bigint): Promise<SponsorTransferOutcome> {
+    const key = process.env.SPONSOR_PRIVATE_KEY;
+    if (!key) return { outcome: "failed_pre_broadcast", reason: "sponsor_disabled" };
+    if (!ethers.isAddress(beneficiary)) return { outcome: "failed_pre_broadcast", reason: "invalid_beneficiary" };
+    if (valueWei <= BigInt(0)) return { outcome: "failed_pre_broadcast", reason: "invalid_topup_config" };
+
+    let offlineSponsor: ethers.Wallet;
+    try {
+        offlineSponsor = new ethers.Wallet(key);
+    } catch (error: any) {
+        console.error("[gas-sponsor] invalid sponsor wallet configuration:", error?.message || error);
+        return { outcome: "failed_pre_broadcast", reason: "invalid_sponsor_config" };
+    }
+
+    let provider: ethers.JsonRpcProvider;
+    try {
+        ({ provider } = await getRpcProviderForWrite());
+    } catch (error: any) {
+        console.error("[gas-sponsor] no healthy RPC endpoint:", error?.message || error);
+        return { outcome: "failed_pre_broadcast", reason: "rpc_unavailable" };
+    }
+
+    const sponsor = offlineSponsor.connect(provider);
+    try {
+        const balance = await provider.getBalance(sponsor.address);
+        if (balance < valueWei * BigInt(2)) {
+            console.error(
+                `[gas-sponsor] sponsor wallet ${sponsor.address} underfunded: ` +
+                `balance=${balance.toString()} needed>=${(valueWei * BigInt(2)).toString()} (18dp wei units)`,
+            );
+            return { outcome: "failed_pre_broadcast", reason: "sponsor_underfunded" };
+        }
+    } catch (error: any) {
+        console.error("[gas-sponsor] sponsor balance check failed:", error?.message || error);
+        return { outcome: "failed_pre_broadcast", reason: "rpc_unavailable" };
+    }
+
+    let tx: ethers.TransactionResponse;
+    try {
+        tx = await sponsor.sendTransaction({ to: beneficiary, value: valueWei });
+        console.log(`[gas-sponsor] bounded top-up submitted from ${sponsor.address} to ${beneficiary.toLowerCase()}: ${tx.hash} (${valueWei.toString()} wei)`);
+    } catch (error: any) {
+        const message: string = error?.message || String(error);
+        console.error(`[gas-sponsor] top-up submission from ${sponsor.address} failed:`, message);
+        if (error?.code === "INSUFFICIENT_FUNDS" || message.toLowerCase().includes("insufficient funds")) {
+            return { outcome: "failed_pre_broadcast", reason: "sponsor_underfunded" };
+        }
+        return { outcome: "failed_pre_broadcast", reason: "topup_failed" };
+    }
+
+    try {
+        const receipt = await confirmSubmittedTopup(tx.hash);
+        if (receipt && Number(receipt.status) === 1) {
+            return { outcome: "confirmed", txHash: receipt.hash || tx.hash };
+        }
+        /* A definitive revert is still a broadcast transaction; leave it hash-bound so the
+           orchestrator never sends a second transfer for the same operation. */
+        return { outcome: "submitted_unconfirmed", txHash: tx.hash };
+    } catch (error: any) {
+        console.error(`[gas-sponsor] confirmation timed out for submitted top-up ${tx.hash}:`, error?.message || error);
+        return { outcome: "submitted_unconfirmed", txHash: tx.hash };
+    }
+}
+
+/**
+ * Read-only reconciliation of a previously submitted sponsor transfer. Returns true only when
+ * the receipt shows success. Never rebroadcasts.
+ */
+export async function confirmSponsorTransferByHash(txHash: string): Promise<boolean> {
+    try {
+        const { result: receipt } = await executeWithRpcFallback(
+            (provider) => provider.getTransactionReceipt(txHash),
+        );
+        return Boolean(receipt) && Number((receipt as { status?: number }).status) === 1;
+    } catch (error) {
+        console.warn(`[gas-sponsor] reconciliation lookup failed for ${txHash}:`, error instanceof Error ? error.message : error);
+        return false;
+    }
+}

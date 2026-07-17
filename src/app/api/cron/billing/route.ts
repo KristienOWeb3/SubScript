@@ -9,7 +9,7 @@ import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookD
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -154,7 +154,11 @@ export async function POST(request: Request) {
                     let awaitingExternalRevocation = false;
                     if (isActiveOnChain) {
                         try {
-                            await ensureGasSponsored(onChainSubscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                            await ensureSponsoredGas({
+                                wallet: onChainSubscriber.toLowerCase(),
+                                action: "billing_renewal",
+                                requestKey: `cancel-downgrade:${subId}`,
+                            }).catch(() => { /* best-effort */ });
                             onChainCancelTxHash = await cancelFromEmbedded(onChainSubscriber, BigInt(subId));
                         } catch (cancelErr: any) {
                             const { data: walletRow } = await supabase

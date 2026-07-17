@@ -316,8 +316,8 @@ test("invalid sponsor and top-up configuration fail closed before RPC", async ()
     });
 });
 
-test("user-initiated legacy wallet execution aborts unless sponsorship succeeds", () => {
-    assert.match(executeRouteSource, /import \{ requireGasSponsored \} from "@\/lib\/sponsor\/gas"/);
-    assert.match(executeRouteSource, /await requireGasSponsored\(wallet\.toLowerCase\(\)\)/);
-    assert.doesNotMatch(executeRouteSource, /await ensureGasSponsored\(wallet\.toLowerCase\(\)\)/);
+test("user-initiated wallet execution aborts unless durable sponsorship succeeds", () => {
+    assert.match(executeRouteSource, /import \{ requireSponsoredGas \} from "@\/lib\/sponsor\/sponsorship"/);
+    assert.match(executeRouteSource, /await requireSponsoredGas\(\{/);
+    assert.doesNotMatch(executeRouteSource, /requireGasSponsored|ensureGasSponsored/);
 });

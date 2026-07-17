@@ -24,7 +24,7 @@ import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
 export const maxDuration = 300;
@@ -345,7 +345,11 @@ export async function POST(request: Request) {
                            revoked for the user, but marking it stopped still ends all charge attempts. */
                         let revokedOnChain = false;
                         try {
-                            await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                            await ensureSponsoredGas({
+                                wallet: subscriber.toLowerCase(),
+                                action: "billing_renewal",
+                                requestKey: `cancel-zombie:${subId}`,
+                            }).catch(() => { /* best-effort */ });
                             await cancelFromEmbedded(subscriber, BigInt(subId));
                             revokedOnChain = true;
                         } catch (killErr: any) {
@@ -489,7 +493,11 @@ export async function POST(request: Request) {
                     const isActiveOnChain: boolean = onChain[5];
 
                     if (isActiveOnChain) {
-                        await ensureGasSponsored(subscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                        await ensureSponsoredGas({
+                            wallet: subscriber.toLowerCase(),
+                            action: "billing_renewal",
+                            requestKey: `cancel-period-end:${subId}`,
+                        }).catch(() => { /* best-effort */ });
                         await cancelFromEmbedded(subscriber, BigInt(subId));
                     }
 

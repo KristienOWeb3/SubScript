@@ -9,7 +9,7 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { sanitizeInput } from "@/utils/security";
 import { commitFromEmbedded, syncVaultMirror } from "@/lib/vault/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 
@@ -67,14 +67,21 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
         }
 
-        /* Pay For Me: SubScript covers gas for the user committing to a merchant vault. */
-        await requireGasSponsored(wallet.toLowerCase());
-
         /* commit escrows funds, so a retried request must reuse the same Circle idempotency key
            or it escrows twice. Keyed on the client's x-request-id (stable across its retries) —
            the amount is in the seed so a genuinely new commit for a different amount never
            collides even if a client re-sends a stale request id. */
         const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+
+        /* Pay For Me: custody-aware, durable and budget-bounded. The commit amount is declared
+           as principal so it is never reclassified as sponsored gas, and a retried request
+           (same x-request-id) reuses the durable sponsorship instead of farming a new top-up. */
+        await requireSponsoredGas({
+            wallet: wallet.toLowerCase(),
+            action: "vault_commit",
+            requestKey: `vault-commit:${requestId}:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}:${amount.toString()}`,
+            principalRequiredWei: amount * BigInt(1_000_000_000_000),
+        });
         const txHash = await commitFromEmbedded(wallet, merchantAddress, amount,
             deterministicIdempotencyKey(`req:${requestId}:vault-commit:${wallet.toLowerCase()}:${merchantAddress.toLowerCase()}:${amount.toString()}`));
         const v = await syncVaultMirror(wallet, merchantAddress);

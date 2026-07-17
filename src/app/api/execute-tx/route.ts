@@ -11,7 +11,7 @@ import {
     SUBSCRIPT_ROUTER_ADDRESS,
     USDC_NATIVE_GAS_ADDRESS
 } from "@/lib/contracts/constants";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 
 /* Custody execution waits for on-chain confirmation (required for Circle SCA wallets,
    whose tx hash only exists once confirmed), so give the route enough headroom. */
@@ -424,13 +424,16 @@ export async function POST(request: Request) {
                 console.log(`[Withdrawal Requested] session: ${wallet}, action: ${action}, target: ${wallet}, requestId: ${requestId}`);
             }
 
-            /* Legacy AES-key EOA wallets pay Arc gas (USDC) from their own balance. Sponsorship
-               is a precondition for user-initiated execution: if it cannot be confirmed, abort
-               before custody submits anything so the no-funds-touched guarantee remains true.
-               Circle wallets skip this because Circle Gas Station pays their gas. */
-            if (walletRecord.encrypted_private_key && !walletRecord.circle_wallet_id) {
-                await requireGasSponsored(wallet.toLowerCase());
-            }
+            /* Sponsorship is a precondition for user-initiated execution: if it cannot be
+               confirmed, abort before custody submits anything so the no-funds-touched guarantee
+               remains true. Custody is detected server-side — Circle SCA wallets resolve through
+               Gas Station with no sponsor transfer; only legacy EOA wallets receive a bounded,
+               durably recorded top-up. */
+            await requireSponsoredGas({
+                wallet: wallet.toLowerCase(),
+                action: "execute_tx",
+                requestKey: `execute-tx:${requestId}:${action}:${wallet.toLowerCase()}`,
+            });
 
             /* Custody routing: execute through Circle's contract-execution API (Gas Station pays gas). */
             const custody = await getWalletCustody(wallet.toLowerCase());
