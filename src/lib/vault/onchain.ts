@@ -10,9 +10,12 @@ import {
     USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 
+/* The commitment/exposure policy is a platform constant (2 USDC per user→merchant
+   relationship per cycle) — merchants have no on-chain lever to change it. */
+export const VAULT_STANDARD_COMMIT_MICROS = BigInt(2_000_000);
+
 export const VAULT_ABI = [
-    "function setRequiredCommit(uint256 amount)",
-    "function requiredCommit(address merchant) view returns (uint256)",
+    "function STANDARD_COMMIT() view returns (uint256)",
     "function commit(address merchant, uint256 amount)",
     "function withdrawSurplus(address merchant, uint256 amount)",
     "function reclaimAbandonedEscrow(address merchant)",
@@ -185,16 +188,8 @@ export async function reclaimAbandonedFromEmbedded(walletAddress: string, mercha
     return txHash;
 }
 
-export async function setRequiredCommitFromEmbedded(merchantWallet: string, amount: bigint) {
-    const custody = await getWalletCustody(merchantWallet);
-    const { txHash } = await custody.executeContract({
-        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
-        abi: VAULT_ABI,
-        functionName: "setRequiredCommit",
-        args: [amount],
-    });
-    return txHash;
-}
+/* setRequiredCommitFromEmbedded was removed with the platform-fixed 2 USDC policy:
+   the contract no longer exposes a merchant-configurable commitment. */
 
 export async function claimMerchantFromEmbedded(merchantWallet: string) {
     const custody = await getWalletCustody(merchantWallet);
