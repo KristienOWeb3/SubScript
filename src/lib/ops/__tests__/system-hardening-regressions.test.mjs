@@ -168,7 +168,10 @@ test("contract escape windows and payment-token liabilities fail closed", async 
         source("contracts/SubScriptRouter.sol"),
     ]);
     assert.match(vault, /block\.timestamp < uint256\(v\.lockedUntil\) \+ RECLAIM_GRACE/);
-    assert.match(vault, /function drawUsage\(address user, uint256 amount\) external nonReentrant whenNotPaused/);
+    /* V3: settlement is keeper-only. The guarded entry point is drawUsageFor; a direct
+       merchant drawUsage must NOT exist at all. */
+    assert.match(vault, /function drawUsageFor\(address merchant, address user, uint256 amount\) external nonReentrant whenNotPaused/);
+    assert.doesNotMatch(vault, /function drawUsage\(address user/);
     assert.match(router, /token != address\(paymentToken\), "Payment token rescue disabled"/);
 });
 

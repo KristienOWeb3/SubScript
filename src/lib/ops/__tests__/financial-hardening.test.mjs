@@ -267,7 +267,9 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     assert.match(dashboard, /requestKey: `dm-pay:\$\{dm\.id\}`/);
     assert.match(dashboard, /singleSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
     assert.match(dashboard, /batchSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
-    assert.match(dashboard, /vaultCommitRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    /* Vault commits graduated from a ref-only key to a localStorage-durable intent id that
+       survives reloads (see vault-commit-idempotency tests for the full contract). */
+    assert.match(dashboard, /storedIntent\?\.requestId \|\| vaultCommitRequestKey\.current \|\| crypto\.randomUUID\(\)/);
     assert.match(dashboard, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
     assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
 });
