@@ -84,46 +84,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
         }
 
-        const { error: revokeError } = await supabase
-            .from("api_keys")
-            .update({ revoked: true })
-            .eq("wallet_address", walletLower)
-            .eq("revoked", false);
-
-        if (revokeError) {
-            console.error("Failed to revoke older keys:", revokeError);
-        }
-
         const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
         const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
 
-        const { data: newKey, error: insertError } = await supabase
-            .from("api_keys")
-            .insert({
-                wallet_address: walletLower,
-                publishable_key: publishableKey,
-                /* Persist only the hash + display hint; the cleartext is returned once below. */
-                secret_key_hash: hashSecretKey(secretKeyPlain),
-                secret_key_hint: secretKeyHint(secretKeyPlain),
-                revoked: false,
-            })
-            .select()
-            .single();
+        /* Atomic rotation: the replacement key is created FIRST and the old keys are revoked in
+           the same database transaction. If the insert fails, nothing is revoked — a merchant
+           can never be left with zero working keys. Only hash + hint leave this process. */
+        const { data: rotated, error: rotateError } = await supabase.rpc("rotate_merchant_api_key", {
+            p_wallet: walletLower,
+            p_publishable_key: publishableKey,
+            p_secret_key_hash: hashSecretKey(secretKeyPlain),
+            p_secret_key_hint: secretKeyHint(secretKeyPlain),
+        });
 
-        if (insertError) {
-            console.error("POST API key error:", insertError);
-            return NextResponse.json({ error: "Failed to create API key" }, { status: 500 });
+        if (rotateError || !rotated?.id) {
+            console.error("POST API key rotation error:", rotateError?.message);
+            return NextResponse.json({ error: "Failed to create API key; existing keys were preserved." }, { status: 500 });
         }
 
         const camelCaseKey = {
-            id: newKey.id,
-            walletAddress: newKey.wallet_address,
-            publishableKey: newKey.publishable_key,
+            id: rotated.id,
+            walletAddress: rotated.walletAddress,
+            publishableKey: rotated.publishableKey,
+            mode: rotated.mode,
             /* One-time reveal of the full secret. After this response it cannot be retrieved again. */
             secretKeyPlain,
             secretKeyAvailable: true,
-            createdAt: newKey.created_at,
-            revoked: newKey.revoked,
+            createdAt: rotated.createdAt,
+            revoked: false,
         };
 
         return NextResponse.json({ key: camelCaseKey }, { status: 201 });

@@ -73,11 +73,19 @@ async function authenticateMerchant(request: Request): Promise<
     if (mode !== "test" && mode !== "live") {
         return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
     }
+    if (mode === "live") {
+        /* This deployment is testnet-only: live credentials are refused before any lookup
+           (and cannot exist — the database rejects LIVE-mode key insertion). */
+        return { ok: false, status: 401, error: "Unauthorized: sk_live_ keys are not enabled on this deployment" };
+    }
     const keyRecord = await prisma.apiKey.findFirst({
         where: { revoked: false, secretKeyHash: hashSecretKey(secretKey) },
     });
     if (!keyRecord) {
         return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };
+    }
+    if (keyRecord.mode !== "TEST") {
+        return { ok: false, status: 403, error: "Forbidden: this API key's mode cannot settle on this deployment" };
     }
     return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
 }

@@ -9,7 +9,9 @@
 import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { hashSecretKey } from "@/lib/apiKeys";
+import { hashSecretKey, resolveSecretKeyMode } from "@/lib/apiKeys";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
+import { ProtocolConfig } from "@/lib/payments/config";
 import { withPgClient } from "@/lib/serverPg";
 import {
     insertPgDm,
@@ -30,6 +32,7 @@ type VaultUsageRow = {
 type UsageResult =
     | { kind: "missing" }
     | { kind: "idempotency_conflict" }
+    | { kind: "environment_mismatch" }
     | { kind: "inactive"; vault: VaultUsageRow }
     | { kind: "exhausted"; vault: VaultUsageRow; remaining: bigint; notification: DmPushInput | null }
     | { kind: "accrued"; vault: VaultUsageRow; exhausted: boolean; notification: DmPushInput | null; thresholdNotification: DmPushInput | null };
@@ -100,7 +103,8 @@ async function accrueUsageAtomically(
         await client.query("begin");
         try {
             const selected = await client.query(
-                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps
+                `select id, balance_usdc, commit_usdc, owed_usdc, accrued_usage_usdc, active, usage_notified_bps,
+                        environment, settlement_chain_id
                    from metered_vaults
                   where user_address = $1 and merchant_address = $2
                   for update`,
@@ -109,6 +113,15 @@ async function accrueUsageAtomically(
             if (selected.rowCount === 0) {
                 await client.query("commit");
                 return { kind: "missing" } as const;
+            }
+
+            /* A TEST key may only mutate a TEST vault settling on Arc testnet. A future
+               mainnet vault row fails here no matter what the route-level checks missed. */
+            const vaultEnvironment = String(selected.rows[0].environment || "");
+            const vaultChain = BigInt(selected.rows[0].settlement_chain_id ?? 0);
+            if (vaultEnvironment !== "TEST" || vaultChain !== BigInt(5042002)) {
+                await client.query("commit");
+                return { kind: "environment_mismatch" } as const;
             }
 
             const vault = selected.rows[0] as VaultUsageRow;
@@ -163,8 +176,8 @@ async function accrueUsageAtomically(
             /* Append-only ledger row for this charge — the user's transparent record. */
             await client.query(
                 `insert into metered_usage_reports
-                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                     (vault_id, user_address, merchant_address, amount_usdc, accrued_after_usdc, balance_usdc, note, request_id, environment)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, 'TEST')`,
                 [vault.id, userAddress, merchantAddress, amountMicros.toString(), nextAccrued.toString(), balance.toString(), note, requestId],
             );
 
@@ -215,11 +228,31 @@ export async function POST(request: Request) {
         }
         const secretKey = authHeader.replace("Bearer ", "");
 
+        /* Environment isolation, fail-closed in four layers: the credential must be a TEST
+           key (sk_live_ is refused before any lookup), the stored key's immutable mode must
+           be TEST, the deployment itself must be settling Arc testnet, and the vault row is
+           checked for TEST/testnet inside the same transaction that mutates it. */
+        if (resolveSecretKeyMode(secretKey) !== "TEST") {
+            return NextResponse.json(
+                { error: "Unauthorized: only sk_test_ keys are accepted on this deployment." },
+                { status: 401 },
+            );
+        }
+        if (BigInt(ProtocolConfig.CHAIN_ID) !== BigInt(ARC_TESTNET_CHAIN_ID)) {
+            return NextResponse.json(
+                { error: "Usage reporting is unavailable: this deployment is not configured for Arc testnet settlement." },
+                { status: 503 },
+            );
+        }
+
         const apiKeyRecord = await prisma.apiKey.findFirst({
             where: { secretKeyHash: hashSecretKey(secretKey) }
         });
         if (!apiKeyRecord || apiKeyRecord.revoked) {
             return NextResponse.json({ error: "Unauthorized: Invalid or revoked API Key" }, { status: 401 });
+        }
+        if (apiKeyRecord.mode !== "TEST") {
+            return NextResponse.json({ error: "Unauthorized: this API key's mode cannot settle on this deployment." }, { status: 403 });
         }
 
         const merchantAddress = apiKeyRecord.walletAddress.toLowerCase();
@@ -287,6 +320,13 @@ export async function POST(request: Request) {
 
         if (result.kind === "idempotency_conflict") {
             return NextResponse.json({ error: "This request id was already used for a different usage charge." }, { status: 409 });
+        }
+
+        if (result.kind === "environment_mismatch") {
+            return NextResponse.json({
+                error: "This vault does not belong to the TEST environment on Arc testnet; a test key cannot mutate it.",
+                code: "ENVIRONMENT_MISMATCH",
+            }, { status: 403 });
         }
 
         if (result.kind === "inactive") {

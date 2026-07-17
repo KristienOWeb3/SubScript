@@ -92,9 +92,10 @@ export async function POST(request: Request) {
                 wallet_address: wallet.toLowerCase(),
                 publishable_key: publishableKey,
                 /* Persist only the hash + display hint. The cleartext key is returned once below
-                   and never stored at rest. */
+                   and never stored at rest. Only TEST keys can be issued on this deployment. */
                 secret_key_hash: hashSecretKey(secretKeyPlain),
                 secret_key_hint: secretKeyHint(secretKeyPlain),
+                mode: "TEST",
                 revoked: false,
             })
             .select()

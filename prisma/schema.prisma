@@ -27,6 +27,8 @@ model ApiKey {
   secretKeyPlain String?  @map("secret_key_plain")
   secretKeyHash  String?  @unique @map("secret_key_hash")
   secretKeyHint  String?  @map("secret_key_hint")
+  // Immutable environment: "TEST" (sk_test_) or "LIVE" (future sk_live_ — DB-refused today).
+  mode           String   @default("TEST")
   createdAt      DateTime @default(now()) @map("created_at")
   revoked        Boolean  @default(false)
 
@@ -634,6 +636,9 @@ model MeteredVault {
   active            Boolean  @default(false)
   vaultChainId      Int?     @map("vault_chain_id")
   lastSyncedBlock   BigInt?  @map("last_synced_block")
+  // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
+  environment       String   @default("TEST")
+  settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
@@ -660,6 +665,7 @@ model MeteredUsageReport {
   balanceUsdc      BigInt   @map("balance_usdc")
   note             String?
   requestId        String?  @map("request_id")
+  environment      String   @default("TEST")
   createdAt        DateTime @default(now()) @map("created_at")
   vault            MeteredVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
 
