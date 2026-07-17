@@ -92,6 +92,23 @@ type MerchantPlan = {
     active: boolean;
 };
 
+type PlanPromotion = {
+    id: string;
+    planId: string;
+    name: string;
+    discountType: string;
+    discountBps: number | null;
+    regularAmountUsdc: string;
+    introductoryAmountUsdc: string;
+    introductoryCycles: number;
+    startsAt: string | null;
+    expiresAt: string | null;
+    maxRedemptions: number | null;
+    redemptionCount: number;
+    newCustomersOnly: boolean;
+    active: boolean;
+};
+
 const PLAN_DESCRIPTION_MAX = 300;
 
 const formatPlanAmount = (micros: string) => {
@@ -197,6 +214,7 @@ export default function DashboardPage() {
     const [isLinksLoading, setIsLinksLoading] = useState(false);
     const [initialLinksFetched, setInitialLinksFetched] = useState(false);
     const [merchantPlans, setMerchantPlans] = useState<MerchantPlan[]>([]);
+    const [planPromotions, setPlanPromotions] = useState<PlanPromotion[]>([]);
     const [isPlansLoading, setIsPlansLoading] = useState(false);
     const [initialPlansFetched, setInitialPlansFetched] = useState(false);
     const [planName, setPlanName] = useState("");
@@ -1196,12 +1214,19 @@ export default function DashboardPage() {
     const fetchMerchantPlans = async () => {
         setIsPlansLoading(true);
         try {
-            const res = await fetch("/api/merchant/plans");
+            const [res, promoRes] = await Promise.all([
+                fetch("/api/merchant/plans"),
+                fetch("/api/merchant/promotions"),
+            ]);
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Failed to load plans");
             }
             setMerchantPlans(data.plans || []);
+            const promoData = await promoRes.json().catch(() => ({}));
+            if (promoRes.ok && promoData.success) {
+                setPlanPromotions(promoData.promotions || []);
+            }
         } catch (err: any) {
             console.error("Error fetching merchant plans:", err);
             setPlanError(err.message || "Failed to load plans");
@@ -3032,6 +3057,14 @@ Please complete the following implementation tasks:
     const renderPlansTab = () => {
         const activePlans = merchantPlans.filter((plan) => plan.active);
         const inactivePlans = merchantPlans.filter((plan) => !plan.active);
+        /* The most recent promotion per plan (active first) drives the row's promo panel. */
+        const promotionsByPlan = new Map<string, PlanPromotion>();
+        for (const promo of planPromotions) {
+            const existing = promotionsByPlan.get(promo.planId);
+            if (!existing || (promo.active && !existing.active)) {
+                promotionsByPlan.set(promo.planId, promo);
+            }
+        }
 
         return (
             <div className="space-y-8">
@@ -3170,7 +3203,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3188,7 +3221,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -6174,11 +6207,15 @@ function MerchantPlanRow({
     busy,
     onToggle,
     onShare,
+    promotion = null,
+    onPromotionsChanged,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
     onShare: (plan: MerchantPlan) => void;
+    promotion?: PlanPromotion | null;
+    onPromotionsChanged?: () => void;
 }) {
     const [copied, setCopied] = useState(false);
     const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
@@ -6257,6 +6294,231 @@ function MerchantPlanRow({
                         </button>
                     </div>
                 </div>
+            )}
+
+            {(plan.active || promotion) && (
+                <PlanPromotionPanel plan={plan} promotion={promotion ?? null} onChanged={onPromotionsChanged} />
+            )}
+        </div>
+    );
+}
+
+/* Introductory-offer controls for one plan: create, edit, activate/deactivate a promotion.
+   Edits only affect FUTURE subscribers — terms already authorized are snapshotted per
+   subscription and enforced on-chain, so existing subscribers never reprice. */
+function PlanPromotionPanel({
+    plan,
+    promotion,
+    onChanged,
+}: {
+    plan: MerchantPlan;
+    promotion: PlanPromotion | null;
+    onChanged?: () => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [promoName, setPromoName] = useState(promotion?.name || "");
+    const [discountType, setDiscountType] = useState(promotion?.discountType || "PERCENT");
+    const [percentOff, setPercentOff] = useState(
+        promotion?.discountBps ? String(promotion.discountBps / 100) : "40",
+    );
+    const [introPriceUsdc, setIntroPriceUsdc] = useState(
+        promotion && promotion.discountType === "FIXED_PRICE"
+            ? formatPlanAmount(promotion.introductoryAmountUsdc)
+            : "",
+    );
+    const [introCycles, setIntroCycles] = useState(String(promotion?.introductoryCycles || 1));
+    const [expiresAt, setExpiresAt] = useState(
+        promotion?.expiresAt ? promotion.expiresAt.slice(0, 16) : "",
+    );
+    const [maxRedemptions, setMaxRedemptions] = useState(
+        promotion?.maxRedemptions ? String(promotion.maxRedemptions) : "",
+    );
+    const [newCustomersOnly, setNewCustomersOnly] = useState(promotion?.newCustomersOnly ?? true);
+
+    const regularMicros = (() => {
+        try { return BigInt(plan.amountUsdc); } catch { return BigInt(0); }
+    })();
+    const previewIntroMicros = (() => {
+        if (discountType === "FREE_TRIAL") return BigInt(0);
+        if (discountType === "PERCENT") {
+            const pct = Number(percentOff);
+            if (!Number.isFinite(pct) || pct < 1 || pct > 100) return null;
+            return (regularMicros * BigInt(10000 - Math.round(pct * 100))) / BigInt(10000);
+        }
+        const price = Number(introPriceUsdc);
+        if (!Number.isFinite(price) || price < 0) return null;
+        return BigInt(Math.round(price * 1_000_000));
+    })();
+    const cadence = formatPlanPeriod(plan.periodSeconds);
+
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError(null);
+        if (!promoName.trim()) { setError("Promotion name is required."); return; }
+        if (previewIntroMicros === null) { setError("Enter a valid discount."); return; }
+        if (previewIntroMicros >= regularMicros) { setError("Introductory price must be below the regular price."); return; }
+        setSaving(true);
+        try {
+            const payload: Record<string, unknown> = {
+                name: promoName.trim(),
+                discountType,
+                introductoryCycles: Number(introCycles) || 1,
+                expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+                maxRedemptions: maxRedemptions ? Number(maxRedemptions) : null,
+                newCustomersOnly,
+            };
+            if (discountType === "PERCENT") payload.percentOff = Number(percentOff);
+            if (discountType === "FIXED_PRICE") payload.introPriceUsdc = introPriceUsdc;
+            const res = await fetch("/api/merchant/promotions", {
+                method: promotion ? "PATCH" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(promotion ? { ...payload, promotionId: promotion.id } : { ...payload, planId: plan.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to save promotion.");
+            setEditing(false);
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to save promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const toggleActive = async () => {
+        if (!promotion) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/merchant/promotions", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ promotionId: promotion.id, active: !promotion.active }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update promotion.");
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to update promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const summaryLabel = promotion
+        ? promotion.discountType === "FREE_TRIAL"
+            ? `Free for the first ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : cadence}`
+            : promotion.discountType === "PERCENT"
+                ? `${(promotion.discountBps || 0) / 100}% off → ${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+                : `${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+        : null;
+
+    return (
+        <div data-testid="plan-promotion-panel" className="mt-3 rounded-xl border border-amber-300/10 bg-amber-400/[0.03] p-3 font-sans">
+            {!editing && promotion && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-300/70">
+                            Promotion · {promotion.active ? "Live" : "Off"} · {promotion.redemptionCount}{promotion.maxRedemptions ? `/${promotion.maxRedemptions}` : ""} redeemed
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] font-bold text-white/80">{promotion.name}: {summaryLabel}, then {formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</p>
+                        {promotion.expiresAt && (
+                            <p className="text-[9px] text-white/35">Offer ends {new Date(promotion.expiresAt).toLocaleDateString()}</p>
+                        )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={() => setEditing(true)} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50">
+                            Edit
+                        </button>
+                        <button type="button" onClick={toggleActive} disabled={saving}
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15" : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"}`}>
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {!editing && !promotion && plan.active && (
+                <button type="button" onClick={() => setEditing(true)}
+                    className="w-full rounded-lg border border-dashed border-amber-300/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-200/70 transition hover:border-amber-300/40 hover:text-amber-200">
+                    + Add introductory offer (discount or free trial)
+                </button>
+            )}
+
+            {editing && (
+                <form onSubmit={submit} className="space-y-3 text-xs">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer name</label>
+                            <input type="text" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="Launch offer"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer type</label>
+                            <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none">
+                                <option value="PERCENT">Percentage off</option>
+                                <option value="FIXED_PRICE">Fixed intro price</option>
+                                <option value="FREE_TRIAL">Free trial</option>
+                            </select>
+                        </div>
+                        {discountType === "PERCENT" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Percent off (customer pays the rest)</label>
+                                <input type="number" min="1" max="100" step="1" value={percentOff} onChange={(e) => setPercentOff(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        {discountType === "FIXED_PRICE" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Intro price (USDC)</label>
+                                <input type="number" min="0" step="0.01" value={introPriceUsdc} onChange={(e) => setIntroPriceUsdc(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Discounted cycles</label>
+                            <input type="number" min="1" max="36" value={introCycles} onChange={(e) => setIntroCycles(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer ends (optional)</label>
+                            <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Max redemptions (optional)</label>
+                            <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="Unlimited"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-[10px] text-white/60">
+                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#00d2b4]" />
+                        New customers only (subscribers who never had a plan with you)
+                    </label>
+                    {previewIntroMicros !== null && previewIntroMicros < regularMicros && (
+                        <p className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[10px] text-white/60">
+                            Customers pay <span className="font-bold text-[#00d2b4]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
+                            {Number(introCycles) > 1 ? ` per ${cadence} for ${introCycles} cycles` : " today"}, then{" "}
+                            <span className="font-bold text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
+                            disclosed and authorized at checkout; the switch to full price is enforced on-chain.
+                        </p>
+                    )}
+                    {error && <p className="text-[10px] font-bold text-red-400">{error}</p>}
+                    <div className="flex items-center justify-end gap-2">
+                        <button type="button" onClick={() => { setEditing(false); setError(null); }} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white/60 transition hover:text-white disabled:opacity-50">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={saving}
+                            className="rounded-lg bg-[#00d2b4] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50">
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion ? "Save changes" : "Launch offer"}
+                        </button>
+                    </div>
+                </form>
             )}
         </div>
     );

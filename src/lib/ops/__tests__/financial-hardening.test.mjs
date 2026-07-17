@@ -252,7 +252,7 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     /* Subscribe (charges the first payment): key on the single-use checkout session, or the
        client request id for plan subscribes — never just subscriber+merchant, which would make
        a legitimate re-subscribe return the old cancelled transaction. */
-    assert.match(subOnchain, /subscribeFromEmbedded\([^)]*idempotencyKey\?: string\)/);
+    assert.match(subOnchain, /subscribeFromEmbedded\([^{]*idempotencyKey\?: string/);
     assert.match(subscribeRoute, /subscribe-checkout:\$\{checkoutSessionId\}/);
     assert.match(subscribeRoute, /subscribe-plan:\$\{subscriber\}:\$\{merchant\}:\$\{planId\}:generation:\$\{generation\}/);
 

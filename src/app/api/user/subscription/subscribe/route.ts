@@ -9,7 +9,14 @@ import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
-import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain, getIntroductoryTermsOnChain } from "@/lib/subscriptions/onchain";
+import {
+    findApplicablePromotion,
+    claimPromotionRedemption,
+    releasePromotionRedemption,
+    confirmPromotionRedemption,
+    pricingPhaseFor,
+} from "@/lib/subscriptions/promotions";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
@@ -116,6 +123,10 @@ export async function POST(request: Request) {
             await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
             let checkoutClaimed = false;
             let onChainSubmitted = false;
+            /* Introductory promotion this subscriber is redeeming (plan subscribes only).
+               Claimed atomically BEFORE the on-chain create; released if we fail before
+               broadcasting; confirmed with the subId once the subscription exists. */
+            let appliedPromo: { id: string; introAmountUsdc: bigint; introCycles: number } | null = null;
             try {
                 if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
                     const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
@@ -200,6 +211,9 @@ export async function POST(request: Request) {
                 if (onChainActiveId) {
                     const onChain = await getSubscriptionOnChain(onChainActiveId);
                     if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
+                        /* A promo sub whose mirror write failed still has its authorized intro
+                           terms on-chain; rebuild the snapshot from the authoritative source. */
+                        const recoveredIntro = await getIntroductoryTermsOnChain(onChainActiveId);
                         await mirrorSubscriptionCreated({
                             subscriptionId: onChainActiveId,
                             merchantAddress: merchant,
@@ -208,6 +222,9 @@ export async function POST(request: Request) {
                             periodSeconds: onChain.period,
                             beneficiaryAddress,
                             minCommitmentSeconds: plan.minCommitmentSeconds,
+                            promotion: recoveredIntro
+                                ? { promotionId: null, introAmountUsdc: recoveredIntro.introAmountUsdc, introCycles: recoveredIntro.introCycles }
+                                : null,
                         });
                         return NextResponse.json({ success: true, subscriptionId: onChainActiveId, planName: plan.name, reconciled: true });
                     }
@@ -227,6 +244,29 @@ export async function POST(request: Request) {
                         return NextResponse.json({ error: "Subscription checkout is already being processed or completed" }, { status: 409 });
                     }
                     checkoutClaimed = true;
+                }
+
+                /* Resolve and claim the plan's live introductory promotion. Best-effort: a
+                   promotion that expired, hit its cap, or was already redeemed by this
+                   subscriber simply falls back to full price — checkout re-discloses the
+                   actual terms in the response, and nothing was charged yet. Must run before
+                   the sponsorship + subscribeFromEmbedded calls below, which read appliedPromo. */
+                if (!checkoutSessionId && merchantPlan) {
+                    const promo = await findApplicablePromotion({
+                        planId: merchantPlan.id,
+                        merchantAddress: merchant,
+                        subscriber,
+                    });
+                    if (promo) {
+                        const claimed = await claimPromotionRedemption(promo.id, subscriber);
+                        if (claimed) {
+                            appliedPromo = {
+                                id: promo.id,
+                                introAmountUsdc: promo.introductoryAmountUsdc,
+                                introCycles: promo.introductoryCycles,
+                            };
+                        }
+                    }
                 }
 
                 /* createSubscription charges the first payment, so a retry after a timed-out
@@ -259,7 +299,10 @@ export async function POST(request: Request) {
                     plan.periodSeconds,
                     checkoutSessionId
                         ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
-                        : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`)
+                        : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`),
+                    appliedPromo
+                        ? { introAmountUsdc: appliedPromo.introAmountUsdc, introCycles: appliedPromo.introCycles }
+                        : null,
                 );
                 onChainSubmitted = true;
                 if (checkoutSessionId) {
@@ -300,7 +343,18 @@ export async function POST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
+                        promotion: appliedPromo
+                            ? {
+                                promotionId: appliedPromo.id,
+                                introAmountUsdc: appliedPromo.introAmountUsdc,
+                                introCycles: appliedPromo.introCycles,
+                            }
+                            : null,
                     });
+                    if (appliedPromo) {
+                        await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))
+                            .catch((err) => console.error("[subscription/subscribe] redemption confirm failed:", err));
+                    }
                 } catch (reconciliationError) {
                     await recordPaymentReconciliationRequired({
                         dedupeKey: `subscription-mirror:${subId}:${txHash.toLowerCase()}`,
@@ -313,12 +367,22 @@ export async function POST(request: Request) {
                 }
 
                 /* Open the merchant→user DM thread for this subscription (best-effort). */
+                const firstRegularPaymentAt = appliedPromo
+                    ? new Date(Date.now() + appliedPromo.introCycles * Number(plan.periodSeconds) * 1000)
+                    : null;
                 await createSubscriptionStartedDm({
                     merchantAddress: merchant,
                     subscriberAddress: subscriber,
                     planName: plan.name,
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
+                    introTerms: appliedPromo && firstRegularPaymentAt
+                        ? {
+                            introAmountUsdc: appliedPromo.introAmountUsdc,
+                            introCycles: appliedPromo.introCycles,
+                            firstRegularPaymentAt,
+                        }
+                        : null,
                 }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
                 if (checkoutSessionId) {
@@ -353,6 +417,17 @@ export async function POST(request: Request) {
                     merchantAddress: merchant,
                     beneficiary: beneficiaryAddress,
                     txHash,
+                    pricing: appliedPromo
+                        ? {
+                            ...pricingPhaseFor({
+                                sequenceId: 0,
+                                regularAmountUsdc: plan.amountUsdc,
+                                introAmountUsdc: appliedPromo.introAmountUsdc,
+                                introCycles: appliedPromo.introCycles,
+                            }),
+                            regularAmountUsdcMicros: plan.amountUsdc,
+                        }
+                        : null,
                 }), `created:${subId}:${txHash.toLowerCase()}`);
 
                 return NextResponse.json({
@@ -360,6 +435,15 @@ export async function POST(request: Request) {
                     txHash,
                     subscriptionId: subId,
                     planName: plan.name,
+                    ...(appliedPromo ? {
+                        promotion: {
+                            promotionId: appliedPromo.id,
+                            paidTodayUsdcMicros: appliedPromo.introAmountUsdc.toString(),
+                            introductoryCycles: appliedPromo.introCycles,
+                            regularAmountUsdcMicros: plan.amountUsdc.toString(),
+                            firstRegularPaymentAt: firstRegularPaymentAt?.toISOString() ?? null,
+                        },
+                    } : {}),
                 }, { status: 200 });
             } catch (error) {
                 if (checkoutSessionId && checkoutClaimed && !onChainSubmitted) {
@@ -369,6 +453,15 @@ export async function POST(request: Request) {
                     }).catch((resetError: unknown) =>
                         console.error("[subscription/subscribe] checkout claim reset failed:", resetError)
                     );
+                }
+                /* A redemption claimed for a create that never broadcast must be handed back,
+                   or a failed attempt would burn the customer's once-per-promo eligibility and
+                   a slot of the redemption cap. After broadcast the claim stands (funds moved). */
+                if (appliedPromo && !onChainSubmitted) {
+                    await releasePromotionRedemption(appliedPromo.id, subscriber)
+                        .catch((releaseError: unknown) =>
+                            console.error("[subscription/subscribe] promotion release failed:", releaseError)
+                        );
                 }
                 throw error;
             } finally {

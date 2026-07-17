@@ -953,6 +953,21 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
                 Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
               </div>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Plan catalog: /api/v1/plans</p>
+                <p className="mt-2">
+                  A subscription checkout (above) is one payment attempt, not a catalog entry. Your published tiers live in the
+                  <span className="font-bold text-white/85"> plan catalog</span> — the same catalog the dashboard Plans tab, customer DMs, and
+                  <span className="font-mono"> /subscribe</span> links read, so plans created here and in the dashboard always stay in sync.
+                  <span className="font-mono"> GET /api/v1/plans</span> lists your plans (each with its shareable <span className="font-mono">subscribeUrl</span> and
+                  any live introductory promotion), <span className="font-mono">POST /api/v1/plans</span> creates one
+                  (<span className="font-mono">name</span>, <span className="font-mono">amountUsdc</span>, <span className="font-mono">periodDays</span>), and
+                  <span className="font-mono"> PATCH /api/v1/plans</span> updates <span className="font-mono">active</span>,{" "}
+                  <span className="font-mono">description</span>, or <span className="font-mono">detailsUrl</span>. Pass a plan&apos;s{" "}
+                  <span className="font-mono">planId</span> to <span className="font-mono">POST /api/v1/subscriptions</span> to generate checkouts against it.
+                </p>
+              </div>
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">

@@ -76,6 +76,7 @@ export async function createSubscriptionStartedDm({
     amountUsdc,
     periodSeconds,
     isChange = false,
+    introTerms = null,
 }: {
     merchantAddress: string;
     subscriberAddress: string;
@@ -83,6 +84,13 @@ export async function createSubscriptionStartedDm({
     amountUsdc: bigint;
     periodSeconds: bigint;
     isChange?: boolean;
+    /* Introductory terms the subscriber authorized: full disclosure of the price they paid
+       today, how long the discount lasts, and when the regular price begins. */
+    introTerms?: {
+        introAmountUsdc: bigint;
+        introCycles: number;
+        firstRegularPaymentAt: Date;
+    } | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
     const subscriber = subscriberAddress.toLowerCase();
@@ -92,17 +100,27 @@ export async function createSubscriptionStartedDm({
     const amount = formatUsdcFromMicros(amountUsdc);
     const cadence = formatPeriodLabel(periodSeconds);
 
+    const pricingLines = introTerms
+        ? [
+            introTerms.introAmountUsdc === BigInt(0)
+                ? `Paid today: 0 USDC (free ${introTerms.introCycles > 1 ? `${introTerms.introCycles} cycles` : "first cycle"})`
+                : `Paid today: ${formatUsdcFromMicros(introTerms.introAmountUsdc)} USDC (introductory price${introTerms.introCycles > 1 ? ` for ${introTerms.introCycles} cycles` : ""})`,
+            `Then: ${amount} USDC / ${cadence} starting ${introTerms.firstRegularPaymentAt.toISOString().slice(0, 10)}`,
+            "Cancel before then to avoid the regular price.",
+        ]
+        : [`Amount: ${amount} USDC / ${cadence}`];
+
     const dm = await createDmAndNotify({
         senderAddress: merchant,
         receiverAddress: subscriber,
         messageType: "SUBSCRIPTION_STARTED",
         status: "APPROVED",
-        amountUsdc,
+        amountUsdc: introTerms ? introTerms.introAmountUsdc : amountUsdc,
         title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
         description: [
             `Merchant: ${merchantName}`,
             `Plan: ${planName}`,
-            `Amount: ${amount} USDC / ${cadence}`,
+            ...pricingLines,
             "You can manage or cancel this subscription anytime from your dashboard.",
         ].join("\n"),
     });
