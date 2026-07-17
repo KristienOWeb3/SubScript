@@ -675,6 +675,27 @@ model MeteredUsageReport {
   @@map("metered_usage_reports")
 }
 
+// Durable vault-commit intent: persisted BEFORE custody submission so a reload or retry
+// resolves the prior money-moving attempt (same Circle idempotency key) instead of escrowing
+// twice. See supabase/migrations/20260717040000_vault_commit_intents.sql.
+model VaultCommitIntent {
+  requestId             String   @id @map("request_id")
+  userAddress           String   @map("user_address")
+  merchantAddress       String   @map("merchant_address")
+  amountUsdc            Decimal  @map("amount_usdc")
+  environment           String   @default("TEST")
+  custodyIdempotencyKey String   @map("custody_idempotency_key")
+  sponsorRequestKey     String?  @map("sponsor_request_key")
+  txHash                String?  @map("tx_hash")
+  status                String   @default("PENDING")
+  lastError             String?  @map("last_error")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userAddress, createdAt(sort: Desc)])
+  @@map("vault_commit_intents")
+}
+
 // User-filed scam reports against a commit (metered-vault) merchant. Surfaced for SubScript ops
 // review; never affects the keeper draw. One open report per (merchant, reporter).
 model MerchantReport {

@@ -1588,7 +1588,33 @@ export default function UserDashboard() {
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current ||= crypto.randomUUID();
+        const intentStorageKey = "subscript_vault_commit_intent";
+        if (vaultActionMode === "commit") {
+          /* Durable money-moving operation id: persisted in localStorage until terminal
+             resolution, so a reload cannot mint a fresh id for the same commit. Any prior
+             unresolved intent is resolved server-side BEFORE a new commit is allowed. */
+          let storedIntent: { requestId?: string; merchantAddress?: string; amountUsdc?: string } | null = null;
+          try { storedIntent = JSON.parse(localStorage.getItem(intentStorageKey) || "null"); } catch { storedIntent = null; }
+          if (storedIntent?.requestId
+              && (storedIntent.merchantAddress !== merchantAddress || storedIntent.amountUsdc !== vaultActionAmount)) {
+            const prior = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
+              .then((r) => r.json())
+              .catch(() => null);
+            if (prior?.exists && (prior.status === "PENDING" || prior.status === "SUBMITTED")) {
+              throw new Error("A previous vault commit is still resolving. Retry that exact commit (same merchant and amount), or wait for it to finish before starting a new one.");
+            }
+            try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+            storedIntent = null;
+          }
+          vaultCommitRequestKey.current = storedIntent?.requestId || vaultCommitRequestKey.current || crypto.randomUUID();
+          try {
+            localStorage.setItem(intentStorageKey, JSON.stringify({
+              requestId: vaultCommitRequestKey.current,
+              merchantAddress,
+              amountUsdc: vaultActionAmount,
+            }));
+          } catch { /* the in-memory ref still guards this tab */ }
+        }
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -1600,8 +1626,15 @@ export default function UserDashboard() {
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current = null;
+        if (!res.ok || !data.success) {
+          /* An ambiguous commit stays persisted — the retry reuses the same request id and
+             dedupes at Circle instead of escrowing twice. */
+          throw new Error(data.error || "Vault action failed.");
+        }
+        if (vaultActionMode === "commit") {
+          vaultCommitRequestKey.current = null;
+          try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+        }
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
