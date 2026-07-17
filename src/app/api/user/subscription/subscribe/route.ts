@@ -8,6 +8,7 @@ import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
@@ -23,6 +24,10 @@ export const maxDuration = 120;
 
 export async function POST(request: Request) {
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         const roleCheck = await requireAccountRole(wallet, "USER");

@@ -14,7 +14,7 @@ import {
     isAddress,
     getContract,
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import DashboardHeader from "@/components/DashboardHeader";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
@@ -23,7 +23,6 @@ import {
     Check, Loader2, AlertTriangle, PlayCircle, XCircle, ChevronLeft
 } from "@/components/icons";
 import { 
-    ARC_TESTNET_CHAIN_ID, 
     PREMIUM_PAYMENT_RECIPIENT_ADDRESS,
     PREMIUM_PLAN_PRICE_USDC,
     STANDARD_CONTRACT_ADDRESS, 
@@ -32,7 +31,7 @@ import {
 import { STANDARD_SUBSCRIPT_ABI, USDC_ERC20_ABI } from "@/lib/contracts/abis";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 
@@ -216,9 +215,9 @@ export default function UpgradePage() {
             return data.txHash as string;
         }
 
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
+        if (chainId !== activeArcChain.id) {
             setCheckoutStatus("Switching network to Arc Testnet...");
-            await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+            await switchChainAsync({ chainId: activeArcChain.id });
         }
 
         return await writeContractAsync({
@@ -326,9 +325,9 @@ export default function UpgradePage() {
             const userAddress = getAddress(address) as `0x${string}`;
 
             /* 1. Ensure connected browser wallets are on Arc Testnet. Embedded wallets are server-signed. */
-            if (!embeddedWallet && chainId !== ARC_TESTNET_CHAIN_ID) {
+            if (!embeddedWallet && chainId !== activeArcChain.id) {
                 setCheckoutStatus("Switching network to Arc Testnet...");
-                await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                await switchChainAsync({ chainId: activeArcChain.id });
             }
 
             /* 2. Check USDC details and decimals */

@@ -17,7 +17,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 import WithdrawModal from "@/components/WithdrawModal";
 import DepositModal from "@/components/DepositModal";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
     SUBSCRIPT_ROUTER_ADDRESS, 
@@ -52,7 +52,7 @@ const tabs = [
 type TabId = "overview" | "premium" | "analytics" | "payment-links" | "payroll" | "apikeys" | "checkout" | "webhooks" | "settings";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 

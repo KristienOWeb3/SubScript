@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { ProtocolConfig } from "@/lib/payments/config";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { arcHttp } from "@/lib/arc/transport";
 import {
     ARC_TESTNET_CHAIN_ID,
@@ -46,7 +48,7 @@ const SUBSCRIPT_ABI = [
     },
 ] as const;
 
-const publicClient = createPublicClient({ chain: arcTestnet, transport: arcHttp() });
+const publicClient = createPublicClient({ chain: activeArcChain, transport: arcHttp() });
 
 const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     daily: 86_400,
@@ -435,7 +437,7 @@ export async function POST(request: Request) {
                 receiptToken: generateReceiptId("subscription"),
                 sandboxMode: isTestMode,
                 simulationOnly: false,
-                settlementChainId: ARC_TESTNET_CHAIN_ID,
+                settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
                 creationFingerprint: {
                     merchantAddress,
                     amountUsdc: amountMicros.toString(),
@@ -443,7 +445,7 @@ export async function POST(request: Request) {
                     linkKind: "MERCHANT",
                     sandboxMode: isTestMode,
                     simulationOnly: false,
-                    settlementChainId: ARC_TESTNET_CHAIN_ID,
+                    settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
                     maxUses: null,
                     expiresAt: null,
                 },

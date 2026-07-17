@@ -12,11 +12,16 @@ import { deterministicIdempotencyKey } from "@/lib/custody";
 import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
 import { prisma } from "@/lib/prisma";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

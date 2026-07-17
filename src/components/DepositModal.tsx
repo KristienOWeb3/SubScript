@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, QrCode, Loader2 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
 
@@ -20,7 +20,7 @@ const ERC20_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
+    chain: activeArcChain,
     transport: arcHttp(),
 });
 

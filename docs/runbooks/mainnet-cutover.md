@@ -30,7 +30,18 @@ testnet, so nothing changes until you set these.
 | `NEXT_PUBLIC_ARC_RPC_PRIMARY` | mainnet RPC | Client-side RPC (wagmi/viem). Defaults to `https://rpc.mainnet.arc.network` when env is mainnet, but set it explicitly to your provider. |
 
 ### Mainnet contract addresses (override the testnet defaults)
-Leave any unset to keep the testnet default. A malformed value is ignored and falls back to the default.
+
+> 🔒 **Mainnet is fail-closed.** With `NEXT_PUBLIC_ENVIRONMENT=mainnet`, financial routes call
+> `assertFinancialNetworkReady()` (`src/lib/network/registry.ts`) and **refuse to serve** until
+> every one of these is explicitly set and well-formed: the four contract addresses below,
+> `NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS`, `NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID` (=5042001),
+> `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_ARC_RPC_PRIMARY` (https), `TREASURY_ADDRESS`, and
+> `CIRCLE_ARC_BLOCKCHAIN=ARC`. There is **no silent fallback to a testnet address in mainnet
+> mode.** On testnet, unset values keep the testnet defaults as before.
+>
+> After setting them, also verify on-chain reality: each contract address must contain bytecode
+> on Arc mainnet, and the Router's owner/treasury and the PSA/Vault token addresses must match
+> the intended mainnet USDC and treasury (`npm run check:contracts`).
 
 > ⚠️ **Deploy the CURRENT contract source at cutover — do not point mainnet at fresh deployments
 > of the old testnet bytecode.** The 2026-07-08 hardening pass exists only in source until deployed:

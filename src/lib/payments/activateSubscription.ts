@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { ROUTER_ADDRESS, ARC_TESTNET_CHAIN_ID, PREMIUM_PRICE } from "./constants";
+import { ROUTER_ADDRESS, PREMIUM_PRICE } from "./constants";
+import { ProtocolConfig } from "./config";
 
 const ROUTER_INTERFACE = new ethers.Interface([
     "function setMerchantTier(address _merchant, uint8 _tier) external",
@@ -133,7 +134,7 @@ export async function activateSubscription({
                 merchant: normalizedUser,
                 payment_session: sessionId,
                 tx_hash: txHash,
-                chain_id: ARC_TESTNET_CHAIN_ID,
+                chain_id: ProtocolConfig.CHAIN_ID,
                 tier_before: tierBefore,
                 tier_after: 1,
                 admin_wallet: adminWallet.address.toLowerCase(),

@@ -17,10 +17,9 @@ import {
   fallback
 } from "viem";
 import { sepolia } from "viem/chains";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID, 
   ARC_CCTP_DOMAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   CCTP_CONFIG 
@@ -104,7 +103,7 @@ const VAULT_CONTRACT_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
+  chain: activeArcChain,
   transport: arcHttp(),
 });
 
@@ -823,7 +822,7 @@ export default function UserDashboard() {
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
     args: userWallet ? [userWallet as `0x${string}`] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: activeArcChain.id,
     query: { enabled: Boolean(userWallet) },
   });
 
@@ -1334,8 +1333,8 @@ export default function UserDashboard() {
           throw new Error("Connect your wallet to pay this request.");
         }
         /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -1606,8 +1605,8 @@ export default function UserDashboard() {
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         const amountMicros = parseUnits(limitDecimals(vaultActionAmount, 6), 6);
 
@@ -1936,8 +1935,8 @@ export default function UserDashboard() {
       ] as const;
 
       /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
@@ -6299,7 +6298,7 @@ function DepositModal({
 
     setCctpStatus("claiming");
     setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
-    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+    await switchChainAsync({ chainId: activeArcChain.id });
     const mintHash = await writeContractAsync({
       address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
       abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],

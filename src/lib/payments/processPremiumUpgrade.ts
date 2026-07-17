@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import crypto from "crypto";
 import { verifyTransaction } from "./verifyTransaction";
 import { activateSubscription } from "./activateSubscription";
-import { ARC_TESTNET_CHAIN_ID } from "./constants";
+import { ProtocolConfig } from "./config";
 import { executeWithRpcFallback } from "./rpc";
 
 const normalizeAddress = (value: string) => ethers.getAddress(value).toLowerCase();
@@ -220,8 +220,8 @@ export async function processPremiumUpgrade({
 
         const { result: verificationResult, rpcEndpoint } = await executeWithRpcFallback(async (provider) => {
             const network = await provider.getNetwork();
-            if (network.chainId !== BigInt(ARC_TESTNET_CHAIN_ID)) {
-                console.error(`[tx_invalid_chain] RPC network chain ID mismatch. Expected ${ARC_TESTNET_CHAIN_ID}, got ${network.chainId}`);
+            if (network.chainId !== BigInt(ProtocolConfig.CHAIN_ID)) {
+                console.error(`[tx_invalid_chain] RPC network chain ID mismatch. Expected ${ProtocolConfig.CHAIN_ID}, got ${network.chainId}`);
                 throw new Error("INVALID_CHAIN");
             }
 

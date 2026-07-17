@@ -14,10 +14,9 @@ import {
   parseEventLogs,
   parseUnits
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
 import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID,
   ARC_CCTP_DOMAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   SUBSCRIPT_ROUTER_ADDRESS,
@@ -31,7 +30,7 @@ import { sepolia } from "viem/chains";
 
 /* Initialize standard viem public client targeting Arc Testnet */
 const publicClient = createPublicClient({
-  chain: arcTestnet,
+  chain: activeArcChain,
   transport: arcHttp(),
 });
 
@@ -237,7 +236,7 @@ export default function SubScriptCheckout({
 
       // Step 5: Switch back to Arc Testnet
       setStatusMessage("Switching network back to Arc Testnet...");
-      await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      await switchChainAsync({ chainId: activeArcChain.id });
 
       // Step 6: Mint USDC on Arc
       setStatusMessage("Minting USDC on Arc Network...");
@@ -329,9 +328,9 @@ export default function SubScriptCheckout({
     setStatusMessage("Checking USDC allowance...");
 
     try {
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
+      if (chainId !== activeArcChain.id) {
         setStatusMessage("Switching to Arc Testnet...");
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
 
       const userAddress = getAddress(userWallet) as `0x${string}`;

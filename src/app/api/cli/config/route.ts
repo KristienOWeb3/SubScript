@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import {
-  ARC_TESTNET_CHAIN_ID,
   SUBSCRIPT_PROTOCOL_FEE_BPS,
   SUBSCRIPT_ROUTER_ADDRESS,
   STANDARD_CONTRACT_ADDRESS,
   USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
+import { ACTIVE_ARC_CHAIN_ID } from "@/lib/network/registry";
 
 export async function GET() {
   /* Sign with the dedicated CLI-config key if provided, otherwise the protocol owner key
@@ -26,7 +26,7 @@ export async function GET() {
        self-consistent — the CLI verifies the recovered signer against its own pinned owner
        address, so a stale hardcoded value here can never mask a wrong server key. */
     const config = {
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ACTIVE_ARC_CHAIN_ID,
       routerAddress: SUBSCRIPT_ROUTER_ADDRESS,
       standardAddress: STANDARD_CONTRACT_ADDRESS,
       usdcAddress: USDC_NATIVE_GAS_ADDRESS,
