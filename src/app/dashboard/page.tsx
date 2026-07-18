@@ -84,6 +84,7 @@ type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | 
 
 type MerchantPlan = {
     id: string;
+    targetSubscriber?: string | null;
     merchantAddress: string;
     name: string;
     description?: string | null;
@@ -1912,8 +1913,8 @@ export default function DashboardPage() {
                         id: `agent-run-${subscription.subscriptionId}`,
                         rawId: subscription.subscriptionId,
                         address: subscriber,
-                        displayAddress: subscription.subscriberName || shortAddress,
-                        shortSubAddress: subscription.subscriberName || shortAddress,
+                        displayAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        shortSubAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
                         limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
                         rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
                         rawPeriod: subscription.periodSeconds,
@@ -6199,7 +6200,9 @@ function MerchantPlanRow({
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
-                        {plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
+                        {plan.targetSubscriber
+                            ? `${plan.active ? "Assigned API offer" : "Assigned offer closed"} — ${plan.targetSubscriber.slice(0, 6)}…${plan.targetSubscriber.slice(-4)}`
+                            : plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
                     </p>
                 </div>
                 <button
@@ -6234,7 +6237,7 @@ function MerchantPlanRow({
                 </div>
             )}
 
-            {plan.active && (
+            {plan.active && !plan.targetSubscriber && (
                 <div data-testid="merchant-plan-link-strip" className="mt-3 grid min-w-0 gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 p-2 sm:flex sm:items-center sm:px-3 sm:py-2">
                     <span className="block min-w-0 max-w-full truncate border-b border-white/5 pb-1.5 font-mono text-[10px] text-white/45 sm:flex-1 sm:border-none sm:pb-0">{subscribeUrl}</span>
                     <div className="grid w-full min-w-0 grid-cols-2 gap-2 pt-1 sm:flex sm:w-auto sm:items-center sm:justify-end sm:pt-0">

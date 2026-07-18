@@ -121,6 +121,8 @@ export interface Subscription {
     intervalCount?: number;
     interval?: string | null;
     planId?: string | null;
+    merchantCustomerId?: string | null;
+    externalReference?: string | null;
     checkoutUrl?: string;
     cancelAtPeriodEnd?: boolean;
     [key: string]: unknown;
@@ -133,9 +135,12 @@ export interface CreateSubscriptionParams {
     intervalSeconds?: number;
     intervalCount?: number;
     subscriber?: string;
-    /** Publish this generic, unassigned checkout as a DM-selectable plan. Requires idempotencyKey. */
+    /** API-created plans publish to the merchant catalog/DM picker by default; set false to opt out. */
     publishToDm?: boolean;
     title?: string;
+    /** Merchant-owned customer/account identifier persisted through subscription lifecycle webhooks. */
+    merchantCustomerId?: string;
+    /** Backwards-compatible alias for merchantCustomerId. Values must match if both are supplied. */
     externalReference?: string;
     idempotencyKey?: string;
     sandbox?: boolean;

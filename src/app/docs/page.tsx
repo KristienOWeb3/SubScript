@@ -951,7 +951,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               </div>
 
               <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
-                Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
+                Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.updated</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
               </div>
             </section>
 

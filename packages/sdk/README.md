@@ -27,6 +27,16 @@ const sub = await subscript.subscriptions.create({
   interval: "monthly",
 });
 
+// Assign a plan to one existing SubScript user and bind it to your customer account.
+// The plan appears in the merchant dashboard and that user's DM by default.
+const assigned = await subscript.subscriptions.create({
+  amountUsdcMicros: usdc(19.99),
+  interval: "monthly",
+  subscriber: "0x…",
+  merchantCustomerId: "customer_1042",
+  idempotencyKey: "customer_1042_pro_monthly",
+});
+
 // Metered usage
 await subscript.usage.report({ userAddress: "0x…", amountUsdcMicros: usdc(0.5) });
 
@@ -51,6 +61,7 @@ const event = subscript.webhooks.constructEvent(
 // throws if the signature is invalid; otherwise returns the parsed event
 switch (event.type) {
   case "payment.succeeded": /* … */ break;
+  case "subscription.updated": /* upgrade the existing merchant account */ break;
   case "subscription.renewed": /* … */ break;
   case "subscription.payment_failed": /* dunning */ break;
   case "subscription.canceled": /* … */ break;
@@ -66,5 +77,11 @@ switch (event.type) {
 - Helpers: `usdc(decimal)` → micro-USDC string, `fromMicros(micros)` → decimal string
 
 All amounts are integer **micro-USDC** (1 USDC = 1,000,000). The full contract is published as an [OpenAPI 3.1 spec](https://www.subscriptonarc.com/openapi.json).
+
+Subscription products publish to the merchant dashboard and in-DM plan picker by default.
+Use `publishToDm: false` to keep a checkout private. A `subscriber`-assigned plan also creates
+a pending offer in that user's DM. `merchantCustomerId` (or `externalReference`) requires an
+assigned subscriber and remains attached through upgrade, renewal, cancellation, and webhook
+events. Customer plan changes are upgrade-only.
 
 Non-2xx responses throw `SubScriptError` (`.status`, `.body`).

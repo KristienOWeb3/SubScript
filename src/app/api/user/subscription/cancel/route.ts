@@ -9,6 +9,7 @@ import { mirrorSubscriptionCanceled, mirrorSubscriptionCancelAtPeriodEnd } from 
 import { triggerExitSurvey } from "@/lib/payments/email";
 import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
+import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 120;
 
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
         if (!sub.isActive) {
             return NextResponse.json({ error: "This subscription is already inactive" }, { status: 409 });
         }
+        const mirrored = await prisma.subscription.findUnique({
+            where: { subscriptionId: BigInt(subscriptionId) },
+            select: {
+                beneficiaryAddress: true,
+                externalReference: true,
+                sourceCheckoutId: true,
+            },
+        }).catch(() => null);
 
         /* Keep the user's already-paid days: if the current period hasn't ended, don't kill the
            sub on-chain now. Flag cancel-at-period-end (stops future billing) and let the
@@ -86,6 +95,9 @@ export async function POST(request: Request) {
             subscriber: wallet.toLowerCase(),
             merchantAddress: sub.merchant,
             txHash,
+            beneficiary: mirrored?.beneficiaryAddress ?? null,
+            externalReference: mirrored?.externalReference ?? null,
+            sourceCheckoutId: mirrored?.sourceCheckoutId ?? null,
             reason: "Canceled by subscriber",
         }), `customer-canceled:${subscriptionId}:${txHash.toLowerCase()}`);
 

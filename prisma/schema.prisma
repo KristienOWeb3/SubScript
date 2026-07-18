@@ -173,6 +173,9 @@ model MerchantPlan {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   merchantAddress String   @map("merchant_address")
   sourceCheckoutId String? @unique(map: "merchant_plans_source_checkout_id_key") @map("source_checkout_id") @db.Uuid
+  // NULL plans are public to every customer; API checkouts assigned to one subscriber
+  // remain visible and actionable only for that wallet.
+  targetSubscriber String? @map("target_subscriber")
   name            String
   description     String?
   detailsUrl      String?  @map("details_url")
@@ -185,6 +188,7 @@ model MerchantPlan {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([merchantAddress])
+  @@index([merchantAddress, active, targetSubscriber], map: "merchant_plans_visibility_idx")
   @@map("merchant_plans")
 }
 
@@ -210,6 +214,9 @@ model Subscription {
   // Sponsored subscriptions: the wallet that receives the service when it differs from
   // the paying subscriber. Carried in merchant webhooks for entitlement mapping.
   beneficiaryAddress      String?   @map("beneficiary_address")
+  // Merchant-owned account/entitlement binding copied from the originating API checkout.
+  externalReference       String?   @map("external_reference")
+  sourceCheckoutId        String?   @map("source_checkout_id") @db.Uuid
   // Snapshot of the plan's commitment window at subscribe time (<= one period by constraint).
   minCommitmentUntil      DateTime? @map("min_commitment_until")
   createdAt               DateTime  @default(now()) @map("created_at")
@@ -220,6 +227,8 @@ model Subscription {
   @@index([merchantAddress, kind, status, cancelAtPeriodEnd, downgradeFailures, subscriptionId(sort: Desc)], map: "subscriptions_merchant_attention_idx")
   @@index([subscriber])
   @@index([beneficiaryAddress])
+  @@index([merchantAddress, externalReference, kind, status], map: "subscriptions_merchant_reference_idx")
+  @@index([sourceCheckoutId], map: "subscriptions_source_checkout_id_idx")
   @@map("subscriptions")
 }
 

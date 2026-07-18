@@ -111,6 +111,63 @@ export async function createSubscriptionStartedDm({
 }
 
 /**
+ * Deliver a merchant-authored API subscription offer to one SubScript user.
+ * The checkout id is the durable identity: retries return the existing DM
+ * instead of sending duplicate inbox rows or push notifications.
+ */
+export async function createSubscriptionOfferDm({
+    merchantAddress,
+    subscriberAddress,
+    checkoutSessionId,
+    planName,
+    amountUsdc,
+    periodSeconds,
+}: {
+    merchantAddress: string;
+    subscriberAddress: string;
+    checkoutSessionId: string;
+    planName: string;
+    amountUsdc: bigint;
+    periodSeconds: bigint;
+}) {
+    const merchant = merchantAddress.toLowerCase();
+    const subscriber = subscriberAddress.toLowerCase();
+    const dedupeKey = `subscription-offer:${checkoutSessionId}:${subscriber}`;
+
+    const existing = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+    if (existing) return existing;
+
+    const merchantAlias = await prisma.addressAlias.findUnique({ where: { address: merchant } }).catch(() => null);
+    const merchantName = merchantAlias?.alias || `${merchant.slice(0, 6)}...${merchant.slice(-4)}`;
+    const amount = formatUsdcFromMicros(amountUsdc);
+    const cadence = formatPeriodLabel(periodSeconds);
+
+    try {
+        return await createDmAndNotify({
+            senderAddress: merchant,
+            receiverAddress: subscriber,
+            messageType: "SUBSCRIPTION_OFFER",
+            status: "PENDING",
+            amountUsdc,
+            title: `${merchantName} offered ${planName}`,
+            description: [
+                `Merchant: ${merchantName}`,
+                `Plan: ${planName}`,
+                `Amount: ${amount} USDC / ${cadence}`,
+                "Review the recurring terms, then accept or decline this plan.",
+            ].join("\n"),
+            paymentLinkId: checkoutSessionId,
+            dedupeKey,
+        });
+    } catch (error: any) {
+        if (error?.code !== "P2002") throw error;
+        const raced = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+        if (!raced) throw error;
+        return raced;
+    }
+}
+
+/**
  * True if a subscription has opened a merchant→user DM thread (a SUBSCRIPTION_STARTED,
  * EXPIRY_WARNING, or CHURN_SURVEY DM — all subscription-lifecycle only). Used to gate
  * one-time payment receipt DMs so they appear only after a subscription relationship.

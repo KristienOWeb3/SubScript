@@ -62,7 +62,7 @@ export async function healSubscriptionDrift(
 
     const { data: liveSubs, error: liveErr } = await supabase
         .from("subscriptions")
-        .select("subscription_id, merchant_address, status, amount_cap_usdc, last_settlement_timestamp, updated_at")
+        .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
         .in("status", ["ACTIVE", "PAST_DUE"])
         .order("updated_at", { ascending: true })
         .limit(liveBudget);
@@ -71,7 +71,7 @@ export async function healSubscriptionDrift(
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: cancelledSubs, error: cancErr } = await supabase
         .from("subscriptions")
-        .select("subscription_id, merchant_address, status, amount_cap_usdc, updated_at")
+        .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, updated_at")
         .eq("status", "CANCELED")
         .gte("updated_at", fourteenDaysAgo)
         .order("updated_at", { ascending: true })
@@ -105,6 +105,9 @@ export async function healSubscriptionDrift(
                     amountUsdcMicros: sub.amount_cap_usdc || 0,
                     subscriber,
                     merchantAddress: sub.merchant_address,
+                    beneficiary: sub.beneficiary_address || null,
+                    externalReference: sub.external_reference || null,
+                    sourceCheckoutId: sub.source_checkout_id || null,
                     reason: "Canceled on-chain (reconciled)",
                 }), `drift-canceled:${subId}`);
                 healed.push({ subId, action: "MIRRORED_ONCHAIN_CANCEL" });
