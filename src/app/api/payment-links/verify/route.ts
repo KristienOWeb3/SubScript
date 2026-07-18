@@ -131,6 +131,13 @@ export async function POST(request: Request) {
         if (linkError || !paymentLink) {
             return NextResponse.json({ error: "Payment Link Not Found" }, { status: 404 });
         }
+        if (
+            typeof paymentLink.receiver_address === "string" &&
+            paymentLink.receiver_address.trim() &&
+            paymentLink.receiver_address.toLowerCase() !== normalizedPayer
+        ) {
+            return NextResponse.json({ error: "This payment request is locked to another SubScript user." }, { status: 403 });
+        }
 
         const settlesDirectlyToUser = isUserPaymentLink(paymentLink);
         const beneficiaryValidation = validateBeneficiaryAddress(

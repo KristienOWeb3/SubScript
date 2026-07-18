@@ -76,6 +76,26 @@ function messageOf(error: unknown) {
     return error instanceof Error ? error.message : "Payment verification failed";
 }
 
+function sponsoredWebhookMetadata(stateSnapshot: unknown): Record<string, unknown> | undefined {
+    if (!stateSnapshot || typeof stateSnapshot !== "object") return undefined;
+    const snapshot = stateSnapshot as Record<string, unknown>;
+    if (snapshot.isSponsored !== true) return undefined;
+    const sponsoredPlanId = typeof snapshot.sponsoredPlanId === "string" ? snapshot.sponsoredPlanId : null;
+    const sponsoredPlanName = typeof snapshot.sponsoredPlanName === "string" ? snapshot.sponsoredPlanName : null;
+    const durationSeconds = typeof snapshot.durationSeconds === "number" && Number.isFinite(snapshot.durationSeconds)
+        ? snapshot.durationSeconds
+        : null;
+    return {
+        isSponsored: true,
+        sponsoredPlanId,
+        sponsored_plan_id: sponsoredPlanId,
+        sponsoredPlanName,
+        sponsored_plan_name: sponsoredPlanName,
+        durationSeconds,
+        duration_seconds: durationSeconds,
+    };
+}
+
 async function completeJob(supabase: any, job: PaymentLinkVerificationJob) {
     const { data, error } = await supabase.rpc("complete_payment_link_verification_job", {
         p_job_id: job.id,
@@ -431,6 +451,15 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
             assertVerifiedTransaction(job, receipt, txLookup.result);
 
             const shareUrl = receiptUrl(job.receipt_id, job.request_origin);
+            const { data: parentLink, error: parentLinkError } = await supabase
+                .from("payment_links")
+                .select("state_snapshot")
+                .eq("id", job.payment_link_id)
+                .maybeSingle();
+            if (parentLinkError) {
+                throw new Error(`Failed to read payment-link metadata: ${parentLinkError.message}`);
+            }
+            const webhookMetadata = sponsoredWebhookMetadata(parentLink?.state_snapshot);
             const webhookPayload = job.settles_directly_to_user ? null : createPaymentSucceededWebhook({
                 paymentId: "pending",
                 checkoutSessionId: job.payment_link_id,
@@ -441,6 +470,7 @@ async function verifyAndFinalize(supabase: any, job: PaymentLinkVerificationJob)
                 payerAddress: job.payer_address,
                 beneficiaryAddress: job.beneficiary_address,
                 chainId: Number(job.chain_id),
+                metadata: webhookMetadata,
             });
             const { data: finalizeResult, error: finalizeError } = await supabase.rpc(
                 "finalize_payment_link_settlement",

@@ -22,6 +22,7 @@ export function createPaymentSucceededWebhook(args: {
     payerAddress: string;
     beneficiaryAddress: string;
     chainId?: number;
+    metadata?: Record<string, unknown>;
 }) {
     const amountPaid = formatUsdc(args.amountUsdc);
     const amountUsdcMicros = (typeof args.amountUsdc === "bigint" ? args.amountUsdc : BigInt(args.amountUsdc)).toString();
@@ -48,6 +49,7 @@ export function createPaymentSucceededWebhook(args: {
             txHash: args.txHash,
             transaction_hash: args.txHash,
             ...paymentIdentityMetadata(args.payerAddress, args.beneficiaryAddress),
+            ...(args.metadata ?? {}),
             // On-chain reconciliation: verify settlement independently.
             chain_id: settlement.chainId,
             chainId: settlement.chainId,

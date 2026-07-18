@@ -6,7 +6,7 @@ import { useAccount, useConnect, useDisconnect, useWriteContract, useBalance, us
 import { formatUnits } from "viem";
 import { 
     Loader2, CheckCircle, AlertTriangle, AlertCircle,
-    Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert
+    Wallet, ExternalLink, ArrowRight, Lock, QrCode, Shield, ShieldAlert, Gift
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import { motion, AnimatePresence } from "framer-motion";
@@ -61,6 +61,12 @@ function isPendingCheckoutVerification(value: unknown): value is PendingCheckout
         && (candidate.source === "wallet" || candidate.source === "embedded")
         && (candidate.phase === "broadcast" || candidate.phase === "confirmed")
         && (candidate.receiptId === null || typeof candidate.receiptId === "string");
+}
+
+function formatCheckoutAddress(address: string) {
+    return /^0x[a-fA-F0-9]{40}$/.test(address)
+        ? `${address.slice(0, 6)}...${address.slice(-4)}`
+        : address;
 }
 
 export default function PublicPayClient({
@@ -161,6 +167,16 @@ export default function PublicPayClient({
         linkData?.external_reference?.startsWith("peer-request:") ||
         linkData?.external_reference?.startsWith("dm-peer-request:")
     );
+    const giftBeneficiaryAddress = typeof linkData?.beneficiary_address === "string"
+        ? linkData.beneficiary_address
+        : typeof linkData?.beneficiaryAddress === "string"
+            ? linkData.beneficiaryAddress
+            : null;
+    const giftBeneficiaryLabel = typeof linkData?.beneficiary_display_name === "string" && linkData.beneficiary_display_name
+        ? linkData.beneficiary_display_name
+        : giftBeneficiaryAddress
+            ? formatCheckoutAddress(giftBeneficiaryAddress)
+            : null;
 
     /* Merchant-site return URLs from the checkout intent (POST /api/intent successUrl/cancelUrl).
        A merchant integration opens this hosted checkout in a new tab, so after settlement the
@@ -1844,6 +1860,22 @@ export default function PublicPayClient({
                             )}
                         </div>
 
+                        {giftBeneficiaryLabel && (
+                            <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-[#ccff00]/20 bg-black/30 text-[#ccff00]">
+                                        <Gift className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ccff00]">Gift payment</p>
+                                        <p className="mt-1 text-xs leading-relaxed text-white/70">
+                                            This payment is a gift. Access will be granted to{" "}
+                                            <span className="font-mono font-bold text-white">{giftBeneficiaryLabel}</span>.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Amount Due</span>
