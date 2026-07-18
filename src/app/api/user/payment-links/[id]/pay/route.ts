@@ -88,6 +88,9 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (payer === recipient) {
             return NextResponse.json({ error: "You can't pay your own payment link." }, { status: 400 });
         }
+        if (link.receiverAddress && link.receiverAddress.toLowerCase() !== payer) {
+            return NextResponse.json({ error: "This payment request is locked to another SubScript user." }, { status: 403 });
+        }
 
         const settlesDirectlyToUser = isPeerRequestLink(link);
 

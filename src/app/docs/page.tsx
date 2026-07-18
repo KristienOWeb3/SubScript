@@ -311,6 +311,12 @@ const webhookPayloadCode = `{
     "amount": "15",
     "amount_usdc_micros": "15000000",
     "currency": "USDC",
+    "beneficiary_address": "0xbeneficiary...",
+    "beneficiaryAddress": "0xbeneficiary...",
+    "isSponsored": true,
+    "sponsoredPlanId": "plan_123",
+    "sponsoredPlanName": "Pro Weekly",
+    "durationSeconds": 604800,
     "receipt_id": "rcpt-7e10c918a3aa672eb783f1b965914b12",
     "transaction_hash": "0x...",
     "chain_id": 5042002,
@@ -1150,6 +1156,18 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
 
               <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
                 Canonical event: <span className="font-mono">type: &quot;payment.succeeded&quot;</span>. Use <span className="font-mono">data.intent_id</span> to find the SubScript checkout and <span className="font-mono">data.merchant_reference</span> to find your own user or order. The legacy <span className="font-mono">event: &quot;payment.success&quot;</span> alias is present only for compatibility.
+              </div>
+
+              <div className="rounded-2xl border border-[#ccff00]/20 bg-[#ccff00]/10 p-5 text-xs leading-relaxed text-white/75">
+                <p className="font-bold text-white/85">Sponsored plan fulfillment</p>
+                <p className="mt-2">
+                  A user can generate a shareable gift checkout from a merchant plan with{" "}
+                  <span className="font-mono">POST /api/user/requests/merchant-plan</span>. The checkout is a one-time payment for the plan&apos;s regular price and one billing duration. In{" "}
+                  <span className="font-mono">payment.succeeded</span>, check <span className="font-mono">data.isSponsored</span>,{" "}
+                  <span className="font-mono">data.beneficiary_address</span>, <span className="font-mono">data.sponsoredPlanId</span>, and{" "}
+                  <span className="font-mono">data.durationSeconds</span>. Credit the beneficiary, not necessarily the payer. If that beneficiary already has active access, extend the existing access window by{" "}
+                  <span className="font-mono">durationSeconds</span> instead of rejecting the webhook or creating a duplicate subscription.
+                </p>
               </div>
 
               <CodeBlock code={webhookPayloadCode} language="json" />

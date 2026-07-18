@@ -58,6 +58,7 @@ import {
   MessageSquare,
   QrCode,
   Send,
+  Share2,
   Shield,
   User,
   Users,
@@ -374,6 +375,12 @@ export default function UserDashboard() {
   const [planManagerOpen, setPlanManagerOpen] = useState(false);
   const [planManagerStatus, setPlanManagerStatus] = useState<string | null>(null);
   const [planManagerError, setPlanManagerError] = useState<string | null>(null);
+  const [giftPlan, setGiftPlan] = useState<MerchantPlan | null>(null);
+  const [giftFriendUsername, setGiftFriendUsername] = useState("");
+  const [giftRequestUrl, setGiftRequestUrl] = useState<string | null>(null);
+  const [giftRequestError, setGiftRequestError] = useState<string | null>(null);
+  const [giftRequestCopied, setGiftRequestCopied] = useState(false);
+  const [giftRequestBusyPlanId, setGiftRequestBusyPlanId] = useState<string | null>(null);
   const [registeredDomain, setRegisteredDomain] = useState<string | null>(null);
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(() => {
@@ -1271,6 +1278,53 @@ export default function UserDashboard() {
     }
 
     await applyPlanChange("scheduled");
+  };
+
+  const openGiftPlanModal = (plan: MerchantPlan) => {
+    setGiftPlan(plan);
+    setGiftFriendUsername("");
+    setGiftRequestUrl(null);
+    setGiftRequestError(null);
+    setGiftRequestCopied(false);
+  };
+
+  const copyGiftRequestUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url);
+    setGiftRequestCopied(true);
+    triggerToast("Gift checkout link copied!");
+    setTimeout(() => setGiftRequestCopied(false), 1600);
+  };
+
+  const handleCreateGiftPlanRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!giftPlan) return;
+    setGiftRequestError(null);
+    setGiftRequestBusyPlanId(giftPlan.id);
+    try {
+      const res = await fetch("/api/user/requests/merchant-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantAddress: giftPlan.merchantAddress,
+          planId: giftPlan.id,
+          amountUsdcMicros: giftPlan.amountUsdc,
+          title: `Sponsor ${giftPlan.name}`,
+          description: giftPlan.description || `Gift checkout for ${giftPlan.name}`,
+          friendUsername: giftFriendUsername.trim() || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not create gift checkout.");
+      const absoluteUrl = typeof data.checkoutUrl === "string" && /^https?:\/\//i.test(data.checkoutUrl)
+        ? data.checkoutUrl
+        : `${window.location.origin}${data.checkoutUrl || `/pay/${data.paymentLinkId}`}`;
+      setGiftRequestUrl(absoluteUrl);
+      await copyGiftRequestUrl(absoluteUrl).catch(() => {});
+    } catch (err: any) {
+      setGiftRequestError(err.message || "Could not create gift checkout.");
+    } finally {
+      setGiftRequestBusyPlanId(null);
+    }
   };
 
   const handleCancelSubscriptionForMerchant = async (merchantAddress: string) => {
@@ -3214,7 +3268,9 @@ export default function UserDashboard() {
                               error={planManagerError}
                               onToggle={handleTogglePlanManager}
                               onSubscribe={handleSubscribeOrSwitchPlan}
+                              onAskFriend={openGiftPlanModal}
                               onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                              giftLoadingPlanId={giftRequestBusyPlanId}
                             />
                           ) : (
                             <div className="flex flex-col gap-2">
@@ -3355,7 +3411,9 @@ export default function UserDashboard() {
                                   error={planManagerError}
                                   onToggle={handleTogglePlanManager}
                                   onSubscribe={handleSubscribeOrSwitchPlan}
+                                  onAskFriend={openGiftPlanModal}
                                   onCancel={() => selectedDmPeer && handleCancelSubscriptionForMerchant(selectedDmPeer)}
+                                  giftLoadingPlanId={giftRequestBusyPlanId}
                                 />
                               ) : (
                                 <div className="flex flex-col gap-2">
@@ -5163,6 +5221,127 @@ export default function UserDashboard() {
       <VaultInfoModal open={vaultInfoOpen} onClose={() => setVaultInfoOpen(false)} />
 
       <AnimatePresence>
+        {giftPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[65] flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
+            onClick={() => giftRequestBusyPlanId === null && setGiftPlan(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 16, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 26 }}
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gift-plan-title"
+              className="w-full max-w-md space-y-5 rounded-3xl border border-[#00d2b4]/20 bg-[#0c0c10] p-6 text-white shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00d2b4]">Gift checkout</p>
+                  <h2 id="gift-plan-title" className="mt-1 text-lg font-black text-white">{giftPlan.name}</h2>
+                  <p className="mt-1 text-xs font-bold text-[#ccff00]">
+                    {formatUsdc(giftPlan.amountUsdc)} USDC / {formatPlanPeriod(giftPlan.periodSeconds)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGiftPlan(null)}
+                  disabled={giftRequestBusyPlanId !== null}
+                  className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 disabled:opacity-40"
+                  aria-label="Close gift checkout modal"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {giftRequestUrl ? (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider text-emerald-200">Gift link ready</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-white/55">
+                          Share this checkout anywhere. The payment is one-time, single-use, and credits access to your account.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                    <p className="break-all font-mono text-[11px] leading-relaxed text-white/70">{giftRequestUrl}</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => copyGiftRequestUrl(giftRequestUrl)}
+                      className="dm-quick-button justify-center border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
+                    >
+                      <Copy className="h-3.5 w-3.5" /> {giftRequestCopied ? "Copied!" : "Copy"}
+                    </button>
+                    <a
+                      href={`https://t.me/share/url?url=${encodeURIComponent(giftRequestUrl)}&text=${encodeURIComponent(`Sponsor my ${giftPlan.name} plan on SubScript`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="dm-quick-button justify-center border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4]"
+                    >
+                      <Share2 className="h-3.5 w-3.5" /> Telegram
+                    </a>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent(`Sponsor ${giftPlan.name}`)}&body=${encodeURIComponent(`You can sponsor this SubScript plan here:\n\n${giftRequestUrl}`)}`}
+                      className="dm-quick-button justify-center border-white/10 bg-white/[0.05] text-white/70"
+                    >
+                      <Mail className="h-3.5 w-3.5" /> Email
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleCreateGiftPlanRequest} className="space-y-4">
+                  <p className="text-xs leading-relaxed text-white/55">
+                    This creates a shareable one-time checkout for the plan price and duration. It does not create a second recurring authorization.
+                  </p>
+                  <Field label="Lock to a friend's username (optional)">
+                    <input
+                      value={giftFriendUsername}
+                      onChange={(event) => setGiftFriendUsername(event.target.value)}
+                      placeholder="friend.sub or friend"
+                      className="subscript-input"
+                      disabled={giftRequestBusyPlanId !== null}
+                    />
+                  </Field>
+                  <p className="text-[10px] leading-relaxed text-white/40">
+                    Leave it blank to make a public link. If you enter a username, only that SubScript user can pay it.
+                  </p>
+                  {giftRequestError && <p className="text-[11px] font-bold text-red-300">{giftRequestError}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGiftPlan(null)}
+                      disabled={giftRequestBusyPlanId !== null}
+                      className="dm-quick-button min-w-0 border-white/10 bg-white/[0.06] text-white/55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={giftRequestBusyPlanId !== null}
+                      className={`dm-quick-button dm-action-menu-trigger relative min-w-0 overflow-hidden text-white ${giftRequestBusyPlanId !== null ? "quick-action-loading" : ""}`}
+                    >
+                      {giftRequestBusyPlanId !== null ? "Creating..." : "Create link"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {vaultActionOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -6184,7 +6363,9 @@ function MerchantPlanManager({
   error,
   onToggle,
   onSubscribe,
+  onAskFriend,
   onCancel,
+  giftLoadingPlanId,
 }: {
   open: boolean;
   merchantLabel: string;
@@ -6196,7 +6377,9 @@ function MerchantPlanManager({
   error: string | null;
   onToggle: () => void;
   onSubscribe: (plan: MerchantPlan) => void;
+  onAskFriend: (plan: MerchantPlan) => void;
   onCancel: () => void;
+  giftLoadingPlanId?: string | null;
 }) {
   const hasActiveSubscription = !!activeSubscription;
   const activePlan = activeSubscription
@@ -6294,6 +6477,7 @@ function MerchantPlanManager({
                     }
                   }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
+                  const giftBusy = giftLoadingPlanId === plan.id;
                   return (
                     <motion.div
                       key={plan.id}
@@ -6357,6 +6541,17 @@ function MerchantPlanManager({
                             : hasActiveSubscription
                               ? "Upgrade"
                               : "Subscribe"}
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.93 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
+                        type="button"
+                        onClick={() => onAskFriend(plan)}
+                        disabled={giftBusy}
+                        className={`mt-2 w-full rounded-xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#00d2b4] transition hover:bg-[#00d2b4]/18 disabled:opacity-45 ${giftBusy ? "quick-action-loading" : ""}`}
+                      >
+                        {giftBusy ? "Creating link" : "Ask a Friend to Pay"}
                       </motion.button>
                     </motion.div>
                   );
