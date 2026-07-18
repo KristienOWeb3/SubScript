@@ -2742,7 +2742,7 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className={`min-w-0 flex-1 md:h-full ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
+        <div className={`min-w-0 flex-1 md:h-full ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -2790,9 +2790,13 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 items-start">
+        <div className={`grid grid-cols-1 gap-8 items-start ${
+          isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""
+        }`}>
           {/* Right main view content */}
-          <div className="col-span-1 min-h-[500px]">
+          <div className={`col-span-1 ${
+            isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "min-h-[500px]"
+          }`}>
             {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
                 incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
                 whenever a re-render or second tap landed mid-exit on slow mobile frames, leaving
@@ -2802,7 +2806,7 @@ export default function UserDashboard() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="min-h-0"
+              className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
             {activeTab === "home" && (
               <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
