@@ -20,12 +20,132 @@ const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const MAX_SCAN_FILES = 400;
 
 interface ScanResult {
-    intentCallers: string[];   // files that call the checkout intent API
-    webhookHandlers: string[]; // files that verify SubScript webhook signatures
+    checkoutCallers: string[];          // files that call any checkout API
+    intentCallers: string[];            // files that call the one-time intent API
+    subscriptionCallers: string[];      // files that call the recurring subscription API
+    suspiciousIntentCallers: string[];  // intent callers that also send recurring-only fields
+    webhookHandlers: string[];          // files that verify SubScript webhook signatures
+}
+
+export interface CheckoutApiCall {
+    endpoint: "/api/intent" | "/api/v1/subscriptions";
+    source: string;
+}
+
+function maskStringsAndComments(source: string): string {
+    let result = "";
+    let quote: "'" | '"' | "`" | null = null;
+    let escaped = false;
+
+    for (let index = 0; index < source.length; index++) {
+        const char = source[index];
+        const next = source[index + 1];
+
+        if (quote) {
+            result += char === "\n" ? "\n" : " ";
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === quote) {
+                quote = null;
+            }
+            continue;
+        }
+
+        if (char === "'" || char === '"' || char === "`") {
+            quote = char;
+            result += " ";
+            continue;
+        }
+
+        if (char === "/" && next === "/") {
+            while (index < source.length && source[index] !== "\n") {
+                result += " ";
+                index++;
+            }
+            if (index < source.length) result += "\n";
+            continue;
+        }
+
+        if (char === "/" && next === "*") {
+            result += "  ";
+            index += 2;
+            while (index < source.length) {
+                if (source[index] === "*" && source[index + 1] === "/") {
+                    result += "  ";
+                    index++;
+                    break;
+                }
+                result += source[index] === "\n" ? "\n" : " ";
+                index++;
+            }
+            continue;
+        }
+
+        result += char;
+    }
+
+    return result;
+}
+
+function findCallEnd(source: string, openParen: number): number {
+    let depth = 0;
+    let quote: "'" | '"' | "`" | null = null;
+    let escaped = false;
+
+    for (let index = openParen; index < source.length; index++) {
+        const char = source[index];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === quote) {
+                quote = null;
+            }
+            continue;
+        }
+        if (char === "'" || char === '"' || char === "`") {
+            quote = char;
+            continue;
+        }
+        if (char === "(") depth++;
+        if (char === ")" && --depth === 0) return index;
+    }
+
+    return source.length - 1;
+}
+
+export function findCheckoutApiCalls(content: string): CheckoutApiCall[] {
+    const calls: CheckoutApiCall[] = [];
+    const searchable = maskStringsAndComments(content);
+    const callPattern = /\b(fetch|axios\.post)\s*\(/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = callPattern.exec(searchable))) {
+        const openParen = searchable.indexOf("(", match.index);
+        const end = findCallEnd(searchable, openParen);
+        const source = content.slice(match.index, end + 1);
+        const isPost = match[1] === "axios.post" || /\bmethod\s*:\s*["']POST["']/i.test(source);
+        if (!isPost) continue;
+
+        for (const endpoint of ["/api/intent", "/api/v1/subscriptions"] as const) {
+            if (source.includes(endpoint)) calls.push({ endpoint, source });
+        }
+    }
+
+    return calls;
 }
 
 async function scanForIntegration(cwd: string): Promise<ScanResult> {
-    const result: ScanResult = { intentCallers: [], webhookHandlers: [] };
+    const result: ScanResult = {
+        checkoutCallers: [],
+        intentCallers: [],
+        subscriptionCallers: [],
+        suspiciousIntentCallers: [],
+        webhookHandlers: [],
+    };
     let filesRead = 0;
 
     async function walk(dir: string, depth: number) {
@@ -51,8 +171,26 @@ async function scanForIntegration(cwd: string): Promise<ScanResult> {
                     continue;
                 }
                 const rel = path.relative(cwd, full);
-                if (content.includes("/api/intent") || content.includes("SUBSCRIPT_SECRET_KEY")) {
+                const apiCalls = findCheckoutApiCalls(content);
+                const intentCalls = apiCalls.filter((call) => call.endpoint === "/api/intent");
+                const subscriptionCalls = apiCalls.filter(
+                    (call) => call.endpoint === "/api/v1/subscriptions"
+                );
+                if (apiCalls.length > 0) {
+                    result.checkoutCallers.push(rel);
+                }
+                if (intentCalls.length > 0) {
                     result.intentCallers.push(rel);
+                }
+                if (subscriptionCalls.length > 0) {
+                    result.subscriptionCallers.push(rel);
+                }
+                if (
+                    intentCalls.some((call) =>
+                        /["']?\b(interval|intervalSeconds|intervalCount|periodDays|planId|publishToDm|subscriber|merchantCustomerId)\b["']?\s*:/.test(call.source)
+                    )
+                ) {
+                    result.suspiciousIntentCallers.push(rel);
                 }
                 if (content.includes("x-subscript-signature") || content.includes("SUBSCRIPT_WEBHOOK_SECRET")) {
                     result.webhookHandlers.push(rel);
@@ -161,22 +299,35 @@ export async function runDoctor() {
     }
 
     /* 3. Find the actual integration surface — CLI-generated files or hand-written code that
-       calls /api/intent or verifies webhook signatures. */
+       calls a checkout API or verifies webhook signatures. */
     const scan = await scanForIntegration(cwd);
     const cliCheckoutRoute = paths && paths.hasBackend && existsSync(paths.checkoutPath);
     const cliWebhookRoute = paths && paths.hasBackend && existsSync(paths.webhookPath);
-    const hasCheckout = cliCheckoutRoute || scan.intentCallers.length > 0;
+    const hasCheckout = cliCheckoutRoute || scan.checkoutCallers.length > 0;
     const hasWebhook = cliWebhookRoute || scan.webhookHandlers.length > 0;
 
     if (hasCheckout) {
+        const detectedBillingModel = scan.subscriptionCallers.length > 0
+            ? "recurring subscription"
+            : scan.intentCallers.length > 0
+                ? "one-time intent"
+                : "checkout";
         notes.push(cliCheckoutRoute
-            ? `Checkout intent route: ${path.relative(cwd, paths!.checkoutPath)}`
-            : `Checkout integration (hand-written): ${scan.intentCallers[0]}`);
+            ? `${detectedBillingModel[0].toUpperCase()}${detectedBillingModel.slice(1)} route: ${path.relative(cwd, paths!.checkoutPath)}`
+            : `${detectedBillingModel[0].toUpperCase()}${detectedBillingModel.slice(1)} integration (hand-written): ${scan.checkoutCallers[0]}`);
     } else {
         issues.push({
             code: "no_checkout_integration",
-            issue: "No checkout integration found (no CLI-generated intent route and no code calling /api/intent).",
-            fix: "Scaffold one: npx @subscriptonarc/cli add checkout",
+            issue: "No checkout integration found (no code calling /api/intent or /api/v1/subscriptions).",
+            fix: "For recurring billing run `npx @subscriptonarc/cli init`; for a one-time payment run `npx @subscriptonarc/cli add checkout`.",
+        });
+    }
+
+    if (scan.suspiciousIntentCallers.length > 0) {
+        issues.push({
+            code: "recurring_fields_on_payment_intent",
+            issue: `${scan.suspiciousIntentCallers[0]} calls the one-time /api/intent endpoint while sending recurring-only fields. That checkout cannot renew or appear as a DM plan.`,
+            fix: "Use POST /api/v1/plans for a reusable catalog plan or POST /api/v1/subscriptions for recurring checkout. Keep /api/intent only for one-time payments.",
         });
     }
 
@@ -196,7 +347,7 @@ export async function runDoctor() {
     if (hasCheckout && !(await readEnvVar(cwd, "SUBSCRIPT_SECRET_KEY"))) {
         issues.push({
             code: "missing_secret_key",
-            issue: "SUBSCRIPT_SECRET_KEY is missing (or a placeholder) in .env.local — the checkout route can't create intents.",
+            issue: "SUBSCRIPT_SECRET_KEY is missing (or a placeholder) in .env.local — the checkout route can't create payment or subscription checkouts.",
             fix: "Copy your sk_test_/sk_live_ key from Dashboard → Developers → API keys into .env.local.",
         });
     }

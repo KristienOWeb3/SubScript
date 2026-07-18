@@ -252,7 +252,9 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       
       // Click Replay Event
       await page.click('button:has-text("Replay"):visible');
-      await expect(page.locator("text=successfully re-delivered")).toBeVisible();
+      // The replay outcome now surfaces in two places — the inline observability log and the
+      // action banner — so scope the assertion to the first match to avoid a strict-mode violation.
+      await expect(page.locator("text=successfully re-delivered").first()).toBeVisible();
     });
 
     test("should keep off-ramp settlement disabled", async ({ page }) => {

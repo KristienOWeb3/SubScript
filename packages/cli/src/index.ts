@@ -55,7 +55,7 @@ async function runWizard() {
     intro("@subscriptonarc/integration-wizard");
 
     const secretKeyResult = await text({
-        message: "Enter your SubScript Secret Key (server-side Checkout Intent key):",
+        message: "Enter your SubScript Secret Key (server-side payment and subscription API key):",
         placeholder: "sk_test_...",
         validate(value) {
             if (!value || value.trim().length === 0) {
@@ -398,7 +398,7 @@ Commands:
   init --key <sk_...> --merchant <0x...> --yes
                         Fully non-interactive setup (no dashboard round-trip).
   init --session <tok>  Non-interactive setup using a token from your merchant dashboard.
-  add checkout          Scaffold the checkout intent server route + button (works without init).
+  add checkout          Scaffold a one-time payment-intent route + button (works without init).
   add webhook           Scaffold the signed webhook receiver route (works without init).
   doctor                Diagnose an existing SubScript integration (exit 1 when issues found).
   verify                Verify generated files against the protocol templates (exit 1 on FAIL).
@@ -415,7 +415,7 @@ Options:
   --merchant <0x...>    init: merchant payout wallet address.
   --framework <name>    init/add: next-app | next-pages | react-spa | express (skips auto-detect).
   --mode <mode>         "standard" (default) or "privacy-routed".
-  --plan-name <name>    init: subscription plan name (default "Premium Subscription").
+  --plan-name <name>    init: recurring subscription plan name (default "Premium Subscription").
   --amount <usdc>       init: plan amount cap in USDC (default 10).
   --interval <seconds>  init: plan interval in seconds (default 2592000 = 30 days).
   -y, --yes             init: accept defaults, never prompt.

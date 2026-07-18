@@ -22,6 +22,27 @@ const merchantPlan = {
   active: true,
 };
 
+const dmMessages = Array.from({ length: 18 }, (_, index) => ({
+  id: `dm-mobile-audit-${index + 1}`,
+  senderAddress: merchantAddress.toLowerCase(),
+  senderName: "Mobile Audit Merchant",
+  senderRole: "ENTERPRISE",
+  senderProfilePic: null,
+  receiverAddress: userAddress.toLowerCase(),
+  receiverName: "Mobile User",
+  receiverRole: "USER",
+  receiverProfilePic: null,
+  messageType: "DEBIT_SUCCESS",
+  status: "COMPLETED",
+  amountUsdc: "25000000",
+  title: `Subscription message ${index + 1}`,
+  description:
+    "A deliberately long direct-message description that creates enough history to verify the pinned conversation bars.",
+  txHash: null,
+  paymentLinkId: null,
+  createdAt: new Date(Date.UTC(2026, 5, 1, 0, index)).toISOString(),
+}));
+
 const publicRoutes = [
   "/",
   "/answers",
@@ -218,7 +239,7 @@ async function newAuditContext(
 
     if (path === "/api/user/vault/config") return json({ success: true, vaults: [], config: null });
     if (path === "/api/user/subscriptions") return json({ success: true, subscriptions: [] });
-    if (path === "/api/user/dms") return json({ success: true, dms: [] });
+    if (path === "/api/user/dms") return json({ success: true, dms: dmMessages });
     if (path === "/api/user/payment-links") return json({ success: true, links: [] });
     if (path === "/api/user/requests") return json({ success: true, requests: [] });
     if (path === "/api/user/email") return json({ success: true });
@@ -460,6 +481,48 @@ test.describe("mobile overflow audit", () => {
     expect(overflowResult.horizontalProtrusions).toEqual([]);
     expect(overflowResult.fixedVerticalProtrusions).toEqual([]);
     await mobileContext.close();
+  });
+
+  test("keeps both mobile DM bars visible while message history scrolls", async ({ browser }, testInfo) => {
+    const context = await newAuditContext(
+      browser,
+      { name: "mobile", width: 390, height: 844 },
+      "user",
+    );
+    const page = await context.newPage();
+    await page.goto(`${baseURL}/dashboard/user?tab=inbox`, { waitUntil: "domcontentloaded" });
+
+    await page.getByText("Mobile Audit Merchant", { exact: true }).first().click();
+
+    const header = page.getByRole("banner").filter({ hasText: "Mobile Audit Merchant" });
+    const footer = page.getByTestId("mobile-dm-action-footer");
+    const messages = page.getByTestId("mobile-dm-message-scroller");
+
+    await expect(header).toBeVisible();
+    await expect(footer).toBeVisible();
+    await expect(messages).toBeVisible();
+
+    await page.waitForTimeout(500);
+    const before = await Promise.all([header.boundingBox(), footer.boundingBox()]);
+    await messages.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect.poll(() => messages.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+    const after = await Promise.all([header.boundingBox(), footer.boundingBox()]);
+    expect(before[0]).not.toBeNull();
+    expect(before[1]).not.toBeNull();
+    expect(after[0]).not.toBeNull();
+    expect(after[1]).not.toBeNull();
+    expect(after[0]!.y).toBeCloseTo(before[0]!.y, 1);
+    expect(after[1]!.y).toBeCloseTo(before[1]!.y, 1);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+    const footerBox = after[1];
+    expect(footerBox).not.toBeNull();
+    expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(844);
+    await page.screenshot({ path: testInfo.outputPath("mobile-dm-pinned-bars.png") });
+    await context.close();
   });
 
   async function runAudit(

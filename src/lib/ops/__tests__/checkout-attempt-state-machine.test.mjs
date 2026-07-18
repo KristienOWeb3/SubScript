@@ -65,7 +65,9 @@ test("the bound transaction hash is returned only for SUBMITTED and SETTLED atte
     /* Split the function into its return objects; only SUBMITTED/SETTLED may carry txHash. */
     const returns = fn.body.split("jsonb_build_object").slice(1);
     for (const chunk of returns) {
-        const head = chunk.slice(0, 40);
+        /* Normalize enough of the return head to cover CRLF checkouts on Windows as well as LF
+           checkouts in CI; line-ending width must not turn this safety assertion into a false failure. */
+        const head = chunk.slice(0, 80).replace(/\s+/g, " ");
         if (chunk.includes("'txHash'")) {
             assert.ok(
                 head.includes("'SETTLED'") || head.includes("'SUBMITTED'"),

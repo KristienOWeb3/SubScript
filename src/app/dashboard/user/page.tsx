@@ -877,11 +877,13 @@ export default function UserDashboard() {
     }
   };
 
+  const dmRequestSequence = useRef(0);
   const loadDms = useCallback(async () => {
+    const requestSequence = ++dmRequestSequence.current;
     try {
       const res = await fetch("/api/user/dms");
       const data = await res.json();
-      if (data.success) setDms(data.dms);
+      if (data.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
     } catch (err) {
       console.error("Failed to load DMs:", err);
     }
@@ -2200,6 +2202,9 @@ export default function UserDashboard() {
         },
       ] as const;
 
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
       for (let i = 0; i < resolvedRows.length; i++) {
         const row = resolvedRows[i];
         setBatchProgress(`Sending transfer ${i + 1} of ${resolvedRows.length}...`);
@@ -2600,10 +2605,14 @@ export default function UserDashboard() {
   const isActiveMobileDm = isMobile && activeTab === "inbox" && Boolean(selectedDmPeer);
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden">
+    <div className={`relative overflow-x-hidden bg-[#060608] text-white selection:bg-[#ccff00]/30 selection:text-white border-t-4 border-[#ccff00] md:h-[100dvh] md:overflow-hidden ${
+      isActiveMobileDm ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
+    }`}>
       <AnimatedGradientBg variant="dashboard" />
 
-      <div className="relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0">
+      <div className={`relative z-10 md:flex md:h-[calc(100dvh-4px)] md:min-h-0 ${
+        isActiveMobileDm ? "h-full overflow-hidden" : ""
+      }`}>
         {mustBackupWallet ? (
           <div className="flex-1 flex items-center justify-center p-6 md:h-full overflow-y-auto">
             <div className="max-w-xl w-full space-y-6 py-12">
@@ -2738,7 +2747,7 @@ export default function UserDashboard() {
           />
         )}
 
-        <div className={`min-w-0 flex-1 md:h-full ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
+        <div className={`min-w-0 flex-1 md:h-full ${isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""} ${activeTab === "inbox" ? "md:overflow-hidden" : "md:overflow-y-auto"}`}>
           {/* Mobile headers (only shown on small screens) */}
           {isMobile && (
             <div className="w-full">
@@ -2767,7 +2776,11 @@ export default function UserDashboard() {
           )}
 
       {/* Main Grid View Container */}
-      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${isActiveMobileDm ? "pb-3" : "pb-[calc(8rem+env(safe-area-inset-bottom))]"}`}>
+      <main className={`mx-auto max-w-7xl px-5 lg:px-8 pt-24 lg:pt-8 lg:pb-12 ${
+        isActiveMobileDm
+          ? "h-full overflow-hidden pb-0"
+          : "pb-[calc(8rem+env(safe-area-inset-bottom))]"
+      }`}>
         {/* Title Header (Desktop only — hidden on inbox so the chat frame fills the viewport) */}
         {!isMobile && activeTab !== "inbox" && (
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/5">
@@ -2782,9 +2795,13 @@ export default function UserDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 items-start">
+        <div className={`grid grid-cols-1 gap-8 items-start ${
+          isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : ""
+        }`}>
           {/* Right main view content */}
-          <div className="col-span-1 min-h-[500px]">
+          <div className={`col-span-1 ${
+            isActiveMobileDm ? "h-full min-h-0 overflow-hidden" : "min-h-[500px]"
+          }`}>
             {/* Keyed enter-only animation — deliberately NO AnimatePresence/exit here. Gating the
                 incoming tab on the outgoing tab's exit spring (mode="wait") dropped the presence
                 whenever a re-render or second tap landed mid-exit on slow mobile frames, leaving
@@ -2794,7 +2811,7 @@ export default function UserDashboard() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="min-h-0"
+              className={isActiveMobileDm ? "h-full min-h-0" : "min-h-0"}
             >
             {activeTab === "home" && (
               <div className="grid grid-cols-1 gap-7 md:grid-cols-2 items-stretch">
@@ -3062,11 +3079,12 @@ export default function UserDashboard() {
 
             {activeTab === "inbox" && (
               <section
-                className="mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row"
+                className={`mx-auto flex w-full max-w-[430px] min-h-0 flex-col gap-5 md:h-[calc(100dvh-104px)] md:max-w-none md:flex-row ${
+                  isActiveMobileDm ? "h-full overflow-hidden" : ""
+                }`}
               >
                 {isMobile ? (
-                  /* Mobile View Thread Selection Toggle */
-                  <div className="flex-1 flex flex-col justify-between w-full">
+                  <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
                     {!selectedDmPeer ? (
                       <div className="w-full space-y-4 pb-20">
                         <DmThreadSelect
@@ -3075,8 +3093,11 @@ export default function UserDashboard() {
                         />
                       </div>
                     ) : (
-                      <div className="relative flex h-[calc(100dvh-7.5rem)] flex-1 flex-col overflow-hidden">
-                        <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-32">
+                      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                        <div
+                          data-testid="mobile-dm-message-scroller"
+                          className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 space-y-4 px-1 pt-1 pb-4"
+                        >
                           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                             {isActiveDmMerchant
                               ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -3104,8 +3125,11 @@ export default function UserDashboard() {
                           <div ref={dmBottomRef} />
                         </div>
 
-                        {/* Bottom Action Footer for Mobile — fixed so the chat scrolls behind it and it stays visible. */}
-                        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-[#060608]/90 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md">
+                        {/* Bottom Action Footer for Mobile — stays inside the DM while only messages scroll. */}
+                        <div
+                          data-testid="mobile-dm-action-footer"
+                          className="relative z-30 shrink-0 border-t border-white/5 bg-[#060608]/95 px-1 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-xl"
+                        >
                           {isActiveDmMerchant ? (
                             <MerchantPlanManager
                               open={planManagerOpen}
@@ -3169,7 +3193,10 @@ export default function UserDashboard() {
                             className="flex flex-col h-full justify-between gap-5 overflow-hidden"
                           >
                             {/* Desktop Chat Pane Header */}
-                            <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
+                            <div
+                              data-testid="desktop-dm-header"
+                              className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#09090c]/95 pb-4 backdrop-blur-xl"
+                            >
                               <div className="flex items-center gap-3">
                                 <Avatar profilePic={activeThread?.peerProfilePic || null} />
                                 <div>
@@ -3208,7 +3235,7 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Message bubbles pane */}
-                            <div className="flex-1 overflow-y-auto will-change-transform translate-z-0 pr-1 space-y-4 min-h-0">
+                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain will-change-transform translate-z-0 pr-1 space-y-4">
                               <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/55 mt-3">
                                 {isActiveDmMerchant
                                   ? "MERCHANT REQUESTED A PAYMENT FOR THEIR SERVICES"
@@ -3237,7 +3264,10 @@ export default function UserDashboard() {
                             </div>
 
                             {/* Bottom Action Footer for Desktop */}
-                            <div className="pt-4 border-t border-white/5 shrink-0">
+                            <div
+                              data-testid="desktop-dm-action-footer"
+                              className="sticky bottom-0 z-20 shrink-0 border-t border-white/5 bg-[#09090c]/95 pt-4 backdrop-blur-xl"
+                            >
                               {isActiveDmMerchant ? (
                                 <MerchantPlanManager
                                   open={planManagerOpen}
@@ -5029,6 +5059,8 @@ export default function UserDashboard() {
         sepoliaUsdc={sepoliaUsdc}
         userWallet={userWallet}
         isEmbeddedWalletSession={isEmbeddedWalletSession}
+        chainId={chainId}
+        switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
       />
@@ -6042,11 +6074,11 @@ function MerchantPlanManager({
   const planLabel = activePlan ? activePlan.name : "Active Plan";
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <motion.div
         layout
         transition={{ type: "spring", stiffness: 400, damping: 22, mass: 0.8 }}
-        className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
+        className="order-2 flex flex-wrap items-center gap-2 rounded-2xl border border-[#ccff00]/15 bg-[#ccff00]/[0.06] p-3"
       >
         <div className="min-w-0 flex-1">
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ccff00]/70">
@@ -6095,7 +6127,7 @@ function MerchantPlanManager({
             exit={{ opacity: 0, y: 8, scale: 0.95, scaleY: 0.9 }}
             transition={{ type: "spring", stiffness: 380, damping: 16, mass: 0.7 }}
             style={{ transformOrigin: "top center" }}
-            className="space-y-3 rounded-2xl border border-white/10 bg-black/45 p-3"
+            className="order-1 max-h-[min(48dvh,28rem)] space-y-3 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-black/45 p-3"
           >
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-5 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
@@ -6244,7 +6276,7 @@ function DmRequestComposer({
             transition={{ type: "spring", stiffness: 450, damping: 20, mass: 0.8 }}
             style={{ transformOrigin: "bottom center" }}
             onSubmit={onSubmit}
-            className="rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+            className="max-h-[min(55dvh,30rem)] overflow-y-auto overscroll-contain rounded-[28px] border border-[#ccff00]/20 bg-black/55 p-4 shadow-[0_14px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount">
@@ -6924,6 +6956,8 @@ function SendFundsModal({
   sepoliaUsdc,
   userWallet,
   isEmbeddedWalletSession,
+  chainId,
+  switchChainAsync,
   writeContractAsync,
   refetchUsdc,
 }: {
@@ -6934,6 +6968,8 @@ function SendFundsModal({
   sepoliaUsdc: number;
   userWallet: string | null;
   isEmbeddedWalletSession: boolean;
+  chainId: number | undefined;
+  switchChainAsync: (parameters: { chainId: number }) => Promise<unknown>;
   writeContractAsync: any;
   refetchUsdc: () => void;
 }) {
@@ -7039,6 +7075,9 @@ function SendFundsModal({
         },
       ] as const;
 
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
       const hash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,

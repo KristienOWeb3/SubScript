@@ -13,7 +13,7 @@ import { SubScript, usdc } from "@subscriptonarc/sdk";
 
 const subscript = new SubScript({ secretKey: process.env.SUBSCRIPT_SECRET_KEY! });
 
-// One-time payment
+// One-time payment only. This does not create a dashboard or DM plan.
 const intent = await subscript.intents.create({
   title: "Order #1042",
   amountUsdcMicros: usdc(15),            // 15 USDC -> "15000000"
@@ -21,10 +21,16 @@ const intent = await subscript.intents.create({
 });
 console.log(intent.checkoutUrl);
 
-// Subscription
-const sub = await subscript.subscriptions.create({
+// Reusable recurring plan: appears in the merchant dashboard and DM picker.
+const plan = await subscript.plans.create({
+  name: "Pro",
   amountUsdcMicros: usdc(9.99),
-  interval: "monthly",
+  periodDays: 30,
+});
+
+// Subscription checkout from the reusable plan.
+const sub = await subscript.subscriptions.create({
+  planId: plan.id,
 });
 
 // Assign a plan to one existing SubScript user and bind it to your customer account.
@@ -71,12 +77,29 @@ switch (event.type) {
 ## API
 
 - `subscript.intents.create(params)` / `.retrieve(id)`
+- `subscript.plans.create(params)` / `.list()` / `.update({ planId, active?, description?, detailsUrl? })`
 - `subscript.subscriptions.create(params)` / `.retrieve(id)` / `.list({ subscriber })` / `.cancel(id)`
 - `subscript.usage.report({ userAddress, amountUsdcMicros })`
 - `subscript.webhooks.verify(rawBody, sigHeader, secret)` / `.constructEvent(...)`
 - Helpers: `usdc(decimal)` → micro-USDC string, `fromMicros(micros)` → decimal string
 
 All amounts are integer **micro-USDC** (1 USDC = 1,000,000). The full contract is published as an [OpenAPI 3.1 spec](https://www.subscriptonarc.com/openapi.json).
+
+Choose the billing object before calling the SDK:
+
+| Product | SDK method | Dashboard / DM plan |
+|---|---|---|
+| One-time order, invoice, ticket, or fixed pass | `subscript.intents.create()` | No |
+| Reusable recurring product | `subscript.plans.create()` | Yes |
+| Recurring checkout or assigned offer | `subscript.subscriptions.create()` | Yes by default |
+
+Under the hood these map to `POST /api/intent`, `POST /api/v1/plans`, and
+`POST /api/v1/subscriptions`, respectively.
+
+Never simulate a subscription by putting “weekly”, “monthly”, “membership”, or similar wording
+in an intent title. Intents remain one-time. The API rejects subscription-only intent fields and
+requires `confirmOneTime: true` if recurring-looking wording deliberately describes a one-time
+pass.
 
 Subscription products publish to the merchant dashboard and in-DM plan picker by default.
 Use `publishToDm: false` to keep a checkout private. A `subscriber`-assigned plan also creates

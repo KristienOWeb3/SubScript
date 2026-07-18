@@ -91,10 +91,31 @@ No account needed for a first call — the shared sandbox demo key
 All backend requests to the SubScript API must be authenticated using the API Key in the `Authorization` header:
 `Authorization: Bearer sk_test_...`
 
+### Mandatory billing-model decision for developers and agents
+
+Select the resource from behavior, never from a convenient example or a product title:
+
+| Required behavior | REST endpoint | MCP tool | Dashboard / DM |
+|---|---|---|---|
+| One charge for an order, invoice, ticket, or deliberately fixed pass | `POST /api/intent` | `create_intent` | Payment/receipt only; never a plan |
+| Reusable recurring merchant product | `POST /api/v1/plans` | `create_plan` | Merchant dashboard and DM plan picker |
+| Recurring checkout or user-assigned plan offer | `POST /api/v1/subscriptions` | `create_subscription` | Dashboard and DM by default |
+
+Never create weekly, monthly, yearly, membership, renewable, or subscription access through
+`/api/intent`. A title such as `"Pro — 1 Week"` does not create recurrence. The intent API rejects
+subscription-only fields and returns `422 ambiguous_recurring_product` for recurring-looking
+wording. Only send `confirmOneTime: true` when that wording deliberately describes a non-renewing,
+one-time pass.
+
+For an account-bound subscription, send both `subscriber` (the SubScript wallet) and
+`merchantCustomerId` (the merchant's account ID). If the user upgrades from the DM, the existing
+subscription and that same merchant account are updated. Plan changes are upgrade-only; agents
+must not generate downgrade controls or downgrade API calls.
+
 ---
 
-### Create Checkout Intent
-Generates a hosted checkout URL for an app-integrated payment session.
+### Create One-Time Checkout Intent
+Generates a hosted checkout URL for one non-recurring payment session. It never creates a plan.
 
 * **Endpoint**: `POST /api/intent`
 * **Headers**:
@@ -110,6 +131,8 @@ Generates a hosted checkout URL for an app-integrated payment session.
   * `maxUses` (number, optional): Maximum uses for the checkout.
   * `externalReference` (string, optional): Custom metadata or tracking ID.
   * `sandbox` (boolean, optional): Allows test integrations before live payout setup. `sk_test_` keys are treated as sandbox automatically.
+  * `confirmOneTime` (boolean, optional): Required when recurring-looking wording deliberately
+    describes a one-time pass. It does not make an intent recurring.
 
 * **Response (201 Created)**:
 ```json
@@ -118,8 +141,11 @@ Generates a hosted checkout URL for an app-integrated payment session.
   "intent": {
     "id": "pay_link_uuid_123",
     "checkoutSessionId": "pay_link_uuid_123",
-    "title": "Mario Premium Arcade Pass",
-    "description": "1-week subscription access pass",
+    "object": "payment_intent",
+    "paymentType": "one_time",
+    "appearsInDmPlanPicker": false,
+    "title": "Order #1042",
+    "description": "One-time account activation",
     "amountUsdc": "10000000",
     "merchantAddress": "0x725d56151ceac9ead625241d13b8307b22eddb10",
     "status": "PENDING",
@@ -127,6 +153,54 @@ Generates a hosted checkout URL for an app-integrated payment session.
     "checkoutUrl": "https://www.subscriptonarc.com/pay/pay_link_uuid_123"
   },
   "sandbox": true
+}
+```
+
+Do not send `interval`, `intervalSeconds`, `intervalCount`, `periodDays`, `planId`,
+`publishToDm`, `subscriber`, or `merchantCustomerId` to `/api/intent`. Use the recurring
+endpoints below.
+
+### Create and manage recurring plans
+
+* **Create**: `POST /api/v1/plans`
+* **List**: `GET /api/v1/plans`
+* **Update/deactivate**: `PATCH /api/v1/plans`
+* **Create body**: `{ name, amountUsdcMicros, periodDays | intervalSeconds, description?,
+  detailsUrl?, minCommitmentDays? }`
+* **Update body**: `{ planId, active? | description? | detailsUrl? }`. Price and period are
+  immutable; create a new higher-priced plan for an upgrade.
+
+Creating a plan writes the reusable product to the authenticated merchant's catalog. It appears
+in the merchant dashboard and DM plan picker.
+
+```json
+{
+  "name": "Kris Script Pro",
+  "amountUsdcMicros": "10000000",
+  "periodDays": 7,
+  "description": "Recurring weekly access"
+}
+```
+
+### Create a subscription checkout or assigned offer
+
+* **Endpoint**: `POST /api/v1/subscriptions`
+* **Body**: `{ planId | amountUsdcMicros, interval | intervalSeconds, intervalCount?,
+  subscriber?, merchantCustomerId?, publishToDm?, title?, idempotencyKey? }`
+
+`planId` reuses a catalog plan. An inline amount and interval creates a recurring product
+without a separate catalog call. API-created subscription products publish to the merchant
+dashboard and DM by default; set `publishToDm: false` only for a deliberately private checkout.
+When `subscriber` is supplied, the plan/offer is limited to that wallet. The response is
+`incomplete` with a `checkoutUrl` until the user authorizes it on-chain.
+
+```json
+{
+  "planId": "plan_123",
+  "subscriber": "0xCustomerWallet",
+  "merchantCustomerId": "customer_1042",
+  "publishToDm": true,
+  "idempotencyKey": "customer_1042_kris_pro"
 }
 ```
 

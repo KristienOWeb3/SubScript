@@ -40,8 +40,15 @@ export async function ensureDefaultAliasFromEmail(
             const taken = await prisma.addressAlias.findUnique({ where: { alias } }).catch(() => null);
             if (taken) continue;
             // create() (not upsert) so a concurrent assignment can't clobber an existing username
-            await prisma.addressAlias.create({ data: { address, alias, isAnonymous: false } }).catch(() => { /* race — fine */ });
-            return;
+            try {
+                await prisma.addressAlias.create({ data: { address, alias, isAnonymous: false } });
+                return;
+            } catch {
+                /* A concurrent signup may have claimed this alias or assigned this address.
+                   Stop only if this wallet now has an alias; otherwise probe the next suffix. */
+                const assigned = await prisma.addressAlias.findUnique({ where: { address } }).catch(() => null);
+                if (assigned) return;
+            }
         }
     } catch (err) {
         console.error("ensureDefaultAliasFromEmail failed:", err instanceof Error ? err.message : err);

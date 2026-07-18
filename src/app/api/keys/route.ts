@@ -3,6 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { hashSecretKey, secretKeyHint } from "@/lib/apiKeys";
+import { validateWebhookUrl } from "@/lib/webhookUrls";
 
 function getSupabase() {
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -84,6 +85,22 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Forbidden: This action requires an active premium tier." }, { status: 403 });
         }
 
+        const body = await request.json().catch(() => ({}));
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+        }
+        const requestedWebhookUrl = "webhookUrl" in body ? body.webhookUrl : undefined;
+        if (requestedWebhookUrl !== undefined && typeof requestedWebhookUrl !== "string") {
+            return NextResponse.json({ error: "webhookUrl must be a string" }, { status: 400 });
+        }
+        const webhookUrl = typeof requestedWebhookUrl === "string" && requestedWebhookUrl.trim()
+            ? requestedWebhookUrl.trim()
+            : null;
+        const validatedWebhook = webhookUrl ? await validateWebhookUrl(webhookUrl) : null;
+        if (validatedWebhook && !validatedWebhook.ok) {
+            return NextResponse.json({ error: validatedWebhook.error }, { status: 400 });
+        }
+
         const publishableKey = `pk_test_${crypto.randomBytes(24).toString("hex")}`;
         const secretKeyPlain = `sk_test_${crypto.randomBytes(32).toString("hex")}`;
 
@@ -114,7 +131,54 @@ export async function POST(request: Request) {
             revoked: false,
         };
 
-        return NextResponse.json({ key: camelCaseKey }, { status: 201 });
+        let webhookEndpoint: {
+            id: string;
+            walletAddress: string;
+            url: string;
+            secret: string;
+            secretAvailable: true;
+            active: boolean;
+            createdAt: string;
+        } | null = null;
+        let webhookWarning: string | null = null;
+
+        /* Key issuance has already succeeded, so webhook setup is deliberately best-effort.
+           Always return the one-time key secret even if endpoint storage fails; otherwise the
+           merchant would lose the only opportunity to copy it and needlessly rotate again. */
+        if (validatedWebhook?.ok) {
+            const webhookSecret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
+            const { data: endpoint, error: endpointError } = await supabase
+                .from("webhook_endpoints")
+                .insert({
+                    wallet_address: walletLower,
+                    url: validatedWebhook.url,
+                    secret: webhookSecret,
+                    active: true,
+                })
+                .select()
+                .single();
+
+            if (endpointError || !endpoint) {
+                console.error("POST API key webhook registration error:", endpointError?.message);
+                webhookWarning = "API key created, but the webhook endpoint could not be registered. Copy the key now, then add the endpoint from Developers → Webhooks.";
+            } else {
+                webhookEndpoint = {
+                    id: endpoint.id,
+                    walletAddress: endpoint.wallet_address,
+                    url: endpoint.url,
+                    secret: endpoint.secret,
+                    secretAvailable: true,
+                    active: endpoint.active,
+                    createdAt: endpoint.created_at,
+                };
+            }
+        }
+
+        return NextResponse.json({
+            key: camelCaseKey,
+            ...(webhookEndpoint ? { webhookEndpoint } : {}),
+            ...(webhookWarning ? { webhookWarning } : {}),
+        }, { status: 201 });
     } catch (error: any) {
         console.error("POST API key error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

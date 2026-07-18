@@ -11,6 +11,7 @@ import { checkProviderRateLimit } from "@/lib/providerRateLimit";
 import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
 import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
+import { inspectPaymentIntentSemantics } from "@/lib/paymentIntentSemantics";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
 function validateReturnUrl(label: string, value: unknown): { ok: true; value?: string } | { ok: false; error: string } {
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
 
         // 2. Parse and validate body
         const body = await parseBody(request);
-        if (!body) {
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
             return apiError({ status: 400, code: "invalid_json", requestId, message: "Bad Request: Invalid JSON body" });
         }
 
@@ -105,8 +106,34 @@ export async function POST(request: Request) {
             maxUses,
             successUrl,
             cancelUrl,
-            sandbox
+            sandbox,
+            confirmOneTime,
         } = body;
+        if (confirmOneTime !== undefined && typeof confirmOneTime !== "boolean") {
+            return apiError({
+                status: 400,
+                code: "invalid_confirm_one_time",
+                requestId,
+                message: "Bad Request: confirmOneTime must be a boolean. /api/intent creates one-time payments only.",
+            });
+        }
+        const semanticCheck = inspectPaymentIntentSemantics(body);
+        if (semanticCheck.recurringFields.length > 0) {
+            return apiError({
+                status: 400,
+                code: "subscription_fields_on_payment_intent",
+                requestId,
+                message: `Bad Request: /api/intent creates one-time payments and does not accept recurring terms. Move ${semanticCheck.recurringFields.join(", ")} to POST /api/v1/plans (reusable DM-visible catalog plan) or POST /api/v1/subscriptions (subscription checkout).`,
+            });
+        }
+        if (semanticCheck.recurringTextSignals.length > 0 && confirmOneTime !== true) {
+            return apiError({
+                status: 422,
+                code: "ambiguous_recurring_product",
+                requestId,
+                message: "This product looks recurring, but /api/intent creates a one-time payment that will not appear in the merchant plan catalog or DM plan picker. Use POST /api/v1/plans or POST /api/v1/subscriptions. If this is intentionally a one-time pass, resend with confirmOneTime: true.",
+            });
+        }
         const isTestMode = apiKeyMode === "test";
         if (sandbox !== undefined && sandbox !== isTestMode) {
             return apiError({ status: 400, code: "invalid_sandbox_mode", requestId, message: "Bad Request: sandbox mode is determined by the API key" });
@@ -124,7 +151,7 @@ export async function POST(request: Request) {
         const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
-            return apiError({ status: 400, code: "missing_title", requestId, message: "Bad Request: title is required (a short product/plan name shown on the hosted checkout page)" });
+            return apiError({ status: 400, code: "missing_title", requestId, message: "Bad Request: title is required (a short one-time purchase name shown on the hosted checkout page)" });
         }
         if (title.length > 200) {
             return apiError({ status: 400, code: "invalid_title", requestId, message: "Bad Request: title must be 200 characters or fewer" });
@@ -232,6 +259,9 @@ export async function POST(request: Request) {
                     success: true,
                     intent: {
                         id: existing.id,
+                        object: "payment_intent",
+                        paymentType: "one_time",
+                        appearsInDmPlanPicker: false,
                         title: existing.title,
                         description: existing.description,
                         amountUsdc: existing.amountUsdc.toString(),
@@ -314,6 +344,9 @@ export async function POST(request: Request) {
             intent: {
                 id: newLink.id,
                 checkoutSessionId: newLink.id,
+                object: "payment_intent",
+                paymentType: "one_time",
+                appearsInDmPlanPicker: false,
                 title: newLink.title,
                 description: newLink.description,
                 amountUsdc: newLink.amountUsdc.toString(),

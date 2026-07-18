@@ -43,6 +43,8 @@ framework, and `add webhook` generates the handler in step 4.
 ## 3. Create a payment and redirect
 
 Amounts are integer **micro-USDC** (1 USDC = 1,000,000); the `usdc()` helper does the math.
+This example is a **one-time order**. `/api/intent` does not create a recurring product and its
+result will not appear in the merchant DM plan picker.
 
 ```ts
 // app/api/checkout/route.ts  (Next.js App Router)
@@ -87,6 +89,9 @@ export async function POST(req: Request) {
       // event.data.intent_id, event.data.amount_usdc_micros, event.data.transaction_hash
       // Idempotency: skip if you've already credited this intent_id.
       break;
+    case "subscription.created":
+      // Record the initial subscription lifecycle event; provision only when its status is active.
+      break;
     case "subscription.renewed":
     case "subscription.payment_failed":   // dunning
     case "subscription.canceled":
@@ -125,14 +130,38 @@ npx @subscriptonarc/cli trigger subscription.payment_failed --url http://localho
 
 ## 7. Subscriptions (optional)
 
+For a reusable plan that appears in your merchant dashboard and users' DM plan picker, create
+the catalog entry first:
+
+```ts
+const plan = await subscript.plans.create({
+  name: "Pro",
+  amountUsdcMicros: usdc(9.99),
+  periodDays: 30,
+});
+```
+
+Then create a subscription checkout from that plan:
+
 ```ts
 const sub = await subscript.subscriptions.create({
-  amountUsdcMicros: usdc(9.99),
-  interval: "monthly",
+  planId: plan.id,
+  subscriber: "0xCustomerWallet...",
+  merchantCustomerId: "customer_1042",
+  publishToDm: true, // true is already the default
 });
 // sub.status is "incomplete" until the customer authorizes it on-chain at sub.checkoutUrl.
-// You'll then receive subscription.renewed on each cycle (and payment_failed / canceled).
+// Handle subscription.created first, then subscription.renewed on each settled cycle
+// (and subscription.payment_failed / subscription.canceled).
 ```
+
+Use `POST /api/v1/subscriptions` directly when you do not need a reusable catalog entry. API
+subscription products publish to the dashboard and DM by default. `merchantCustomerId` keeps the
+SubScript subscription tied to your account when the customer upgrades it from the DM. Plan
+changes are upgrade-only.
+
+Do not create a “Monthly”, “Weekly”, “Membership”, or “Subscription” product with
+`subscript.intents.create()`. A payment intent is always one-time, regardless of its title.
 
 ## 8. Usage billing status (optional)
 

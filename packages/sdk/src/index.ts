@@ -75,6 +75,9 @@ export function verifyWebhookSignature(
 
 export interface Intent {
     id: string;
+    object: "payment_intent";
+    paymentType: "one_time";
+    appearsInDmPlanPicker: false;
     checkoutSessionId?: string;
     title: string;
     description?: string | null;
@@ -97,6 +100,10 @@ export interface Intent {
 }
 
 export interface CreateIntentParams {
+    /**
+     * One-time payments only. For recurring products use `plans.create` or
+     * `subscriptions.create`; payment intents never appear in the DM plan picker.
+     */
     title: string;
     amountUsdcMicros: string | bigint | number;
     description?: string;
@@ -106,7 +113,46 @@ export interface CreateIntentParams {
     successUrl?: string;
     cancelUrl?: string;
     idempotencyKey?: string;
+    /** Required only when recurring-looking wording is intentionally describing a one-time pass. */
+    confirmOneTime?: boolean;
     sandbox?: boolean;
+}
+
+export interface Plan {
+    id: string;
+    object: "plan";
+    name: string;
+    description?: string | null;
+    detailsUrl?: string | null;
+    merchantAddress: string;
+    amountUsdc: string;
+    amountUsdcMicros: string;
+    periodSeconds: number;
+    minCommitmentSeconds: number;
+    active: boolean;
+    subscribeUrl: string;
+    createdAt: string;
+    [key: string]: unknown;
+}
+
+interface CreatePlanBaseParams {
+    name: string;
+    amountUsdcMicros: string | bigint | number;
+    description?: string;
+    detailsUrl?: string;
+    minCommitmentDays?: number;
+}
+
+export type CreatePlanParams = CreatePlanBaseParams & (
+    | { periodDays: number; intervalSeconds?: never }
+    | { periodDays?: never; intervalSeconds: number }
+);
+
+export interface UpdatePlanParams {
+    planId: string;
+    active?: boolean;
+    description?: string | null;
+    detailsUrl?: string | null;
 }
 
 export interface Subscription {
@@ -232,12 +278,25 @@ export class SubScript {
         return json as T;
     }
 
-    /** One-time payment intents (hosted checkout). */
+    /** One-time payment intents only. These never become recurring plans or DM plan options. */
     readonly intents = {
         create: (params: CreateIntentParams): Promise<Intent> =>
             this.request<{ intent: Intent }>("POST", "/api/intent", stringifyMicros(params)).then((r) => r.intent),
         retrieve: (id: string): Promise<Intent> =>
             this.request<{ intent: Intent }>("GET", `/api/intent/${encodeURIComponent(id)}`).then((r) => r.intent),
+    };
+
+    /** Reusable recurring catalog plans shown in the merchant dashboard and user DM picker. */
+    readonly plans = {
+        create: (params: CreatePlanParams): Promise<Plan> =>
+            this.request<{ plan: Plan }>("POST", "/api/v1/plans", stringifyMicros(params)).then((r) => r.plan),
+        list: (params?: { active?: boolean }): Promise<Plan[]> =>
+            this.request<{ data: Plan[] }>(
+                "GET",
+                `/api/v1/plans${params?.active === undefined ? "" : `?active=${params.active}`}`,
+            ).then((r) => r.data),
+        update: (params: UpdatePlanParams): Promise<Plan> =>
+            this.request<{ plan: Plan }>("PATCH", "/api/v1/plans", params).then((r) => r.plan),
     };
 
     /** Recurring subscriptions. */

@@ -66,6 +66,24 @@ function getHostname(url: string) {
     }
 }
 
+type SubscriptionResult = { txHash?: string; subscriptionId?: string; planName?: string };
+
+function buildMerchantSuccessUrl(successUrl: string, planId: string, result: SubscriptionResult) {
+    try {
+        const url = new URL(successUrl);
+        url.searchParams.set("subscript_status", "success");
+        url.searchParams.set("subscript_verification_status", "settled");
+        url.searchParams.set("subscript_plan_id", planId);
+        if (result.subscriptionId) {
+            url.searchParams.set("subscript_subscription_id", result.subscriptionId);
+        }
+        if (result.txHash) url.searchParams.set("subscript_tx_hash", result.txHash);
+        return url.toString();
+    } catch {
+        return null;
+    }
+}
+
 function friendlyError(raw: string): string {
     const map: [RegExp, string][] = [
         [/USDC approval.*reverted/i, "Your wallet denied the spending approval. Please try again."],
@@ -102,7 +120,7 @@ export default function SubscribeClient({
 
     const [isSubscribing, setIsSubscribing] = useState(false);
     const [subscribeError, setSubscribeError] = useState<string | null>(null);
-    const [result, setResult] = useState<{ txHash?: string; subscriptionId?: string; planName?: string } | null>(null);
+    const [result, setResult] = useState<SubscriptionResult | null>(null);
 
     /* Interstitial before following the merchant-supplied "view more" link off-platform. */
     const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -168,11 +186,13 @@ export default function SubscribeClient({
 
     useEffect(() => {
         if (!result || !plan?.successUrl) return;
+        const successUrl = buildMerchantSuccessUrl(plan.successUrl, plan.id, result);
+        if (!successUrl) return;
         const redirectTimer = window.setTimeout(() => {
-            window.location.assign(plan.successUrl!);
+            window.location.assign(successUrl);
         }, 3500);
         return () => window.clearTimeout(redirectTimer);
-    }, [result, plan?.successUrl]);
+    }, [result, plan?.id, plan?.successUrl]);
 
     const handleSignIn = () => {
         const next = `/subscribe/${planId}`;
@@ -422,7 +442,12 @@ export default function SubscribeClient({
                                 </p>
                                 <button
                                     type="button"
-                                    onClick={() => plan.successUrl ? window.location.assign(plan.successUrl) : router.push("/user?tab=inbox")}
+                                    onClick={() => {
+                                        const successUrl = plan.successUrl
+                                            ? buildMerchantSuccessUrl(plan.successUrl, plan.id, result)
+                                            : null;
+                                        successUrl ? window.location.assign(successUrl) : router.push("/user?tab=inbox");
+                                    }}
                                     className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-[#00d2b4] hover:brightness-110 text-black font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
                                 >
                                     {plan.successUrl ? `Return to ${getHostname(plan.successUrl)}` : "Go to my dashboard"} <ArrowRight className="w-4 h-4" />

@@ -65,8 +65,16 @@ sponsored payments, and AI‑native transactions, all with the same predictable 
 
 **For developers**
 - One lifecycle: create intent → bounded authorization → receipt binding → on‑chain verification → webhook
-- Checkout Intents (`/api/intent`, `GET /api/intent/:id`), payment links (`/api/payment-links`), subscriptions (`/api/v1/subscriptions`), metered vault status/reporting (`/api/user/vault/status`, `/api/user/vault/report-usage`), and a typed CLI
+- One-time Checkout Intents (`/api/intent`, `GET /api/intent/:id`), recurring plans (`/api/v1/plans`), subscriptions (`/api/v1/subscriptions`), payment links (`/api/payment-links`), metered vault status/reporting (`/api/user/vault/status`, `/api/user/vault/report-usage`), and a typed CLI
 - DNS‑style aliases for human‑readable payment identities
+
+### Billing endpoint rule
+
+Use `/api/intent` only for a one-time order, invoice, ticket, or fixed pass. It never creates a
+merchant dashboard/DM plan, regardless of its title. Use `/api/v1/plans` for a reusable recurring
+catalog plan and `/api/v1/subscriptions` for a recurring checkout or user-assigned offer.
+API-created subscription products publish to the dashboard and DM by default; customer plan
+changes are upgrade-only.
 
 ## How a payment works
 
@@ -112,11 +120,11 @@ npm run build
 ## Integrate in minutes (CLI)
 
 ```bash
-# Scaffold checkout + signed-webhook routes + env for your framework:
+# Scaffold a recurring subscription + signed-webhook routes + env:
 npx @subscriptonarc/cli init
 # Non-interactive (agent/CI):
 npx @subscriptonarc/cli init --key sk_test_... --merchant 0x... --framework next-app --yes
-# Add pieces to an existing app, diagnose, or forward live webhooks to localhost:
+# Add a one-time checkout, diagnose, or forward live webhooks to localhost:
 npx @subscriptonarc/cli add checkout
 npx @subscriptonarc/cli doctor
 npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks

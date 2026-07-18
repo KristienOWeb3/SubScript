@@ -121,7 +121,7 @@ export async function runInit(options: { session?: string; mode?: string; noTele
 
     console.log("\n[SUCCESS] SubScript initialization completed successfully!");
     console.log("[INFO] Next steps:");
-    console.log("  1. Add checkout component:  npx @subscriptonarc/cli add checkout");
+    console.log("  1. Add one-time checkout (optional): npx @subscriptonarc/cli add checkout");
     if (paths.hasBackend) {
       console.log("  2. Add webhook route:       npx @subscriptonarc/cli add webhook");
     }

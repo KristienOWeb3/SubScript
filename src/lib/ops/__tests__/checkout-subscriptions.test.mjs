@@ -242,6 +242,7 @@ test("subscription checkout preserves merchant terms and return flow", () => {
     assert.match(api, /beneficiary: beneficiaryAddress/);
     assert.match(meta, /minCommitmentSeconds/);
     assert.match(meta, /successUrl/);
-    assert.match(client, /window\.location\.assign\(plan\.successUrl\)/);
+    assert.match(client, /buildMerchantSuccessUrl\(plan\.successUrl, plan\.id, result\)/);
+    assert.match(client, /subscript_verification_status/);
     assert.match(client, /subscript_subscription_attempt/);
 });
