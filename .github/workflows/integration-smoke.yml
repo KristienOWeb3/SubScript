@@ -57,8 +57,9 @@ jobs:
   # configured) creates a sandbox intent + checks its status. Failing here means the deploy is
   # broken for integrators even though the build succeeded.
   post-deploy-smoke:
-    # Production only: preview deployments sit behind Vercel deployment protection (SSO),
-    # so every API call there 401s with "Protected deployment" — not a real signal.
+    # Production only. Vercel's generated deployment URL can remain behind deployment
+    # protection even when the public production domain is healthy, so probe the stable public
+    # origin instead. Override the repository variable if the production domain changes.
     if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +70,7 @@ jobs:
       - name: Smoke-test the live deployment
         run: node scripts/subscript-integration-smoke.mjs
         env:
-          SUBSCRIPT_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          SUBSCRIPT_BASE_URL: ${{ vars.SUBSCRIPT_PRODUCTION_URL || 'https://www.subscriptonarc.com' }}
           SUBSCRIPT_SECRET_KEY: ${{ secrets.SUBSCRIPT_SECRET_KEY }}
           SUBSCRIPT_WEBHOOK_SECRET: ${{ secrets.SUBSCRIPT_WEBHOOK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
