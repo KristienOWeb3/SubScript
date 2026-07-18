@@ -86,6 +86,9 @@ export function subscriptionWebhookData(args: {
         introductoryCyclesRemaining: number;
         nextPaymentAmountUsdcMicros: bigint;
     } | null;
+    /* Merchant-owned account identifier and canonical originating checkout. */
+    externalReference?: string | null;
+    sourceCheckoutId?: string | null;
 }): Record<string, unknown> {
     const micros = args.amountUsdcMicros != null
         ? (typeof args.amountUsdcMicros === "bigint" ? args.amountUsdcMicros : BigInt(args.amountUsdcMicros)).toString()
@@ -118,6 +121,12 @@ export function subscriptionWebhookData(args: {
         subscriber: args.subscriber ?? null,
         merchant_address: args.merchantAddress ?? null,
         merchantAddress: args.merchantAddress ?? null,
+        external_reference: args.externalReference ?? null,
+        externalReference: args.externalReference ?? null,
+        merchant_customer_id: args.externalReference ?? null,
+        merchantCustomerId: args.externalReference ?? null,
+        source_checkout_id: args.sourceCheckoutId ?? null,
+        sourceCheckoutId: args.sourceCheckoutId ?? null,
         ...(args.beneficiary ? { beneficiary: args.beneficiary, beneficiary_address: args.beneficiary, beneficiaryAddress: args.beneficiary } : {}),
         ...(args.reason ? { reason: args.reason } : {}),
         ...(settlement ? {

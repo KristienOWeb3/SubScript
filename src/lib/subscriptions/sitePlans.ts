@@ -1,8 +1,9 @@
-/* Explicitly publish a generic site subscription checkout as a DM-visible plan.
+/* Publish a site subscription checkout as a DM-visible plan.
  *
- * Checkout sessions are attempts, not catalog entries. They can be assigned to one
- * subscriber, carry a beneficiary or invoice details, expire, or already be consumed.
- * Publication is therefore merchant-initiated and validates one checkout at a time.
+ * Generic API checkouts become public plans. A checkout assigned to one subscriber becomes
+ * a targeted plan for only that wallet. Beneficiary-bound and invoice/private payment
+ * attempts remain ineligible because they contain fulfillment terms that must not be
+ * exposed as reusable catalog products.
  */
 import { Prisma, type MerchantPlan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +21,31 @@ export class SitePlanPublicationError extends Error {
     ) {
         super(message);
     }
+}
+
+export function checkoutHasPrivatePlanTerms(
+    link: {
+        externalReference: string | null;
+        beneficiaryAddress: string | null;
+        payerEmail: string | null;
+        receiverAddress: string | null;
+        receiverPrivateKey: string | null;
+        invoiceNumber: string | null;
+        dueDate: Date | null;
+    },
+    meta: NonNullable<ReturnType<typeof readSubscriptionCheckoutMeta>>,
+) {
+    return Boolean(
+        (link.externalReference && !meta.subscriber)
+        ||
+        meta.beneficiary
+        || link.beneficiaryAddress
+        || link.payerEmail
+        || link.receiverAddress
+        || link.receiverPrivateKey
+        || link.invoiceNumber
+        || link.dueDate
+    );
 }
 
 export async function lockMerchantPlanCatalog(
@@ -41,6 +67,7 @@ function assertPublishableCheckout(
         useCount: number;
         paidAt: Date | null;
         verifiedTxHash: string | null;
+        externalReference: string | null;
         beneficiaryAddress: string | null;
         payerEmail: string | null;
         receiverAddress: string | null;
@@ -72,18 +99,9 @@ function assertPublishableCheckout(
             "CHECKOUT_CONSUMED",
         );
     }
-    if (
-        meta.subscriber
-        || meta.beneficiary
-        || link.beneficiaryAddress
-        || link.payerEmail
-        || link.receiverAddress
-        || link.receiverPrivateKey
-        || link.invoiceNumber
-        || link.dueDate
-    ) {
+    if (checkoutHasPrivatePlanTerms(link, meta)) {
         throw new SitePlanPublicationError(
-            "Customer-assigned, beneficiary-bound, or invoice-specific checkouts cannot be published as public plans.",
+            "Beneficiary-bound or invoice-specific checkouts cannot be published as plans.",
             409,
             "CHECKOUT_PRIVATE",
         );
@@ -97,18 +115,13 @@ function assertPublishableCheckout(
     }
 }
 
-export async function publishSitePlanFromCheckout(
-    merchantAddress: string,
-    checkoutSessionId: string,
+async function publishSitePlanFromCheckoutInTransaction(
+    tx: Prisma.TransactionClient,
+    merchant: string,
+    checkoutId: string,
+    catalogLocked = false,
 ): Promise<{ plan: MerchantPlan; created: boolean }> {
-    const merchant = merchantAddress.toLowerCase();
-    const checkoutId = checkoutSessionId.trim().toLowerCase();
-    if (!UUID_PATTERN.test(checkoutId)) {
-        throw new SitePlanPublicationError("checkoutSessionId must be a valid UUID.", 400, "INVALID_CHECKOUT_ID");
-    }
-
-    return prisma.$transaction(async (tx) => {
-        await lockMerchantPlanCatalog(tx, merchant);
+        if (!catalogLocked) await lockMerchantPlanCatalog(tx, merchant);
 
         /* The persisted source identity makes retries idempotent. Do not reactivate an
            existing plan: a merchant's later deactivation remains authoritative. */
@@ -162,15 +175,19 @@ export async function publishSitePlanFromCheckout(
         const periodSeconds = subscriptionCheckoutPeriod(meta);
         assertPublishableCheckout(link, meta, periodSeconds);
 
-        const activeCount = await tx.merchantPlan.count({
-            where: { merchantAddress: merchant, active: true },
-        });
-        if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
-            throw new SitePlanPublicationError(
-                `You can have at most ${MAX_ACTIVE_MERCHANT_PLANS} active plans.`,
-                403,
-                "PLAN_LIMIT_REACHED",
-            );
+        /* Targeted offers are not public catalog entries and therefore do not consume the
+           merchant's public 20-plan allowance. */
+        if (!meta.subscriber) {
+            const activePublicCount = await tx.merchantPlan.count({
+                where: { merchantAddress: merchant, active: true, targetSubscriber: null },
+            });
+            if (activePublicCount >= MAX_ACTIVE_MERCHANT_PLANS) {
+                throw new SitePlanPublicationError(
+                    `You can have at most ${MAX_ACTIVE_MERCHANT_PLANS} active public plans.`,
+                    403,
+                    "PLAN_LIMIT_REACHED",
+                );
+            }
         }
 
         const plan = await tx.merchantPlan.create({
@@ -182,8 +199,39 @@ export async function publishSitePlanFromCheckout(
                 periodSeconds,
                 minCommitmentSeconds: BigInt(meta.minCommitmentSeconds),
                 sourceCheckoutId: checkoutId,
+                targetSubscriber: meta.subscriber,
             },
         });
         return { plan, created: true };
+}
+
+export async function publishSitePlanFromCheckout(
+    merchantAddress: string,
+    checkoutSessionId: string,
+): Promise<{ plan: MerchantPlan; created: boolean }> {
+    const merchant = merchantAddress.toLowerCase();
+    const checkoutId = checkoutSessionId.trim().toLowerCase();
+    if (!UUID_PATTERN.test(checkoutId)) {
+        throw new SitePlanPublicationError("checkoutSessionId must be a valid UUID.", 400, "INVALID_CHECKOUT_ID");
+    }
+
+    return prisma.$transaction(async (tx) => {
+        return publishSitePlanFromCheckoutInTransaction(tx, merchant, checkoutId);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+}
+
+/* Generic API publication and checkout creation share one catalog lock + transaction. At the
+   public-plan ceiling the transaction rolls back, so no invisible orphan checkout is left behind.
+   Targeted offers use the same atomic path but are exempt from the public catalog allowance. */
+export async function createCheckoutWithPublishedSitePlan(
+    merchantAddress: string,
+    data: Prisma.PaymentLinkCreateArgs["data"],
+) {
+    const merchant = merchantAddress.toLowerCase();
+    return prisma.$transaction(async (tx) => {
+        await lockMerchantPlanCatalog(tx, merchant);
+        const link = await tx.paymentLink.create({ data });
+        const published = await publishSitePlanFromCheckoutInTransaction(tx, merchant, link.id, true);
+        return { link, published };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }

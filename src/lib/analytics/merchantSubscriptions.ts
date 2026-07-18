@@ -5,6 +5,8 @@ export type MerchantSubscriptionDetail = {
     subscriptionId: string;
     subscriber: string | null;
     subscriberName: string | null;
+    externalReference: string | null;
+    sourceCheckoutId: string | null;
     status: string;
     cancelAtPeriodEnd: boolean;
     nextBillingDate: string | null;

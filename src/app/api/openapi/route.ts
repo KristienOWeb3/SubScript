@@ -89,6 +89,8 @@ const spec = {
                     intervalSeconds: { type: "integer" },
                     intervalCount: { type: "integer" },
                     interval: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", "yearly", null] },
+                    merchantCustomerId: { type: ["string", "null"], description: "Merchant-owned customer/account binding." },
+                    externalReference: { type: ["string", "null"], description: "Backwards-compatible alias for merchantCustomerId." },
                     checkoutUrl: { type: "string", format: "uri" },
                     cancelAtPeriodEnd: { type: "boolean" },
                 },
@@ -137,7 +139,7 @@ const spec = {
                     id: { type: "string" },
                     type: {
                         type: "string",
-                        enum: ["subscription.created", "subscription.renewed", "subscription.canceled", "subscription.payment_failed"],
+                        enum: ["subscription.created", "subscription.updated", "subscription.renewed", "subscription.canceled", "subscription.payment_failed"],
                         description: "Canonical event name.",
                     },
                     event: { type: "string", description: "Back-compat alias of `type`." },
@@ -146,11 +148,14 @@ const spec = {
                         type: "object",
                         properties: {
                             subscription_id: { type: "string" },
-                            status: { type: "string", enum: ["incomplete", "active", "past_due", "canceled"] },
+                            status: { type: "string", enum: ["incomplete", "active", "updated", "past_due", "canceled"] },
                             amount_usdc_micros: { type: ["string", "null"] },
                             currency: { type: "string", const: "USDC" },
                             subscriber: { type: ["string", "null"] },
                             merchant_address: { type: ["string", "null"] },
+                            merchant_customer_id: { type: ["string", "null"], description: "Merchant-owned account binding supplied at API plan creation." },
+                            external_reference: { type: ["string", "null"], description: "Alias of merchant_customer_id." },
+                            source_checkout_id: { type: ["string", "null"], description: "Originating API checkout/offer id." },
                             beneficiary_address: { type: ["string", "null"], description: "Sponsored subscriptions: the wallet receiving the service when it differs from the paying subscriber. Key entitlements off this when present." },
                             reason: { type: "string", description: "Present on canceled/payment_failed events." },
                             transaction_hash: { type: ["string", "null"] },
@@ -360,7 +365,7 @@ const spec = {
         "/api/v1/subscriptions": {
             post: {
                 summary: "Create a subscription",
-                description: "Returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` once the subscriber authorizes it on-chain. Supply `planId`, or an amount (`amountUsdcMicros`) plus an interval (`interval` named, or `intervalSeconds`).",
+                description: "Returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` once the subscriber authorizes it on-chain. Supply `planId`, or an amount (`amountUsdcMicros`) plus an interval (`interval` named, or `intervalSeconds`). API-created products publish to the merchant catalog by default; subscriber-assigned products are visible only to that subscriber.",
                 requestBody: {
                     required: true,
                     content: {
@@ -374,9 +379,11 @@ const spec = {
                                     interval: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
                                     intervalSeconds: { type: "integer", minimum: 1 },
                                     intervalCount: { type: "integer", minimum: 1, maximum: 365, default: 1 },
-                                    subscriber: { type: "string", description: "Optional 0x subscriber address." },
+                                    subscriber: { type: "string", description: "Optional 0x subscriber address. Required when merchantCustomerId or externalReference is supplied." },
                                     title: { type: "string" },
-                                    externalReference: { type: "string", maxLength: 256 },
+                                    merchantCustomerId: { type: "string", maxLength: 256, description: "Recommended merchant-owned customer/account identifier. Persisted on the active subscription and lifecycle webhooks." },
+                                    externalReference: { type: "string", maxLength: 256, description: "Backwards-compatible alias for merchantCustomerId; both must match if supplied together." },
+                                    publishToDm: { type: "boolean", default: true, description: "Publish the product to the DM plan picker. Subscriber-assigned plans are targeted; set false to keep it private." },
                                     idempotencyKey: { type: "string" },
                                     sandbox: { type: "boolean" },
                                 },

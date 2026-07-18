@@ -40,6 +40,8 @@ const detailSelect = {
     downgradeFailures: true,
     amountCapUsdc: true,
     billingIntervalSeconds: true,
+    externalReference: true,
+    sourceCheckoutId: true,
 } satisfies Prisma.SubscriptionSelect;
 
 async function loadAliases(addresses: Array<string | null | undefined>) {
@@ -73,6 +75,8 @@ function formatDetail(
         subscriptionId: subscription.subscriptionId.toString(),
         subscriber,
         subscriberName: publicSubscriberName(subscriber, aliases),
+        externalReference: subscription.externalReference,
+        sourceCheckoutId: subscription.sourceCheckoutId,
         status: subscription.status,
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         nextBillingDate: subscription.nextBillingDate?.toISOString() || null,

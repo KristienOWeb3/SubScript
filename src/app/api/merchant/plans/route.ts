@@ -17,7 +17,9 @@ import { formatPromotion, isPromotionLive, type PromotionRow } from "@/lib/subsc
 
 const MAX_DESCRIPTION_LEN = 300;
 
-function formatPlan(p: any) {
+function formatPlan(p: any, viewerAddress?: string) {
+    const viewer = viewerAddress?.toLowerCase();
+    const target = p.targetSubscriber?.toLowerCase() || null;
     return {
         id: p.id,
         merchantAddress: p.merchantAddress,
@@ -27,6 +29,8 @@ function formatPlan(p: any) {
         amountUsdc: p.amountUsdc.toString(),
         periodSeconds: p.periodSeconds.toString(),
         minCommitmentSeconds: (p.minCommitmentSeconds ?? BigInt(0)).toString(),
+        targetSubscriber: target,
+        ...(target && viewer === target ? { checkoutSessionId: p.sourceCheckoutId ?? null } : {}),
         active: p.active,
     };
 }
@@ -77,7 +81,14 @@ export async function GET(request: Request) {
         // both the due-today price and the recurring price before authorization.
         if (merchantParam && ethers.isAddress(merchantParam)) {
             const plans = await prisma.merchantPlan.findMany({
-                where: { merchantAddress: merchantParam.toLowerCase(), active: true },
+                where: {
+                    merchantAddress: merchantParam.toLowerCase(),
+                    active: true,
+                    OR: [
+                        { targetSubscriber: null },
+                        { targetSubscriber: wallet.toLowerCase() },
+                    ],
+                },
                 orderBy: { amountUsdc: "asc" },
             });
             const promotions = plans.length > 0
@@ -92,7 +103,10 @@ export async function GET(request: Request) {
             );
             return NextResponse.json({
                 success: true,
-                plans: plans.map((p) => ({ ...formatPlan(p), promotion: liveByPlan.get(p.id) ?? null })),
+                plans: plans.map((plan) => ({
+                    ...formatPlan(plan, wallet),
+                    promotion: liveByPlan.get(plan.id) ?? null,
+                })),
             }, { status: 200 });
         }
 
@@ -105,7 +119,10 @@ export async function GET(request: Request) {
             where: { merchantAddress: wallet.toLowerCase() },
             orderBy: { createdAt: "desc" },
         });
-        return NextResponse.json({ success: true, plans: plans.map(formatPlan) }, { status: 200 });
+        return NextResponse.json({
+            success: true,
+            plans: plans.map((plan: any) => formatPlan(plan)),
+        }, { status: 200 });
     } catch (error: any) {
         console.error("List plans failed:", error);
         return NextResponse.json({ error: error.message || "Failed to list plans" }, { status: 500 });
@@ -175,7 +192,7 @@ export async function POST(request: Request) {
                checkout publications cannot both pass the active-plan ceiling. */
             await lockMerchantPlanCatalog(tx, merchantAddress);
             const activeCount = await tx.merchantPlan.count({
-                where: { merchantAddress, active: true },
+                where: { merchantAddress, active: true, targetSubscriber: null },
             });
             if (activeCount >= MAX_ACTIVE_MERCHANT_PLANS) {
                 return { limitReached: true as const };
@@ -229,6 +246,16 @@ export async function PATCH(request: Request) {
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
         if (!plan || plan.merchantAddress.toLowerCase() !== wallet.toLowerCase()) {
             return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+        }
+        if (body.active === true && plan.targetSubscriber) {
+            const sourceCheckout = plan.sourceCheckoutId
+                ? await prisma.paymentLink.findUnique({ where: { id: plan.sourceCheckoutId } })
+                : null;
+            if (!sourceCheckout?.active || sourceCheckout.status !== "PENDING") {
+                return NextResponse.json({
+                    error: "A consumed or canceled targeted subscription offer cannot be reactivated.",
+                }, { status: 409 });
+            }
         }
 
         const data: { active: boolean; description?: string | null; detailsUrl?: string | null } = {

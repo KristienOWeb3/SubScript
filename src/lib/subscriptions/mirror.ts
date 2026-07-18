@@ -14,6 +14,8 @@ export async function mirrorSubscriptionCreated({
     minCommitmentSeconds,
     promotion,
     anchorNextPaymentSeconds,
+    externalReference,
+    sourceCheckoutId,
 }: {
     subscriptionId: string | bigint;
     merchantAddress: string;
@@ -33,6 +35,10 @@ export async function mirrorSubscriptionCreated({
        that just happened), the chain's nextPayment is authoritative — anchor billing to
        it instead of "now + period" so the keeper neither drifts late nor re-bills early. */
     anchorNextPaymentSeconds?: bigint | null;
+    /* Merchant account binding copied from the API checkout. */
+    externalReference?: string | null;
+    /* Checkout identity used to create/select the canonical plan. */
+    sourceCheckoutId?: string | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
         const sub = subscriber.toLowerCase();
@@ -62,6 +68,8 @@ export async function mirrorSubscriptionCreated({
                 firstRegularPaymentAt: new Date(now.getTime() + promotion.introCycles * Number(period) * 1000),
             }
             : {};
+        const merchantReference = externalReference?.trim() || null;
+        const checkoutSource = sourceCheckoutId?.trim().toLowerCase() || null;
 
         /* The subscriptions.merchant_address FK requires a merchants row. */
         await prisma.merchant.upsert({
@@ -83,6 +91,8 @@ export async function mirrorSubscriptionCreated({
                 lastSettlementTimestamp: settlementAnchor,
                 cancelAtPeriodEnd: false,
                 beneficiaryAddress: beneficiary,
+                externalReference: merchantReference,
+                sourceCheckoutId: checkoutSource,
                 minCommitmentUntil: commitmentUntil,
                 ...promoSnapshot,
                 updatedAt: now,
@@ -99,6 +109,8 @@ export async function mirrorSubscriptionCreated({
                 nextBillingDate: nextBilling,
                 lastSettlementTimestamp: settlementAnchor,
                 beneficiaryAddress: beneficiary,
+                externalReference: merchantReference,
+                sourceCheckoutId: checkoutSource,
                 minCommitmentUntil: commitmentUntil,
                 ...promoSnapshot,
             },
@@ -109,10 +121,15 @@ export async function mirrorSubscriptionModified({
     subscriptionId,
     amountUsdc,
     periodSeconds,
+    externalReference,
+    sourceCheckoutId,
 }: {
     subscriptionId: string | bigint;
     amountUsdc: bigint;
     periodSeconds: bigint;
+    /* Undefined preserves the existing binding; a string fills or updates it. */
+    externalReference?: string;
+    sourceCheckoutId?: string;
 }) {
     await prisma.subscription.update({
         where: { subscriptionId: BigInt(subscriptionId) },
@@ -120,6 +137,12 @@ export async function mirrorSubscriptionModified({
             amountCapUsdc: amountUsdc.toString(),
             billingIntervalSeconds: BigInt(periodSeconds),
             kind: "CUSTOMER",
+            ...(externalReference !== undefined
+                ? { externalReference: externalReference.trim() || null }
+                : {}),
+            ...(sourceCheckoutId !== undefined
+                ? { sourceCheckoutId: sourceCheckoutId.trim().toLowerCase() || null }
+                : {}),
             updatedAt: new Date(),
         },
     });
