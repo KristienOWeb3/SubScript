@@ -1649,7 +1649,7 @@ export default function UserDashboard() {
       variant: "warning",
       title: "Cancel this service",
       description:
-        "We'll notify the merchant to stop rendering service and stop billing new usage — further usage reports are rejected immediately. You're settled only for usage already reported this cycle; your remaining committed funds unlock when the cycle ends, and a Withdraw button appears here then. Re-committing later restarts the service.",
+        "We'll notify the merchant to stop rendering service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. When the cycle ends, the merchant is settled that amount and your unused balance returns to you automatically. Re-committing later restarts the service.",
       confirmLabel: "Cancel service",
       onConfirm: async () => {
         const id = String(vault.id || vault.merchantAddress);
@@ -7554,7 +7554,7 @@ function MeteredVaultRow({
 
       {cancelled && (
         <p className="text-[10px] leading-relaxed text-orange-200/70">
-          Service cancelled — the merchant has been told to stop rendering service and can no longer bill new usage. You&apos;re settled only for usage already reported this cycle; your remaining committed funds unlock after <span className="font-bold">{shortDate(lockedUntilDate)}</span>, when a Withdraw button appears here. Re-commit to restart the service.
+          Service cancelled — the merchant has been told to stop rendering service and can no longer bill new usage. You&apos;re charged only for usage already reported this cycle. When the cycle ends after <span className="font-bold">{shortDate(lockedUntilDate)}</span>, the merchant is settled that amount and your unused balance returns to you automatically. Re-commit to restart the service.
         </p>
       )}
       {locked && !blocked && !cancelled && (
