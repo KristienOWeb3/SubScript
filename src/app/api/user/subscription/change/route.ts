@@ -32,6 +32,9 @@ export async function POST(request: Request) {
     let changeClaimKey: string | null = null;
     let proratedTxHashForRecovery: string | null = null;
     let modifyTxHashForRecovery: string | null = null;
+    let targetedOfferCheckoutId: string | null = null;
+    let targetedOfferClaimed = false;
+    let resumingDurableChange = false;
     try {
         const wallet = await getSessionWallet(request.headers);
         if (!wallet) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -45,9 +48,12 @@ export async function POST(request: Request) {
         if (!planId) return NextResponse.json({ error: "planId is required" }, { status: 400 });
 
         const plan = await prisma.merchantPlan.findUnique({ where: { id: planId } });
-        if (!plan || !plan.active) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+        if (!plan) return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
 
         const subscriber = wallet.toLowerCase();
+        if (plan.targetSubscriber && plan.targetSubscriber.toLowerCase() !== subscriber) {
+            return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+        }
 
         /* Resolve the current subscription (must belong to caller, be active, and be with the
            same merchant — you can only switch between a merchant's own plans). */
@@ -67,9 +73,68 @@ export async function POST(request: Request) {
         if (current.merchant !== plan.merchantAddress.toLowerCase()) {
             return NextResponse.json({ error: "You can only switch to a plan from the same merchant." }, { status: 400 });
         }
+        /* A lost HTTP response must be safely replayable after the chain and local offer have
+           already reached the target terms. This is a no-op success, never a second change. */
         if (current.amount === plan.amountUsdc && current.period === plan.periodSeconds) {
-            return NextResponse.json({ error: "You're already on this plan." }, { status: 409 });
+            return NextResponse.json({
+                success: true,
+                subscriptionId: fromSubscriptionId,
+                planName: plan.name,
+                alreadyApplied: true,
+                proratedChargeUsdc: null,
+                proratedTxHash: null,
+                effective: "This plan is already active.",
+            }, { status: 200 });
         }
+        if (!plan.active) {
+            return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+        }
+
+        const mirroredBeforeChange = await prisma.subscription.findUnique({
+            where: { subscriptionId: BigInt(fromSubscriptionId) },
+            select: {
+                beneficiaryAddress: true,
+                externalReference: true,
+                sourceCheckoutId: true,
+            },
+        }).catch(() => null);
+        const targetedCheckout = plan.targetSubscriber && plan.sourceCheckoutId
+            ? await prisma.paymentLink.findUnique({
+                where: { id: plan.sourceCheckoutId },
+                select: {
+                    id: true,
+                    active: true,
+                    status: true,
+                    externalReference: true,
+                },
+            })
+            : null;
+        if (plan.targetSubscriber && (
+            !targetedCheckout
+            || !targetedCheckout.active
+            || !["PENDING", "PROCESSING"].includes(targetedCheckout.status)
+        )) {
+            return NextResponse.json({
+                error: "This subscription offer has already been used or canceled.",
+                code: "SUBSCRIPTION_OFFER_UNAVAILABLE",
+            }, { status: 409 });
+        }
+        const offeredAccountReference = targetedCheckout?.externalReference?.trim() || null;
+        const currentAccountReference = mirroredBeforeChange?.externalReference?.trim() || null;
+        if (
+            currentAccountReference
+            && offeredAccountReference
+            && currentAccountReference !== offeredAccountReference
+        ) {
+            return NextResponse.json({
+                error: "This offer belongs to a different merchant customer account.",
+                code: "ACCOUNT_BINDING_MISMATCH",
+            }, { status: 409 });
+        }
+        const effectiveAccountReference = currentAccountReference || offeredAccountReference;
+        const effectiveSourceCheckoutId =
+            mirroredBeforeChange?.sourceCheckoutId || targetedCheckout?.id || null;
+        targetedOfferCheckoutId = targetedCheckout?.id || null;
 
         const rateComparison = compareRecurringRates(
             plan.amountUsdc,
@@ -77,14 +142,16 @@ export async function POST(request: Request) {
             current.amount,
             current.period,
         );
-        if (rateComparison < 0) {
+        if (rateComparison <= 0) {
             return NextResponse.json({
-                error: "Plan reductions are not available. You can keep your current plan or choose a higher tier.",
-                code: "PLAN_REDUCTION_NOT_ALLOWED",
+                error: rateComparison < 0
+                    ? "Plan reductions are not available. You can keep your current plan or choose a higher tier."
+                    : "Only upgrades to a higher recurring rate are available.",
+                code: rateComparison < 0 ? "PLAN_REDUCTION_NOT_ALLOWED" : "PLAN_UPGRADE_REQUIRED",
             }, { status: 403 });
         }
 
-        const isUpgrade = rateComparison > 0;
+        const isUpgrade = true;
 
         /* Single-flight guard: a double-submit or retry must not charge the prorated difference or
            apply the modify twice. Claim (subscription, plan, subscriber) atomically — a concurrent
@@ -128,6 +195,7 @@ export async function POST(request: Request) {
                         data: { status: "PROCESSING", expiresAt: changeClaimExpiry() },
                     });
                     if (resumed.count === 1) {
+                        resumingDurableChange = true;
                         /* Continue from durable recovery state. Custody keys below are deterministic,
                            so an ambiguous provider response cannot repeat the transfer/modify. */
                     } else {
@@ -145,6 +213,7 @@ export async function POST(request: Request) {
                         changeClaimKey = null;
                         return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
                     }
+                    resumingDurableChange = true;
                 } else {
                     changeClaimKey = null;
                     return NextResponse.json({ error: "A plan change for this subscription is already in progress." }, { status: 409 });
@@ -155,9 +224,35 @@ export async function POST(request: Request) {
             }
         }
 
-        /* Authorization, merchant compatibility, upgrade direction, and the durable plan-change
-           claim must all succeed before consuming sponsor budget. Bind sponsorship to the exact
-           financial fingerprint so changed terms or mode cannot reuse an earlier top-up. */
+        /* A subscriber-assigned API offer is single-use. Claim it before any payment or chain
+           modification so two different upgrade modes cannot consume it concurrently. */
+        if (targetedOfferCheckoutId) {
+            const offerClaim = targetedCheckout?.status === "PROCESSING" && resumingDurableChange
+                ? { count: 1 }
+                : await prisma.paymentLink.updateMany({
+                    where: {
+                        id: targetedOfferCheckoutId,
+                        active: true,
+                        status: "PENDING",
+                    },
+                    data: { status: "PROCESSING" },
+                });
+            if (offerClaim.count !== 1) {
+                await prisma.idempotencyKey.delete({
+                    where: { executionKey: changeClaimKey! },
+                }).catch(() => {});
+                changeClaimKey = null;
+                return NextResponse.json({
+                    error: "This subscription offer is already being processed or completed.",
+                    code: "SUBSCRIPTION_OFFER_UNAVAILABLE",
+                }, { status: 409 });
+            }
+            targetedOfferClaimed = true;
+        }
+
+        /* Authorization, merchant compatibility, upgrade direction, durable claims, and the
+           targeted-offer claim must all succeed before consuming sponsor budget. Bind
+           sponsorship to the exact financial fingerprint so changed terms cannot reuse it. */
         await requireSponsoredGas({
             wallet: subscriber,
             action: "subscription_change",
@@ -217,7 +312,50 @@ export async function POST(request: Request) {
             subscriptionId: fromSubscriptionId,
             amountUsdc: plan.amountUsdc,
             periodSeconds: plan.periodSeconds,
+            ...(effectiveAccountReference && !currentAccountReference
+                ? { externalReference: effectiveAccountReference }
+                : {}),
+            ...(effectiveSourceCheckoutId && !mirroredBeforeChange?.sourceCheckoutId
+                ? { sourceCheckoutId: effectiveSourceCheckoutId }
+                : {}),
         });
+
+        if (targetedOfferCheckoutId) {
+            await prisma.$transaction(async (tx) => {
+                const finalized = await tx.paymentLink.updateMany({
+                    where: {
+                        id: targetedOfferCheckoutId!,
+                        status: "PROCESSING",
+                    },
+                    data: {
+                        active: false,
+                        status: "PAID",
+                        paidAt: new Date(),
+                        verifiedTxHash: txHash.toLowerCase(),
+                    },
+                });
+                if (finalized.count !== 1) {
+                    throw new Error("The plan changed on-chain, but the assigned offer still requires reconciliation.");
+                }
+                await tx.merchantPlan.updateMany({
+                    where: {
+                        id: plan.id,
+                        targetSubscriber: subscriber,
+                    },
+                    data: { active: false },
+                });
+                await tx.subscriptDm.updateMany({
+                    where: {
+                        paymentLinkId: targetedOfferCheckoutId!,
+                        receiverAddress: subscriber,
+                        messageType: "SUBSCRIPTION_OFFER",
+                        status: "PENDING",
+                    },
+                    data: { status: "APPROVED" },
+                });
+            });
+            targetedOfferClaimed = false;
+        }
 
         await createSubscriptionStartedDm({
             merchantAddress: plan.merchantAddress,
@@ -234,12 +372,6 @@ export async function POST(request: Request) {
            merchants map entitlement to, so it updates the SAME account rather than creating a second.
            Best-effort and non-blocking: webhook delivery must never fail the user's plan change. */
         try {
-            const mirrored = await prisma.subscription
-                .findUnique({
-                    where: { subscriptionId: BigInt(fromSubscriptionId) },
-                    select: { beneficiaryAddress: true },
-                })
-                .catch(() => null);
             await dispatchDurableSubscriptionWebhook(plan.merchantAddress, "subscription.updated", {
                 ...subscriptionWebhookData({
                     subscriptionId: fromSubscriptionId,
@@ -248,7 +380,9 @@ export async function POST(request: Request) {
                     subscriber,
                     merchantAddress: plan.merchantAddress,
                     txHash,
-                    beneficiary: mirrored?.beneficiaryAddress ?? null,
+                    beneficiary: mirroredBeforeChange?.beneficiaryAddress ?? null,
+                    externalReference: effectiveAccountReference,
+                    sourceCheckoutId: effectiveSourceCheckoutId,
                 }),
                 plan_id: plan.id,
                 planId: plan.id,
@@ -292,6 +426,17 @@ export async function POST(request: Request) {
         return NextResponse.json(responsePayload, { status: 200 });
     } catch (error: any) {
         console.error("Change plan failed:", error);
+        if (targetedOfferCheckoutId && targetedOfferClaimed
+            && !proratedTxHashForRecovery && !modifyTxHashForRecovery) {
+            await prisma.paymentLink.updateMany({
+                where: {
+                    id: targetedOfferCheckoutId,
+                    status: "PROCESSING",
+                    active: true,
+                },
+                data: { status: "PENDING" },
+            }).catch(() => {});
+        }
         /* Once either on-chain leg may have succeeded, retain a durable recovery state. Deleting
            the claim would lose evidence of a collected proration and strand the payment. */
         if (changeClaimKey) {

@@ -44,6 +44,14 @@ const STANDARD_ABI = [
    dunning; this constant is only the fallback when no merchant row/config exists. */
 const DEFAULT_MAX_RENEWAL_FAILURES = 4;
 
+function lifecycleBinding(sub: any) {
+    return {
+        beneficiary: sub.beneficiary_address || null,
+        externalReference: sub.external_reference || null,
+        sourceCheckoutId: sub.source_checkout_id || null,
+    };
+}
+
 async function loadDunningConfig(supabase: any, merchantAddresses: string[]): Promise<Map<string, number>> {
     const config = new Map<string, number>();
     if (merchantAddresses.length === 0) return config;
@@ -212,6 +220,7 @@ export async function POST(request: Request) {
                         amountUsdcMicros: amountOnChain,
                         subscriber,
                         merchantAddress,
+                        ...lifecycleBinding(sub),
                         reason: "Canceled on-chain",
                     }), `customer-canceled:${subId}:on-chain`);
                     results.push({ subId, subscriber, action: "CANCELLED_ON_CHAIN", success: true });
@@ -317,7 +326,7 @@ export async function POST(request: Request) {
                         subscriber,
                         merchantAddress,
                         txHash: settlementTxHash,
-                        beneficiary: sub.beneficiary_address || null,
+                        ...lifecycleBinding(sub),
                         pricing: pricingBlock,
                     }), `customer-renewed:${subId}:${sequenceId}:${settlementTxHash || "chain-confirmed"}`);
                     if (!await completeBillingClaim(settlementTxHash)) throw new Error("Customer renewal repair claim completion failed");
@@ -364,6 +373,7 @@ export async function POST(request: Request) {
                             amountUsdcMicros: chargeAmount,
                             subscriber,
                             merchantAddress,
+                            ...lifecycleBinding(sub),
                             reason: "Insufficient balance or allowance",
                             pricing: pricingBlock,
                         }), `customer-payment-failed:${subId}:${newFailures}`);
@@ -426,6 +436,7 @@ export async function POST(request: Request) {
                                 amountUsdcMicros: amountOnChain,
                                 subscriber,
                                 merchantAddress,
+                                ...lifecycleBinding(sub),
                                 reason: "Stopped after repeated failed renewals (zombie kill)",
                             }), `customer-canceled:${subId}:zombie-kill`);
                         }
@@ -500,7 +511,7 @@ export async function POST(request: Request) {
                     subscriber,
                     merchantAddress,
                     txHash: tx.hash,
-                    beneficiary: sub.beneficiary_address || null,
+                    ...lifecycleBinding(sub),
                     pricing: pricingBlock,
                 }), `customer-renewed:${subId}:${sequenceId}:${tx.hash.toLowerCase()}`);
 
@@ -585,7 +596,7 @@ export async function POST(request: Request) {
 
         const { data: dueCancels, error: dueCancelError } = await supabase
             .from("subscriptions")
-            .select("subscription_id, merchant_address")
+            .select("subscription_id, merchant_address, beneficiary_address, external_reference, source_checkout_id")
             .eq("kind", "CUSTOMER")
             .in("status", ["ACTIVE", "PAST_DUE"])
             .eq("cancel_at_period_end", true)
@@ -631,6 +642,7 @@ export async function POST(request: Request) {
                         amountUsdcMicros: amount,
                         subscriber,
                         merchantAddress: sub.merchant_address,
+                        ...lifecycleBinding(sub),
                         reason: "Canceled at period end",
                     }), `customer-canceled:${subId}:period-end`);
 

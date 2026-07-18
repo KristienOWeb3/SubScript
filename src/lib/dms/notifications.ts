@@ -32,6 +32,7 @@ const FALLBACK_TITLES: Record<string, string> = {
     PEER_REACTION: "New reaction",
     PEER_REQUEST: "New payment request",
     PEER_TRANSFER: "USDC received",
+    SUBSCRIPTION_OFFER: "New subscription plan",
     SUBSCRIPTION_STARTED: "Subscription updated",
 };
 

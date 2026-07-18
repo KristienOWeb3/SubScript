@@ -154,6 +154,7 @@ interface DmMessage {
 
 interface MerchantPlan {
   id: string;
+  checkoutSessionId?: string | null;
   merchantAddress: string;
   name: string;
   description?: string | null;
@@ -1196,12 +1197,16 @@ export default function UserDashboard() {
           BigInt(activeSub.amountCapUsdc),
           BigInt(activeSub.billingIntervalSeconds),
         );
-        if (comparison < 0) {
+        if (comparison <= 0) {
           setPlanManagerStatus(null);
-          setPlanManagerError("Plan reductions are not available. Choose your current plan or a higher tier.");
+          setPlanManagerError(
+            comparison < 0
+              ? "Plan reductions are not available. Choose your current plan or a higher tier."
+              : "Only upgrades to a higher recurring rate are available."
+          );
           return;
         }
-        isUpgrade = comparison > 0;
+        isUpgrade = true;
       } catch {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
@@ -1216,7 +1221,9 @@ export default function UserDashboard() {
         const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
         const body = activeSub
           ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-          : { planId: plan.id };
+          : plan.checkoutSessionId
+            ? { checkoutSessionId: plan.checkoutSessionId }
+            : { planId: plan.id };
         /* Subscribing charges the first payment server-side; a retry with the same x-request-id
            dedupes at Circle instead of creating (and charging) a second subscription. */
         subscribeRequestKey.current ||= crypto.randomUUID();
@@ -1315,7 +1322,29 @@ export default function UserDashboard() {
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
-    /* Merchant subscription requests settle through the sponsored hosted checkout. */
+    /* Assigned API subscription offers use the same plan-change controller as the DM plan
+       picker. That controller detects an existing merchant subscription and modifies its
+       on-chain id in place; a new subscriber activates the assigned checkout instead. */
+    if (dm.messageType === "SUBSCRIPTION_OFFER") {
+      if (!dm.paymentLinkId) return;
+      try {
+        const merchantAddress = dm.senderAddress.toLowerCase();
+        const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(merchantAddress)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Failed to load this subscription offer.");
+        const plans = (data.plans || []) as MerchantPlan[];
+        const assignedPlan = plans.find((plan) => plan.checkoutSessionId === dm.paymentLinkId);
+        if (!assignedPlan) throw new Error("This subscription offer is no longer available.");
+        setThreadPlans(plans);
+        setPlansMerchantAddress(merchantAddress);
+        await handleSubscribeOrSwitchPlan(assignedPlan);
+      } catch (error: any) {
+        setPlanManagerError(error.message || "Failed to open this subscription offer.");
+      }
+      return;
+    }
+
+    /* Other merchant requests settle through the hosted one-time checkout. */
     if (dm.messageType !== "PEER_REQUEST") {
       if (!dm.paymentLinkId) return;
       const checkoutUrl = `/pay/${dm.paymentLinkId}`;
@@ -2512,7 +2541,7 @@ export default function UserDashboard() {
   const isActionableDm = (dm: DmMessage) =>
     dm.status === "PENDING" &&
     dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
-    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const pendingDmCount = dms.filter(isActionableDm).length;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
@@ -5671,11 +5700,11 @@ function DmBubble({
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -5688,7 +5717,11 @@ function DmBubble({
   if (canPay) {
     actionItems.push({
       key: "pay",
-      label: dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm",
+      label: dm.messageType === "EXPIRY_WARNING"
+        ? "Resubscribe"
+        : dm.messageType === "SUBSCRIPTION_OFFER"
+          ? "Review plan"
+          : "Confirm",
       onClick: onPay,
       loadingKey: `pay-${dm.id}`,
     });
@@ -6080,17 +6113,17 @@ function MerchantPlanManager({
                     ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
                       activeSubscription.billingIntervalSeconds === plan.periodSeconds
                     : false;
-                  let isReduction = false;
+                  let isUnavailableChange = false;
                   if (activeSubscription) {
                     try {
-                      isReduction = compareRecurringRates(
+                      isUnavailableChange = compareRecurringRates(
                         BigInt(plan.amountUsdc),
                         BigInt(plan.periodSeconds),
                         BigInt(activeSubscription.amountCapUsdc),
                         BigInt(activeSubscription.billingIntervalSeconds),
-                      ) < 0;
+                      ) <= 0;
                     } catch {
-                      isReduction = true;
+                      isUnavailableChange = true;
                     }
                   }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
@@ -6143,17 +6176,17 @@ function MerchantPlanManager({
                         transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
-                        disabled={isCurrent || isReduction || loadingAction === loadingKey}
+                        disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
                         className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
-                          isCurrent || isReduction
+                          isCurrent || isUnavailableChange
                             ? "border-white/5 bg-white/[0.03] text-white/25"
                             : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent
                           ? "Active now"
-                          : isReduction
-                            ? "Lower tier unavailable"
+                          : isUnavailableChange
+                            ? "Upgrade only"
                             : hasActiveSubscription
                               ? "Upgrade"
                               : "Subscribe"}
