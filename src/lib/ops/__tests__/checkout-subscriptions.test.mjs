@@ -224,12 +224,29 @@ test("subscription checkout binds OTP correctly and cannot false-succeed after b
 
     assert.match(client, /purpose: "bind_wallet_email"/);
     assert.match(dashboard, /purpose: "bind_wallet_email"/);
-    assert.match(route, /EMBEDDED_WALLET_REQUIRED/);
+    assert.match(route, /EXTERNAL_TRANSACTION_REQUIRED/);
     assert.match(route, /RECONCILIATION_PENDING/);
     assert.match(route, /if \(!subId\)/);
     assert.match(route, /status: "active"/);
     assert.match(onchain, /findActiveOnChainSubscriptionId\(walletAddress, merchant\)/);
     assert.doesNotMatch(mirror, /subscription create failed/);
+});
+
+test("connected-wallet subscriptions verify the exact confirmed plan transaction before mirroring", () => {
+    const route = source("src/app/api/user/subscription/subscribe/route.ts");
+    const onchain = source("src/lib/subscriptions/onchain.ts");
+
+    assert.match(route, /txHash must be a 32-byte EVM transaction hash/);
+    assert.match(route, /verifyExternalSubscriptionTx/);
+    assert.match(route, /onChainActiveId !== verifiedExternal\?\.subId/);
+    assert.match(route, /if \(!externalTxHash && !checkoutSessionId && merchantPlan\)/);
+    assert.match(onchain, /receipt\.status !== 1/);
+    assert.match(onchain, /tx\.from[\s\S]*input\.subscriber/);
+    assert.match(onchain, /tx\.to[\s\S]*STANDARD_CONTRACT_ADDRESS/);
+    assert.match(onchain, /log\.address\.toLowerCase\(\) !== STANDARD_CONTRACT_ADDRESS\.toLowerCase\(\)/);
+    assert.match(onchain, /parsed\.args\.merchant[\s\S]*input\.merchant/);
+    assert.match(onchain, /BigInt\(parsed\.args\.amount\) === input\.amount/);
+    assert.match(onchain, /BigInt\(parsed\.args\.period\) === input\.period/);
 });
 
 test("subscription checkout preserves merchant terms and return flow", () => {
