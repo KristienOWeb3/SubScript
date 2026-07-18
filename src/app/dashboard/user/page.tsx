@@ -1303,8 +1303,8 @@ export default function UserDashboard() {
               triggerToast("Subscription cancelled");
             } else if (data.cancelAtPeriodEnd && data.accessUntil) {
               const until = new Date(data.accessUntil).toLocaleDateString();
-              setPlanManagerStatus(`Cancelled — you keep access until ${until}.`);
-              triggerToast(`Cancelled — access until ${until}`);
+              setPlanManagerStatus(`Cancelled. You keep access until ${until}.`);
+              triggerToast(`Cancelled: access until ${until}`);
             } else {
               setPlanManagerStatus("Subscription cancelled on-chain.");
               triggerToast("Subscription cancelled on-chain");
@@ -2284,7 +2284,7 @@ export default function UserDashboard() {
           return remaining.length > 0 ? remaining : [{ address: "", amount: "" }];
         });
         setBatchSendStatus(
-          `${err.message || "Batch partially completed."} ${settled.length} transfer${settled.length === 1 ? "" : "s"} already settled and ${settled.length === 1 ? "was" : "were"} removed — retry sends only the remaining recipients.`
+          `${err.message || "Batch partially completed."} ${settled.length} transfer${settled.length === 1 ? "" : "s"} already settled and ${settled.length === 1 ? "was" : "were"} removed. Retry sends only the remaining recipients.`
         );
         for (const t of settled) {
           if (t?.txHash) {
@@ -3063,7 +3063,7 @@ export default function UserDashboard() {
                         </button>
                       </div>
                       <p className="mt-1 text-[9px] text-white/40">
-                        Prepaid balance for a metered service —{" "}
+                        Prepaid balance for a metered service.{" "}
                         <button type="button" onClick={() => setVaultInfoOpen(true)} className="font-bold text-[#ccff00]/80 hover:underline">
                           what&apos;s this?
                         </button>
@@ -3467,7 +3467,7 @@ export default function UserDashboard() {
                 <div className="flex items-start gap-3 rounded-3xl border border-white/5 bg-black/30 p-4">
                   <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
                   <p className="text-[11px] leading-relaxed text-white/45">
-                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request — those are receiver-bound and can't be shared.
+                    Want to bill a specific person privately instead? Open their thread in <button type="button" onClick={() => setActiveTab("inbox")} className="font-bold text-[#ccff00] underline-offset-2 hover:underline">DMs</button> and tap Request. Those are receiver-bound and can't be shared.
                   </p>
                 </div>
               </section>
@@ -4025,7 +4025,7 @@ export default function UserDashboard() {
                       </h4>
                       <p className="text-[10px] leading-relaxed text-white/45 font-sans">
                         Billing question, incorrect charge, or something not working? Real humans read every
-                        message — include your wallet address and a receipt ID or transaction hash if it&apos;s
+                        message. Include your wallet address and a receipt ID or transaction hash if it&apos;s
                         about a payment.
                       </p>
                       <div className="space-y-2 font-sans text-xs">
@@ -4060,7 +4060,7 @@ export default function UserDashboard() {
                         <Globe className="h-3.5 w-3.5 text-[#ccff00]" /> DNS Identity Management
                       </h4>
                       <p className="text-[9px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
-                        Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.
+                        Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully. After a change you won't be able to switch again for a year.
                       </p>
 
                       {registeredDomain ? (
@@ -4880,7 +4880,7 @@ export default function UserDashboard() {
                           referrals.map((ref) => (
                             <tr key={ref.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
                               <td className="py-4 font-semibold text-white/80"><Identity address={ref.referredAddress} /></td>
-                              <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "—"}</td>
+                              <td className="py-4 font-semibold text-white/60">{ref.alias ? `@${ref.alias}` : "-"}</td>
                               <td className="py-4 text-white/50">{new Date(ref.createdAt).toLocaleDateString()}</td>
                               <td className="py-4 text-right">
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400">
@@ -5189,7 +5189,7 @@ export default function UserDashboard() {
                       <p className="text-[11px] leading-relaxed text-white/70">
                         SubScript has not verified this merchant. Committing escrows funds they can bill
                         metered usage against. Only commit to merchants you trust and have independently
-                        verified — funds lost to a fraudulent merchant may not be recoverable.
+                        verified. Funds lost to a fraudulent merchant may not be recoverable.
                       </p>
                     </div>
                   </div>
@@ -5348,7 +5348,7 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
             </div>
             <p className="text-xs leading-relaxed text-white/55">
               A vault is a small prepaid balance you commit to a single service. Instead of paying per
-              call, you fund the vault once and the service draws from it as you use it — so usage-based
+              call, you fund the vault once and the service draws from it as you use it, so usage-based
               products keep working without you approving every charge.
             </p>
             <div className="space-y-2">
@@ -6864,7 +6864,7 @@ function DepositModal({
                     {cctpRecovery && (
                       <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-[10px] leading-relaxed text-amber-100/80">
                         <p className="font-bold uppercase tracking-wider text-amber-200">Bridge recovery found</p>
-                        <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting—do not start another burn.</p>
+                        <p className="mt-2">{cctpRecovery.amount} USDC was already burned on Sepolia. Resume attestation and Arc minting. Do not start another burn.</p>
                         <a href={`https://sepolia.etherscan.io/tx/${cctpRecovery.burnHash}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-bold underline">View burn transaction</a>
                       </div>
                     )}
@@ -7488,7 +7488,7 @@ function MeteredVaultRow({
   const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
   const shortDate = (date: Date | null) => date
     ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
-    : "—";
+    : "-";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
       <div className="flex items-start justify-between gap-3">
@@ -7572,7 +7572,7 @@ function MeteredVaultRow({
       )}
       {locked && !blocked && !cancelled && (
         <p className="text-[10px] leading-relaxed text-white/40">
-          Committed funds are locked while the cycle runs — the keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+          Committed funds are locked while the cycle runs. The keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
         </p>
       )}
       {awaitingSettlement && (
@@ -7587,7 +7587,7 @@ function MeteredVaultRow({
       )}
       {blocked && commitNeeded > 0 && (
         <p className="text-[10px] leading-relaxed text-amber-300/70">
-          Service paused — you&apos;ve used your committed amount. Re-commit {formatUsdc(vault.commitUsdc)} USDC to keep using it.
+          Service paused. You&apos;ve used your committed amount. Re-commit {formatUsdc(vault.commitUsdc)} USDC to keep using it.
         </p>
       )}
     </div>

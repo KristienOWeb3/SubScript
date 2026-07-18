@@ -67,16 +67,16 @@ export default function Home() {
 
     const stats = [
         ["1%", "Flat processing fee per successful payment"],
-        ["$0", "Fees for subscribers — no hidden charges"],
+        ["$0", "Fees for subscribers, with no hidden charges"],
         ["<1s", "Settlement finality on Arc"],
-        ["24/7", "Settlement — no banking hours or cut-offs"],
+        ["24/7", "Settlement with no banking hours or cut-offs"],
     ];
 
     const featureCardsLarge = [
         {
             icon: Zap,
             title: "Programmable subscriptions",
-            text: "Bounded USDC payment authorizations via Permit2, with revocation controls the customer holds. Funds stay in the customer's wallet until each billing cycle executes — no locked balances, and no charges after cancellation.",
+            text: "Bounded USDC payment authorizations via Permit2, with revocation controls the customer holds. Funds stay in the customer's wallet until each billing cycle executes. There are no locked balances, and no charges after cancellation.",
         },
         {
             icon: Code,
@@ -86,9 +86,9 @@ export default function Home() {
     ];
 
     const featureCardsSmall = [
-        { icon: Wallet, title: "Familiar onboarding", text: "Customers sign in with Google and receive an embedded wallet automatically — no seed phrases or browser extensions." },
+        { icon: Wallet, title: "Familiar onboarding", text: "Customers sign in with Google and receive an embedded wallet automatically, requiring no seed phrases or browser extensions." },
         { icon: Webhook, title: "Signed webhooks", text: "HMAC-signed events tell your backend exactly which order to fulfill. Idempotent by design." },
-        { icon: ReceiptText, title: "Readable receipts", text: "Every payment binds to an auditable receipt record on Arc — no block explorer required." },
+        { icon: ReceiptText, title: "Readable receipts", text: "Every payment binds to an auditable receipt record on Arc, so no block explorer is required." },
         { icon: QrCode, title: "Payment links & QR codes", text: "Generate branded links and QR codes from the dashboard, with no code required." },
         { icon: BarChart3, title: "Usage-based billing", text: "Prepaid metered balances for API calls, AI tokens, storage, or pay-per-view consumption." },
         { icon: ShieldCheck, title: "Privacy & multisig", text: "Confidential merchant transactions with Safe multisig payout destinations." },
@@ -96,29 +96,29 @@ export default function Home() {
 
     const steps = [
         ["Create a Checkout Intent", "Your backend calls POST /api/intent with your secret key and receives a hosted checkout URL."],
-        ["The customer pays in USDC", "SubScript handles wallet onboarding, authorization, and settlement on Arc — the customer simply confirms."],
+        ["The customer pays in USDC", "SubScript handles wallet onboarding, authorization, and settlement on Arc, so the customer simply confirms."],
         ["A signed webhook confirms payment", "Verify the HMAC signature, match the intent ID, and fulfill the order."],
     ];
 
     const useCases = [
         { icon: Server, title: "SaaS platforms", text: "Recurring seat-based billing with automatic renewals, retry-aware recovery, and clean cancellation semantics." },
-        { icon: Globe, title: "APIs & AI products", text: "Meter usage against prepaid USDC balances — bill per call, per token, or per session with exact precision." },
+        { icon: Globe, title: "APIs & AI products", text: "Meter usage against prepaid USDC balances and bill per call, per token, or per session with exact precision." },
         { icon: Users, title: "Creators & memberships", text: "Payment links and QR codes for memberships and digital goods. Share a link, get settled in USDC." },
         { icon: Building2, title: "Global businesses", text: "Reach customers whose cards fail on cross-border charges. USDC settlement works the same in every market." },
     ];
 
     const securityItems = [
-        { icon: KeyRound, title: "Bounded authorizations", text: "Customers approve capped Permit2 allowances — never unlimited access to a wallet. Every authorization is revocable on-chain at any time." },
+        { icon: KeyRound, title: "Bounded authorizations", text: "Customers approve capped Permit2 allowances, never giving unlimited access to a wallet. Every authorization is revocable on-chain at any time." },
         { icon: Lock, title: "Signed event delivery", text: "Webhooks are HMAC-SHA256 signed with timestamped payloads, protecting fulfillment against forgery and replay." },
         { icon: ShieldCheck, title: "Institutional payout controls", text: "Route merchant payouts to Safe multisig destinations and keep treasury operations under multi-party approval." },
-        { icon: RefreshCcw, title: "Verifiable settlement", text: "Every charge settles on Arc with a receipt record both parties can independently audit — no opaque processor ledger." },
+        { icon: RefreshCcw, title: "Verifiable settlement", text: "Every charge settles on Arc with a receipt record both parties can independently audit, without any opaque processor ledger." },
     ];
 
     const faqs = [
         ["Do my customers need to understand crypto?", "No. Customers sign in with Google, receive an embedded wallet automatically, and pay the advertised USDC price. There are no seed phrases, browser extensions, or gas tokens to manage."],
-        ["What does SubScript cost?", "Merchants pay a flat 1% fee on successful payments. Subscribers pay nothing — no setup fees, maintenance fees, or failed-payment penalties."],
-        ["How do I integrate?", "A no-code merchant can launch with a hosted payment link in minutes. Developers can scaffold checkout and signed-webhook routes in one command with the CLI — `npx @subscriptonarc/cli init` — or make a first REST call with no account using the sandbox demo key. Under the hood it is one REST call to create an intent, then fulfilling orders from signed webhook events. Sandbox keys and test clocks let you test end to end before going live."],
-        ["Can customers cancel at any time?", "Yes. Authorizations are bounded and revocable on-chain, so a cancelled subscription cannot be charged again — cancellation is enforced by the payment layer itself, not by a support queue."],
+        ["What does SubScript cost?", "Merchants pay a flat 1% fee on successful payments. Subscribers pay nothing, with no setup fees, maintenance fees, or failed-payment penalties."],
+        ["How do I integrate?", "A no-code merchant can launch with a hosted payment link in minutes. Developers can scaffold checkout and signed-webhook routes in one command with the CLI using `npx @subscriptonarc/cli init`, or make a first REST call with no account using the sandbox demo key. Under the hood it is one REST call to create an intent, then fulfilling orders from signed webhook events. Sandbox keys and test clocks let you test end to end before going live."],
+        ["Can customers cancel at any time?", "Yes. Authorizations are bounded and revocable on-chain, so a cancelled subscription cannot be charged again, as cancellation is enforced by the payment layer itself, not by a support queue."],
         ["What is Arc?", "Arc is a USDC-native network built for payments, with sub-second settlement finality and predictable fees. SubScript uses it as the settlement layer for every transaction."],
     ];
 
@@ -141,20 +141,11 @@ export default function Home() {
             <section id="get-started" className="relative w-full min-h-screen flex items-center justify-center pt-32 sm:pt-36 pb-16 sm:pb-24">
                 <div className="max-w-7xl mx-auto w-full px-6 sm:px-12">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-                        <div className="flex justify-center order-2 lg:order-1 w-full">
+                        <div className="flex justify-center order-2 lg:order-2 w-full">
                             <MockupDashboardCard />
                         </div>
 
-                        <div className="order-1 lg:order-2 text-center lg:text-left flex flex-col items-center lg:items-start">
-                            <motion.span
-                                className="inline-flex items-center gap-2 rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] px-4 py-1.5 text-[11px] sm:text-xs tracking-[0.14em] font-semibold text-[#00d2b4] uppercase mb-5"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.6 }}
-                            >
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#00d2b4]" />
-                                Stablecoin payment infrastructure
-                            </motion.span>
+                        <div className="order-1 lg:order-1 text-center lg:text-left flex flex-col items-center lg:items-start">
 
                             <motion.h1
                                 className="text-3xl sm:text-4xl lg:text-[3.4rem] font-bold tracking-tight text-white mb-7 leading-[1.08]"
@@ -172,7 +163,7 @@ export default function Home() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8, delay: 0.3 }}
                             >
-                                Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts — settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
+                                Accept one-time and recurring USDC payments with hosted checkout, signed webhooks, and human-readable receipts, settled on Arc in under a second. Your customers sign in with Google and pay the advertised price. Nothing more.
                             </motion.p>
 
                             <motion.div
@@ -235,7 +226,7 @@ export default function Home() {
                     <SectionHeading
                         eyebrow="Payment infrastructure"
                         title="Everything you need to accept USDC"
-                        description="One-time payments, recurring billing, usage-based charging, and invoicing — delivered through a single payment authorization framework on Arc."
+                        description="One-time payments, recurring billing, usage-based charging, and invoicing, delivered through a single payment authorization framework on Arc."
                     />
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                         {featureCardsLarge.map(({ icon: Icon, title, text }, i) => (
@@ -272,11 +263,11 @@ export default function Home() {
                             <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Built for developers</span>
                             <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white">Two API calls to production</h2>
                             <p className="mt-4 text-sm text-white/55 leading-relaxed max-w-lg">
-                                Create a Checkout Intent from your backend, redirect the customer to hosted checkout, and fulfill from a signed webhook. Plain REST with predictable, integer-precise amounts — no SDK lock-in, no client-side keys.
+                                Create a Checkout Intent from your backend, redirect the customer to hosted checkout, and fulfill from a signed webhook. Plain REST uses predictable, integer-precise amounts, with no SDK lock-in or client-side keys.
                             </p>
                             <ul className="mt-6 space-y-3">
                                 {[
-                                    "Intent-based reconciliation — no wallet address matching",
+                                    "Intent-based reconciliation with no wallet address matching",
                                     "HMAC-SHA256 signed webhooks with replay protection",
                                     "Sandbox keys and test flows before going live",
                                     "OpenAPI specification for typed client generation",
@@ -350,7 +341,7 @@ export default function Home() {
                                 <span className="text-xs tracking-[0.2em] font-semibold text-[#00d2b4] uppercase">Security</span>
                                 <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight">Trust enforced by the payment layer</h2>
                                 <p className="mt-4 text-sm text-white/55 leading-relaxed">
-                                    SubScript is designed so that neither merchants nor SubScript hold open-ended access to customer funds — controls are enforced on-chain, not by policy.
+                                    SubScript is designed so that neither merchants nor SubScript hold open-ended access to customer funds. Controls are enforced on-chain, not by policy.
                                 </p>
                             </Reveal>
                             <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -396,7 +387,7 @@ export default function Home() {
                         <div className="liquid-glass border border-[#00d2b4]/20 bg-[#00d2b4]/[0.04] rounded-[2rem] p-10 sm:p-14 text-center">
                             <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">Start accepting USDC today</h2>
                             <p className="mt-4 text-sm text-white/55 max-w-xl mx-auto leading-relaxed">
-                                Create a merchant account, generate a payment link or Checkout Intent, and settle in stablecoins on Arc — no card networks and no chargebacks.
+                                Create a merchant account, generate a payment link or Checkout Intent, and settle in stablecoins on Arc without card networks or chargebacks.
                             </p>
                             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
                                 <Link href="/signup?role=merchant" className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#00d2b4] hover:bg-[#00d2b4]/85 text-black font-semibold rounded-2xl text-sm transition-all shadow-[0_0_24px_rgba(0,210,180,0.25)]">
