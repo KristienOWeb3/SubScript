@@ -38,6 +38,58 @@ const socialLinks = [
     { name: "Telegram", href: "https://t.me/subscript", icon: TelegramIcon, live: false },
 ];
 
+const overlayVariants = {
+    hidden: { y: "-100%" },
+    visible: {
+        y: 0,
+        transition: {
+            type: "tween",
+            ease: [0.16, 1, 0.3, 1], // easeOutExpo
+            duration: 0.45
+        }
+    },
+    exit: {
+        y: "-100%",
+        transition: {
+            type: "tween",
+            ease: [0.7, 0, 0.84, 0], // easeInExpo
+            duration: 0.35
+        }
+    }
+};
+
+const staggerContainerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.06,
+            delayChildren: 0.2
+        }
+    },
+    exit: {
+        opacity: 0,
+        transition: {
+            staggerChildren: 0.04,
+            staggerDirection: -1
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: {
+            type: "spring",
+            stiffness: 260,
+            damping: 24
+        }
+    },
+    exit: { opacity: 0, y: 10 }
+};
+
 export default function Navbar() {
     const [scrolled, setScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -152,6 +204,11 @@ export default function Navbar() {
     }, []);
 
     const navLinks = [
+        { name: "Documentation", href: "/docs", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Protocol", href: "/protocol", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Compare", href: "/compare", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Answers", href: "/answers", className: "text-[#9ca3af] hover:text-white" },
+        { name: "Support", href: "/support", className: "text-[#9ca3af] hover:text-white" },
         { name: "Sign in", href: "/login", className: "text-[#9ca3af] hover:text-white" },
     ];
 
@@ -176,12 +233,12 @@ export default function Navbar() {
                     </Link>
 
                     {/* Desktop Nav Links */}
-                    <div className="hidden md:flex items-center gap-6">
+                    <div className="hidden lg:flex items-center gap-6">
                         {navLinks.filter(link => link.name !== "Sign in").map((link) => (
                             <Link
                                 key={link.name}
                                 href={link.href}
-                                className={`text-xs font-semibold tracking-wide uppercase transition-all duration-200 ${link.className}`}
+                                className={`text-xs font-semibold tracking-wide uppercase transition-all duration-200 ${pathname === link.href ? "text-[#00d2b4]" : "text-[#9ca3af] hover:text-white"}`}
                             >
                                 {link.name}
                             </Link>
@@ -189,7 +246,7 @@ export default function Navbar() {
                     </div>
 
                     {/* Right Action buttons */}
-                    <div className="hidden md:flex items-center gap-6">
+                    <div className="hidden lg:flex items-center gap-6">
                         {wrongNetwork && walletConnected && (
                             <button
                                 onClick={switchToArcTestnet}
@@ -213,7 +270,7 @@ export default function Navbar() {
                     </div>
 
                     {/* Mobile Menu Button & Sign Up */}
-                    <div className="md:hidden flex items-center gap-3">
+                    <div className="lg:hidden flex items-center gap-3">
                         {wrongNetwork && walletConnected && (
                             <button
                                 onClick={switchToArcTestnet}
@@ -243,11 +300,11 @@ export default function Navbar() {
             <AnimatePresence>
                 {mobileMenuOpen && (
                     <motion.div
-                        className="fixed inset-0 z-50 md:hidden flex flex-col bg-black/95 backdrop-blur-xl"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-50 lg:hidden flex flex-col bg-black/95 backdrop-blur-xl"
+                        variants={overlayVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
                     >
                         <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
                             {/* Logo */}
@@ -271,71 +328,79 @@ export default function Navbar() {
                             </button>
                         </div>
 
-                        {/* Navigation Links */}
-                        <div className="flex-1 px-8 py-8 flex flex-col gap-4">
-                            {navLinks.map((link, idx) => (
+                        {/* Stagger Container wraps links and footer details so everything animates in order */}
+                        <motion.div
+                            className="flex-1 flex flex-col min-h-0"
+                            variants={staggerContainerVariants}
+                            initial="hidden"
+                            animate="visible"
+                            exit="exit"
+                        >
+                            {/* Scrollable container for links if screen is small */}
+                            <div className="flex-1 px-8 py-8 flex flex-col gap-4 overflow-y-auto">
+                                {navLinks.map((link) => (
+                                    <motion.div
+                                        key={link.name}
+                                        variants={itemVariants}
+                                    >
+                                        <Link
+                                            href={link.href}
+                                            onClick={() => setMobileMenuOpen(false)}
+                                            className={`block text-2xl font-semibold py-2 transition-colors ${pathname === link.href ? "text-[#00d2b4]" : "text-[#9ca3af] hover:text-white"}`}
+                                        >
+                                            {link.name}
+                                        </Link>
+                                    </motion.div>
+                                ))}
+                                {/* Sign Up Link inside Mobile Overlay */}
                                 <motion.div
-                                    key={link.name}
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: idx * 0.05 }}
+                                    variants={itemVariants}
+                                    className="pt-4 border-t border-white/5"
                                 >
                                     <Link
-                                        href={link.href}
+                                        href="/signup"
                                         onClick={() => setMobileMenuOpen(false)}
-                                        className={`block text-2xl font-semibold py-2 transition-colors ${link.className}`}
+                                        className="block text-2xl font-semibold text-[#00d2b4] py-2"
                                     >
-                                        {link.name}
+                                        Create account
                                     </Link>
                                 </motion.div>
-                            ))}
-                            {/* Sign Up Link inside Mobile Overlay */}
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: navLinks.length * 0.05 }}
-                                className="pt-4 border-t border-white/5"
-                            >
-                                <Link
-                                    href="/signup"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                    className="block text-2xl font-semibold text-[#00d2b4] py-2"
-                                >
-                                    Create account
-                                </Link>
-                            </motion.div>
-                        </div>
-
-                        {/* Social Icons inside Mobile Menu */}
-                        <div className="px-8 py-8 border-t border-white/5 bg-[#17171a]/50">
-                            <p className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider mb-4">Community</p>
-                            <div className="flex items-center gap-4">
-                                {socialLinks.map((social) => (
-                                    social.live ? (
-                                        <a
-                                            key={social.name}
-                                            href={social.href}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            onClick={() => setMobileMenuOpen(false)}
-                                            className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
-                                            aria-label={social.name}
-                                        >
-                                            <social.icon className="w-6 h-6" />
-                                        </a>
-                                    ) : (
-                                        <button
-                                            key={social.name}
-                                            onClick={() => { showSocialToast(social.name); setMobileMenuOpen(false); }}
-                                            className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
-                                            aria-label={social.name}
-                                        >
-                                            <social.icon className="w-6 h-6" />
-                                        </button>
-                                    )
-                                ))}
                             </div>
-                        </div>
+
+                            {/* Social Icons inside Mobile Menu */}
+                            <motion.div
+                                className="px-8 py-8 border-t border-white/5 bg-[#17171a]/50"
+                                variants={itemVariants}
+                            >
+                                <p className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider mb-4">Community</p>
+                                <div className="flex items-center gap-4">
+                                    {socialLinks.map((social) => (
+                                        social.live ? (
+                                            <a
+                                                key={social.name}
+                                                href={social.href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={() => setMobileMenuOpen(false)}
+                                                className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
+                                                aria-label={social.name}
+                                            >
+                                                <social.icon className="w-6 h-6" />
+                                            </a>
+                                        ) : (
+                                            <button
+                                                key={social.name}
+                                                onClick={() => { showSocialToast(social.name); setMobileMenuOpen(false); }}
+                                                className="w-12 h-12 rounded-xl bg-[#27272a]/80 border border-white/5 flex items-center justify-center text-[#9ca3af] hover:text-[#00d2b4] hover:border-[#00d2b4] transition-all duration-200"
+                                                aria-label={social.name}
+                                            >
+                                                <social.icon className="w-6 h-6" />
+                                            </button>
+                                        )
+                                    ))}
+                                </div>
+                            </motion.div>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>

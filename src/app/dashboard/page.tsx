@@ -681,7 +681,7 @@ export default function DashboardPage() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to save");
-            setDunningMessage("Saved — applies from the next billing run.");
+            setDunningMessage("Saved. Applies from the next billing run.");
             setTimeout(() => setDunningMessage(null), 4000);
         } catch (err: any) {
             setDunningMessage(err.message || "Failed to save dunning settings.");
@@ -2720,7 +2720,7 @@ Please complete the following implementation tasks:
 
                                 <div className="col-span-2 space-y-3 rounded-2xl border border-white/5 bg-white/[0.015] p-4">
                                     <p className="text-[9px] font-bold uppercase tracking-wide text-white/40">
-                                        Invoice details <span className="normal-case text-white/25">(optional — turns this link into an invoice; shown on the checkout page)</span>
+                                        Invoice details <span className="normal-case text-white/25">(optional, turns this link into an invoice; shown on the checkout page)</span>
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-3">
                                         <div className="space-y-1">
@@ -3012,7 +3012,7 @@ Please complete the following implementation tasks:
                                                                             No payments recorded for this checkout link yet.
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="overflow-hidden border border-white/5 rounded-xl bg-black/20">
+                                                                        <div className="overflow-x-auto border border-white/5 rounded-xl bg-black/20">
                                                                             <table className="w-full text-left border-collapse text-[10px]">
                                                                                 <thead>
                                                                                     <tr className="border-b border-white/5 bg-white/[0.02] text-[8px] uppercase tracking-wider text-white/30 font-bold">
@@ -3129,7 +3129,7 @@ Please complete the following implementation tasks:
                                 Create Subscription Plan
                             </h2>
                             <p className="text-[11px] text-white/40 font-sans">
-                                Publish named recurring USDC plans. Share each plan's subscribe link with customers — no website needed.
+                                Publish named recurring USDC plans. Share each plan's subscribe link with customers, with no website needed.
                                 The same plans power your API keys and webhooks later, so you scale without rebuilding.
                             </p>
                         </div>
@@ -3182,7 +3182,7 @@ Please complete the following implementation tasks:
 
                         <div className="space-y-1">
                             <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                Minimum Commitment (days) <span className="normal-case text-white/25">(optional — disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
+                                Minimum Commitment (days) <span className="normal-case text-white/25">(optional, disclosed to subscribers before they authorize; max one billing period, capped at 30 days)</span>
                             </label>
                             <input
                                 type="number"
@@ -3198,7 +3198,7 @@ Please complete the following implementation tasks:
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                    Description <span className="normal-case text-white/25">(optional — shown to subscribers)</span>
+                                    Description <span className="normal-case text-white/25">(optional, shown to subscribers)</span>
                                 </label>
                                 <span className={`text-[9px] font-bold ${planDescription.length >= PLAN_DESCRIPTION_MAX ? "text-amber-400" : "text-white/30"}`}>
                                     {planDescription.length}/{PLAN_DESCRIPTION_MAX}
@@ -3209,14 +3209,14 @@ Please complete the following implementation tasks:
                                 onChange={(event) => setPlanDescription(event.target.value.slice(0, PLAN_DESCRIPTION_MAX))}
                                 rows={3}
                                 maxLength={PLAN_DESCRIPTION_MAX}
-                                placeholder="What's included — features, usage limits, support level, billing terms…"
+                                placeholder="What's included (features, usage limits, support level, billing terms…)"
                                 className="w-full resize-none rounded-xl border border-white/10 bg-black px-4 py-3 text-white transition-colors focus:border-[#00d2b4] focus:outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
                             <label className="text-white/50 font-bold uppercase text-[9px] tracking-wide">
-                                Details Link <span className="normal-case text-white/25">(optional — &ldquo;view more&rdquo;)</span>
+                                Details Link <span className="normal-case text-white/25">(optional, &ldquo;view more&rdquo;)</span>
                             </label>
                             <input
                                 type="url"
@@ -3303,7 +3303,7 @@ Please complete the following implementation tasks:
                             Help &amp; Support
                         </h2>
                         <p className="text-[11px] text-white/40 font-sans">
-                            Integration help, activation issues, billing questions, or security disclosures — real
+                            Integration help, activation issues, billing questions, or security disclosures. Real
                             humans read every message.
                         </p>
                     </div>
@@ -3418,7 +3418,7 @@ Please complete the following implementation tasks:
                     <div className="space-y-4 pt-4 border-t border-white/5">
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
                         <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
-                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent — you can hold either without the other.
+                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent, so you can hold either without the other.
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -3479,8 +3479,8 @@ Please complete the following implementation tasks:
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
                             {merchantAliasNextChange
-                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change it again then. Business names cannot be unregistered.</>
-                                : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.</>}
+                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong>. You can change it again then. Business names cannot be unregistered.</>
+                                : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully, because after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
                             <div className="p-4 rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/5 flex items-center justify-between">
@@ -4369,7 +4369,7 @@ Please complete the following implementation tasks:
                                             {isPremium ? "Premium Tier" : "Standard Tier"}
                                         </p>
                                         <p className="text-[10px] text-white/40">
-                                            {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access — upgrade for premium features"}
+                                            {isPremium ? "Full access to rerouting, analytics, and priority execution" : "Basic dashboard access. Upgrade for premium features."}
                                         </p>
                                     </div>
                                 </div>
@@ -4574,7 +4574,7 @@ Please complete the following implementation tasks:
                                             </p>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] font-bold tracking-wide ${vaultBalance > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
-                                                    {vaultBalance > 0 ? "Available" : "—"}
+                                                    {vaultBalance > 0 ? "Available" : "-"}
                                                 </span>
                                                 <span className="text-xs font-semibold text-white/40 font-mono">
                                                     {balanceVisible ? `${detectedCurrency.symbol}${(vaultBalance * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '•••••'}
@@ -4788,7 +4788,7 @@ Please complete the following implementation tasks:
                                                 </div>
                                                 <div>
                                                     <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Grace Period</h3>
-                                                    <p className="text-xs text-white/50">Payment failed — access temporarily preserved</p>
+                                                    <p className="text-xs text-white/50">Payment failed. Access temporarily preserved.</p>
                                                 </div>
                                             </div>
                                             <p className="text-xs text-white/70 leading-relaxed font-sans">
@@ -4828,7 +4828,7 @@ Please complete the following implementation tasks:
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <p className="text-sm text-white/50">Default — funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
+                                                <p className="text-sm text-white/50">Default: funds route to your connected wallet ({address?.slice(0, 6)}...{address?.slice(-4)})</p>
                                             )}
                                         </div>
 
@@ -5324,7 +5324,7 @@ Please complete the following implementation tasks:
                                                 </button>
                                             </div>
                                             <p className="mt-2 text-[10px] leading-relaxed text-yellow-400/80">
-                                                Copy this now. It is only readable while this page stays open — the key is stored
+                                                Copy this now. It is only readable while this page stays open; the key is stored
                                                 hashed, so it cannot be shown again.
                                             </p>
                                         </>
@@ -5334,7 +5334,7 @@ Please complete the following implementation tasks:
                                                 <code className="break-all text-xs text-white/45">{activeSecretKey}</code>
                                             </div>
                                             <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-                                                This is a fingerprint of the live key, not the key itself — enough to tell which one
+                                                This is a fingerprint of the live key, not the key itself. It's enough to tell which one
                                                 your integration should be using. The secret is stored hashed and is shown only once,
                                                 when it is created. If you no longer have it, roll the key below to issue a new one.
                                             </p>
@@ -5348,7 +5348,7 @@ Please complete the following implementation tasks:
                                         <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-[10px] text-white/40 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
-                                            {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one — the new key is revealed and copied once, here."}
+                                            {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one. The new key is revealed and copied once, here."}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
@@ -5379,10 +5379,10 @@ Please complete the following implementation tasks:
                                 <div>
                                     <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                         <Code2 className={`w-4 h-4 ${primaryColorText}`} />
-                                        Fastest integration — the CLI
+                                        Fastest integration: the CLI
                                     </h2>
                                     <p className="mt-2 text-[11px] text-white/55 leading-relaxed max-w-md">
-                                        One command scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript is a plain REST API — there is no SDK to install.
+                                        One command scaffolds a checkout intent route, a signed webhook receiver, and a checkout button. SubScript is a plain REST API. There is no SDK to install.
                                     </p>
                                 </div>
                                 <a
@@ -6383,8 +6383,8 @@ function MerchantPlanRow({
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
                         {plan.targetSubscriber
-                            ? `${plan.active ? "Assigned API offer" : "Assigned offer closed"} — ${plan.targetSubscriber.slice(0, 6)}…${plan.targetSubscriber.slice(-4)}`
-                            : plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
+                            ? `${plan.active ? "Assigned API offer" : "Assigned offer closed"} for ${plan.targetSubscriber.slice(0, 6)}...${plan.targetSubscriber.slice(-4)}`
+                            : plan.active ? "Live, accepting subscribers" : "Hidden from new subscribers"}
                     </p>
                 </div>
                 <button

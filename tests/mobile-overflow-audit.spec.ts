@@ -415,6 +415,56 @@ async function auditOverflow(page: Page, label: string) {
 test.describe("mobile overflow audit", () => {
   test.setTimeout(600_000);
 
+  test("keeps the complete mobile navigation accessible while hidden scrollbars still scroll", async ({ browser }) => {
+    const context = await newAuditContext(
+      browser,
+      { name: "narrow", width: 320, height: 740 },
+      "anonymous",
+    );
+    const page = await context.newPage();
+    await page.goto(`${baseURL}/`, { waitUntil: "domcontentloaded" });
+
+    await page.getByRole("button", { name: "Open Menu" }).click();
+    const menuScroller = page.locator(".overflow-y-auto").filter({
+      has: page.getByRole("link", { name: "Documentation", exact: true }),
+    });
+    await expect(menuScroller).toBeVisible();
+
+    for (const linkName of [
+      "Documentation",
+      "Protocol",
+      "Compare",
+      "Answers",
+      "Support",
+      "Sign in",
+      "Create account",
+    ]) {
+      const link = page.getByRole("link", { name: linkName, exact: true });
+      await link.scrollIntoViewIfNeeded();
+      await expect(link).toBeVisible();
+    }
+
+    const menuScroll = await menuScroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return {
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      };
+    });
+    expect(menuScroll.scrollHeight).toBeGreaterThan(menuScroll.clientHeight);
+    expect(menuScroll.scrollTop).toBeGreaterThan(0);
+
+    await page.getByRole("button", { name: "Close Menu" }).click();
+    await expect(page.getByRole("button", { name: "Open Menu" })).toBeVisible();
+    const pageScrollTop = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      return window.scrollY;
+    });
+    expect(pageScrollTop).toBeGreaterThan(0);
+    await context.close();
+  });
+
   test("uses the requested responsive user-home layout", async ({ browser }, testInfo) => {
     const desktopContext = await newAuditContext(
       browser,
