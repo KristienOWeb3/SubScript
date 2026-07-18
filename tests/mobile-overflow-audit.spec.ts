@@ -439,7 +439,7 @@ test.describe("mobile overflow audit", () => {
       "Sign in",
       "Create account",
     ]) {
-      const link = page.getByRole("link", { name: linkName, exact: true });
+      const link = menuScroller.getByRole("link", { name: linkName, exact: true });
       await link.scrollIntoViewIfNeeded();
       await expect(link).toBeVisible();
     }
