@@ -694,6 +694,11 @@ model MeteredVault {
   environment       String   @default("TEST")
   settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
   disputed          Boolean  @default(false)
+  // User-initiated cancellation of the metered service. Once set, further usage stops
+  // accruing (report-usage refuses new charges), the merchant is notified to stop rendering
+  // service, and the user withdraws the unused escrow after lockedUntil. Cleared on re-commit.
+  cancelRequestedAt DateTime? @map("cancel_requested_at")
+  cancelReason      String?   @map("cancel_reason")
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
