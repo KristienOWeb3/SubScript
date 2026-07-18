@@ -4,7 +4,9 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    # Run on PRs into main and into any integration branch (e.g. stacked feature
+    # PRs based on Kristien/*), so the browser flow is exercised before those merge too.
+    branches: [ main, 'Kristien/**' ]
 
 permissions:
   contents: read

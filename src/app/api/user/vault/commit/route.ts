@@ -200,10 +200,11 @@ export async function POST(request: Request) {
             data: { status: "MIRRORED" },
         }).catch(() => { /* SUBMITTED remains resumable; the GET resolver reports it */ });
         /* A commit changes the balance denominator for usage thresholds, so re-arm the 50%/80%
-           alerts against the new balance. */
+           alerts against the new balance. Re-committing is also an explicit opt back in, so it
+           clears any prior cancellation and lets the merchant resume reporting usage. */
         await prisma.meteredVault.updateMany({
             where: { userAddress: wallet.toLowerCase(), merchantAddress: merchantAddress.toLowerCase() },
-            data: { usageNotifiedBps: 0 },
+            data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
         }).catch(() => {});
         if (v.active) {
             await prisma.subscriptDm.updateMany({
