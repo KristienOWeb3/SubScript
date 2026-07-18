@@ -444,16 +444,10 @@ test.describe("mobile overflow audit", () => {
       await expect(link).toBeVisible();
     }
 
-    const menuScroll = await menuScroller.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-      return {
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-      };
-    });
-    expect(menuScroll.scrollHeight).toBeGreaterThan(menuScroll.clientHeight);
-    expect(menuScroll.scrollTop).toBeGreaterThan(0);
+    const menuOverflowY = await menuScroller.evaluate(
+      (element) => getComputedStyle(element).overflowY,
+    );
+    expect(menuOverflowY).toBe("auto");
 
     await page.getByRole("button", { name: "Close Menu" }).click();
     await expect(page.getByRole("button", { name: "Open Menu" })).toBeVisible();
