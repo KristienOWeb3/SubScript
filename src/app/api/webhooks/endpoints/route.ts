@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
+import { Prisma } from "@prisma/client";
 import crypto from "crypto";
+import { prisma } from "@/lib/prisma";
 import { validateWebhookUrl } from "@/lib/webhookUrls";
 
 function getSupabase() {
@@ -26,6 +28,41 @@ async function checkMerchantPremium(supabase: any, walletAddress: string): Promi
 function redactWebhookSecret(secret: string | null | undefined): string {
     if (!secret) return "";
     return `${secret.slice(0, 10)}...${secret.slice(-4)}`;
+}
+
+type LatestDeliveryRow = {
+    webhookEndpointId: string;
+    event: string | null;
+    status: number | null;
+    responseBody: string | null;
+    createdAt: Date;
+};
+
+async function getLatestDeliveriesByEndpoint(endpointIds: string[]): Promise<LatestDeliveryRow[]> {
+    if (endpointIds.length === 0) return [];
+    /* The lateral LIMIT is applied independently for each endpoint in one query. A global LIMIT is
+       incorrect here: a noisy endpoint can fill the entire window and hide quieter endpoints. */
+    return prisma.$queryRaw<LatestDeliveryRow[]>(Prisma.sql`
+        WITH requested_endpoints(id) AS (
+            VALUES ${Prisma.join(
+                endpointIds.map((endpointId) => Prisma.sql`(${endpointId}::uuid)`),
+            )}
+        )
+        SELECT
+            requested.id AS "webhookEndpointId",
+            latest.event,
+            latest.status,
+            latest.response_body AS "responseBody",
+            latest.created_at AS "createdAt"
+        FROM requested_endpoints AS requested
+        CROSS JOIN LATERAL (
+            SELECT event, status, response_body, created_at
+            FROM webhook_events
+            WHERE webhook_endpoint_id = requested.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) AS latest
+    `);
 }
 
 export async function GET(request: Request) {
@@ -76,23 +113,16 @@ export async function GET(request: Request) {
             : null;
 
         const endpointIds = (endpoints || []).map((endpoint: any) => endpoint.id);
-        const { data: deliveries, error: deliveryError } = endpointIds.length
-            ? await supabase
-                .from("webhook_events")
-                .select("webhook_endpoint_id, event, status, response_body, created_at")
-                .in("webhook_endpoint_id", endpointIds)
-                .order("created_at", { ascending: false })
-            : { data: [], error: null };
-        if (deliveryError) {
+        let deliveries: LatestDeliveryRow[] = [];
+        try {
+            deliveries = await getLatestDeliveriesByEndpoint(endpointIds);
+        } catch (deliveryError) {
+            /* Endpoint configuration remains usable if observability history is unavailable. */
             console.error("GET latest webhook deliveries error:", deliveryError);
         }
-        /* Events arrive newest-first. The first row recorded for each endpoint is therefore its
-           latest delivery, without issuing one database request per endpoint. */
-        const latestDeliveryByEndpoint = new Map<string, any>();
+        const latestDeliveryByEndpoint = new Map<string, LatestDeliveryRow>();
         for (const delivery of deliveries || []) {
-            if (!latestDeliveryByEndpoint.has(delivery.webhook_endpoint_id)) {
-                latestDeliveryByEndpoint.set(delivery.webhook_endpoint_id, delivery);
-            }
+            latestDeliveryByEndpoint.set(delivery.webhookEndpointId, delivery);
         }
 
         const endpointsWithLatestDelivery = (endpoints || []).map((e: any) => {
@@ -110,8 +140,8 @@ export async function GET(request: Request) {
                     ? {
                         event: latestDelivery.event,
                         status: latestDelivery.status,
-                        lastAttemptAt: latestDelivery.created_at,
-                        responseBody: latestDelivery.response_body,
+                        lastAttemptAt: latestDelivery.createdAt,
+                        responseBody: latestDelivery.responseBody,
                     }
                     : null,
             };

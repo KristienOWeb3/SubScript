@@ -27,6 +27,117 @@ interface ScanResult {
     webhookHandlers: string[];          // files that verify SubScript webhook signatures
 }
 
+export interface CheckoutApiCall {
+    endpoint: "/api/intent" | "/api/v1/subscriptions";
+    source: string;
+}
+
+function maskStringsAndComments(source: string): string {
+    let result = "";
+    let quote: "'" | '"' | "`" | null = null;
+    let escaped = false;
+
+    for (let index = 0; index < source.length; index++) {
+        const char = source[index];
+        const next = source[index + 1];
+
+        if (quote) {
+            result += char === "\n" ? "\n" : " ";
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === quote) {
+                quote = null;
+            }
+            continue;
+        }
+
+        if (char === "'" || char === '"' || char === "`") {
+            quote = char;
+            result += " ";
+            continue;
+        }
+
+        if (char === "/" && next === "/") {
+            while (index < source.length && source[index] !== "\n") {
+                result += " ";
+                index++;
+            }
+            if (index < source.length) result += "\n";
+            continue;
+        }
+
+        if (char === "/" && next === "*") {
+            result += "  ";
+            index += 2;
+            while (index < source.length) {
+                if (source[index] === "*" && source[index + 1] === "/") {
+                    result += "  ";
+                    index++;
+                    break;
+                }
+                result += source[index] === "\n" ? "\n" : " ";
+                index++;
+            }
+            continue;
+        }
+
+        result += char;
+    }
+
+    return result;
+}
+
+function findCallEnd(source: string, openParen: number): number {
+    let depth = 0;
+    let quote: "'" | '"' | "`" | null = null;
+    let escaped = false;
+
+    for (let index = openParen; index < source.length; index++) {
+        const char = source[index];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === quote) {
+                quote = null;
+            }
+            continue;
+        }
+        if (char === "'" || char === '"' || char === "`") {
+            quote = char;
+            continue;
+        }
+        if (char === "(") depth++;
+        if (char === ")" && --depth === 0) return index;
+    }
+
+    return source.length - 1;
+}
+
+export function findCheckoutApiCalls(content: string): CheckoutApiCall[] {
+    const calls: CheckoutApiCall[] = [];
+    const searchable = maskStringsAndComments(content);
+    const callPattern = /\b(fetch|axios\.post)\s*\(/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = callPattern.exec(searchable))) {
+        const openParen = searchable.indexOf("(", match.index);
+        const end = findCallEnd(searchable, openParen);
+        const source = content.slice(match.index, end + 1);
+        const isPost = match[1] === "axios.post" || /\bmethod\s*:\s*["']POST["']/i.test(source);
+        if (!isPost) continue;
+
+        for (const endpoint of ["/api/intent", "/api/v1/subscriptions"] as const) {
+            if (source.includes(endpoint)) calls.push({ endpoint, source });
+        }
+    }
+
+    return calls;
+}
+
 async function scanForIntegration(cwd: string): Promise<ScanResult> {
     const result: ScanResult = {
         checkoutCallers: [],
@@ -60,20 +171,24 @@ async function scanForIntegration(cwd: string): Promise<ScanResult> {
                     continue;
                 }
                 const rel = path.relative(cwd, full);
-                const callsIntent = content.includes("/api/intent");
-                const callsSubscription = content.includes("/api/v1/subscriptions");
-                if (callsIntent || callsSubscription || content.includes("SUBSCRIPT_SECRET_KEY")) {
+                const apiCalls = findCheckoutApiCalls(content);
+                const intentCalls = apiCalls.filter((call) => call.endpoint === "/api/intent");
+                const subscriptionCalls = apiCalls.filter(
+                    (call) => call.endpoint === "/api/v1/subscriptions"
+                );
+                if (apiCalls.length > 0) {
                     result.checkoutCallers.push(rel);
                 }
-                if (callsIntent) {
+                if (intentCalls.length > 0) {
                     result.intentCallers.push(rel);
                 }
-                if (callsSubscription) {
+                if (subscriptionCalls.length > 0) {
                     result.subscriptionCallers.push(rel);
                 }
                 if (
-                    callsIntent
-                    && /["']?\b(interval|intervalSeconds|intervalCount|periodDays|planId|publishToDm|subscriber|merchantCustomerId)\b["']?\s*:/.test(content)
+                    intentCalls.some((call) =>
+                        /["']?\b(interval|intervalSeconds|intervalCount|periodDays|planId|publishToDm|subscriber|merchantCustomerId)\b["']?\s*:/.test(call.source)
+                    )
                 ) {
                     result.suspiciousIntentCallers.push(rel);
                 }

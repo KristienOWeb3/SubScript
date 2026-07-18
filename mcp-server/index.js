@@ -123,9 +123,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             minCommitmentDays: { type: "integer", minimum: 0, maximum: 30 },
           },
           required: ["name", "amountUsdcMicros"],
-          anyOf: [
-            { required: ["periodDays"] },
-            { required: ["intervalSeconds"] },
+          oneOf: [
+            {
+              required: ["periodDays"],
+              not: { required: ["intervalSeconds"] },
+            },
+            {
+              required: ["intervalSeconds"],
+              not: { required: ["periodDays"] },
+            },
           ],
         },
       },
@@ -157,13 +163,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             idempotencyKey: { type: "string" },
             sandbox: { type: "boolean" },
           },
-          anyOf: [
-            { required: ["planId"] },
+          oneOf: [
+            {
+              required: ["planId"],
+              not: {
+                anyOf: [
+                  { required: ["amountUsdcMicros"] },
+                  { required: ["interval"] },
+                  { required: ["intervalSeconds"] },
+                ],
+              },
+            },
             {
               required: ["amountUsdcMicros"],
-              anyOf: [
-                { required: ["interval"] },
-                { required: ["intervalSeconds"] },
+              not: { required: ["planId"] },
+              oneOf: [
+                {
+                  required: ["interval"],
+                  not: { required: ["intervalSeconds"] },
+                },
+                {
+                  required: ["intervalSeconds"],
+                  not: { required: ["interval"] },
+                },
               ],
             },
           ],

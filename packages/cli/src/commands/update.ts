@@ -73,6 +73,19 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
     const merchantAddress = merchantMatch ? merchantMatch[1] : "";
     const parsedMode = modeMatch ? modeMatch[1] : "standard";
     const mode = (parsedMode === "zk-routed" ? "privacy-routed" : parsedMode) as "standard" | "privacy-routed";
+    let billingMode: "one_time" | "subscription" = "subscription";
+    const buttonPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
+    for (const generatedPath of [paths.checkoutPath, buttonPath]) {
+      if (!existsSync(generatedPath)) continue;
+      const generatedContent = await readFile(generatedPath, "utf8");
+      const billingModeMatch = generatedContent.match(
+        /\bbillingMode:\s*["'](one_time|subscription)["']/
+      );
+      if (billingModeMatch) {
+        billingMode = billingModeMatch[1] as "one_time" | "subscription";
+        break;
+      }
+    }
 
     if (!merchantAddress) {
       throw new Error("Could not parse config settings from subscript.config.ts");
@@ -127,14 +140,13 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
     await updateFile(providerPath, "SubScriptProvider.tsx", providerContent);
 
     // Update SubScriptCheckoutButton.tsx
-    const buttonPath = path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx");
     const checkoutContent = generateCheckoutButtonTemplate({
       cliVersion: CLI_VERSION,
       templateVersion: TEMPLATE_VERSION,
       requestId,
       generationTimestamp,
       mode,
-      billingMode: "subscription",
+      billingMode,
     });
     await updateFile(buttonPath, "SubScriptCheckoutButton.tsx", checkoutContent);
 
@@ -158,7 +170,7 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
         requestId,
         generationTimestamp,
         framework,
-        billingMode: "subscription",
+        billingMode,
       });
       await updateFile(paths.checkoutPath, path.basename(paths.checkoutPath), checkoutRouteContent);
 

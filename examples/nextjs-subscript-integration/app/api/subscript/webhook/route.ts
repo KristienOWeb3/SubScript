@@ -9,7 +9,7 @@ function verifySignature(rawBody: string, signatureHeader: string, secret: strin
     }),
   );
 
-  if (!parts.t || !parts.v1) return false;
+  if (!parts.t || !parts.v1 || !/^[a-fA-F0-9]{64}$/.test(parts.v1)) return false;
   const timestamp = Number(parts.t);
   if (!Number.isFinite(timestamp) || Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 300) {
     return false;
@@ -37,18 +37,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
   }
 
-  const event = JSON.parse(rawBody) as {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Webhook body must be valid JSON" }, { status: 400 });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return NextResponse.json({ error: "Malformed webhook event" }, { status: 400 });
+  }
+  const event = parsed as {
     id?: unknown;
     type?: unknown;
-    data?: Record<string, unknown>;
+    data?: unknown;
   };
-  if (typeof event.id !== "string" || typeof event.type !== "string" || !event.data) {
+  if (
+    typeof event.id !== "string" ||
+    typeof event.type !== "string" ||
+    !event.data ||
+    typeof event.data !== "object" ||
+    Array.isArray(event.data)
+  ) {
     return NextResponse.json({ error: "Malformed webhook event" }, { status: 400 });
   }
   const verifiedEvent = {
     id: event.id,
     type: event.type,
-    data: event.data,
+    data: event.data as Record<string, unknown>,
   };
 
   /*
