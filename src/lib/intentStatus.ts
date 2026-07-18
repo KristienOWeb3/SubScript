@@ -27,6 +27,43 @@ export async function resolveViewerMerchant(request: Request): Promise<string | 
     return null;
 }
 
+async function latestIntentWebhookDelivery(intentId: string, merchantAddress: string) {
+    try {
+        const delivery = await prisma.webhookEvent.findFirst({
+            where: {
+                endpoint: { walletAddress: merchantAddress.toLowerCase() },
+                OR: [
+                    { payload: { path: ["data", "intent_id"], equals: intentId } },
+                    { payload: { path: ["data", "checkout_session_id"], equals: intentId } },
+                    { payload: { path: ["data", "checkoutSessionId"], equals: intentId } },
+                ],
+            },
+            orderBy: { createdAt: "desc" },
+            select: {
+                event: true,
+                eventType: true,
+                status: true,
+                responseBody: true,
+                createdAt: true,
+                endpoint: { select: { url: true } },
+            },
+        });
+        if (!delivery) return null;
+        return {
+            status: delivery.status,
+            lastAttemptAt: delivery.createdAt,
+            endpoint: delivery.endpoint?.url || null,
+            responseBody: delivery.responseBody,
+            event: delivery.eventType || delivery.event,
+        };
+    } catch (error) {
+        /* Checkout polling must remain available if the observability ledger is temporarily
+           unavailable. Owners still receive payment state; delivery health degrades to null. */
+        console.error("Failed to load intent webhook delivery:", error);
+        return null;
+    }
+}
+
 export async function getIntentStatus(
     intentId: string,
     origin: string,
@@ -68,6 +105,9 @@ export async function getIntentStatus(
         options?.viewerMerchantAddress
         && options.viewerMerchantAddress.toLowerCase() === link.merchantAddress.toLowerCase(),
     );
+    const webhookDelivery = isOwnerView
+        ? await latestIntentWebhookDelivery(link.id, link.merchantAddress)
+        : null;
 
     return {
         id: link.id,
@@ -94,5 +134,8 @@ export async function getIntentStatus(
                 explorerUrl: settlement.explorerTxUrl,
             }
             : null,
+        /* Endpoint URLs and response bodies can contain private merchant infrastructure details.
+           Do not even include the field for anonymous callers or authenticated non-owners. */
+        ...(isOwnerView ? { webhookDelivery } : {}),
     };
 }

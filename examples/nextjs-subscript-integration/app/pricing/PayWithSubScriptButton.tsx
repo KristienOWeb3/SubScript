@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function PayWithSubScriptButton({ userId }: { userId: string }) {
+export function PayWithSubScriptButton({ userId, orderId }: { userId: string; orderId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -14,7 +14,7 @@ export function PayWithSubScriptButton({ userId }: { userId: string }) {
       const response = await fetch("/api/subscript/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, orderId }),
       });
       const payload = await response.json();
       if (!response.ok) {

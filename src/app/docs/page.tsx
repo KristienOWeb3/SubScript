@@ -641,6 +641,32 @@ export default function DocsPage() {
                   fields are rejected by the intent endpoint; recurring-looking titles require an explicit one-time confirmation.
                 </p>
               </div>
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+                <table className="w-full min-w-[760px] text-left text-xs">
+                  <thead className="border-b border-white/5 bg-white/[0.03] text-[9px] uppercase tracking-widest text-white/40">
+                    <tr>
+                      <th className="px-4 py-3">Use case</th>
+                      <th className="px-4 py-3">Correct endpoint</th>
+                      <th className="px-4 py-3">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-white/65">
+                    {[
+                      ["One-time payment", "POST /api/intent", "One-time hosted checkout only; never a recurring or DM plan."],
+                      ["Public recurring plan", "POST /api/v1/plans", "Reusable tier shown in merchant plans, user DMs, and the public subscribe flow."],
+                      ["User-specific subscription checkout", "POST /api/v1/subscriptions + subscriber", "Recurring checkout and targeted offer for that user."],
+                      ["DM-visible subscription checkout", "POST /api/v1/subscriptions + publishToDm: true", "Recurring product shown in the dashboard and DM plan flow."],
+                      ["Metered billing", "POST /api/user/vault/report-usage", "Accrues usage against the user's merchant vault."],
+                    ].map(([useCase, endpoint, result]) => (
+                      <tr key={useCase}>
+                        <td className="px-4 py-3 font-semibold text-white/85">{useCase}</td>
+                        <td className="px-4 py-3 font-mono text-[#00d2b4]">{endpoint}</td>
+                        <td className="px-4 py-3 leading-relaxed">{result}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {[
                   ["OpenAPI", "/openapi.json"],
@@ -693,6 +719,17 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 language="dotenv"
               />
 
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
+                <p className="font-bold text-white/85">Register the webhook while creating the API key</p>
+                <p className="mt-2">
+                  The dashboard setup sends <span className="font-mono">POST /api/keys</span> with an optional{" "}
+                  <span className="font-mono">webhookUrl</span>. A successful response reveals both the API secret and{" "}
+                  <span className="font-mono">webhookEndpoint.secret</span> once. If endpoint registration fails after the
+                  key is created, copy the key and follow the returned <span className="font-mono">webhookWarning</span> to
+                  add the endpoint from Developers → Webhooks.
+                </p>
+              </div>
+
               <div>
                 <h3 className="text-sm font-semibold text-white">1. Create the Checkout Intent</h3>
                 <p className="mt-2 text-xs leading-relaxed text-white/60">
@@ -710,7 +747,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <CodeBlock code={intentResponseCode} language="json" />
 
               <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-5 text-xs leading-relaxed text-amber-50/85">
-                <span className="font-bold text-amber-100">Fulfillment rule:</span> never unlock from the success redirect alone. Redirects are user-controlled navigation. Unlock only after a valid, idempotently processed <span className="font-mono">payment.succeeded</span> webhook.
+                <span className="font-bold text-amber-100">Fulfillment rule:</span> never unlock from the success redirect alone. A settled checkout adds <span className="font-mono">subscript_verification_status=settled</span>, but that confirms SubScript settlement—not webhook delivery or fulfillment in your application. Unlock only after a valid, idempotently processed <span className="font-mono">payment.succeeded</span> webhook, or reconcile from <span className="font-mono">GET /api/intent/:id</span>.
               </div>
             </section>
 
@@ -1080,6 +1117,21 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <p className="text-sm leading-relaxed text-white/70">
                 A redirect says where the browser went. A signed webhook says what settled. Read the raw request bytes, verify the timestamped HMAC, claim the event ID atomically, and only then update your order or entitlement.
               </p>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Dashboard delivery health APIs</p>
+                <p className="mt-2">
+                  Signed-in Premium merchants can inspect <span className="font-mono">GET /api/webhooks/endpoints</span> and{" "}
+                  <span className="font-mono">GET /api/webhooks/events</span>, resend a selected event with{" "}
+                  <span className="font-mono">POST /api/webhooks/events/replay</span>, or send a signed sample through{" "}
+                  <span className="font-mono">POST /api/webhooks/test</span>. Test event types are{" "}
+                  <span className="font-mono">test</span>, <span className="font-mono">payment.succeeded</span>, and{" "}
+                  <span className="font-mono">subscription.created</span>. The dashboard shows the exact endpoint, HTTP status,
+                  response body, and delivery time so a missing endpoint or failed response is visible immediately. Send{" "}
+                  <span className="font-mono">{`{ "latest": true }`}</span> to the replay endpoint for the one-click
+                  “Resend latest” flow.
+                </p>
+              </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
                 {[

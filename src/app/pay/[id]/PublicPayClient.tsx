@@ -497,6 +497,7 @@ export default function PublicPayClient({
         try {
             const url = new URL(base);
             url.searchParams.set("subscript_status", "success");
+            url.searchParams.set("subscript_verification_status", "settled");
             url.searchParams.set("subscript_checkout_id", String(linkData?.id || id));
             if (receiptId) url.searchParams.set("subscript_receipt_id", receiptId);
             if (successTxHash) url.searchParams.set("subscript_tx_hash", successTxHash);

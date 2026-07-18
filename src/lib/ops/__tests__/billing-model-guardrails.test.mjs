@@ -26,6 +26,7 @@ test("payment intents reject recurring fields and ambiguous recurring products",
 
   assert.match(semantics, /subscription\|subscribe\|subscriber\|recurring/);
   assert.match(semantics, /daily\|weekly\|monthly\|quarterly\|yearly/);
+  assert.match(semantics, /starter\|basic\|standard\|pro\|professional\|premium/);
   assert.match(route, /subscription_fields_on_payment_intent/);
   assert.match(route, /ambiguous_recurring_product/);
   assert.match(route, /confirmOneTime !== true/);
@@ -64,6 +65,22 @@ test("SDK, MCP, and OpenAPI expose first-class recurring plan operations", () =>
   assert.match(openapi, /"\/api\/v1\/plans"/);
   assert.match(openapi, /summary: "Create a one-time payment intent"/);
   assert.match(openapi, /"422":/);
+  for (const endpoint of [
+    "/api/intent/{id}",
+    "/api/keys",
+    "/api/webhooks/endpoints",
+    "/api/webhooks/events",
+    "/api/webhooks/events/replay",
+    "/api/webhooks/test",
+    "/api/user/vault/report-usage",
+  ]) {
+    assert.match(openapi, new RegExp(`"${endpoint.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+  }
+  assert.match(openapi, /subscript_verification_status=settled/);
+  assert.match(openapi, /publishToDm:[\s\S]*default: true/);
+  assert.match(openapi, /webhookUrl/);
+  assert.match(openapi, /webhookWarning/);
+  assert.match(openapi, /latest:\s*\{ type: "boolean"/);
 });
 
 test("developer and agent docs state the endpoint decision and DM behavior", () => {
@@ -96,4 +113,27 @@ test("developer and agent docs state the endpoint decision and DM behavior", () 
     assert.match(content, /upgrade-only/i);
     assert.match(content, /merchantCustomerId/);
   }
+});
+
+test("merchant success redirects distinguish settlement from merchant fulfillment", () => {
+  const oneTimeCheckout = read("src/app/pay/[id]/PublicPayClient.tsx");
+  const subscriptionCheckout = read("src/app/subscribe/[planId]/SubscribeClient.tsx");
+
+  for (const checkout of [oneTimeCheckout, subscriptionCheckout]) {
+    assert.match(checkout, /subscript_verification_status/);
+    assert.match(checkout, /"settled"/);
+  }
+});
+
+test("developer dashboard exposes webhook setup and delivery health controls", () => {
+  const dashboard = read("src/app/dashboard/page.tsx");
+
+  assert.match(dashboard, /apiKeyWebhookUrl/);
+  assert.match(dashboard, /webhookUrl/);
+  assert.match(dashboard, /\/api\/webhooks\/test/);
+  assert.match(dashboard, /payment\.succeeded/);
+  assert.match(dashboard, /subscription\.created/);
+  assert.match(dashboard, /Resend latest event/);
+  assert.match(dashboard, /latestDelivery/);
+  assert.match(dashboard, /Merchant wallet/);
 });

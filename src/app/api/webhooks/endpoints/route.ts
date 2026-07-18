@@ -52,17 +52,78 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Failed to retrieve webhook endpoints" }, { status: 500 });
         }
 
-        const camelCaseEndpoints = (endpoints || []).map((e: any) => ({
-            id: e.id,
-            walletAddress: e.wallet_address,
-            url: e.url,
-            secret: redactWebhookSecret(e.secret),
-            secretAvailable: false,
-            active: e.active,
-            createdAt: e.created_at,
-        }));
+        const normalizedWallet = wallet.toLowerCase();
+        const { data: activeKey, error: keyError } = await supabase
+            .from("api_keys")
+            .select("id, publishable_key, secret_key_hint, mode, created_at")
+            .eq("wallet_address", normalizedWallet)
+            .eq("revoked", false)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (keyError) {
+            console.error("GET webhook endpoint API-key linkage error:", keyError);
+        }
 
-        return NextResponse.json({ endpoints: camelCaseEndpoints }, { status: 200 });
+        const apiKey = activeKey
+            ? {
+                id: activeKey.id,
+                publishableKey: activeKey.publishable_key,
+                fingerprint: activeKey.secret_key_hint || "",
+                mode: activeKey.mode || "TEST",
+                createdAt: activeKey.created_at,
+            }
+            : null;
+
+        const endpointIds = (endpoints || []).map((endpoint: any) => endpoint.id);
+        const { data: deliveries, error: deliveryError } = endpointIds.length
+            ? await supabase
+                .from("webhook_events")
+                .select("webhook_endpoint_id, event, status, response_body, created_at")
+                .in("webhook_endpoint_id", endpointIds)
+                .order("created_at", { ascending: false })
+            : { data: [], error: null };
+        if (deliveryError) {
+            console.error("GET latest webhook deliveries error:", deliveryError);
+        }
+        /* Events arrive newest-first. The first row recorded for each endpoint is therefore its
+           latest delivery, without issuing one database request per endpoint. */
+        const latestDeliveryByEndpoint = new Map<string, any>();
+        for (const delivery of deliveries || []) {
+            if (!latestDeliveryByEndpoint.has(delivery.webhook_endpoint_id)) {
+                latestDeliveryByEndpoint.set(delivery.webhook_endpoint_id, delivery);
+            }
+        }
+
+        const endpointsWithLatestDelivery = (endpoints || []).map((e: any) => {
+            const latestDelivery = latestDeliveryByEndpoint.get(e.id);
+            return {
+                id: e.id,
+                walletAddress: e.wallet_address,
+                url: e.url,
+                secret: redactWebhookSecret(e.secret),
+                secretAvailable: false,
+                active: e.active,
+                createdAt: e.created_at,
+                apiKey,
+                latestDelivery: latestDelivery
+                    ? {
+                        event: latestDelivery.event,
+                        status: latestDelivery.status,
+                        lastAttemptAt: latestDelivery.created_at,
+                        responseBody: latestDelivery.response_body,
+                    }
+                    : null,
+            };
+        });
+
+        return NextResponse.json({
+            merchant: {
+                walletAddress: normalizedWallet,
+                apiKey,
+            },
+            endpoints: endpointsWithLatestDelivery,
+        }, { status: 200 });
     } catch (error: any) {
         console.error("GET webhook endpoints error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

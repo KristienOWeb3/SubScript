@@ -22,6 +22,19 @@ Authorization: Bearer sk_live_…   # production
 `sk_test_` keys (and any request with `"sandbox": true`) run in sandbox mode and never move
 real funds. `GET /api/intent/:id` and `GET /api/intent/status` are public (no key required).
 
+Signed-in Premium merchants can create a key and register its webhook in one setup request:
+
+```http
+POST /api/keys
+Content-Type: application/json
+
+{ "webhookUrl": "https://merchant.example/api/webhooks/subscript" }
+```
+
+The response reveals the new `key.secretKeyPlain` and `webhookEndpoint.secret` once. If key
+creation succeeds but endpoint storage fails, the response still returns the key plus
+`webhookWarning`; copy the key immediately, then register the endpoint from the Webhooks panel.
+
 ## Amounts
 
 Amounts are **canonical integer micro-USDC**: 1 USDC = 1,000,000. So 15 USDC is `"15000000"`
@@ -70,11 +83,13 @@ Errors return a JSON body `{ "error": "message" }` (some also include a `code`).
 This decision is mandatory. Product names such as “Pro”, “Weekly”, or “1 Month” do not turn a
 one-time intent into a subscription.
 
-| Product behavior | Endpoint | Merchant dashboard | User DM plan picker | Can renew |
-|---|---|---|---|---|
-| One charge for an order, invoice, ticket, or fixed pass | `POST /api/intent` | Payment/receipt only | No | No |
-| Reusable recurring plan in the merchant catalog | `POST /api/v1/plans` | Yes | Yes by default | When subscribed |
-| Subscription checkout or plan assigned to a user | `POST /api/v1/subscriptions` | Yes | Yes by default | Yes |
+| Use case | Correct endpoint | Result |
+|---|---|---|
+| One-time payment | `POST /api/intent` | One-time hosted checkout only; never a recurring plan or DM plan choice |
+| Public recurring plan | `POST /api/v1/plans` | Reusable tier shown in merchant plans, existing user DMs, and the public subscribe flow |
+| User-specific subscription checkout | `POST /api/v1/subscriptions` with `subscriber` | Recurring checkout and targeted offer for that user |
+| DM-visible subscription checkout | `POST /api/v1/subscriptions` with `publishToDm: true` | Recurring checkout whose product appears in the dashboard and DM plan flow |
+| Metered billing | `POST /api/user/vault/report-usage` | Accrues a usage charge against the user's merchant vault; no fixed recurring plan |
 
 **Never use `/api/intent` to represent a recurring product.** A title such as
 `"Kris's Script Pro — 1 Week"` is still a one-time payment unless it is created through the
@@ -94,7 +109,9 @@ Do not send `interval`, `intervalSeconds`, `planId`, `subscriber`, `merchantCust
 
 ### `GET /api/intent/:id` — payment status (public)
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
-`latestPayment.txHash` + `latestPayment.explorerUrl`.
+`latestPayment.txHash` + `latestPayment.explorerUrl`. An authenticated owning merchant also
+receives the latest `webhookDelivery` summary when one exists: delivery status, HTTP response,
+attempt time, and endpoint URL.
 
 ### `GET /api/intent/status?id=<id>` — payment status legacy query form (public)
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
@@ -134,7 +151,9 @@ Body: `amountUsdcMicros` **or** `planId`; `interval` (`daily|weekly|monthly|year
 and `sandbox?`.
 
 API-created subscription products are published to the merchant dashboard and the in-DM plan
-picker by default; set `publishToDm: false` to opt out. When `subscriber` is supplied, the plan
+picker by default. **Keep `publishToDm: true` when the subscription must be available from the
+DM plan flow; set `publishToDm: false` only for an intentionally private checkout.** When
+`subscriber` is supplied, the plan
 and a pending offer DM are visible only to that wallet. `merchantCustomerId` requires
 `subscriber`, is persisted on activation, and is included in lifecycle webhooks so a DM upgrade
 updates the same account in the merchant's system. Returns an `incomplete` subscription with a
@@ -160,6 +179,15 @@ and an onboarding dashboard URL when the customer must commit or re-commit.
 
 ### `POST /api/user/vault/report-usage` — report metered usage
 Body: `userAddress`, `amountUsdcMicros`. Accrues usage against the subscriber's vault.
+
+## Success and cancel redirects
+
+`successUrl` and `cancelUrl` are browser navigation destinations, not fulfillment messages. A
+successful one-time checkout adds `subscript_status=success`,
+`subscript_verification_status=settled`, and checkout identifiers to the success URL. The
+verification value means SubScript confirmed settlement; it does **not** prove that your webhook
+was delivered or that your application fulfilled the order. Fulfill only after a valid signed
+webhook, or reconcile from `GET /api/intent/:id`.
 
 ### Invoice fields on payment links
 `POST /api/payment-links` additionally accepts `invoice_number?`, `due_date?` (ISO or unix), and
@@ -226,3 +254,25 @@ import { SubScript } from "@subscriptonarc/sdk";
 const subscript = new SubScript({ secretKey: process.env.SUBSCRIPT_SECRET_KEY! });
 const event = subscript.webhooks.constructEvent(rawBody, sigHeader, webhookSecret);
 ```
+
+### Dashboard webhook management and health
+
+These endpoints use the signed-in merchant dashboard session
+(`subscript_session_token` cookie), not a secret API key, and require an active Premium tier:
+
+- `POST /api/keys` with optional `webhookUrl` — create/rotate the merchant API key and register
+  its webhook during the same setup flow. Returns `webhookEndpoint` or a recoverable
+  `webhookWarning`.
+- `GET /api/webhooks/endpoints` — list endpoint URL, merchant wallet, active/inactive state,
+  redacted signing secret, and latest delivery health.
+- `POST /api/webhooks/endpoints` `{ "url": "https://merchant.example/api/webhooks/subscript" }`
+  — register an endpoint. The full `whsec_…` signing secret is returned once.
+- `DELETE /api/webhooks/endpoints?id=<endpoint-id>` — remove an owned endpoint.
+- `GET /api/webhooks/events` — list the latest 50 deliveries with event, endpoint, exact HTTP
+  status, response body, request payload, and timestamp.
+- `POST /api/webhooks/events/replay` with `{ "eventId": "evt_…" }` or `{ "latest": true }` —
+  resend a selected or latest stored delivery. Add `endpointId` with `latest: true` to choose
+  the latest delivery for one owned endpoint.
+- `POST /api/webhooks/test` `{ "eventType": "payment.succeeded", "endpointId": "…" }` — send a
+  signed test delivery. `eventType` accepts `test`, `payment.succeeded`, or
+  `subscription.created`; omit `endpointId` to test every active endpoint.

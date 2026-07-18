@@ -43,6 +43,25 @@ test("docs prevent one-time intents from being mistaken for recurring DM plans",
   assert.match(docs, /upgrade-only/i);
 });
 
+test("docs make endpoint selection and delivery observability explicit", () => {
+  for (const required of [
+    "One-time payment",
+    "Public recurring plan",
+    "User-specific subscription checkout",
+    "DM-visible subscription checkout",
+    "Metered billing",
+    "publishToDm: true",
+    "subscript_verification_status=settled",
+    "/api/webhooks/endpoints",
+    "/api/webhooks/events/replay",
+    "/api/webhooks/test",
+    "POST /api/keys",
+    "webhookWarning",
+  ]) {
+    assert.match(docs, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
 test("docs explain the identifiers developers must persist", () => {
   for (const identifier of ["intent.id", "externalReference", "receiptToken", "request_id"]) {
     assert.match(docs, new RegExp(identifier.replace(".", "\\.")));

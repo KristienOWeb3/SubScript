@@ -1175,6 +1175,8 @@ export default function DashboardPage() {
     const [isKeysLoading, setIsKeysLoading] = useState(false);
     const [revealSecret, setRevealSecret] = useState(false);
     const [isRolling, setIsRolling] = useState(false);
+    const [apiKeyWebhookUrl, setApiKeyWebhookUrl] = useState("");
+    const [apiKeySetupStatus, setApiKeySetupStatus] = useState<string | null>(null);
 
 
     const [webhookEndpoints, setWebhookEndpoints] = useState<any[]>([]);
@@ -1188,6 +1190,7 @@ export default function DashboardPage() {
 
     const [selectedWebhook, setSelectedWebhook] = useState<string>("");
     const [isReplaying, setIsReplaying] = useState(false);
+    const [isTestingWebhook, setIsTestingWebhook] = useState<string | null>(null);
     const [replayStatus, setReplayStatus] = useState<string | null>(null);
 
 
@@ -2012,24 +2015,50 @@ export default function DashboardPage() {
     };
 
     const handleRollKeys = async () => {
+        const hasActiveKey = apiKeys.some((key) => !key.revoked);
         setConfirmModal({
             open: true,
-            title: "Rotate API Key",
-            description: "The current production key will stop working immediately. Existing integrations will fail until they are updated with the new key.",
-            confirmLabel: "Rotate Key",
-            variant: "danger",
+            title: hasActiveKey ? "Rotate API Key" : "Generate API Key",
+            description: hasActiveKey
+                ? "The current production key will stop working immediately. Existing integrations will fail until they are updated with the new key."
+                : "Your secret key will be shown once. Save it before leaving this page.",
+            confirmLabel: hasActiveKey ? "Rotate Key" : "Generate Key",
+            variant: hasActiveKey ? "danger" : "default",
             onConfirm: async () => {
                 setConfirmModal(null);
                 setIsRolling(true);
+                setApiKeySetupStatus(null);
                 try {
-                    const res = await fetch("/api/keys", { method: "POST" });
+                    const webhookUrl = apiKeyWebhookUrl.trim();
+                    const res = await fetch("/api/keys", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(webhookUrl ? { webhookUrl } : {}),
+                    });
                     const data = await res.json();
                     if (data.key) {
                         setApiKeys([data.key]);
                         handleCopy(data.key.secretKeyPlain, "API Secret Key Rolled");
+                        if (data.webhookEndpoint) {
+                            setWebhookEndpoints((current) => [
+                                data.webhookEndpoint,
+                                ...current.filter((endpoint) => endpoint.id !== data.webhookEndpoint.id),
+                            ]);
+                            setApiKeyWebhookUrl("");
+                        }
+                        if (data.webhookWarning) {
+                            setApiKeySetupStatus(`API key created, but webhook setup needs attention: ${data.webhookWarning}`);
+                        } else {
+                            setApiKeySetupStatus(data.webhookEndpoint
+                                ? "API key and webhook endpoint created."
+                                : "API key created. Register a webhook before going live.");
+                        }
+                    } else {
+                        setApiKeySetupStatus(data.error || "Could not create API credentials.");
                     }
                 } catch (err) {
                     console.error("Error rolling keys:", err);
+                    setApiKeySetupStatus("Network error while creating API credentials.");
                 } finally {
                     setIsRolling(false);
                 }
@@ -2096,14 +2125,14 @@ export default function DashboardPage() {
         }
     };
 
-    const handleReplayWebhook = async (eventId: string) => {
+    const handleReplayWebhook = async (eventId?: string) => {
         setIsReplaying(true);
-        setReplayStatus("Replaying event...");
+        setReplayStatus(eventId ? "Replaying event..." : "Resending latest event...");
         try {
             const res = await fetch("/api/webhooks/events/replay", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ eventId }),
+                body: JSON.stringify(eventId ? { eventId } : { latest: true }),
             });
             const data = await res.json();
             if (data.success) {
@@ -2119,6 +2148,29 @@ export default function DashboardPage() {
             setTimeout(() => setReplayStatus(null), 4000);
         } finally {
             setIsReplaying(false);
+        }
+    };
+
+    const handleSendWebhookTest = async (eventType: "test" | "payment.succeeded" | "subscription.created") => {
+        setIsTestingWebhook(eventType);
+        setReplayStatus(`Sending ${eventType} test event...`);
+        try {
+            const res = await fetch("/api/webhooks/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ eventType }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || "Test webhook delivery failed.");
+            }
+            setReplayStatus(data.message || `${eventType} test event sent.`);
+            await Promise.all([fetchWebhookEndpoints(), fetchWebhookEvents()]);
+        } catch (err: any) {
+            setReplayStatus(err.message || "Network error sending test webhook.");
+        } finally {
+            setIsTestingWebhook(null);
+            setTimeout(() => setReplayStatus(null), 6000);
         }
     };
 
@@ -5167,6 +5219,12 @@ Please complete the following implementation tasks:
                             )}
                         </div>
 
+                        {apiKeySetupStatus && (
+                            <p role="status" className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-[10px] leading-relaxed text-white/65">
+                                {apiKeySetupStatus}
+                            </p>
+                        )}
+
                         {isKeysLoading ? (
                             <div className="py-12 text-center flex flex-col items-center gap-2">
                                 <Loader2 className="w-6 h-6 animate-spin text-[#00d2b4]" />
@@ -5177,7 +5235,25 @@ Please complete the following implementation tasks:
                                 <Key className="w-8 h-8 mx-auto text-white/20" />
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white uppercase tracking-wider">No Active API Credentials</p>
-                                    <p className="text-[10px] text-white/40 leading-relaxed">Generate credentials to start integrating the SubScript SDK.</p>
+                                    <p className="text-[10px] text-white/40 leading-relaxed">
+                                        Generate credentials and optionally register the webhook receiver that belongs to this integration.
+                                    </p>
+                                </div>
+                                <div className="mx-auto w-full max-w-xl space-y-2 text-left">
+                                    <label htmlFor="api-key-webhook-url" className="block text-[10px] font-bold uppercase tracking-wider text-white/55">
+                                        Webhook URL <span className="font-normal normal-case text-white/30">(recommended)</span>
+                                    </label>
+                                    <input
+                                        id="api-key-webhook-url"
+                                        type="url"
+                                        value={apiKeyWebhookUrl}
+                                        onChange={(event) => setApiKeyWebhookUrl(event.target.value)}
+                                        placeholder="https://your-app.example/api/subscript/webhook"
+                                        className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-xs text-white outline-none transition-colors focus:border-[#00d2b4]"
+                                    />
+                                    <p className="text-[9px] leading-relaxed text-white/30">
+                                        SubScript creates the endpoint with your API key so payment and subscription events are observable immediately.
+                                    </p>
                                 </div>
                                 <button
                                     onClick={handleRollKeys}
@@ -5568,6 +5644,8 @@ Please complete the following implementation tasks:
                 }
 
                 const selectedPayload = webhookEvents.find(w => w.id === selectedWebhook);
+                const webhookActiveKey = apiKeys.find((key) => !key.revoked) || null;
+                const webhookKeyFingerprint = webhookActiveKey?.secretKeyPlain || "No active API key";
 
                 return (
                     <div className="space-y-8">
@@ -5581,6 +5659,21 @@ Please complete the following implementation tasks:
                                 <p className="text-[11px] text-white/40 font-sans">
                                     Configure endpoints to receive subscription.created, payment.succeeded, and other lifecycle events.
                                 </p>
+                            </div>
+
+                            <div className="grid gap-3 rounded-2xl border border-white/5 bg-black/25 p-4 text-[10px] font-sans sm:grid-cols-3">
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">Merchant wallet</p>
+                                    <p className="mt-1 break-all font-mono text-white/70">{sessionWallet || "Not authenticated"}</p>
+                                </div>
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">API key</p>
+                                    <p className="mt-1 break-all font-mono text-white/70">{webhookKeyFingerprint}</p>
+                                </div>
+                                <div>
+                                    <p className="font-bold uppercase tracking-wider text-white/30">Webhook access</p>
+                                    <p className="mt-1 text-white/70">{isPremium ? "Premium enabled" : "Premium required"}</p>
+                                </div>
                             </div>
 
                             {/* Add endpoint form */}
@@ -5616,30 +5709,46 @@ Please complete the following implementation tasks:
                                 <div className="space-y-3 font-sans text-xs">
                                     {webhookEndpoints.map((ep) => (
                                         <div key={ep.id} className="bg-black/30 border border-white/5 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                            <div className="space-y-1">
-                                                <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
+                                            <div className="min-w-0 space-y-2">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="font-mono text-xs font-bold text-white break-all">{ep.url}</p>
+                                                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${
+                                                        ep.active
+                                                            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                                                            : "border-red-500/20 bg-red-500/10 text-red-400"
+                                                    }`}>
+                                                        {ep.active ? "Active" : "Inactive"}
+                                                    </span>
+                                                </div>
                                                 <div className="flex items-center gap-3 text-[10px] text-white/40">
                                                     <span>Secret: </span>
                                                     <code className="font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
-                                                        {revealWebhookSecret === ep.id ? ep.secret : "whsec_••••••••••••••••••••••••••••••••"}
+                                                        {ep.secretAvailable && revealWebhookSecret === ep.id ? ep.secret : ep.secret || "whsec_••••••••"}
                                                     </code>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
-                                                        className="text-[#00d2b4] hover:underline"
-                                                    >
-                                                        {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
-                                                    </button>
-                                                    {revealWebhookSecret === ep.id && (
-                                                        <button
+                                                    {ep.secretAvailable && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setRevealWebhookSecret(prev => prev === ep.id ? null : ep.id)}
+                                                                className="text-[#00d2b4] hover:underline"
+                                                            >
+                                                                {revealWebhookSecret === ep.id ? "Hide" : "Reveal"}
+                                                            </button>
+                                                            {revealWebhookSecret === ep.id && <button
                                                             type="button"
                                                             onClick={() => handleCopy(ep.secret, "Webhook Secret")}
                                                             className="text-white/40 hover:text-white"
                                                         >
                                                             <Copy className="w-3 h-3" />
-                                                        </button>
+                                                            </button>}
+                                                        </>
                                                     )}
                                                 </div>
+                                                <p className="text-[10px] text-white/35">
+                                                    {ep.latestDelivery
+                                                        ? <>Last delivery: <span className="font-mono text-white/60">{ep.latestDelivery.event}</span> · HTTP {ep.latestDelivery.status ?? "pending"} · {ep.latestDelivery.lastAttemptAt ? new Date(ep.latestDelivery.lastAttemptAt).toLocaleString() : "time unavailable"}</>
+                                                        : "No deliveries recorded for this endpoint yet."}
+                                                </p>
                                             </div>
                                             <button
                                                 type="button"
@@ -5651,6 +5760,43 @@ Please complete the following implementation tasks:
                                         </div>
                                     ))}
                                 </div>
+                            )}
+                        </div>
+
+                        <div className="liquid-glass space-y-4 rounded-3xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.03] p-6 shadow-2xl">
+                            <div>
+                                <h2 className="text-sm font-bold uppercase tracking-wider text-white">Webhook health checks</h2>
+                                <p className="mt-1 text-[11px] text-white/40">
+                                    Send signed sample events to every active endpoint, or resend the newest real delivery.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {([
+                                    ["test", "Send test webhook"],
+                                    ["payment.succeeded", "Send test payment.succeeded"],
+                                    ["subscription.created", "Send test subscription.created"],
+                                ] as const).map(([eventType, label]) => (
+                                    <button
+                                        key={eventType}
+                                        type="button"
+                                        onClick={() => handleSendWebhookTest(eventType)}
+                                        disabled={Boolean(isTestingWebhook) || webhookEndpoints.every((endpoint) => !endpoint.active)}
+                                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                    >
+                                        {isTestingWebhook === eventType ? "Sending…" : label}
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => handleReplayWebhook()}
+                                    disabled={isReplaying || webhookEvents.length === 0}
+                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white transition-colors hover:border-[#00d2b4]/30 hover:bg-[#00d2b4]/10 disabled:opacity-40"
+                                >
+                                    {isReplaying ? "Resending…" : "Resend latest event"}
+                                </button>
+                            </div>
+                            {replayStatus && (
+                                <p className="rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-[10px] text-white/60">{replayStatus}</p>
                             )}
                         </div>
 

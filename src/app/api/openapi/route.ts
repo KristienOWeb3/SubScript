@@ -22,6 +22,12 @@ const spec = {
                 scheme: "bearer",
                 description: "Secret API key: `Authorization: Bearer sk_test_…` (valueless Arc testnet settlement) or `sk_live_…` (production).",
             },
+            dashboardSession: {
+                type: "apiKey",
+                in: "cookie",
+                name: "subscript_session_token",
+                description: "Signed merchant dashboard session. Webhook management endpoints also require an active Premium tier.",
+            },
         },
         schemas: {
             Error: {
@@ -33,6 +39,62 @@ const spec = {
                     doc_url: { type: "string", format: "uri" },
                 },
                 required: ["error"],
+            },
+            WebhookDeliverySummary: {
+                type: "object",
+                properties: {
+                    status: { type: "integer", description: "Exact HTTP response status from the merchant server." },
+                    responseBody: { type: ["string", "null"], description: "Exact response body returned by the merchant server." },
+                    lastAttemptAt: { type: "string", format: "date-time" },
+                    endpoint: { type: "string", format: "uri" },
+                    eventId: { type: "string" },
+                },
+            },
+            WebhookEndpoint: {
+                type: "object",
+                properties: {
+                    id: { type: "string", format: "uuid" },
+                    walletAddress: { type: "string", description: "Merchant wallet that owns this endpoint and its API keys." },
+                    url: { type: "string", format: "uri" },
+                    secret: { type: "string", description: "Full signing secret on creation; redacted on later reads." },
+                    secretAvailable: { type: "boolean", description: "True only when the full secret is present in this response." },
+                    active: { type: "boolean" },
+                    createdAt: { type: "string", format: "date-time" },
+                    latestDelivery: {
+                        oneOf: [
+                            { $ref: "#/components/schemas/WebhookDeliverySummary" },
+                            { type: "null" },
+                        ],
+                    },
+                },
+            },
+            WebhookEvent: {
+                type: "object",
+                properties: {
+                    id: { type: "string" },
+                    event: { type: "string" },
+                    status: { type: "integer", description: "Exact HTTP response status." },
+                    time: { type: "string", description: "Delivery attempt time." },
+                    endpointUrl: { type: "string", format: "uri" },
+                    payload: { type: "object", additionalProperties: true },
+                    responseBody: { type: ["string", "null"] },
+                },
+            },
+            ApiKey: {
+                type: "object",
+                properties: {
+                    id: { type: "string", format: "uuid" },
+                    walletAddress: { type: "string" },
+                    publishableKey: { type: "string" },
+                    mode: { type: "string", enum: ["test", "live"] },
+                    secretKeyPlain: {
+                        type: "string",
+                        description: "Full `sk_…` secret only on creation; later reads return a non-sensitive hint.",
+                    },
+                    secretKeyAvailable: { type: "boolean" },
+                    createdAt: { type: "string", format: "date-time" },
+                    revoked: { type: "boolean" },
+                },
             },
             Intent: {
                 type: "object",
@@ -55,6 +117,13 @@ const spec = {
                     returnUrls: {
                         type: "object",
                         properties: { successUrl: { type: "string" }, cancelUrl: { type: "string" } },
+                    },
+                    webhookDelivery: {
+                        oneOf: [
+                            { $ref: "#/components/schemas/WebhookDeliverySummary" },
+                            { type: "null" },
+                        ],
+                        description: "Latest delivery health. Returned only to the authenticated merchant that owns the intent.",
                     },
                 },
             },
@@ -255,6 +324,94 @@ const spec = {
         },
     },
     paths: {
+        "/api/keys": {
+            get: {
+                summary: "List active merchant API keys",
+                description:
+                    "Dashboard-session endpoint for Premium merchants. Secret keys are never retrievable after their one-time creation response.",
+                security: [{ dashboardSession: [] }],
+                responses: {
+                    "200": {
+                        description: "OK",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        keys: {
+                                            type: "array",
+                                            items: { $ref: "#/components/schemas/ApiKey" },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            post: {
+                summary: "Create an API key and optionally register its webhook",
+                description:
+                    "Rotates the merchant's API key and optionally registers `webhookUrl` in the same setup flow. The full API and webhook secrets are revealed once. Key creation is preserved if webhook registration fails; in that case the response includes `webhookWarning`.",
+                security: [{ dashboardSession: [] }],
+                requestBody: {
+                    required: false,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    webhookUrl: {
+                                        type: "string",
+                                        format: "uri",
+                                        description: "Optional public HTTPS receiver to register for this merchant wallet.",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "201": {
+                        description: "Key created; copy every returned full secret now",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    required: ["key"],
+                                    properties: {
+                                        key: { $ref: "#/components/schemas/ApiKey" },
+                                        webhookEndpoint: { $ref: "#/components/schemas/WebhookEndpoint" },
+                                        webhookWarning: {
+                                            type: "string",
+                                            description: "Present when the key succeeded but endpoint registration did not.",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": { description: "Invalid or unsafe webhook URL", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            delete: {
+                summary: "Revoke an owned API key",
+                security: [{ dashboardSession: [] }],
+                parameters: [
+                    { name: "id", in: "query", required: true, schema: { type: "string", format: "uuid" } },
+                ],
+                responses: {
+                    "200": { description: "Revoked" },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Key is not owned by this merchant, or Premium is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "404": { description: "Key not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
         "/api/payment-links": {
             post: {
                 summary: "Create a hosted payment link",
@@ -350,7 +507,12 @@ const spec = {
                                     externalReference: { type: "string", maxLength: 256 },
                                     maxUses: { type: "integer", minimum: 1, maximum: 10000 },
                                     expiresAt: { type: ["integer", "string"], description: "Unix seconds/ms or ISO date." },
-                                    successUrl: { type: "string", format: "uri", description: "https URL to return to after payment." },
+                                    successUrl: {
+                                        type: "string",
+                                        format: "uri",
+                                        description:
+                                            "https URL to return to after confirmed settlement. SubScript adds `subscript_status=success` and `subscript_verification_status=settled`; these do not prove webhook delivery or merchant fulfillment.",
+                                    },
                                     cancelUrl: { type: "string", format: "uri", description: "https URL to return to on cancel." },
                                     idempotencyKey: { type: "string" },
                                     confirmOneTime: { type: "boolean", description: "Set true only to confirm that recurring-looking wording describes an intentional one-time purchase." },
@@ -371,7 +533,8 @@ const spec = {
         "/api/intent/status": {
             get: {
                 summary: "Get a payment intent's status (legacy query form)",
-                security: [],
+                description: "Public aggregate status polling. Authenticate as the owning merchant to receive transaction proof and the latest webhook delivery health.",
+                security: [{}, { bearerAuth: [] }, { dashboardSession: [] }],
                 parameters: [{ name: "id", in: "query", required: true, schema: { type: "string" } }],
                 responses: {
                     "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" } } } } } },
@@ -382,8 +545,8 @@ const spec = {
         "/api/intent/{id}": {
             get: {
                 summary: "Get a payment intent's status",
-                description: "Pollable read endpoint for agents and backends that need to reconcile without waiting for a webhook. Return URLs are intentionally not exposed.",
-                security: [],
+                description: "Pollable read endpoint for agents and backends that need to reconcile without waiting for a webhook. Public calls receive aggregate status; the authenticated owning merchant also receives transaction proof and `webhookDelivery`. Return URLs are intentionally not exposed.",
+                security: [{}, { bearerAuth: [] }, { dashboardSession: [] }],
                 parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                 responses: {
                     "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" } } } } } },
@@ -489,7 +652,12 @@ const spec = {
                                     title: { type: "string" },
                                     merchantCustomerId: { type: "string", maxLength: 256, description: "Recommended merchant-owned customer/account identifier. Persisted on the active subscription and lifecycle webhooks." },
                                     externalReference: { type: "string", maxLength: 256, description: "Backwards-compatible alias for merchantCustomerId; both must match if supplied together." },
-                                    publishToDm: { type: "boolean", default: true, description: "Publish the product to the DM plan picker. Subscriber-assigned plans are targeted; set false to keep it private." },
+                                    publishToDm: {
+                                        type: "boolean",
+                                        default: true,
+                                        description:
+                                            "Important: keep true when this recurring product must appear in the merchant dashboard and DM plan flow. Subscriber-assigned plans are targeted to that wallet; set false only for an intentionally private checkout.",
+                                    },
                                     idempotencyKey: { type: "string" },
                                     sandbox: { type: "boolean" },
                                 },
@@ -521,6 +689,230 @@ const spec = {
                     "200": { description: "Canceled", content: { "application/json": { schema: { $ref: "#/components/schemas/Subscription" } } } },
                     "403": { description: "Only the subscriber can cancel an active subscription", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "404": { description: "Not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/webhooks/endpoints": {
+            get: {
+                summary: "List webhook endpoints and delivery health",
+                description:
+                    "Dashboard-session endpoint for Premium merchants. Shows which merchant wallet owns each endpoint, whether it is active, and its latest delivery result.",
+                security: [{ dashboardSession: [] }],
+                responses: {
+                    "200": {
+                        description: "OK",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        endpoints: {
+                                            type: "array",
+                                            items: { $ref: "#/components/schemas/WebhookEndpoint" },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            post: {
+                summary: "Register a webhook endpoint",
+                description:
+                    "Registers an endpoint for the signed-in merchant wallet. The full `whsec_…` signing secret is returned once; later list responses redact it.",
+                security: [{ dashboardSession: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["url"],
+                                properties: {
+                                    url: { type: "string", format: "uri", description: "Public HTTPS webhook receiver URL." },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "201": {
+                        description: "Registered; persist the returned signing secret now",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        endpoint: { $ref: "#/components/schemas/WebhookEndpoint" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": { description: "Invalid or unsafe endpoint URL", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            delete: {
+                summary: "Delete an owned webhook endpoint",
+                security: [{ dashboardSession: [] }],
+                parameters: [
+                    { name: "id", in: "query", required: true, schema: { type: "string", format: "uuid" } },
+                ],
+                responses: {
+                    "200": { description: "Deleted" },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Endpoint is not owned by this merchant, or Premium is inactive", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "404": { description: "Endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/webhooks/events": {
+            get: {
+                summary: "List recent webhook delivery attempts",
+                description:
+                    "Returns the latest 50 delivery attempts for the signed-in merchant, including the exact endpoint, HTTP status, response body, payload, and attempt time.",
+                security: [{ dashboardSession: [] }],
+                responses: {
+                    "200": {
+                        description: "OK",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        events: {
+                                            type: "array",
+                                            items: { $ref: "#/components/schemas/WebhookEvent" },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/webhooks/events/replay": {
+            post: {
+                summary: "Resend a stored webhook event",
+                description:
+                    "Re-delivers the exact stored payload to its owned endpoint and records the new attempt. Supply exactly one of `eventId` or `latest: true`; pair `latest` with `endpointId` to select the latest delivery for one owned endpoint.",
+                security: [{ dashboardSession: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                oneOf: [
+                                    { required: ["eventId"] },
+                                    {
+                                        required: ["latest"],
+                                        properties: { latest: { const: true } },
+                                    },
+                                ],
+                                properties: {
+                                    eventId: { type: "string", description: "Stored UUID or `evt_…` event id." },
+                                    latest: { type: "boolean", description: "Set true to resend the latest stored delivery." },
+                                    endpointId: {
+                                        type: "string",
+                                        format: "uuid",
+                                        description: "Optional with `latest: true`; selects the latest delivery for this owned endpoint.",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "200": {
+                        description: "Replay attempted; inspect `success` and `status` for the merchant response",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        success: { type: "boolean" },
+                                        message: { type: "string" },
+                                        status: { type: "integer" },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": { description: "Invalid event id", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Event endpoint is not owned by this merchant", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "404": { description: "Event or endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/webhooks/test": {
+            post: {
+                summary: "Send a signed test webhook",
+                description:
+                    "Sends an observable signed sample to one owned endpoint, or every active endpoint when `endpointId` is omitted. Test deliveries are stored in webhook event history.",
+                security: [{ dashboardSession: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["eventType"],
+                                properties: {
+                                    eventType: {
+                                        type: "string",
+                                        enum: ["test", "payment.succeeded", "subscription.created"],
+                                    },
+                                    endpointId: {
+                                        type: "string",
+                                        format: "uuid",
+                                        description: "Optional owned endpoint. Omit to test all active endpoints.",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "200": {
+                        description: "Test delivery attempted",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        success: { type: "boolean" },
+                                        eventId: { type: "string" },
+                                        dispatchedCount: { type: "integer" },
+                                        deliveries: {
+                                            type: "array",
+                                            items: {
+                                                type: "object",
+                                                properties: {
+                                                    endpointId: { type: "string", format: "uuid" },
+                                                    endpointUrl: { type: "string", format: "uri" },
+                                                    status: { type: "integer" },
+                                                    responseBody: { type: ["string", "null"] },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "400": { description: "Invalid event type or endpoint id", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Signed-in merchant session required", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "403": { description: "Active Premium tier required or endpoint not owned", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "404": { description: "Endpoint not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
         },

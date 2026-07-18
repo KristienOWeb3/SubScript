@@ -27,6 +27,10 @@ const RECURRING_TEXT_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
         label: "duration-like product title",
         pattern: /(?:^|[\s—–-])\d+\s*(?:day|week|month|quarter|year)s?\b/i,
     },
+    {
+        label: "named product plan",
+        pattern: /\b(?:starter|basic|standard|pro|professional|premium|business|enterprise)\s+plan\b/i,
+    },
 ];
 
 export type PaymentIntentSemanticCheck = {

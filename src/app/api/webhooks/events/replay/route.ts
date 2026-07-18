@@ -21,41 +21,93 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => null);
-        if (!body || typeof body !== "object" || typeof body.eventId !== "string") {
-            return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
         }
 
-        const eventId = body.eventId.trim().toLowerCase();
-        /* Accept both canonical UUIDs and the `evt_`-prefixed IDs that payment and subscription
-           lifecycle webhooks use (e.g. evt_subscription_… from lifecycleEventId, evt_payment_…).
-           A strict UUID check silently 400s every replay of those events. */
-        if (!/^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(eventId)) {
+        const resendLatest = body.latest === true;
+        const requestedEventId = typeof body.eventId === "string"
+            ? body.eventId.trim().toLowerCase()
+            : "";
+        if (resendLatest === Boolean(requestedEventId)) {
+            return NextResponse.json({
+                error: "Provide exactly one of eventId or latest: true",
+            }, { status: 400 });
+        }
+        /* Accept both canonical UUIDs and the `evt_`-prefixed IDs used by older event rows. */
+        if (
+            requestedEventId
+            && !/^(evt_[a-z0-9_]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(requestedEventId)
+        ) {
             return NextResponse.json({ error: "eventId must be a valid event ID" }, { status: 400 });
+        }
+        const endpointId = body.endpointId;
+        if (
+            endpointId !== undefined
+            && (typeof endpointId !== "string"
+                || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(endpointId))
+        ) {
+            return NextResponse.json({ error: "endpointId must be a valid UUID" }, { status: 400 });
         }
         const supabase = getSupabase();
 
-        const { data: pastEvent, error: pastEventError } = await supabase
-            .from("webhook_events")
-            .select("*")
-            .eq("id", eventId)
+        const normalizedWallet = wallet.toLowerCase();
+        const { data: merchant, error: merchantError } = await supabase
+            .from("merchants")
+            .select("tier")
+            .eq("wallet_address", normalizedWallet)
             .maybeSingle();
-
-        if (pastEventError || !pastEvent) {
-            return NextResponse.json({ error: "Webhook event not found" }, { status: 404 });
+        if (merchantError || merchant?.tier !== "PREMIUM") {
+            return NextResponse.json({
+                error: "Forbidden: Webhook replay requires an active premium tier.",
+            }, { status: 403 });
         }
 
-        const { data: endpoint, error: endpointError } = await supabase
+        let endpointQuery = supabase
             .from("webhook_endpoints")
             .select("*")
-            .eq("id", pastEvent.webhook_endpoint_id)
-            .maybeSingle();
+            .eq("wallet_address", normalizedWallet);
+        if (endpointId) endpointQuery = endpointQuery.eq("id", endpointId);
+        const { data: ownedEndpoints, error: endpointError } = await endpointQuery;
 
-        if (endpointError || !endpoint) {
+        if (endpointError) {
+            console.error("Webhook replay endpoint lookup error:", endpointError);
+            return NextResponse.json({ error: "Failed to load webhook endpoints" }, { status: 500 });
+        }
+        if (!ownedEndpoints?.length) {
             return NextResponse.json({ error: "Webhook endpoint not found" }, { status: 404 });
         }
 
-        if (endpoint.wallet_address !== wallet.toLowerCase()) {
-            return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        const endpointIds = ownedEndpoints.map((endpoint: any) => endpoint.id);
+        let eventQuery = supabase
+            .from("webhook_events")
+            .select("*")
+            .in("webhook_endpoint_id", endpointIds);
+        if (resendLatest) {
+            eventQuery = eventQuery.order("created_at", { ascending: false }).limit(1);
+        } else if (requestedEventId.startsWith("evt_")) {
+            /* Protocol IDs live in payload.id while webhook_events.id is a UUID delivery-row id.
+               Querying a protocol ID against the UUID column would fail before ownership checks. */
+            eventQuery = eventQuery.eq("payload->>id", requestedEventId);
+        } else {
+            eventQuery = eventQuery.eq("id", requestedEventId);
+        }
+        const { data: matchingEvents, error: pastEventError } = await eventQuery;
+        const pastEvent = matchingEvents?.[0];
+        if (pastEventError) {
+            console.error("Webhook replay event lookup error:", pastEventError);
+            return NextResponse.json({ error: "Failed to load webhook event" }, { status: 500 });
+        }
+        if (!pastEvent) {
+            return NextResponse.json({ error: "Webhook event not found" }, { status: 404 });
+        }
+
+        const endpoint = ownedEndpoints.find((candidate: any) => candidate.id === pastEvent.webhook_endpoint_id);
+        if (!endpoint) {
+            return NextResponse.json({ error: "Webhook endpoint not found" }, { status: 404 });
+        }
+        if (endpoint.active !== true) {
+            return NextResponse.json({ error: "Webhook endpoint is inactive" }, { status: 409 });
         }
 
         const originalPayload = pastEvent.payload;
@@ -74,9 +126,10 @@ export async function POST(request: Request) {
                 id: newRecordId,
                 webhook_endpoint_id: endpoint.id,
                 event: pastEvent.event,
+                event_type: pastEvent.event_type || pastEvent.event,
                 status,
                 payload: originalPayload,
-                response_body: `[REPLAY OF ${eventId}] ${responseText}`,
+                response_body: `[REPLAY OF ${pastEvent.id}] ${responseText}`,
             });
 
         if (insertError) {
@@ -88,12 +141,16 @@ export async function POST(request: Request) {
                 success: true,
                 message: `Webhook successfully re-delivered. HTTP ${status}.`,
                 status,
+                eventId: newRecordId,
+                originalEventId: pastEvent.id,
             });
         } else {
             return NextResponse.json({
                 success: false,
                 message: `Webhook re-delivery failed with HTTP ${status}.`,
                 status,
+                eventId: newRecordId,
+                originalEventId: pastEvent.id,
             });
         }
     } catch (error) {
