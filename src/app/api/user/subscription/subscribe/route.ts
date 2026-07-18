@@ -3,22 +3,65 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSessionWallet } from "@/lib/auth";
+import { getWalletCustody, isCustodialWallet } from "@/lib/auth/walletCustody";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { prisma } from "@/lib/prisma";
 import { sanitizeInput } from "@/utils/security";
-import { requireGasSponsored } from "@/lib/sponsor/gas";
-import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain } from "@/lib/subscriptions/onchain";
+import { requireSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { subscribeFromEmbedded, findActiveOnChainSubscriptionId, getSubscriptionOnChain, getIntroductoryTermsOnChain } from "@/lib/subscriptions/onchain";
+import {
+    findApplicablePromotion,
+    claimPromotionRedemption,
+    releasePromotionRedemption,
+    confirmPromotionRedemption,
+    pricingPhaseFor,
+} from "@/lib/subscriptions/promotions";
 import { deterministicIdempotencyKey } from "@/lib/custody";
 import { mirrorSubscriptionCreated } from "@/lib/subscriptions/mirror";
 import { createSubscriptionStartedDm } from "@/lib/dms/system";
 import { withPgClient } from "@/lib/serverPg";
 import { getVerifiedAccountEmail } from "@/lib/auth/verifiedEmail";
 import { readSubscriptionCheckoutMeta, subscriptionCheckoutPeriod } from "@/lib/subscriptionCheckout";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { recordPaymentReconciliationRequired } from "@/lib/payments/reconciliationEvents";
 
 export const maxDuration = 120;
+
+async function markSubscriptionOfferAccepted(checkoutSessionId: string, subscriber: string) {
+    if (!checkoutSessionId) return;
+    await prisma.subscriptDm.updateMany({
+        where: {
+            paymentLinkId: checkoutSessionId,
+            receiverAddress: subscriber,
+            messageType: "SUBSCRIPTION_OFFER",
+            status: "PENDING",
+        },
+        data: { status: "APPROVED" },
+    }).catch((err: unknown) =>
+        console.error("[subscription/subscribe] offer acceptance sync failed:", err)
+    );
+}
+
+async function deactivateConsumedApiPlan({
+    sourceCheckoutId,
+    subscriber,
+}: {
+    sourceCheckoutId: string | null;
+    subscriber: string;
+}) {
+    if (!sourceCheckoutId) return;
+    /* Targeted offers are single-recipient and disappear after activation. Generic API plans
+       remain reusable even though the original checkout session itself is single-use. */
+    await prisma.merchantPlan.updateMany({
+        where: {
+            sourceCheckoutId,
+            targetSubscriber: subscriber,
+        },
+        data: { active: false },
+    });
+}
 
 export async function POST(request: Request) {
     try {
@@ -30,11 +73,26 @@ export async function POST(request: Request) {
         if (!verifiedEmail?.email) {
             return NextResponse.json({ error: "Verify an email address with OTP before subscribing." }, { status: 403 });
         }
-        if (verifiedEmail.provider === "external_wallet" || verifiedEmail.provider === "external_wallet_email_otp") {
+        /* Gate on signing custody rather than the provider label: 'external_wallet_email_otp' is
+           stamped on by /api/user/email whenever a wallet binds an OTP email, including wallets
+           SubScript custodies, so the label rejected Circle accounts from subscribing with a message
+           telling them to sign in the way they already had. */
+        if (!isCustodialWallet(await getWalletCustody(wallet))) {
             return NextResponse.json({
                 error: "Browser-wallet subscriptions are not available yet. Sign in with email or Google to use a gas-sponsored SubScript wallet.",
                 code: "EMBEDDED_WALLET_REQUIRED",
             }, { status: 409 });
+        }
+        /* Authenticate before inspecting deployment readiness so anonymous probes cannot receive
+           environment-key diagnostics. Authenticated financial requests still fail closed. */
+        try {
+            assertFinancialNetworkReady();
+        } catch (networkError) {
+            console.error("[subscription/subscribe] financial network is not ready:", networkError);
+            return NextResponse.json(
+                { error: "Subscription payments are temporarily unavailable." },
+                { status: 503 },
+            );
         }
 
         const body = sanitizeInput(await request.json().catch(() => null)) || {};
@@ -44,25 +102,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "planId or checkoutSessionId is required" }, { status: 400 });
         }
 
-        /* Sponsored subscription ("Pay for Me"): the caller pays, someone else receives the
-           service. The beneficiary rides the mirror + merchant webhooks for entitlement mapping;
-           billing, cancellation rights, and on-chain authorization stay with the payer. */
-        let beneficiaryAddress: string | null = null;
-        if (body.beneficiaryAddress !== undefined && body.beneficiaryAddress !== null && body.beneficiaryAddress !== "") {
-            if (typeof body.beneficiaryAddress !== "string" || !ethers.isAddress(body.beneficiaryAddress)) {
-                return NextResponse.json({ error: "beneficiaryAddress must be a valid 0x address" }, { status: 400 });
-            }
-            beneficiaryAddress = body.beneficiaryAddress.toLowerCase();
-            if (beneficiaryAddress === wallet.toLowerCase()) beneficiaryAddress = null;
-        }
-
         const checkout = checkoutSessionId
             ? await prisma.paymentLink.findUnique({ where: { id: checkoutSessionId } })
             : null;
         const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
-        if (!beneficiaryAddress && checkoutMeta?.beneficiary) {
-            beneficiaryAddress = checkoutMeta.beneficiary === wallet.toLowerCase() ? null : checkoutMeta.beneficiary;
-        }
+        /* Beneficiary is merchant-authored checkout metadata. The payer cannot override the
+           entitlement recipient from this authenticated execution endpoint. */
+        const beneficiaryAddress = checkoutMeta?.beneficiary && checkoutMeta.beneficiary !== wallet.toLowerCase()
+            ? checkoutMeta.beneficiary
+            : null;
         const merchantPlan = planId
             ? await prisma.merchantPlan.findUnique({ where: { id: planId } })
             : null;
@@ -86,9 +134,17 @@ export async function POST(request: Request) {
         }
 
         const subscriber = wallet.toLowerCase();
+        if (merchantPlan?.targetSubscriber && merchantPlan.targetSubscriber !== subscriber) {
+            return NextResponse.json({ error: "This plan is assigned to another subscriber" }, { status: 403 });
+        }
         if (checkoutMeta?.subscriber && checkoutMeta.subscriber !== subscriber) {
             return NextResponse.json({ error: "This subscription checkout is assigned to another subscriber" }, { status: 403 });
         }
+        const sourceCheckoutId = checkoutSessionId || merchantPlan?.sourceCheckoutId || null;
+        const sourceCheckout = checkout || (sourceCheckoutId
+            ? await prisma.paymentLink.findUnique({ where: { id: sourceCheckoutId } })
+            : null);
+        const externalReference = sourceCheckout?.externalReference?.trim() || null;
         const merchant = plan.merchantAddress.toLowerCase();
         const lockKey = `customer-subscription:${subscriber}:${merchant}`;
         const subscriptionReconciliationContext = {
@@ -100,6 +156,8 @@ export async function POST(request: Request) {
             periodSeconds: plan.periodSeconds.toString(),
             beneficiaryAddress,
             minCommitmentSeconds: plan.minCommitmentSeconds.toString(),
+            externalReference,
+            sourceCheckoutId,
         };
 
         /* Serialize subscription creation per user + merchant. Without this database-backed lock,
@@ -109,6 +167,10 @@ export async function POST(request: Request) {
             await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
             let checkoutClaimed = false;
             let onChainSubmitted = false;
+            /* Introductory promotion this subscriber is redeeming (plan subscribes only).
+               Claimed atomically BEFORE the on-chain create; released if we fail before
+               broadcasting; confirmed with the subId once the subscription exists. */
+            let appliedPromo: { id: string; introAmountUsdc: bigint; introCycles: number } | null = null;
             try {
                 if (checkoutSessionId && checkout?.status === "PROCESSING" && checkout.verifiedTxHash) {
                     const recoveredId = await findActiveOnChainSubscriptionId(subscriber, merchant);
@@ -134,10 +196,16 @@ export async function POST(request: Request) {
                             periodSeconds: plan.periodSeconds,
                             beneficiaryAddress,
                             minCommitmentSeconds: plan.minCommitmentSeconds,
+                            externalReference,
+                            sourceCheckoutId,
                         });
                         await prisma.paymentLink.update({
                             where: { id: checkoutSessionId },
                             data: { active: false, status: "PAID", paidAt: new Date() },
+                        });
+                        await deactivateConsumedApiPlan({
+                            sourceCheckoutId,
+                            subscriber,
                         });
                     } catch (reconciliationError) {
                         await recordPaymentReconciliationRequired({
@@ -149,15 +217,25 @@ export async function POST(request: Request) {
                         });
                         throw reconciliationError;
                     }
-                    await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
                         subscriptionId: recoveredId,
                         status: "active",
                         amountUsdcMicros: plan.amountUsdc,
                         subscriber,
                         merchantAddress: merchant,
                         beneficiary: beneficiaryAddress,
+                        externalReference,
+                        sourceCheckoutId,
                         txHash: checkout.verifiedTxHash,
-                    })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
+                    }), `created:${recoveredId}:${checkout.verifiedTxHash.toLowerCase()}`);
+                    await createSubscriptionStartedDm({
+                        merchantAddress: merchant,
+                        subscriberAddress: subscriber,
+                        planName: plan.name,
+                        amountUsdc: plan.amountUsdc,
+                        periodSeconds: plan.periodSeconds,
+                    }).catch((err) => console.error("[subscription/subscribe] recovered DM creation failed:", err));
+                    await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
                     return NextResponse.json({ success: true, txHash: checkout.verifiedTxHash, subscriptionId: recoveredId, planName: plan.name });
                 }
 
@@ -193,6 +271,9 @@ export async function POST(request: Request) {
                 if (onChainActiveId) {
                     const onChain = await getSubscriptionOnChain(onChainActiveId);
                     if (onChain && onChain.amount === plan.amountUsdc && onChain.period === plan.periodSeconds) {
+                        /* A promo sub whose mirror write failed still has its authorized intro
+                           terms on-chain; rebuild the snapshot from the authoritative source. */
+                        const recoveredIntro = await getIntroductoryTermsOnChain(onChainActiveId);
                         await mirrorSubscriptionCreated({
                             subscriptionId: onChainActiveId,
                             merchantAddress: merchant,
@@ -201,7 +282,41 @@ export async function POST(request: Request) {
                             periodSeconds: onChain.period,
                             beneficiaryAddress,
                             minCommitmentSeconds: plan.minCommitmentSeconds,
+                            promotion: recoveredIntro
+                                ? { promotionId: null, introAmountUsdc: recoveredIntro.introAmountUsdc, introCycles: recoveredIntro.introCycles }
+                                : null,
+                            externalReference,
+                            sourceCheckoutId,
                         });
+                        if (checkoutSessionId) {
+                            await prisma.paymentLink.update({
+                                where: { id: checkoutSessionId },
+                                data: { active: false, status: "PAID", paidAt: new Date() },
+                            });
+                        }
+                        await deactivateConsumedApiPlan({
+                            sourceCheckoutId,
+                            subscriber,
+                        });
+                        await createSubscriptionStartedDm({
+                            merchantAddress: merchant,
+                            subscriberAddress: subscriber,
+                            planName: plan.name,
+                            amountUsdc: plan.amountUsdc,
+                            periodSeconds: plan.periodSeconds,
+                        }).catch((err) => console.error("[subscription/subscribe] reconciled DM creation failed:", err));
+                        await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
+                        await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                            subscriptionId: onChainActiveId,
+                            status: "active",
+                            amountUsdcMicros: onChain.amount,
+                            subscriber,
+                            merchantAddress: merchant,
+                            beneficiary: beneficiaryAddress,
+                            externalReference,
+                            sourceCheckoutId,
+                            txHash: checkout?.verifiedTxHash || null,
+                        }), `reconciled-created:${onChainActiveId}:${sourceCheckoutId || plan.id}`);
                         return NextResponse.json({ success: true, subscriptionId: onChainActiveId, planName: plan.name, reconciled: true });
                     }
                     return NextResponse.json({
@@ -222,13 +337,52 @@ export async function POST(request: Request) {
                     checkoutClaimed = true;
                 }
 
-                await requireGasSponsored(subscriber);
+                /* Resolve and claim the plan's live introductory promotion. Best-effort: a
+                   promotion that expired, hit its cap, or was already redeemed by this
+                   subscriber simply falls back to full price — checkout re-discloses the
+                   actual terms in the response, and nothing was charged yet. Must run before
+                   the sponsorship + subscribeFromEmbedded calls below, which read appliedPromo. */
+                if (!checkoutSessionId && merchantPlan) {
+                    const promo = await findApplicablePromotion({
+                        planId: merchantPlan.id,
+                        merchantAddress: merchant,
+                        subscriber,
+                    });
+                    if (promo) {
+                        const claimed = await claimPromotionRedemption(promo.id, subscriber);
+                        if (claimed) {
+                            appliedPromo = {
+                                id: promo.id,
+                                introAmountUsdc: promo.introductoryAmountUsdc,
+                                introCycles: promo.introductoryCycles,
+                            };
+                        }
+                    }
+                }
+
                 /* createSubscription charges the first payment, so a retry after a timed-out
                    response must reuse the SAME Circle idempotency key or it double-charges.
-                   Checkout sessions are single-use → durable key on the session id. Plan
-                   subscribes key on the client's x-request-id (reused across its retries);
-                   without one, each request is its own attempt. */
-                const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+                   Checkout sessions are single-use → durable key on the session id. Direct plan
+                   subscribes derive a generation from durable subscription history under the
+                   advisory lock, so even clients without a retry header reuse the same attempt. */
+                const generationResult = await client.query(
+                    `select count(*)::bigint AS generation
+                       from subscriptions
+                      where subscriber = $1 and merchant_address = $2 and kind = 'CUSTOMER'`,
+                    [subscriber, merchant],
+                );
+                const generation = BigInt(generationResult.rows[0]?.generation || 0) + BigInt(1);
+                /* Custody-aware sponsorship, keyed on the same stable identity as the Circle
+                   idempotency key so a retried subscribe reuses the durable record. The first
+                   period's charge is declared as principal — never reclassified as gas. */
+                await requireSponsoredGas({
+                    wallet: subscriber,
+                    action: "subscribe",
+                    requestKey: checkoutSessionId
+                        ? `subscribe-checkout:${checkoutSessionId}`
+                        : `subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`,
+                    principalRequiredWei: BigInt(plan.amountUsdc) * BigInt(1_000_000_000_000),
+                });
                 const { txHash, subId } = await subscribeFromEmbedded(
                     subscriber,
                     merchant,
@@ -236,7 +390,10 @@ export async function POST(request: Request) {
                     plan.periodSeconds,
                     checkoutSessionId
                         ? deterministicIdempotencyKey(`subscribe-checkout:${checkoutSessionId}`)
-                        : deterministicIdempotencyKey(`req:${requestId}:subscribe:${subscriber}:${planId}`)
+                        : deterministicIdempotencyKey(`subscribe-plan:${subscriber}:${merchant}:${planId}:generation:${generation}`),
+                    appliedPromo
+                        ? { introAmountUsdc: appliedPromo.introAmountUsdc, introCycles: appliedPromo.introCycles }
+                        : null,
                 );
                 onChainSubmitted = true;
                 if (checkoutSessionId) {
@@ -277,7 +434,20 @@ export async function POST(request: Request) {
                         periodSeconds: plan.periodSeconds,
                         beneficiaryAddress,
                         minCommitmentSeconds: plan.minCommitmentSeconds,
+                        promotion: appliedPromo
+                            ? {
+                                promotionId: appliedPromo.id,
+                                introAmountUsdc: appliedPromo.introAmountUsdc,
+                                introCycles: appliedPromo.introCycles,
+                            }
+                            : null,
+                        externalReference,
+                        sourceCheckoutId,
                     });
+                    if (appliedPromo) {
+                        await confirmPromotionRedemption(appliedPromo.id, subscriber, BigInt(subId))
+                            .catch((err) => console.error("[subscription/subscribe] redemption confirm failed:", err));
+                    }
                 } catch (reconciliationError) {
                     await recordPaymentReconciliationRequired({
                         dedupeKey: `subscription-mirror:${subId}:${txHash.toLowerCase()}`,
@@ -290,12 +460,22 @@ export async function POST(request: Request) {
                 }
 
                 /* Open the merchant→user DM thread for this subscription (best-effort). */
+                const firstRegularPaymentAt = appliedPromo
+                    ? new Date(Date.now() + appliedPromo.introCycles * Number(plan.periodSeconds) * 1000)
+                    : null;
                 await createSubscriptionStartedDm({
                     merchantAddress: merchant,
                     subscriberAddress: subscriber,
                     planName: plan.name,
                     amountUsdc: plan.amountUsdc,
                     periodSeconds: plan.periodSeconds,
+                    introTerms: appliedPromo && firstRegularPaymentAt
+                        ? {
+                            introAmountUsdc: appliedPromo.introAmountUsdc,
+                            introCycles: appliedPromo.introCycles,
+                            firstRegularPaymentAt,
+                        }
+                        : null,
                 }).catch((err) => console.error("[subscription/subscribe] DM creation failed:", err));
 
                 if (checkoutSessionId) {
@@ -321,22 +501,49 @@ export async function POST(request: Request) {
                     }
                     checkoutClaimed = false;
                 }
+                await deactivateConsumedApiPlan({
+                    sourceCheckoutId,
+                    subscriber,
+                });
+                await markSubscriptionOfferAccepted(checkoutSessionId, subscriber);
 
-                await dispatchMerchantWebhook(merchant, "subscription.created", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(merchant, "subscription.created", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "active",
                     amountUsdcMicros: plan.amountUsdc,
                     subscriber,
                     merchantAddress: merchant,
                     beneficiary: beneficiaryAddress,
+                    externalReference,
+                    sourceCheckoutId,
                     txHash,
-                })).catch((error) => console.error("[subscription/subscribe] activation webhook failed:", error));
+                    pricing: appliedPromo
+                        ? {
+                            ...pricingPhaseFor({
+                                sequenceId: 0,
+                                regularAmountUsdc: plan.amountUsdc,
+                                introAmountUsdc: appliedPromo.introAmountUsdc,
+                                introCycles: appliedPromo.introCycles,
+                            }),
+                            regularAmountUsdcMicros: plan.amountUsdc,
+                        }
+                        : null,
+                }), `created:${subId}:${txHash.toLowerCase()}`);
 
                 return NextResponse.json({
                     success: true,
                     txHash,
                     subscriptionId: subId,
                     planName: plan.name,
+                    ...(appliedPromo ? {
+                        promotion: {
+                            promotionId: appliedPromo.id,
+                            paidTodayUsdcMicros: appliedPromo.introAmountUsdc.toString(),
+                            introductoryCycles: appliedPromo.introCycles,
+                            regularAmountUsdcMicros: plan.amountUsdc.toString(),
+                            firstRegularPaymentAt: firstRegularPaymentAt?.toISOString() ?? null,
+                        },
+                    } : {}),
                 }, { status: 200 });
             } catch (error) {
                 if (checkoutSessionId && checkoutClaimed && !onChainSubmitted) {
@@ -346,6 +553,15 @@ export async function POST(request: Request) {
                     }).catch((resetError: unknown) =>
                         console.error("[subscription/subscribe] checkout claim reset failed:", resetError)
                     );
+                }
+                /* A redemption claimed for a create that never broadcast must be handed back,
+                   or a failed attempt would burn the customer's once-per-promo eligibility and
+                   a slot of the redemption cap. After broadcast the claim stands (funds moved). */
+                if (appliedPromo && !onChainSubmitted) {
+                    await releasePromotionRedemption(appliedPromo.id, subscriber)
+                        .catch((releaseError: unknown) =>
+                            console.error("[subscription/subscribe] promotion release failed:", releaseError)
+                        );
                 }
                 throw error;
             } finally {

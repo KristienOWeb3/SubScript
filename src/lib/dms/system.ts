@@ -76,6 +76,7 @@ export async function createSubscriptionStartedDm({
     amountUsdc,
     periodSeconds,
     isChange = false,
+    introTerms = null,
 }: {
     merchantAddress: string;
     subscriberAddress: string;
@@ -83,6 +84,13 @@ export async function createSubscriptionStartedDm({
     amountUsdc: bigint;
     periodSeconds: bigint;
     isChange?: boolean;
+    /* Introductory terms the subscriber authorized: full disclosure of the price they paid
+       today, how long the discount lasts, and when the regular price begins. */
+    introTerms?: {
+        introAmountUsdc: bigint;
+        introCycles: number;
+        firstRegularPaymentAt: Date;
+    } | null;
 }) {
     const merchant = merchantAddress.toLowerCase();
     const subscriber = subscriberAddress.toLowerCase();
@@ -92,22 +100,89 @@ export async function createSubscriptionStartedDm({
     const amount = formatUsdcFromMicros(amountUsdc);
     const cadence = formatPeriodLabel(periodSeconds);
 
+    const pricingLines = introTerms
+        ? [
+            introTerms.introAmountUsdc === BigInt(0)
+                ? `Paid today: 0 USDC (free ${introTerms.introCycles > 1 ? `${introTerms.introCycles} cycles` : "first cycle"})`
+                : `Paid today: ${formatUsdcFromMicros(introTerms.introAmountUsdc)} USDC (introductory price${introTerms.introCycles > 1 ? ` for ${introTerms.introCycles} cycles` : ""})`,
+            `Then: ${amount} USDC / ${cadence} starting ${introTerms.firstRegularPaymentAt.toISOString().slice(0, 10)}`,
+            "Cancel before then to avoid the regular price.",
+        ]
+        : [`Amount: ${amount} USDC / ${cadence}`];
+
     const dm = await createDmAndNotify({
         senderAddress: merchant,
         receiverAddress: subscriber,
         messageType: "SUBSCRIPTION_STARTED",
         status: "APPROVED",
-        amountUsdc,
+        amountUsdc: introTerms ? introTerms.introAmountUsdc : amountUsdc,
         title: isChange ? `Plan changed to ${planName}` : `Subscribed to ${planName}`,
         description: [
             `Merchant: ${merchantName}`,
             `Plan: ${planName}`,
-            `Amount: ${amount} USDC / ${cadence}`,
+            ...pricingLines,
             "You can manage or cancel this subscription anytime from your dashboard.",
         ].join("\n"),
     });
 
     return dm;
+}
+
+/**
+ * Deliver a merchant-authored API subscription offer to one SubScript user.
+ * The checkout id is the durable identity: retries return the existing DM
+ * instead of sending duplicate inbox rows or push notifications.
+ */
+export async function createSubscriptionOfferDm({
+    merchantAddress,
+    subscriberAddress,
+    checkoutSessionId,
+    planName,
+    amountUsdc,
+    periodSeconds,
+}: {
+    merchantAddress: string;
+    subscriberAddress: string;
+    checkoutSessionId: string;
+    planName: string;
+    amountUsdc: bigint;
+    periodSeconds: bigint;
+}) {
+    const merchant = merchantAddress.toLowerCase();
+    const subscriber = subscriberAddress.toLowerCase();
+    const dedupeKey = `subscription-offer:${checkoutSessionId}:${subscriber}`;
+
+    const existing = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+    if (existing) return existing;
+
+    const merchantAlias = await prisma.addressAlias.findUnique({ where: { address: merchant } }).catch(() => null);
+    const merchantName = merchantAlias?.alias || `${merchant.slice(0, 6)}...${merchant.slice(-4)}`;
+    const amount = formatUsdcFromMicros(amountUsdc);
+    const cadence = formatPeriodLabel(periodSeconds);
+
+    try {
+        return await createDmAndNotify({
+            senderAddress: merchant,
+            receiverAddress: subscriber,
+            messageType: "SUBSCRIPTION_OFFER",
+            status: "PENDING",
+            amountUsdc,
+            title: `${merchantName} offered ${planName}`,
+            description: [
+                `Merchant: ${merchantName}`,
+                `Plan: ${planName}`,
+                `Amount: ${amount} USDC / ${cadence}`,
+                "Review the recurring terms, then accept or decline this plan.",
+            ].join("\n"),
+            paymentLinkId: checkoutSessionId,
+            dedupeKey,
+        });
+    } catch (error: any) {
+        if (error?.code !== "P2002") throw error;
+        const raced = await prisma.subscriptDm.findUnique({ where: { dedupeKey } });
+        if (!raced) throw error;
+        return raced;
+    }
 }
 
 /**

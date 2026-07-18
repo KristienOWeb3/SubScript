@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { ROUTER_ADDRESS, ARC_TESTNET_CHAIN_ID } from "./constants";
+import { ROUTER_ADDRESS, PREMIUM_PRICE } from "./constants";
+import { ProtocolConfig } from "./config";
 
 const ROUTER_INTERFACE = new ethers.Interface([
     "function setMerchantTier(address _merchant, uint8 _tier) external",
@@ -113,7 +114,8 @@ export async function activateSubscription({
             p_subscription_id: premiumSubId,
             p_session_id: sessionId,
             p_tx_hash: txHash,
-            p_amount: 10,
+            /* amount_cap_usdc is canonical integer micro-USDC throughout subscriptions. */
+            p_amount: PREMIUM_PRICE,
             p_period: 2592000,
             p_claim_id: claimId
         });
@@ -132,7 +134,7 @@ export async function activateSubscription({
                 merchant: normalizedUser,
                 payment_session: sessionId,
                 tx_hash: txHash,
-                chain_id: ARC_TESTNET_CHAIN_ID,
+                chain_id: ProtocolConfig.CHAIN_ID,
                 tier_before: tierBefore,
                 tier_after: 1,
                 admin_wallet: adminWallet.address.toLowerCase(),

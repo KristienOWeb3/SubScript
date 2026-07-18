@@ -21,8 +21,8 @@
 import { ethers } from "ethers";
 import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 
@@ -62,7 +62,7 @@ export async function healSubscriptionDrift(
 
     const { data: liveSubs, error: liveErr } = await supabase
         .from("subscriptions")
-        .select("subscription_id, merchant_address, status, amount_cap_usdc, last_settlement_timestamp, updated_at")
+        .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, last_settlement_timestamp, updated_at")
         .in("status", ["ACTIVE", "PAST_DUE"])
         .order("updated_at", { ascending: true })
         .limit(liveBudget);
@@ -71,7 +71,7 @@ export async function healSubscriptionDrift(
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: cancelledSubs, error: cancErr } = await supabase
         .from("subscriptions")
-        .select("subscription_id, merchant_address, status, amount_cap_usdc, updated_at")
+        .select("subscription_id, merchant_address, status, amount_cap_usdc, beneficiary_address, external_reference, source_checkout_id, updated_at")
         .eq("status", "CANCELED")
         .gte("updated_at", fourteenDaysAgo)
         .order("updated_at", { ascending: true })
@@ -99,14 +99,17 @@ export async function healSubscriptionDrift(
                     .from("subscriptions")
                     .update({ status: "CANCELED", updated_at: new Date().toISOString() })
                     .eq("subscription_id", subId);
-                await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "canceled",
                     amountUsdcMicros: sub.amount_cap_usdc || 0,
                     subscriber,
                     merchantAddress: sub.merchant_address,
+                    beneficiary: sub.beneficiary_address || null,
+                    externalReference: sub.external_reference || null,
+                    sourceCheckoutId: sub.source_checkout_id || null,
                     reason: "Canceled on-chain (reconciled)",
-                })).catch(() => { /* best-effort */ });
+                }), `drift-canceled:${subId}`);
                 healed.push({ subId, action: "MIRRORED_ONCHAIN_CANCEL" });
                 continue;
             }
@@ -114,7 +117,11 @@ export async function healSubscriptionDrift(
             if (sub.status === "CANCELED" && isActiveOnChain) {
                 /* Case 2: DB cancelled but the authorization is still live — revoke it. */
                 try {
-                    await ensureGasSponsored(subscriber).catch(() => { /* best-effort */ });
+                    await ensureSponsoredGas({
+                        wallet: subscriber,
+                        action: "drift_heal",
+                        requestKey: `drift-revoke:${subId}`,
+                    }).catch(() => { /* best-effort */ });
                     const txHash = await cancelFromEmbedded(subscriber, BigInt(subId));
                     healed.push({ subId, action: "REVOKED_STALE_AUTHORIZATION", detail: txHash });
                 } catch (revokeErr: any) {

@@ -7,6 +7,17 @@ import {
 } from "@/components/icons";
 import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 
+type PlanPromotionData = {
+    id: string;
+    name: string;
+    discountType: string;
+    discountBps: number | null;
+    introductoryAmountUsdc: string;
+    introductoryCycles: number;
+    expiresAt: string | null;
+    newCustomersOnly: boolean;
+};
+
 type PlanData = {
     id: string;
     name: string;
@@ -19,6 +30,7 @@ type PlanData = {
     checkoutSessionId?: string;
     successUrl?: string;
     cancelUrl?: string;
+    promotion?: PlanPromotionData | null;
     merchant?: {
         address: string;
         name: string;
@@ -129,6 +141,7 @@ export default function SubscribeClient({
                         checkoutSessionId: data.plan.checkoutSessionId,
                         successUrl: data.plan.successUrl,
                         cancelUrl: data.plan.cancelUrl,
+                        promotion: data.plan.promotion ?? null,
                         merchant: data.merchant,
                     });
                     setLoadError(null);
@@ -258,6 +271,15 @@ export default function SubscribeClient({
     const isEnterpriseViewer = session?.role === "ENTERPRISE";
     const isExternalWalletViewer = Boolean(session?.loggedIn && !session?.isEmbedded);
 
+    /* Introductory offer disclosure. The customer authorizes BOTH prices: the intro
+       charge today (0 for a free trial) and the regular recurring price after
+       `introductoryCycles` cycles — the switch is enforced on-chain. */
+    const promo = plan?.promotion ?? null;
+    const isFreeTrial = promo ? Number(promo.introductoryAmountUsdc) === 0 : false;
+    const firstRegularDate = plan && promo
+        ? new Date(Date.now() + promo.introductoryCycles * Number(plan.periodSeconds) * 1000)
+        : null;
+
     return (
         <div className="min-h-screen bg-transparent text-white selection:bg-[#00d2b4]/30 selection:text-white border-t-4 border-[#00d2b4] flex items-center justify-center p-4 sm:p-6 relative font-sans">
             <AnimatedGradientBg />
@@ -338,21 +360,43 @@ export default function SubscribeClient({
 
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex justify-between items-center">
                             <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                                <RefreshCw className="w-3 h-3" /> Recurring
+                                <RefreshCw className="w-3 h-3" /> {promo ? "Due today" : "Recurring"}
                             </span>
                             <div className="text-right">
+                                {promo && (
+                                    <p className="text-[10px] font-bold text-white/35 line-through">
+                                        {formatAmount(plan.amountUsdc)} USDC
+                                    </p>
+                                )}
                                 <p className="text-2xl font-extrabold text-[#00d2b4] tracking-tight">
-                                    {formatAmount(plan.amountUsdc)}
+                                    {promo ? formatAmount(promo.introductoryAmountUsdc) : formatAmount(plan.amountUsdc)}
                                 </p>
                                 <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest font-mono">
-                                    USDC / {formatPeriod(plan.periodSeconds)}
+                                    {promo
+                                        ? `USDC today · then ${formatAmount(plan.amountUsdc)} / ${formatPeriod(plan.periodSeconds)}`
+                                        : `USDC / ${formatPeriod(plan.periodSeconds)}`}
                                 </p>
                             </div>
                         </div>
 
+                        {promo && (
+                            <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] px-4 py-3 space-y-1">
+                                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">{promo.name}</p>
+                                <p className="text-[10px] leading-relaxed text-white/60">
+                                    {isFreeTrial
+                                        ? <>Your first {promo.introductoryCycles > 1 ? `${promo.introductoryCycles} billing cycles are` : `${formatPeriod(plan.periodSeconds)} is`} <span className="font-bold text-white/85">free</span>.</>
+                                        : <>You pay <span className="font-bold text-white/85">{formatAmount(promo.introductoryAmountUsdc)} USDC</span> per {formatPeriod(plan.periodSeconds)} for {promo.introductoryCycles > 1 ? `your first ${promo.introductoryCycles} cycles` : `your first ${formatPeriod(plan.periodSeconds)}`}.</>}{" "}
+                                    From <span className="font-bold text-white/85">{firstRegularDate?.toLocaleDateString()}</span> the regular price of{" "}
+                                    <span className="font-bold text-white/85">{formatAmount(plan.amountUsdc)} USDC / {formatPeriod(plan.periodSeconds)}</span> applies.
+                                    Cancel before then to avoid it.
+                                </p>
+                            </div>
+                        )}
+
                         <p className="text-[10px] text-white/45 leading-relaxed">
-                            You&apos;ll be charged <span className="text-white/70 font-bold">{formatAmount(plan.amountUsdc)} USDC</span> now and then
-                            automatically every <span className="text-white/70 font-bold">{formatPeriod(plan.periodSeconds)}</span>. You can cancel
+                            You&apos;ll be charged <span className="text-white/70 font-bold">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span> now and then
+                            automatically every <span className="text-white/70 font-bold">{formatPeriod(plan.periodSeconds)}</span>
+                            {promo ? <> (at <span className="text-white/70 font-bold">{formatAmount(plan.amountUsdc)} USDC</span> once the introductory period ends)</> : null}. You can cancel
                             anytime from your SubScript dashboard.
                         </p>
 
@@ -369,7 +413,12 @@ export default function SubscribeClient({
                             <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-5 text-center space-y-4 flex flex-col items-center">
                                 <CheckCircle className="w-8 h-8 text-emerald-400" />
                                 <p className="text-xs font-semibold text-white/80 leading-relaxed">
-                                    You&apos;re subscribed to {result.planName || plan.name}! Your first payment has been taken.
+                                    You&apos;re subscribed to {result.planName || plan.name}!{" "}
+                                    {promo && isFreeTrial
+                                        ? "Your free period has started — nothing was charged today."
+                                        : promo
+                                            ? `Your introductory payment of ${formatAmount(promo.introductoryAmountUsdc)} USDC has been taken.`
+                                            : "Your first payment has been taken."}
                                 </p>
                                 <button
                                     type="button"
@@ -465,10 +514,23 @@ export default function SubscribeClient({
                         )}
                         <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs">
                             <div className="flex justify-between gap-4"><span className="text-white/45">Merchant</span><span className="text-right font-bold">{merchant?.name || "Merchant"}</span></div>
-                            <div className="flex justify-between gap-4"><span className="text-white/45">Charge today</span><span className="font-bold">{formatAmount(plan.amountUsdc)} USDC</span></div>
+                            <div className="flex justify-between gap-4"><span className="text-white/45">Charge today</span><span className="font-bold">{formatAmount(promo ? promo.introductoryAmountUsdc : plan.amountUsdc)} USDC</span></div>
+                            {promo && (
+                                <div className="flex justify-between gap-4"><span className="text-white/45">Regular price</span><span className="font-bold">{formatAmount(plan.amountUsdc)} USDC / {formatPeriod(plan.periodSeconds)}</span></div>
+                            )}
                             <div className="flex justify-between gap-4"><span className="text-white/45">Renews</span><span className="font-bold">Every {formatPeriod(plan.periodSeconds)}</span></div>
                             <div className="flex justify-between gap-4"><span className="text-white/45">Estimated next charge</span><span className="text-right font-bold">{new Date(Date.now() + Number(plan.periodSeconds) * 1000).toLocaleDateString()}</span></div>
+                            {promo && firstRegularDate && (
+                                <div className="flex justify-between gap-4"><span className="text-white/45">First full-price renewal</span><span className="text-right font-bold">{firstRegularDate.toLocaleDateString()}</span></div>
+                            )}
                         </div>
+                        {promo && (
+                            <p className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] p-3 text-[10px] leading-relaxed text-white/60">
+                                You are authorizing both prices now: {isFreeTrial ? "0 USDC" : `${formatAmount(promo.introductoryAmountUsdc)} USDC`} per {formatPeriod(plan.periodSeconds)} during
+                                the introductory period, then {formatAmount(plan.amountUsdc)} USDC per {formatPeriod(plan.periodSeconds)}. The price can never
+                                exceed what you approve here. Cancel before {firstRegularDate?.toLocaleDateString()} to avoid the regular price.
+                            </p>
+                        )}
                         <p className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[10px] leading-relaxed text-amber-200/80">Confirming authorizes recurring USDC charges under these terms. You can manage or cancel the subscription from your dashboard; any minimum commitment shown above still applies.</p>
                         <div className="grid grid-cols-2 gap-3">
                             <button type="button" onClick={() => setShowSubscribeReview(false)} disabled={isSubscribing} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white">Back</button>

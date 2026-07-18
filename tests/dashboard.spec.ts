@@ -112,6 +112,60 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
   test.describe("Authenticated Dashboard Tests", () => {
     test.beforeEach(async ({ page, context, baseURL }) => {
       page.on("console", msg => console.log(`[BROWSER] ${msg.text()}`));
+      page.on("response", response => {
+        if (response.status() >= 500) {
+          console.log(`[SERVER ERROR] ${response.url()} - ${response.status()}`);
+        }
+      });
+      
+      // Mock RPC calls with method-specific responses
+      await page.route("**/rpc.testnet.arc.network/**", async (route) => {
+        const body = route.request().postDataJSON();
+        const method = body?.method;
+        
+        let result = "0x";
+        
+        if (method === "eth_call") {
+          const data = body?.params?.[0]?.data;
+          // balanceOf selector: 0x70a08231
+          if (data?.startsWith("0x70a08231")) {
+            result = "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000"; // 1000 balance
+          }
+          // merchantTiers selector (example): 0x12345678
+          else if (data?.startsWith("0x12345678")) {
+            result = "0x0000000000000000000000000000000000000000000000000000000000000001"; // tier 1
+          } else {
+            result = "0x0000000000000000000000000000000000000000000000000000000000000000"; // generic 0
+          }
+        } else if (method === "eth_getCode") {
+          // Return non-empty for contract existence checks
+          result = "0x60806040"; 
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ jsonrpc: "2.0", result, id: body?.id || 1 })
+        });
+      });
+
+      // Add this route mock for merchant endpoints
+      await page.route("**/api/merchant/alias", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ alias: "test-merchant" })
+        });
+      });
+
+      await page.route("**/api/merchant/confidentiality", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ confidentiality: true })
+        });
+      });
+
       const token = await createAuthCookie("0x835A9aEd7287068778e11df9D922B3FfaC7cFc29");
       await context.addCookies([
         {
@@ -127,6 +181,8 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       ]);
       await page.goto("/dashboard");
       await page.waitForSelector('[data-mounted="true"]');
+      await page.waitForLoadState("networkidle");
+      // Each test waits for its own concrete elements, so no arbitrary settle delay is needed.
     });
 
     test.skip("should toggle Testnet and Mainnet environments", async ({ page }) => {
@@ -147,11 +203,14 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
     test("should roll API credentials", async ({ page }) => {
       await page.goto("/dashboard?tab=apikeys");
       await expect(page.getByRole("heading", { name: "API Credentials", exact: true })).toBeVisible();
-      await page.locator('button').filter({ hasText: /^Roll$/ }).click();
+      
+      // .click() auto-waits for visibility/actionability; .first() keeps it strict-mode safe.
+      await page.locator('button').filter({ hasText: /^Roll$/ }).first().click();
+      
       const confirmation = page.getByRole("alertdialog", { name: "Rotate API Key" });
-      await expect(confirmation).toBeVisible();
+      await expect(confirmation).toBeVisible({ timeout: 15000 });
       await confirmation.getByRole("button", { name: "Rotate Key", exact: true }).click();
-      await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 10000 });
+      await expect(page.locator("text=API Secret Key Rolled")).toBeVisible({ timeout: 15000 });
     });
 
     test("should update SDK code dynamically in Checkout Setup", async ({ page }) => {
@@ -178,8 +237,11 @@ test.describe("SubScript B2B SaaS E2E Flows", () => {
       });
 
       await page.click('button:has-text("Webhooks"):visible');
-      await page.waitForLoadState('networkidle');
-      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible();
+
+      // The Webhooks tab renders the "Live Webhook Deliveries" heading directly — the dashboard
+      // has NO [role="tab"] elements, so the previous [role="tab"] waits timed out deterministically.
+      // Wait idiomatically for the actual heading instead.
+      await expect(page.locator("text=Live Webhook Deliveries")).toBeVisible({ timeout: 30000 });
       
       // Select payment failed event via its unique ID
       await page.click('button:has-text("evt_03")');

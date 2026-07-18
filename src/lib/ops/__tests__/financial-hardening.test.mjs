@@ -59,6 +59,31 @@ test("unverified public webhook receiver is retired", () => {
     assert.match(route, /status:\s*401/);
 });
 
+test("subscription webhook receipt and lifecycle state commit in one database transaction", () => {
+    const route = source("src/app/api/webhooks/subscript/route.ts");
+    const processor = source("src/lib/subscriptions/inboundWebhook.ts");
+
+    assert.match(route, /processInboundSubscriptionWebhook/);
+    assert.doesNotMatch(route, /createClient/);
+    assert.doesNotMatch(route, /\.from\("subscriptions"\)/);
+    assert.doesNotMatch(route, /\.from\("webhook_events"\)/);
+
+    assert.match(processor, /withPgClient/);
+    assert.match(processor, /client\.query\("begin"\)/i);
+    assert.match(processor, /pg_advisory_xact_lock/);
+    assert.match(processor, /from public\.webhook_events[\s\S]*for update/i);
+    assert.match(processor, /insert into public\.merchants/i);
+    assert.match(processor, /insert into public\.subscriptions/i);
+    assert.match(processor, /insert into public\.webhook_events/i);
+    assert.match(processor, /dbError\.code === "23505"[\s\S]*webhook_events_tx_hash_key/);
+    assert.match(processor, /client\.query\("commit"\)/i);
+    assert.match(processor, /client\.query\("rollback"\)/i);
+    assert.ok(
+        processor.indexOf("insert into public.subscriptions") < processor.indexOf("insert into public.webhook_events"),
+        "the webhook receipt must be the final write inside the transaction",
+    );
+});
+
 test("outbound webhooks never follow redirects", () => {
     const dispatcher = source("src/lib/webhooks.ts");
 
@@ -77,7 +102,7 @@ test("reconciliation reports aggregate failures through HTTP status", () => {
     const worker = source("src/lib/payments/reconciliationWorker.ts");
 
     assert.match(route, /const workerHealthy = "error" in paymentLinkVerification[\s\S]*paymentLinkVerification\.success/);
-    assert.match(route, /result\.success && workerHealthy \? 200 : 500/);
+    assert.match(route, /result\.success[\s\S]*workerHealthy[\s\S]*!\("error" in webhookOutbox\)[\s\S]*!\("error" in paymentOperations\)[\s\S]*\? 200[\s\S]*: 500/);
     assert.match(worker, /results\.every\(\(result\)\s*=>\s*result\.success\)/);
 });
 
@@ -227,9 +252,9 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     /* Subscribe (charges the first payment): key on the single-use checkout session, or the
        client request id for plan subscribes — never just subscriber+merchant, which would make
        a legitimate re-subscribe return the old cancelled transaction. */
-    assert.match(subOnchain, /subscribeFromEmbedded\([^)]*idempotencyKey\?: string\)/);
+    assert.match(subOnchain, /subscribeFromEmbedded\([^{]*idempotencyKey\?: string/);
     assert.match(subscribeRoute, /subscribe-checkout:\$\{checkoutSessionId\}/);
-    assert.match(subscribeRoute, /req:\$\{requestId\}:subscribe:/);
+    assert.match(subscribeRoute, /subscribe-plan:\$\{subscriber\}:\$\{merchant\}:\$\{planId\}:generation:\$\{generation\}/);
 
     /* Vault commit (escrows funds): attempt-scoped key including wallet, merchant and amount. */
     assert.match(vaultOnchain, /commitFromEmbedded\([^)]*idempotencyKey\?: string\)/);
@@ -242,7 +267,9 @@ test("custody money-moving calls carry attempt-scoped deterministic idempotency 
     assert.match(dashboard, /requestKey: `dm-pay:\$\{dm\.id\}`/);
     assert.match(dashboard, /singleSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
     assert.match(dashboard, /batchSendRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
-    assert.match(dashboard, /vaultCommitRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
+    /* Vault commits graduated from a ref-only key to a localStorage-durable intent id that
+       survives reloads (see vault-commit-idempotency tests for the full contract). */
+    assert.match(dashboard, /storedIntent\?\.requestId \|\| vaultCommitRequestKey\.current \|\| crypto\.randomUUID\(\)/);
     assert.match(dashboard, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
     assert.match(subscribeClient, /subscribeRequestKey\.current \|\|= crypto\.randomUUID\(\)/);
 });

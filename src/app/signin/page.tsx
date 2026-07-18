@@ -24,10 +24,10 @@ import Script from "next/script";
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialEmail = searchParams.get("email") || "";
+  const initialEmail = searchParams?.get("email") || "";
   /* Optional post-login destination (e.g. a /subscribe/[planId] link). Only safe
      same-origin relative paths are honored, to avoid open-redirects. */
-  const safeNext = getSafeRelativePath(searchParams.get("next"));
+  const safeNext = getSafeRelativePath(searchParams?.get("next") || null);
 
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending: isConnecting } = useConnect();

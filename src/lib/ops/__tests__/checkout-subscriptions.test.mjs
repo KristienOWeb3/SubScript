@@ -58,10 +58,12 @@ test("checkout success polling is bound to a settlement newer than the page base
        never turn the current checkout green until a newer finalized settlement is observed. */
     assert.doesNotMatch(client, /data\?\.link\?\.status\s*===\s*["']PAID["']/);
     assert.match(client, /initialSettlementVersion/);
-    assert.match(client, /settlementVersion !== baselineSettlementVersionRef\.current/);
+    assert.doesNotMatch(client, /settlementVersion !== baselineSettlementVersionRef\.current/);
+    assert.match(client, /data\?\.attemptSettled === true/);
     assert.match(client, /\/api\/payment-links\/\$\{linkData\.id\}\/status/);
     assert.match(statusRoute, /settlementVersion/);
-    assert.match(statusRoute, /attempt_payment\.tx_hash as attempt_tx_hash/);
+    assert.match(statusRoute, /attempt_payment\.id is not null as attempt_settled/);
+    assert.doesNotMatch(statusRoute, /attempt_tx_hash/);
     assert.match(statusRoute, /attempt_payment\.created_at as attempt_created_at/);
     assert.doesNotMatch(statusRoute, /pl\.verified_tx_hash|pl\.paid_at/);
     assert.match(page, /isValidPaymentLinkId\(id\)/);
@@ -116,10 +118,12 @@ test("a payment completed from the desktop QR updates the anonymous checkout", (
     assert.match(client, /\(verificationStatus && !verificationError\) \? verificationPanel/);
     assert.doesNotMatch(client, /embeddedPaySession && verificationStatus && !verificationError/);
     assert.match(client, /void poll\(\)/);
-    assert.match(client, /data\.verifiedTxHash/);
-    assert.match(client, /checkoutAttemptId: clientIntentId/);
+    assert.match(client, /data\?\.attemptSettled === true/);
+    assert.doesNotMatch(client, /data\?\.verifiedTxHash/);
+    assert.match(client, /checkoutAttemptId: attemptId/);
     assert.match(status, /checkout_attempt_id/);
-    assert.match(status, /verifiedTxHash: result\.attempt_tx_hash/);
+    assert.match(status, /attemptSettled: result\.attempt_settled === true/);
+    assert.doesNotMatch(status, /verifiedTxHash:/);
 });
 
 test("money movement requires review and never exposes a cancel result after broadcast", () => {
@@ -205,7 +209,9 @@ test("metadata-backed subscription sessions execute createSubscription and canno
     assert.match(subscribeRoute, /subscribeFromEmbedded/);
     assert.match(subscribeRoute, /status:\s*"PROCESSING"/);
     assert.match(subscribeRoute, /status:\s*"PAID"/);
-    assert.match(onchain, /functionName:\s*"createSubscription"/);
+    /* Plain subscribes call createSubscription; promo subscribes call the intro-terms
+       variant — both are subscription creates on the standard contract, never a deposit. */
+    assert.match(onchain, /functionName:\s*introTerms\s*\?\s*"createSubscriptionWithIntroductoryTerms"\s*:\s*"createSubscription"/);
     assert.doesNotMatch(subscribeRoute, /depositForMerchant/);
 });
 

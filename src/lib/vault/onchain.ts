@@ -10,9 +10,12 @@ import {
     USDC_NATIVE_GAS_ADDRESS,
 } from "@/lib/contracts/constants";
 
+/* The commitment/exposure policy is a platform constant (2 USDC per user→merchant
+   relationship per cycle) — merchants have no on-chain lever to change it. */
+export const VAULT_STANDARD_COMMIT_MICROS = BigInt(2_000_000);
+
 export const VAULT_ABI = [
-    "function setRequiredCommit(uint256 amount)",
-    "function requiredCommit(address merchant) view returns (uint256)",
+    "function STANDARD_COMMIT() view returns (uint256)",
     "function commit(address merchant, uint256 amount)",
     "function withdrawSurplus(address merchant, uint256 amount)",
     "function reclaimAbandonedEscrow(address merchant)",
@@ -20,6 +23,7 @@ export const VAULT_ABI = [
     "function merchantClaim()",
     "function merchantClaimable(address merchant) view returns (uint256)",
     "function getVault(address user, address merchant) view returns (uint256 balance, uint256 owed, uint64 cycleStart, bool active, uint256 commitNeeded, uint64 lockedUntil)",
+    "function disputeHold(address user, address merchant) view returns (bool)",
 ];
 
 const USDC_ABI = [
@@ -34,6 +38,7 @@ export type VaultState = {
     active: boolean;
     commitNeeded: bigint;
     lockedUntil: bigint;
+    disputed: boolean;
 };
 
 function readProvider(): ethers.JsonRpcProvider {
@@ -47,7 +52,10 @@ export function vaultReadContract(provider?: ethers.Provider) {
 
 export async function readVault(user: string, merchant: string): Promise<VaultState> {
     const c = vaultReadContract();
-    const v = await c.getVault(user, merchant);
+    const [v, disputed] = await Promise.all([
+        c.getVault(user, merchant),
+        c.disputeHold(user, merchant),
+    ]);
     return {
         balance: BigInt(v.balance ?? v[0]),
         owed: BigInt(v.owed ?? v[1]),
@@ -55,6 +63,7 @@ export async function readVault(user: string, merchant: string): Promise<VaultSt
         active: Boolean(v.active ?? v[3]),
         commitNeeded: BigInt(v.commitNeeded ?? v[4]),
         lockedUntil: BigInt(v.lockedUntil ?? v[5] ?? 0),
+        disputed: Boolean(disputed),
     };
 }
 
@@ -63,32 +72,68 @@ export async function syncVaultMirror(user: string, merchant: string): Promise<V
     const normalizedUser = user.toLowerCase();
     const normalizedMerchant = merchant.toLowerCase();
     const v = await readVault(normalizedUser, normalizedMerchant);
+    const environment = SUBSCRIPT_VAULT_CHAIN_ID === 5042001 ? "LIVE" : "TEST";
 
     const cycleStart = v.cycleStart > BigInt(0) ? new Date(Number(v.cycleStart) * 1000) : null;
     const lockedUntil = v.lockedUntil > BigInt(0) ? new Date(Number(v.lockedUntil) * 1000) : null;
-    await prisma.meteredVault.upsert({
-        where: { userAddress_merchantAddress: { userAddress: normalizedUser, merchantAddress: normalizedMerchant } },
-        update: {
-            balanceUsdc: v.balance,
-            owedUsdc: v.owed,
-            commitUsdc: v.commitNeeded,
-            cycleStart,
-            lockedUntil,
-            active: v.active,
-            vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
-        },
-        create: {
-            userAddress: normalizedUser,
-            merchantAddress: normalizedMerchant,
-            balanceUsdc: v.balance,
-            owedUsdc: v.owed,
-            commitUsdc: v.commitNeeded,
-            cycleStart,
-            lockedUntil,
-            active: v.active,
-            vaultChainId: SUBSCRIPT_VAULT_CHAIN_ID,
-        },
-    });
+    /* Keep the chain snapshot and cycle-local counters in one atomic upsert. A
+       draw can succeed on-chain while the request dies before the old two-step
+       reset; the next generic sync must therefore clear accrued usage whenever
+       the chain advances (or closes) the cycle. */
+    await prisma.$executeRaw`
+        INSERT INTO public.metered_vaults (
+            user_address,
+            merchant_address,
+            balance_usdc,
+            owed_usdc,
+            commit_usdc,
+            cycle_start,
+            locked_until,
+            active,
+            vault_chain_id,
+            environment,
+            settlement_chain_id,
+            disputed,
+            updated_at
+        ) VALUES (
+            ${normalizedUser},
+            ${normalizedMerchant},
+            ${v.balance},
+            ${v.owed},
+            ${v.commitNeeded},
+            ${cycleStart},
+            ${lockedUntil},
+            ${v.active},
+            ${SUBSCRIPT_VAULT_CHAIN_ID},
+            ${environment},
+            ${SUBSCRIPT_VAULT_CHAIN_ID},
+            ${v.disputed},
+            now()
+        )
+        ON CONFLICT (user_address, merchant_address, environment, settlement_chain_id)
+        DO UPDATE SET
+            balance_usdc = EXCLUDED.balance_usdc,
+            owed_usdc = EXCLUDED.owed_usdc,
+            commit_usdc = EXCLUDED.commit_usdc,
+            cycle_start = EXCLUDED.cycle_start,
+            locked_until = EXCLUDED.locked_until,
+            active = EXCLUDED.active,
+            vault_chain_id = EXCLUDED.vault_chain_id,
+            disputed = EXCLUDED.disputed,
+            accrued_usage_usdc = CASE
+                WHEN public.metered_vaults.cycle_start IS DISTINCT FROM EXCLUDED.cycle_start
+                    OR EXCLUDED.active = false
+                THEN 0
+                ELSE public.metered_vaults.accrued_usage_usdc
+            END,
+            usage_notified_bps = CASE
+                WHEN public.metered_vaults.cycle_start IS DISTINCT FROM EXCLUDED.cycle_start
+                    OR EXCLUDED.active = false
+                THEN 0
+                ELSE public.metered_vaults.usage_notified_bps
+            END,
+            updated_at = now()
+    `;
     return v;
 }
 
@@ -157,16 +202,8 @@ export async function reclaimAbandonedFromEmbedded(walletAddress: string, mercha
     return txHash;
 }
 
-export async function setRequiredCommitFromEmbedded(merchantWallet: string, amount: bigint) {
-    const custody = await getWalletCustody(merchantWallet);
-    const { txHash } = await custody.executeContract({
-        contractAddress: SUBSCRIPT_VAULT_ADDRESS,
-        abi: VAULT_ABI,
-        functionName: "setRequiredCommit",
-        args: [amount],
-    });
-    return txHash;
-}
+/* setRequiredCommitFromEmbedded was removed with the platform-fixed 2 USDC policy:
+   the contract no longer exposes a merchant-configurable commitment. */
 
 export async function claimMerchantFromEmbedded(merchantWallet: string) {
     const custody = await getWalletCustody(merchantWallet);

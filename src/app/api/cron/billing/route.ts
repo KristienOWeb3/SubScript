@@ -5,11 +5,11 @@ import { SUBSCRIPT_ROUTER_ADDRESS, STANDARD_CONTRACT_ADDRESS } from "@/lib/contr
 import { USDC_ERC20_ABI } from "@/lib/contracts/abis";
 import crypto from "crypto";
 import { triggerExitSurvey } from "@/lib/payments/email";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
 import { insertSupabaseDmAndNotify } from "@/lib/dms/notifications";
 import { cancelFromEmbedded } from "@/lib/subscriptions/onchain";
-import { ensureGasSponsored } from "@/lib/sponsor/gas";
+import { ensureSponsoredGas } from "@/lib/sponsor/sponsorship";
 
 const STANDARD_ABI = [
     "function subscriptions(uint256) view returns (address subscriber, address merchant, uint256 amount, uint256 period, uint256 nextPayment, bool isActive)",
@@ -34,6 +34,7 @@ async function createBillingDm({
     title,
     description,
     txHash,
+    dedupeKey,
 }: {
     supabase: any;
     senderAddress: string;
@@ -43,6 +44,7 @@ async function createBillingDm({
     title: string;
     description: string;
     txHash?: string | null;
+    dedupeKey?: string | null;
 }) {
     const { data: customerSettings } = await supabase
         .from("customers")
@@ -63,6 +65,7 @@ async function createBillingDm({
         title,
         description,
         tx_hash: txHash || null,
+        dedupe_key: dedupeKey || null,
     });
 }
 
@@ -151,7 +154,11 @@ export async function POST(request: Request) {
                     let awaitingExternalRevocation = false;
                     if (isActiveOnChain) {
                         try {
-                            await ensureGasSponsored(onChainSubscriber.toLowerCase()).catch(() => { /* best-effort */ });
+                            await ensureSponsoredGas({
+                                wallet: onChainSubscriber.toLowerCase(),
+                                action: "billing_renewal",
+                                requestKey: `cancel-downgrade:${subId}`,
+                            }).catch(() => { /* best-effort */ });
                             onChainCancelTxHash = await cancelFromEmbedded(onChainSubscriber, BigInt(subId));
                         } catch (cancelErr: any) {
                             const { data: walletRow } = await supabase
@@ -260,14 +267,14 @@ export async function POST(request: Request) {
                         })
                         .eq("subscription_id", subId);
 
-                    await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "canceled",
                         amountUsdcMicros: sub.amount_cap_usdc || 0,
                         subscriber: merchantAddress,
                         merchantAddress,
                         reason: "Canceled at period end",
-                    })).catch(() => { /* delivery is best-effort */ });
+                    }), `premium-canceled:${subId}:period-end`);
 
                     const adminPrivateKey = process.env.PRIVATE_KEY || "";
                     const adminAddress = adminPrivateKey 
@@ -363,14 +370,14 @@ export async function POST(request: Request) {
                     ].join("\n"),
                 }).catch((dmErr: any) => console.error("Failed to create renewal warning DM:", dmErr));
 
-                await dispatchMerchantWebhook(sub.merchant_address, "subscription.payment_failed", subscriptionWebhookData({
+                await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.payment_failed", subscriptionWebhookData({
                     subscriptionId: subId,
                     status: "past_due",
                     amountUsdcMicros: sub.amount_cap_usdc || 0,
                     subscriber: subscriberAddress,
                     merchantAddress: sub.merchant_address,
                     reason: failureReason,
-                })).catch(() => { /* delivery is best-effort */ });
+                }), `premium-payment-failed:${subId}:${claimedSequenceId ?? "unclaimed"}:${currentFailures + 1}`);
 
                 if (previousStatus === "ACTIVE") {
                     console.log(`[Premium Entered Past Due] requestId: ${requestId}, merchantAddress: ${subscriberAddress}, subscriptionId: ${subId}`);
@@ -460,14 +467,14 @@ export async function POST(request: Request) {
                             });
                         }
 
-                        await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                        await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                             subscriptionId: subId,
                             status: "canceled",
                             amountUsdcMicros: sub.amount_cap_usdc || 0,
                             subscriber: subscriberAddress,
                             merchantAddress: sub.merchant_address,
                             reason: "Canceled after failed payment retries",
-                        })).catch(() => { /* delivery is best-effort */ });
+                        }), `premium-canceled:${subId}:max-failures`);
 
                         results.push({
                             subId,
@@ -492,6 +499,7 @@ export async function POST(request: Request) {
 
             let claimedSequenceId: number | null = null;
             let billingClaimId: string | null = null;
+            let confirmedRenewalTxHash: string | null = null;
             const renewBillingClaim = async () => {
                 if (claimedSequenceId === null || billingClaimId === null) return false;
                 const { data, error } = await supabase.rpc("renew_subscription_billing", {
@@ -533,6 +541,99 @@ export async function POST(request: Request) {
                     return true;
                 }
                 return false;
+            };
+            const recordChainConfirmation = async (txHash: string) => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const { data, error } = await supabase.rpc("record_subscription_billing_chain_confirmation", {
+                    p_subscription_id: subId,
+                    p_sequence_id: claimedSequenceId,
+                    p_claim_id: billingClaimId,
+                    p_tx_hash: txHash,
+                });
+                if (error) throw new Error(`Failed to persist chain-confirmed renewal: ${error.message}`);
+                if (data !== true) throw new Error("Billing claim ownership changed before chain confirmation was persisted");
+                confirmedRenewalTxHash = txHash.toLowerCase();
+                return true;
+            };
+            const finalizeChainConfirmedRenewal = async (
+                subscriberAddress: string,
+                amountMicros: bigint,
+                txHash: string | null,
+                settlementTimestampIso: string,
+            ) => {
+                if (claimedSequenceId === null || billingClaimId === null) return false;
+                const sequenceId = claimedSequenceId;
+                if (!await renewBillingClaim()) return false;
+
+                const currentContractTier = Number(await routerContract.merchantTiers(subscriberAddress));
+                let upgradeTxHash: string | null = null;
+                if (currentContractTier < 1) {
+                    const tierTx = await routerContract.setMerchantTier(subscriberAddress, 1);
+                    const tierReceipt = await tierTx.wait();
+                    if (tierReceipt.status !== 1) throw new Error("Upgrade transaction reverted");
+                    upgradeTxHash = tierTx.hash;
+                }
+
+                const { data: mirroredSub, error: subUpdateError } = await supabase
+                    .from("subscriptions")
+                    .update({
+                        status: "ACTIVE",
+                        tier: 1,
+                        downgrade_failures: 0,
+                        last_settlement_timestamp: settlementTimestampIso,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq("subscription_id", subId)
+                    .select("subscription_id")
+                    .maybeSingle();
+                if (subUpdateError || !mirroredSub) {
+                    throw new Error(`Renewal mirror update failed: ${subUpdateError?.message || "subscription missing"}`);
+                }
+
+                const { data: mirroredMerchant, error: merchantUpdateError } = await supabase
+                    .from("merchants")
+                    .update({ tier: "PREMIUM", updated_at: new Date().toISOString() })
+                    .eq("wallet_address", subscriberAddress.toLowerCase())
+                    .select("wallet_address")
+                    .maybeSingle();
+                if (merchantUpdateError || !mirroredMerchant) {
+                    throw new Error(`Renewal merchant update failed: ${merchantUpdateError?.message || "merchant missing"}`);
+                }
+
+                await createBillingDm({
+                    supabase,
+                    senderAddress: sub.merchant_address,
+                    receiverAddress: subscriberAddress,
+                    messageType: "DEBIT_SUCCESS",
+                    amountUsdc: amountMicros,
+                    title: "Subscription renewed",
+                    description: [
+                        "SubScript successfully renewed your subscription.",
+                        `Amount debited: ${Number(amountMicros) / 1_000_000} USDC`,
+                        `Subscription ID: ${subId}`,
+                    ].join("\n"),
+                    txHash,
+                    dedupeKey: `premium-renewal:${subId}:${sequenceId}`,
+                });
+
+                await dispatchDurableSubscriptionWebhook(
+                    sub.merchant_address,
+                    "subscription.renewed",
+                    subscriptionWebhookData({
+                        subscriptionId: subId,
+                        status: "active",
+                        amountUsdcMicros: amountMicros,
+                        subscriber: subscriberAddress,
+                        merchantAddress: sub.merchant_address,
+                        txHash,
+                    }),
+                    `premium-renewed:${subId}:${sequenceId}:${txHash || "chain-confirmed"}`,
+                );
+
+                if (!await completeBillingClaim(txHash)) {
+                    throw new Error("Renewal effects were persisted but billing claim completion failed");
+                }
+                return { upgradeTxHash };
             };
             try {
                 /* Fetch subscription state on-chain */
@@ -589,14 +690,14 @@ export async function POST(request: Request) {
                         });
                     }
 
-                    await dispatchMerchantWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
+                    await dispatchDurableSubscriptionWebhook(sub.merchant_address, "subscription.canceled", subscriptionWebhookData({
                         subscriptionId: subId,
                         status: "canceled",
                         amountUsdcMicros: sub.amount_cap_usdc || 0,
                         subscriber,
                         merchantAddress: sub.merchant_address,
                         reason: "Canceled on-chain",
-                    })).catch(() => { /* delivery is best-effort */ });
+                    }), `premium-canceled:${subId}:on-chain`);
 
                     results.push({
                         subId,
@@ -628,6 +729,9 @@ export async function POST(request: Request) {
                     continue;
                 }
                 const sequenceId = Number((nowSeconds - nextPaymentTs) / periodSeconds) + 1;
+                const settlementTimestampIso = new Date(
+                    Number((nextPaymentTs + BigInt(sequenceId - 1) * periodSeconds) * BigInt(1000)),
+                ).toISOString();
                 const requestedClaimId = crypto.randomUUID();
                 const { data: claimed, error: claimError } = await supabase.rpc("claim_subscription_billing", {
                     p_subscription_id: subId,
@@ -649,24 +753,26 @@ export async function POST(request: Request) {
                 }
                 claimedSequenceId = sequenceId;
                 billingClaimId = requestedClaimId;
+                const { data: persistedClaim, error: persistedClaimError } = await supabase
+                    .from("subscription_billing_claims")
+                    .select("status,tx_hash")
+                    .eq("subscription_id", subId)
+                    .eq("sequence_id", sequenceId)
+                    .eq("claim_id", requestedClaimId)
+                    .maybeSingle();
+                if (persistedClaimError || !persistedClaim) {
+                    throw new Error(`Failed to load owned billing claim: ${persistedClaimError?.message || "claim missing"}`);
+                }
+                confirmedRenewalTxHash = persistedClaim.status === "CHAIN_CONFIRMED"
+                    ? (persistedClaim.tx_hash || null)
+                    : null;
 
                 if (await standardContract.isSequenceExecuted(subId, sequenceId)) {
                     /* A prior worker reached chain finality but died before mirroring state. Repair
                        the database instead of misclassifying the contract's duplicate guard as a
                        failed renewal. */
-                    if (!await renewBillingClaim()) continue;
-                    await supabase.from("subscriptions").update({
-                        status: "ACTIVE",
-                        tier: 1,
-                        downgrade_failures: 0,
-                        last_settlement_timestamp: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                    }).eq("subscription_id", subId);
-                    await supabase.from("merchants").update({
-                        tier: "PREMIUM",
-                        updated_at: new Date().toISOString(),
-                    }).eq("wallet_address", subscriber.toLowerCase());
-                    if (!await completeBillingClaim(null)) continue;
+                    const repaired = await finalizeChainConfirmedRenewal(subscriber, requiredAmount, confirmedRenewalTxHash, settlementTimestampIso);
+                    if (!repaired) continue;
                     results.push({
                         subId,
                         subscriber,
@@ -707,72 +813,10 @@ export async function POST(request: Request) {
                     throw new Error("Payment execution transaction reverted");
                 }
 
-                /* Upgrade/Restore merchant tier on-chain */
-                const currentContractTier = Number(await routerContract.merchantTiers(subscriber));
-                let upgradeTxHash = null;
-
-                if (currentContractTier < 1) {
-                    const txUpgrade = await routerContract.setMerchantTier(subscriber, 1);
-                    const receiptUpgrade = await txUpgrade.wait();
-                    if (receiptUpgrade.status !== 1) {
-                        throw new Error("Upgrade transaction reverted");
-                    }
-                    upgradeTxHash = txUpgrade.hash;
-                }
-
-                /* From this point onward every effect is off-chain and must belong to the active
-                   worker. A reclaimed/stale worker leaves reconciliation to its successor. */
-                if (!await renewBillingClaim()) continue;
-
-                if (sub.status === "PAST_DUE") {
-                    console.log(`[Premium Past Due Recovery] requestId: ${requestId}, merchantAddress: ${subscriber}, subscriptionId: ${subId}, txHash: ${tx.hash}`);
-                }
-
-                await createBillingDm({
-                    supabase,
-                    senderAddress: sub.merchant_address,
-                    receiverAddress: subscriber,
-                    messageType: "DEBIT_SUCCESS",
-                    amountUsdc: requiredAmount,
-                    title: "Subscription renewed",
-                    description: [
-                        "SubScript successfully renewed your subscription.",
-                        `Amount debited: ${Number(requiredAmount) / 1_000_000} USDC`,
-                        `Subscription ID: ${subId}`,
-                    ].join("\n"),
-                    txHash: tx.hash,
-                }).catch((dmErr: any) => console.error("Failed to create renewal receipt DM:", dmErr));
-
-                /* Update database to ACTIVE and tier 1 */
-                await supabase
-                    .from("subscriptions")
-                    .update({
-                        status: "ACTIVE",
-                        tier: 1,
-                        downgrade_failures: 0,
-                        last_settlement_timestamp: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq("subscription_id", subId);
-
-                await supabase
-                    .from("merchants")
-                    .update({
-                        tier: "PREMIUM",
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq("wallet_address", subscriber.toLowerCase());
-
-                await dispatchMerchantWebhook(sub.merchant_address, "subscription.renewed", subscriptionWebhookData({
-                    subscriptionId: subId,
-                    status: "active",
-                    amountUsdcMicros: requiredAmount,
-                    subscriber,
-                    merchantAddress: sub.merchant_address,
-                    txHash: tx.hash,
-                })).catch(() => { /* delivery is best-effort */ });
-
-                if (!await completeBillingClaim(tx.hash)) continue;
+                /* Persist chain finality before any fallible mirror, webhook, or DM effect. */
+                await recordChainConfirmation(tx.hash);
+                const finalized = await finalizeChainConfirmedRenewal(subscriber, requiredAmount, tx.hash, settlementTimestampIso);
+                if (!finalized) continue;
 
                 results.push({
                     subId,
@@ -780,7 +824,7 @@ export async function POST(request: Request) {
                     action: "PAYMENT_EXECUTED",
                     success: true,
                     txHash: tx.hash,
-                    upgradeTxHash
+                    upgradeTxHash: finalized.upgradeTxHash
                 });
 
             } catch (err: any) {
@@ -789,19 +833,13 @@ export async function POST(request: Request) {
                     const subOnChain = await standardContract.subscriptions(subId);
                     const subscriber = subOnChain[0];
                     if (claimedSequenceId !== null && await standardContract.isSequenceExecuted(subId, claimedSequenceId)) {
-                        if (!await renewBillingClaim()) continue;
-                        await supabase.from("subscriptions").update({
-                            status: "ACTIVE",
-                            tier: 1,
-                            downgrade_failures: 0,
-                            last_settlement_timestamp: new Date().toISOString(),
-                            updated_at: new Date().toISOString(),
-                        }).eq("subscription_id", subId);
-                        await supabase.from("merchants").update({
-                            tier: "PREMIUM",
-                            updated_at: new Date().toISOString(),
-                        }).eq("wallet_address", subscriber.toLowerCase());
-                        if (!await completeBillingClaim(null)) continue;
+                        const repaired = await finalizeChainConfirmedRenewal(
+                            subscriber,
+                            BigInt(subOnChain[2] || sub.amount_cap_usdc || 0),
+                            confirmedRenewalTxHash,
+                            new Date(Number((BigInt(subOnChain[4]) + BigInt(claimedSequenceId - 1) * BigInt(subOnChain[3])) * BigInt(1000))).toISOString(),
+                        );
+                        if (!repaired) continue;
                         results.push({
                             subId,
                             subscriber,

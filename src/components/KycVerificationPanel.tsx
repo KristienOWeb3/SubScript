@@ -36,11 +36,36 @@ interface KycVerification {
 
 interface KycResponse {
     success?: boolean;
+    available?: boolean;
+    message?: string;
     verification?: KycVerification | null;
     redirectUrl?: string | null;
     supportedCountries?: string[];
     error?: string;
 }
+
+/* What each verification tier unlocks, shown so people know why they'd verify.
+   Verification itself launches with mainnet. */
+const USER_TIER_PERKS = [
+    {
+        name: "Tier 0 — Basic",
+        requirement: "No verification needed",
+        perks: [
+            "Send and receive USDC payments",
+            "Subscriptions, payment links, and DM requests",
+            "Gas sponsored by SubScript on supported actions",
+        ],
+    },
+    {
+        name: "Tier 1 — Verified",
+        requirement: "Identity verification (KYC)",
+        perks: [
+            "Higher transaction and spending limits",
+            "Fiat on-ramp and off-ramp access as they launch",
+            "Access to regulated features on mainnet",
+        ],
+    },
+];
 
 const statusStyles: Record<KycStatus, string> = {
     PENDING: "border-amber-400/25 bg-amber-400/10 text-amber-200",
@@ -72,14 +97,18 @@ function formatDate(value: string | null) {
 
 export default function KycVerificationPanel({
     accent = "#00d2b4",
+    variant = "merchant",
 }: {
     accent?: "#00d2b4" | "#ccff00";
+    variant?: "user" | "merchant";
 }) {
     const [verification, setVerification] = useState<KycVerification | null>(null);
     const [countryCode, setCountryCode] = useState("NG");
     const [consent, setConsent] = useState(false);
     const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
     const [supportedCountries, setSupportedCountries] = useState<string[]>(["NG"]);
+    const [available, setAvailable] = useState(true);
+    const [unavailableMessage, setUnavailableMessage] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -93,6 +122,15 @@ export default function KycVerificationPanel({
             if (!response.ok) {
                 throw new Error(data.error || "Could not load verification status.");
             }
+            if (data.available === false) {
+                setAvailable(false);
+                setUnavailableMessage(data.message || "Identity verification (KYC) will be available on mainnet.");
+                setVerification(null);
+                setRedirectUrl(null);
+                return;
+            }
+            setAvailable(true);
+            setUnavailableMessage(null);
             setVerification(data.verification || null);
             setRedirectUrl(data.redirectUrl || null);
             if (data.supportedCountries?.length) {
@@ -183,6 +221,22 @@ export default function KycVerificationPanel({
                 <div className="mt-6 flex items-center gap-2 text-[10px] text-white/45">
                     <Loader2 className={`h-4 w-4 animate-spin ${accentText}`} />
                     Loading verification status…
+                </div>
+            ) : !available ? (
+                <div className="mt-6 space-y-5">
+                    <div className={`flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4`}>
+                        <Shield className={`mt-0.5 h-4 w-4 shrink-0 ${accentText}`} />
+                        <div>
+                            <p className="text-xs font-bold text-white">
+                                {unavailableMessage || "Identity verification (KYC) will be available on mainnet."}
+                            </p>
+                            <p className="mt-1 text-[10px] leading-relaxed text-white/45">
+                                Nothing is required from you during the testnet beta. When mainnet launches you can
+                                verify here to unlock the tiers below.
+                            </p>
+                        </div>
+                    </div>
+                    {variant === "user" && <UserTierPerks accentText={accentText} verified={false} />}
                 </div>
             ) : (
                 <div className="mt-6 space-y-5">
@@ -305,12 +359,53 @@ export default function KycVerificationPanel({
                         </div>
                     )}
 
+                    {variant === "user" && (
+                        <UserTierPerks accentText={accentText} verified={verification?.status === "APPROVED"} />
+                    )}
+
                     <p className="text-[8px] leading-relaxed text-white/25">
                         Verification approval is a provider decision and does not by itself guarantee access to every
                         regulated product. Availability depends on jurisdiction and applicable compliance policy.
                     </p>
                 </div>
             )}
+        </div>
+    );
+}
+
+/* User-facing tier matrix: what staying basic vs verifying unlocks. */
+function UserTierPerks({ accentText, verified }: { accentText: string; verified: boolean }) {
+    return (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {USER_TIER_PERKS.map((tier, index) => {
+                const isActive = verified ? index === 1 : index === 0;
+                return (
+                    <div
+                        key={tier.name}
+                        className={`space-y-2 rounded-2xl border p-4 ${
+                            isActive ? "border-white/20 bg-white/[0.05]" : "border-white/5 bg-white/[0.02]"
+                        }`}
+                    >
+                        <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-[10px] font-black uppercase tracking-wider text-white">{tier.name}</h4>
+                            {isActive && (
+                                <span className={`rounded bg-white/10 px-1.5 py-0.5 text-[8px] font-bold ${accentText}`}>
+                                    Your tier
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-white/30">{tier.requirement}</p>
+                        <ul className="space-y-1 text-[9px] leading-relaxed text-white/55">
+                            {tier.perks.map((perk) => (
+                                <li key={perk} className="flex items-start gap-1.5">
+                                    <CheckCircle2 className={`mt-0.5 h-3 w-3 shrink-0 ${index === 1 ? accentText : "text-white/30"}`} />
+                                    {perk}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                );
+            })}
         </div>
     );
 }

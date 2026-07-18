@@ -55,9 +55,23 @@ const EXPECTED = [
 const EIP1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 const sel = (s) => ethers.id(s).slice(2, 10);
 
+async function withRetry(fn, retries = 5, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (i === retries - 1) throw e;
+            console.log(`RPC error or rate limit hit. Retrying in ${delay/1000}s...`);
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+        }
+    }
+}
+
 async function main() {
     const rpc = process.env.ARC_RPC_PRIMARY || process.env.RPC_URL || "https://rpc.testnet.arc.network";
-    const provider = new ethers.JsonRpcProvider(rpc);
+    // Setting staticNetwork avoids an extra eth_chainId request on startup that can trigger rate limits
+    const provider = new ethers.JsonRpcProvider(rpc, undefined, { staticNetwork: true });
     console.log(`Checking deployed contracts against ${rpc}\n`);
 
     let healthy = true;
@@ -65,7 +79,7 @@ async function main() {
         if (spec.native) {
             try {
                 const c = new ethers.Contract(spec.address, ["function balanceOf(address) view returns (uint256)"], provider);
-                await c.balanceOf("0x0000000000000000000000000000000000000000");
+                await withRetry(() => c.balanceOf("0x0000000000000000000000000000000000000000"));
                 console.log(`✅ ${spec.name} (${spec.address}) — native predeploy OK`);
             } catch (e) {
                 healthy = false;
@@ -73,17 +87,17 @@ async function main() {
             }
             continue;
         }
-        let code = await provider.getCode(spec.address);
+        let code = await withRetry(() => provider.getCode(spec.address));
         if (code === "0x") {
             healthy = false;
             console.log(`❌ ${spec.name} (${spec.address}) — NO CODE (not deployed)`);
             continue;
         }
-        const raw = await provider.getStorage(spec.address, EIP1967_IMPL_SLOT);
+        const raw = await withRetry(() => provider.getStorage(spec.address, EIP1967_IMPL_SLOT));
         let implNote = "";
         if (raw && raw !== "0x" + "0".repeat(64)) {
             const impl = ethers.getAddress("0x" + raw.slice(26));
-            code = await provider.getCode(impl);
+            code = await withRetry(() => provider.getCode(impl));
             implNote = ` (proxy -> ${impl})`;
         }
         const missing = spec.functions.filter((s) => !code.includes(sel(s)));

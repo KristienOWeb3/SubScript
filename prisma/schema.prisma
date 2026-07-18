@@ -27,6 +27,8 @@ model ApiKey {
   secretKeyPlain String?  @map("secret_key_plain")
   secretKeyHash  String?  @unique @map("secret_key_hash")
   secretKeyHint  String?  @map("secret_key_hint")
+  // Immutable environment: "TEST" (sk_test_) or "LIVE" (future sk_live_ — DB-refused today).
+  mode           String   @default("TEST")
   createdAt      DateTime @default(now()) @map("created_at")
   revoked        Boolean  @default(false)
 
@@ -100,6 +102,12 @@ model PaymentLink {
   verifiedTxHash       String?              @map("verified_tx_hash")
   settlementReference  String?              @map("settlement_reference")
   stateSnapshot        Json?                @map("state_snapshot")
+  linkKind             String               @default("MERCHANT") @map("link_kind")
+  sandboxMode          Boolean              @default(false) @map("sandbox_mode")
+  simulationOnly       Boolean              @default(false) @map("simulation_only")
+  settlementChainId    BigInt               @default(5042002) @map("settlement_chain_id")
+  creationFingerprint  Json?                @map("creation_fingerprint")
+  deletedAt            DateTime?            @map("deleted_at")
   createdAt            DateTime             @default(now()) @map("created_at")
   updatedAt            DateTime             @default(now()) @map("updated_at")
   payments             PaymentLinkPayment[]
@@ -114,7 +122,7 @@ model PaymentLink {
 model PaymentLinkPayment {
   id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentLinkId       String      @map("payment_link_id") @db.Uuid
-  paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Cascade)
+  paymentLink         PaymentLink @relation(fields: [paymentLinkId], references: [id], onDelete: Restrict)
   payerAddress        String      @map("payer_address")
   beneficiaryAddress  String?     @map("beneficiary_address")
   amountUsdc          BigInt      @map("amount_usdc")
@@ -166,6 +174,10 @@ model Merchant {
 model MerchantPlan {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   merchantAddress String   @map("merchant_address")
+  sourceCheckoutId String? @unique(map: "merchant_plans_source_checkout_id_key") @map("source_checkout_id") @db.Uuid
+  // NULL plans are public to every customer; API checkouts assigned to one subscriber
+  // remain visible and actionable only for that wallet.
+  targetSubscriber String? @map("target_subscriber")
   name            String
   description     String?
   detailsUrl      String?  @map("details_url")
@@ -178,7 +190,46 @@ model MerchantPlan {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([merchantAddress])
+  @@index([merchantAddress, active, targetSubscriber], map: "merchant_plans_visibility_idx")
   @@map("merchant_plans")
+}
+
+model MerchantPlanPromotion {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantAddress        String    @map("merchant_address")
+  planId                 String    @map("plan_id") @db.Uuid
+  name                   String
+  // 'PERCENT' | 'FIXED_PRICE' | 'FREE_TRIAL'
+  discountType           String    @map("discount_type")
+  // Basis points OFF the regular price (4000 = 40% off => customer pays 60%).
+  discountBps            Int?      @map("discount_bps")
+  regularAmountUsdc      BigInt    @map("regular_amount_usdc")
+  // Exact integer micro-USDC per introductory cycle (0 = free trial).
+  introductoryAmountUsdc BigInt    @map("introductory_amount_usdc")
+  introductoryCycles     Int       @default(1) @map("introductory_cycles")
+  startsAt               DateTime? @map("starts_at")
+  expiresAt              DateTime? @map("expires_at")
+  maxRedemptions         Int?      @map("max_redemptions")
+  redemptionCount        Int       @default(0) @map("redemption_count")
+  newCustomersOnly       Boolean   @default(true) @map("new_customers_only")
+  active                 Boolean   @default(true)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([merchantAddress])
+  @@map("merchant_plan_promotions")
+}
+
+model PromotionRedemption {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  promotionId       String   @map("promotion_id") @db.Uuid
+  subscriberAddress String   @map("subscriber_address")
+  subscriptionId    BigInt?  @map("subscription_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([promotionId, subscriberAddress], map: "promotion_redemptions_once_per_customer")
+  @@index([subscriberAddress])
+  @@map("promotion_redemptions")
 }
 
 model Subscription {
@@ -196,6 +247,10 @@ model Subscription {
   subscriber              String?   @map("subscriber")
   cancelAtPeriodEnd       Boolean   @default(false) @map("cancel_at_period_end")
   cancelRequestedAt       DateTime? @map("cancel_requested_at")
+  // True while the on-chain PSA authorization may still be active after a cancellation
+  // request. The retry worker keeps revoking until the chain reports inactive.
+  revocationPending       Boolean   @default(false) @map("revocation_pending")
+  revocationTxHash        String?   @map("revocation_tx_hash")
   downgradeFailures       Int       @default(0) @map("downgrade_failures")
   // "PREMIUM" (merchant -> SubScript, billed by the in-app cron) or "CUSTOMER"
   // (customer -> merchant plan, billed on-chain). See subscriptions/mirror.ts.
@@ -203,14 +258,28 @@ model Subscription {
   // Sponsored subscriptions: the wallet that receives the service when it differs from
   // the paying subscriber. Carried in merchant webhooks for entitlement mapping.
   beneficiaryAddress      String?   @map("beneficiary_address")
+  // Merchant-owned account/entitlement binding copied from the originating API checkout.
+  externalReference       String?   @map("external_reference")
+  sourceCheckoutId        String?   @map("source_checkout_id") @db.Uuid
   // Snapshot of the plan's commitment window at subscribe time (<= one period by constraint).
   minCommitmentUntil      DateTime? @map("min_commitment_until")
+  // Immutable snapshot of introductory terms the subscriber authorized (see
+  // merchant_plan_promotions). Billing phase is derived from these, never from the
+  // editable promotion row.
+  promotionId             String?   @map("promotion_id") @db.Uuid
+  introAmountUsdc         BigInt?   @map("intro_amount_usdc")
+  introCycles             Int?      @map("intro_cycles")
+  firstRegularPaymentAt   DateTime? @map("first_regular_payment_at")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @default(now()) @map("updated_at")
 
   @@index([merchantAddress])
+  @@index([merchantAddress, kind, subscriptionId(sort: Desc)], map: "subscriptions_merchant_kind_id_idx")
+  @@index([merchantAddress, kind, status, cancelAtPeriodEnd, downgradeFailures, subscriptionId(sort: Desc)], map: "subscriptions_merchant_attention_idx")
   @@index([subscriber])
   @@index([beneficiaryAddress])
+  @@index([merchantAddress, externalReference, kind, status], map: "subscriptions_merchant_reference_idx")
+  @@index([sourceCheckoutId], map: "subscriptions_source_checkout_id_idx")
   @@map("subscriptions")
 }
 
@@ -486,10 +555,19 @@ model PayrollCampaign {
   permit2Nonce        Int?               @map("permit2_nonce")
   permit2Deadline     DateTime?          @map("permit2_deadline")
   permit2Expiration   DateTime?          @map("permit2_expiration")
+  processingClaimId   String?            @map("processing_claim_id") @db.Uuid
+  processingStartedAt DateTime?          @map("processing_started_at")
+  lastExecutionPayday DateTime?          @map("last_execution_payday")
+  lastPullTxHash      String?            @map("last_pull_tx_hash")
+  lastPayoutTxHash    String?            @map("last_payout_tx_hash")
+  lastExecutionTxHash String?            @map("last_execution_tx_hash")
+  lastExecutionStatus String?            @map("last_execution_status")
+  lastExecutionError  String?            @map("last_execution_error")
   recipients          PayrollRecipient[]
 
   @@index([organizationAddress])
   @@index([status])
+  @@index([status, nextPayday, processingStartedAt])
   @@map("payroll_campaigns")
 }
 
@@ -581,6 +659,7 @@ model SubscriptDm {
   description     String?
   txHash          String?  @map("tx_hash")
   paymentLinkId   String?  @map("payment_link_id") @db.Uuid
+  dedupeKey       String?  @unique(map: "subscript_dms_dedupe_key_unique") @map("dedupe_key")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
@@ -611,6 +690,10 @@ model MeteredVault {
   active            Boolean  @default(false)
   vaultChainId      Int?     @map("vault_chain_id")
   lastSyncedBlock   BigInt?  @map("last_synced_block")
+  // Settlement environment isolation: a TEST api key may only touch TEST vaults on Arc testnet.
+  environment       String   @default("TEST")
+  settlementChainId BigInt   @default(5042002) @map("settlement_chain_id")
+  disputed          Boolean  @default(false)
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
@@ -619,7 +702,7 @@ model MeteredVault {
   customer          Customer @relation(fields: [userAddress], references: [walletAddress], onDelete: Cascade)
   usageReports      MeteredUsageReport[]
 
-  @@unique([userAddress, merchantAddress])
+  @@unique([userAddress, merchantAddress, environment, settlementChainId])
   @@index([userAddress])
   @@index([merchantAddress])
   @@map("metered_vaults")
@@ -637,6 +720,7 @@ model MeteredUsageReport {
   balanceUsdc      BigInt   @map("balance_usdc")
   note             String?
   requestId        String?  @map("request_id")
+  environment      String   @default("TEST")
   createdAt        DateTime @default(now()) @map("created_at")
   vault            MeteredVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
 
@@ -644,6 +728,27 @@ model MeteredUsageReport {
   @@index([merchantAddress, createdAt])
   @@index([vaultId, createdAt])
   @@map("metered_usage_reports")
+}
+
+// Durable vault-commit intent: persisted BEFORE custody submission so a reload or retry
+// resolves the prior money-moving attempt (same Circle idempotency key) instead of escrowing
+// twice. See supabase/migrations/20260717040000_vault_commit_intents.sql.
+model VaultCommitIntent {
+  requestId             String   @id @map("request_id")
+  userAddress           String   @map("user_address")
+  merchantAddress       String   @map("merchant_address")
+  amountUsdc            Decimal  @map("amount_usdc")
+  environment           String   @default("TEST")
+  custodyIdempotencyKey String   @map("custody_idempotency_key")
+  sponsorRequestKey     String?  @map("sponsor_request_key")
+  txHash                String?  @map("tx_hash")
+  status                String   @default("PENDING")
+  lastError             String?  @map("last_error")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userAddress, createdAt(sort: Desc)])
+  @@map("vault_commit_intents")
 }
 
 // User-filed scam reports against a commit (metered-vault) merchant. Surfaced for SubScript ops

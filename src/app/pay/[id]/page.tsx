@@ -55,10 +55,14 @@ async function getPaymentLink(id: string) {
        checkout-intent internals and must never be forwarded to the browser (see the strip in
        PublicPayPage). Everything else here is the checkout-facing whitelist, mirroring the
        anonymous GET /api/payment-links/[id] payload. */
+    /* Settlement-mode fields are part of the whitelist so the checkout can select the snapshotted
+       Arc network and distinguish a funded testnet link from the shared demo simulation.
+       deleted_at is filtered rather than selected: a soft-deleted checkout should read as gone. */
     const { data: link, error } = await supabase
         .from("payment_links")
-        .select("id, merchant_address, title, description, amount_usdc, active, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot, paid_at, verified_tx_hash")
+        .select("id, merchant_address, title, description, amount_usdc, active, sandbox_mode, simulation_only, settlement_chain_id, expires_at, max_uses, use_count, status, receipt_token, merchant_name_snapshot, external_reference, invoice_number, due_date, state_snapshot, paid_at, verified_tx_hash")
         .eq("id", id)
+        .is("deleted_at", null)
         .maybeSingle();
 
     if (error) {

@@ -186,17 +186,42 @@ export async function GET(request: Request) {
             take: 50,
         }).catch(() => []);
 
-        const formattedReceipts = receipts.map((r: any) => ({
-            receiptId: r.receiptId,
-            txHash: r.txHash,
-            chainId: r.chainId,
-            payerAddress: r.payerAddress,
-            merchantAddress: r.merchantAddress,
-            amountUsdc: r.amountUsdc.toString(),
-            status: r.status,
-            createdAt: r.createdAt,
-            memoNote: r.memoNote,
-        }));
+        /* Resolve counterparty display names so the transactions table can say who was paid
+           instead of showing a bare receipt id. Anonymous aliases stay hidden. */
+        const counterpartyAddresses = Array.from(new Set(
+            receipts.map((r: any) => {
+                const payer = String(r.payerAddress || "").toLowerCase();
+                const merchant = String(r.merchantAddress || "").toLowerCase();
+                return payer === normalizedUser ? merchant : payer;
+            }).filter(Boolean),
+        ));
+        const counterpartyAliases = counterpartyAddresses.length
+            ? await prisma.addressAlias.findMany({
+                where: { address: { in: counterpartyAddresses }, isAnonymous: false },
+                select: { address: true, alias: true },
+            }).catch(() => [])
+            : [];
+        const aliasByAddress = new Map(counterpartyAliases.map((a: any) => [a.address, a.alias]));
+
+        const formattedReceipts = receipts.map((r: any) => {
+            const payer = String(r.payerAddress || "").toLowerCase();
+            const merchant = String(r.merchantAddress || "").toLowerCase();
+            const outgoing = payer === normalizedUser;
+            const counterparty = outgoing ? merchant : payer;
+            return {
+                receiptId: r.receiptId,
+                txHash: r.txHash,
+                chainId: r.chainId,
+                payerAddress: r.payerAddress,
+                merchantAddress: r.merchantAddress,
+                amountUsdc: r.amountUsdc.toString(),
+                status: r.status,
+                createdAt: r.createdAt,
+                memoNote: r.memoNote,
+                direction: outgoing ? "sent" : "received",
+                counterpartyName: aliasByAddress.get(counterparty) || null,
+            };
+        });
 
         return NextResponse.json({
             success: true,

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { enablePush, disablePush, isPushEnabled, pushSupported, sendTestPush } from "@/lib/clientPush";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDisconnect, useBalance, useAccount, useSwitchChain, useWriteContract } from "wagmi";
+import { useDisconnect, useReadContract, useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { 
   formatUnits, 
   createPublicClient, 
@@ -17,9 +17,9 @@ import {
   fallback
 } from "viem";
 import { sepolia } from "viem/chains";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
-  ARC_TESTNET_CHAIN_ID, 
   ARC_CCTP_DOMAIN_ID,
   ARC_MESSAGE_TRANSMITTER_ADDRESS,
   CCTP_CONFIG 
@@ -34,6 +34,7 @@ import KycVerificationPanel from "@/components/KycVerificationPanel";
 import ConfirmModal from "@/components/ConfirmModal";
 import { getDashboardUrl } from "@/utils/navigation";
 import { Identity } from "@/components/Identity";
+import { receiptHrefFromDescriptionLine } from "@/lib/dms/receiptPresentation";
 import {
   AlertCircle,
   ArrowDown,
@@ -85,6 +86,10 @@ import { accountDisplayName, merchantDisplayName } from "@/lib/identityDisplay";
 
 const comingSoonUserSettings = new Set(["emailEnabled", "securityShieldEnabled", "securityMultiSigEnabled"]);
 
+const ERC20_BALANCE_ABI = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+] as const;
+
 /* Minimal client-side ABIs for external/browser-wallet vault actions (the embedded path is
    signed server-side instead). */
 const VAULT_TOKEN_ABI = [
@@ -98,8 +103,8 @@ const VAULT_CONTRACT_ABI = [
 ] as const;
 
 const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(),
+  chain: activeArcChain,
+  transport: arcHttp(),
 });
 
 const sepoliaClient = createPublicClient({
@@ -149,6 +154,7 @@ interface DmMessage {
 
 interface MerchantPlan {
   id: string;
+  checkoutSessionId?: string | null;
   merchantAddress: string;
   name: string;
   description?: string | null;
@@ -200,9 +206,17 @@ const formatPeerDisplayName = (name: string | null | undefined, _address: string
   return accountDisplayName(cleanedName);
 };
 
+const txHashPattern = /0x[a-fA-F0-9]{64}/g;
+
+/* Shorten raw hex identifiers to a scannable form. Tx hashes (66 chars) must be replaced
+   before addresses (42 chars) or the address pattern eats the front of the hash and leaves
+   mangled text. Never replace with a generic label like "SubScript account" — that hid who
+   was actually paid. */
 const shortenWalletsInText = (value: string | null | undefined) => {
   if (!value) return value || null;
-  return value.replace(walletAddressPattern, "SubScript account");
+  return value
+    .replace(txHashPattern, (hash) => `${hash.slice(0, 10)}…${hash.slice(-6)}`)
+    .replace(walletAddressPattern, (address) => `${address.slice(0, 6)}…${address.slice(-4)}`);
 };
 
 const dmRequestDurationOptions = [
@@ -215,6 +229,19 @@ const formatUsdc = (amount: string | null) => {
   if (!amount) return "0.00";
   const numeric = Number(amount);
   return Number.isFinite(numeric) ? (numeric / 1_000_000).toFixed(2) : "0.00";
+};
+
+/* Display amounts on the overview cards and activity rows, in USDC or in the local-currency estimate
+   beside it. Cents are load-bearing under 1,000: rounding 0.40 to "0" claims an empty wallet rather
+   than forty cents. Past that they're noise, and dropping them keeps these strings as short as they
+   are today — the balance renders at 52px on a 390px viewport, where the mobile audit allows no
+   horizontal protrusion at all. The threshold suits both scales: sub-$1,000 USDC keeps its cents,
+   while a naira estimate is large enough to stay whole. */
+const formatHeadlineAmount = (value: number) => {
+  /* Threshold on the rounded value, or 999.999 picks the cents branch and renders "1,000.00" while
+     1000 renders "1,000". */
+  const digits = Math.abs(Math.round(value * 100) / 100) < 1000 ? 2 : 0;
+  return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
 const formatPlanPeriod = (seconds: string) => {
@@ -786,29 +813,43 @@ export default function UserDashboard() {
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const { data: usdcBalance, refetch: refetchUsdc } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
-    chainId: ARC_TESTNET_CHAIN_ID,
+  /* balanceOf only. useBalance({ token }) also reads decimals() and symbol() on every refetch, so a
+     single balance cost 3 calls against Arc's public RPC — which rate-limits per RPC call (429,
+     ~1/sec/IP), not per HTTP request. The extra reads raced the one we needed, readContracts runs
+     with allowFailure:false, and the whole query rejected. USDC's decimals are fixed at 6 (the
+     formatUnits below has always assumed it) and the symbol was never read, so both were pure cost. */
+  const { data: usdcBalance, refetch: refetchUsdc } = useReadContract({
+    address: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
+    chainId: activeArcChain.id,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+  const { data: sepoliaUsdcBalance, refetch: refetchSepolia } = useReadContract({
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, // Sepolia USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 11155111,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useBalance({
-    address: userWallet as `0x${string}` | undefined,
-    token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+  const { data: mainnetUsdcBalance, refetch: refetchMainnet } = useReadContract({
+    address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`, // Mainnet USDC
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: userWallet ? [userWallet as `0x${string}`] : undefined,
     chainId: 1,
+    query: { enabled: Boolean(userWallet) },
   });
 
-  const sepoliaUsdc = sepoliaUsdcBalance ? Number(formatUnits(sepoliaUsdcBalance.value, 6)) : 0;
-  const mainnetUsdc = mainnetUsdcBalance ? Number(formatUnits(mainnetUsdcBalance.value, 6)) : 0;
+  const sepoliaUsdc = sepoliaUsdcBalance !== undefined ? Number(formatUnits(sepoliaUsdcBalance, 6)) : 0;
+  const mainnetUsdc = mainnetUsdcBalance !== undefined ? Number(formatUnits(mainnetUsdcBalance, 6)) : 0;
   const hasExternalUsdc = sepoliaUsdc > 0 || mainnetUsdc > 0;
 
-  const walletBalance = usdcBalance ? Number(formatUnits(usdcBalance.value, 6)) : 0;
+  const walletBalance = usdcBalance !== undefined ? Number(formatUnits(usdcBalance, 6)) : 0;
 
   const handleManualRefreshBalances = async () => {
     setIsRefreshingBalances(true);
@@ -992,6 +1033,36 @@ export default function UserDashboard() {
     redirectTo(getDashboardUrl("USER", "/signup"), "Signing you out...");
   };
 
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+  const handleDeleteAccount = () => {
+    setConfirmModal({
+      open: true,
+      title: "Delete your account?",
+      description: "This erases your profile, alias, and settings, and signs you out everywhere. Your payment receipts remain part of the shared ledger. Active subscriptions must be cancelled and vault funds withdrawn before deleting. This cannot be undone.",
+      confirmLabel: "Delete Account",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDeleteAccountLoading(true);
+        try {
+          const res = await fetch("/api/user/account", { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            triggerToast(data.error || "Account deletion failed.");
+            return;
+          }
+          disconnect();
+          redirectTo(getDashboardUrl("USER", "/signup"), "Deleting your account...");
+        } catch {
+          triggerToast("Account deletion failed. Please try again.");
+        } finally {
+          setDeleteAccountLoading(false);
+        }
+      },
+      onCancel: () => setConfirmModal(null),
+    });
+  };
+
   const copyAddress = async () => {
     if (!userWallet) return;
     await navigator.clipboard.writeText(userWallet);
@@ -1060,6 +1131,27 @@ export default function UserDashboard() {
     ) || null;
   };
 
+  /* Mirror-gap self-heal: a subscription can be live on-chain (the user was charged and
+     has the SUBSCRIPTION_STARTED DM) while the local mirror row is missing, which hides
+     the Manage/Cancel controls. When a merchant thread is opened and we know of no active
+     subscription with them, ask the server to reconcile from the chain once per peer. */
+  const reconciledPeersRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedDmPeer || !userWallet) return;
+    const peer = selectedDmPeer.toLowerCase();
+    if (reconciledPeersRef.current.has(peer)) return;
+    const hasActive = subscriptions.some(
+      (sub) => sub.merchantAddress.toLowerCase() === peer && sub.status === "ACTIVE" && !sub.cancelAtPeriodEnd
+    );
+    if (hasActive) return;
+    reconciledPeersRef.current.add(peer);
+    fetch(`/api/user/subscriptions?reconcileMerchant=${encodeURIComponent(peer)}`)
+      .then((res) => res.json())
+      .then((data) => { if (data.success) setSubscriptions(data.subscriptions); })
+      .catch(() => { /* best-effort; the normal list already loaded */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDmPeer, userWallet]);
+
   const loadPlansForMerchant = async (merchantAddress: string) => {
     setIsThreadPlansLoading(true);
     setPlanManagerError(null);
@@ -1105,12 +1197,16 @@ export default function UserDashboard() {
           BigInt(activeSub.amountCapUsdc),
           BigInt(activeSub.billingIntervalSeconds),
         );
-        if (comparison < 0) {
+        if (comparison <= 0) {
           setPlanManagerStatus(null);
-          setPlanManagerError("Plan reductions are not available. Choose your current plan or a higher tier.");
+          setPlanManagerError(
+            comparison < 0
+              ? "Plan reductions are not available. Choose your current plan or a higher tier."
+              : "Only upgrades to a higher recurring rate are available."
+          );
           return;
         }
-        isUpgrade = comparison > 0;
+        isUpgrade = true;
       } catch {
         setPlanManagerError("This plan could not be compared with your current subscription.");
         return;
@@ -1125,7 +1221,9 @@ export default function UserDashboard() {
         const endpoint = activeSub ? "/api/user/subscription/change" : "/api/user/subscription/subscribe";
         const body = activeSub
           ? { fromSubscriptionId: activeSub.subscriptionId, planId: plan.id, mode }
-          : { planId: plan.id };
+          : plan.checkoutSessionId
+            ? { checkoutSessionId: plan.checkoutSessionId }
+            : { planId: plan.id };
         /* Subscribing charges the first payment server-side; a retry with the same x-request-id
            dedupes at Circle instead of creating (and charging) a second subscription. */
         subscribeRequestKey.current ||= crypto.randomUUID();
@@ -1224,7 +1322,29 @@ export default function UserDashboard() {
   };
 
   const handleConfirmPaymentDm = async (dm: DmMessage) => {
-    /* Merchant subscription requests settle through the sponsored hosted checkout. */
+    /* Assigned API subscription offers use the same plan-change controller as the DM plan
+       picker. That controller detects an existing merchant subscription and modifies its
+       on-chain id in place; a new subscriber activates the assigned checkout instead. */
+    if (dm.messageType === "SUBSCRIPTION_OFFER") {
+      if (!dm.paymentLinkId) return;
+      try {
+        const merchantAddress = dm.senderAddress.toLowerCase();
+        const res = await fetch(`/api/merchant/plans?merchantAddress=${encodeURIComponent(merchantAddress)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Failed to load this subscription offer.");
+        const plans = (data.plans || []) as MerchantPlan[];
+        const assignedPlan = plans.find((plan) => plan.checkoutSessionId === dm.paymentLinkId);
+        if (!assignedPlan) throw new Error("This subscription offer is no longer available.");
+        setThreadPlans(plans);
+        setPlansMerchantAddress(merchantAddress);
+        await handleSubscribeOrSwitchPlan(assignedPlan);
+      } catch (error: any) {
+        setPlanManagerError(error.message || "Failed to open this subscription offer.");
+      }
+      return;
+    }
+
+    /* Other merchant requests settle through the hosted one-time checkout. */
     if (dm.messageType !== "PEER_REQUEST") {
       if (!dm.paymentLinkId) return;
       const checkoutUrl = `/pay/${dm.paymentLinkId}`;
@@ -1263,8 +1383,8 @@ export default function UserDashboard() {
           throw new Error("Connect your wallet to pay this request.");
         }
         /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         txHash = await writeContractAsync({
           address: USDC_NATIVE_GAS_ADDRESS,
@@ -1467,6 +1587,58 @@ export default function UserDashboard() {
     setVaultActionOpen(true);
   };
 
+  /* Liveness escape hatch: reclaim the full escrow from a matured-but-never-settled vault
+     once the contract's 7-day grace has elapsed. Embedded wallets sign server-side; external
+     wallets sign reclaimAbandonedEscrow directly. */
+  const [vaultReclaimBusyId, setVaultReclaimBusyId] = useState<string | null>(null);
+  const handleVaultReclaim = async (vault: any) => {
+    if (vaultReclaimBusyId) return;
+    setVaultReclaimBusyId(String(vault.id || vault.merchantAddress));
+    try {
+      if (isEmbeddedWalletSession) {
+        const res = await fetch("/api/user/vault/reclaim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || "Reclaim failed.");
+      } else {
+        if (!accountAddress) throw new Error("Connect your browser wallet to reclaim.");
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
+        }
+        const reclaimHash = await writeContractAsync({
+          address: SUBSCRIPT_VAULT_ADDRESS,
+          abi: [{ type: "function", name: "reclaimAbandonedEscrow", stateMutability: "nonpayable", inputs: [{ name: "merchant", type: "address" }], outputs: [] }] as const,
+          functionName: "reclaimAbandonedEscrow",
+          args: [vault.merchantAddress as `0x${string}`],
+        });
+        const reclaimReceipt = await publicClient.waitForTransactionReceipt({ hash: reclaimHash });
+        if (reclaimReceipt.status !== "success") {
+          throw new Error("The reclaim transaction reverted. Your vault remains unchanged.");
+        }
+        const syncRes = await fetch("/api/user/vault/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+        });
+        if (!syncRes.ok) {
+          throw new Error("Reclaim confirmed on-chain, but the vault could not be refreshed. Retry to synchronize it.");
+        }
+      }
+      await loadVaults();
+    } catch (err: any) {
+      setVaultActionError(err?.message || "Reclaim failed.");
+      setVaultActionOpen(true);
+      setVaultActionMode("withdraw");
+      setVaultActionMerchant(vault.merchantAddress);
+      setVaultActionMerchantLocked(true);
+    } finally {
+      setVaultReclaimBusyId(null);
+    }
+  };
+
   /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
      server-side Circle idempotency key dedupes instead of escrowing the amount twice. */
   const vaultCommitRequestKey = useRef<string | null>(null);
@@ -1518,7 +1690,44 @@ export default function UserDashboard() {
       if (isEmbeddedWalletSession) {
         // Embedded wallet: SubScript signs server-side (and sponsors gas).
         const endpoint = vaultActionMode === "commit" ? "/api/user/vault/commit" : "/api/user/vault/withdraw";
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current ||= crypto.randomUUID();
+        const intentStorageKey = "subscript_vault_commit_intent";
+        if (vaultActionMode === "commit") {
+          /* Durable money-moving operation id: persisted in localStorage until terminal
+             resolution, so a reload cannot mint a fresh id for the same commit. Any prior
+             unresolved intent is resolved server-side BEFORE a new commit is allowed. */
+          let storedIntent: { requestId?: string; merchantAddress?: string; amountUsdc?: string } | null = null;
+          try { storedIntent = JSON.parse(localStorage.getItem(intentStorageKey) || "null"); } catch { storedIntent = null; }
+          if (storedIntent?.requestId
+              && (storedIntent.merchantAddress !== merchantAddress || storedIntent.amountUsdc !== vaultActionAmount)) {
+            const priorResponse = await fetch(`/api/user/vault/commit?requestId=${encodeURIComponent(storedIntent.requestId)}`)
+              .catch(() => null);
+            if (!priorResponse?.ok) {
+              throw new Error("Unable to verify the previous vault commit. Retry after its status can be confirmed.");
+            }
+            const prior = await priorResponse.json().catch(() => null);
+            if (!prior || typeof prior.exists !== "boolean") {
+              throw new Error("The previous vault commit returned an invalid status. Retry before starting a new commit.");
+            }
+            if (prior?.exists && (prior.status === "PENDING" || prior.status === "SUBMITTED")) {
+              throw new Error("A previous vault commit is still resolving. Retry that exact commit (same merchant and amount), or wait for it to finish before starting a new one.");
+            }
+            const terminal = prior.exists === false
+              || (prior.exists === true && (prior.status === "MIRRORED" || prior.status === "FAILED"));
+            if (!terminal) {
+              throw new Error("The previous vault commit has an unknown status. Retry before starting a new commit.");
+            }
+            try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+            storedIntent = null;
+          }
+          vaultCommitRequestKey.current = storedIntent?.requestId || vaultCommitRequestKey.current || crypto.randomUUID();
+          try {
+            localStorage.setItem(intentStorageKey, JSON.stringify({
+              requestId: vaultCommitRequestKey.current,
+              merchantAddress,
+              amountUsdc: vaultActionAmount,
+            }));
+          } catch { /* the in-memory ref still guards this tab */ }
+        }
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -1530,13 +1739,20 @@ export default function UserDashboard() {
           body: JSON.stringify({ merchantAddress, amountUsdc: vaultActionAmount, acknowledgeUnverified: acknowledgedUnverified || undefined }),
         });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || "Vault action failed.");
-        if (vaultActionMode === "commit") vaultCommitRequestKey.current = null;
+        if (!res.ok || !data.success) {
+          /* An ambiguous commit stays persisted — the retry reuses the same request id and
+             dedupes at Circle instead of escrowing twice. */
+          throw new Error(data.error || "Vault action failed.");
+        }
+        if (vaultActionMode === "commit") {
+          vaultCommitRequestKey.current = null;
+          try { localStorage.removeItem(intentStorageKey); } catch { /* no-op */ }
+        }
       } else {
         // External/browser wallet: sign the vault transactions client-side, then refresh the mirror.
         if (!accountAddress) throw new Error("Connect your browser wallet to manage your vault.");
-        if (chainId !== ARC_TESTNET_CHAIN_ID) {
-          await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+        if (chainId !== activeArcChain.id) {
+          await switchChainAsync({ chainId: activeArcChain.id });
         }
         const amountMicros = parseUnits(limitDecimals(vaultActionAmount, 6), 6);
 
@@ -1865,8 +2081,8 @@ export default function UserDashboard() {
       ] as const;
 
       /* Connected-wallet accounts must be on Arc before the USDC transfer settles. */
-      if (chainId !== ARC_TESTNET_CHAIN_ID) {
-        await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
       }
       const txHash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
@@ -2281,7 +2497,7 @@ export default function UserDashboard() {
     ...subscriptions.map((s) => {
       const usdVal = Number(s.amountCapUsdc) / 1_000_000;
       const localVal = usdVal * exchangeRate;
-      const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+      const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
       return {
         id: `sub-${s.subscriptionId}`,
         kind: "recurring" as const,
@@ -2301,7 +2517,7 @@ export default function UserDashboard() {
         const incoming = d.receiverAddress.toLowerCase() === userWallet?.toLowerCase() && !isDebitSuccess;
         const usdVal = Number(d.amountUsdc) / 1_000_000;
         const localVal = usdVal * exchangeRate;
-        const localLabel = `${detectedCurrency.symbol}${localVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+        const localLabel = `${detectedCurrency.symbol}${formatHeadlineAmount(localVal)}`;
         return {
           id: `dm-${d.id}`,
           kind: "one-time" as const,
@@ -2325,7 +2541,7 @@ export default function UserDashboard() {
   const isActionableDm = (dm: DmMessage) =>
     dm.status === "PENDING" &&
     dm.receiverAddress.toLowerCase() === userWallet?.toLowerCase() &&
-    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+    ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const pendingDmCount = dms.filter(isActionableDm).length;
   const dmThreads = Array.from(dms.reduce((threads, dm) => {
     const peerAddress = getDmPeerAddress(dm, userWallet).toLowerCase();
@@ -2608,10 +2824,10 @@ export default function UserDashboard() {
                         </button>
                       </div>
                       <div className="mt-3 text-[52px] leading-none sm:text-6xl font-extrabold tracking-tight text-white select-all">
-                        {balanceVisible ? `$${walletBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••••"}
+                        {balanceVisible ? `$${formatHeadlineAmount(walletBalance)}` : "••••••"}
                       </div>
                       <p className="mt-3 text-xl sm:text-2xl font-extrabold text-white/55">
-                        {balanceVisible ? `${detectedCurrency.symbol}${localBalance.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                        {balanceVisible ? `${detectedCurrency.symbol}${formatHeadlineAmount(localBalance)}` : "••••"}
                       </p>
                     </section>
 
@@ -2650,7 +2866,7 @@ export default function UserDashboard() {
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Spending past (USDC)</p>
                         <p className="mt-3 text-[11px] font-black text-white/40">30D</p>
                         <p className="mt-1 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${monthlySpendUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                          {balanceVisible ? `$${formatHeadlineAmount(monthlySpendUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2665,7 +2881,7 @@ export default function UserDashboard() {
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Total Commit (LOCKED)</p>
                         <p className="mt-3 text-3xl font-extrabold tracking-tight text-white">
-                          {balanceVisible ? `$${totalCommitLockedUsdc.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "••••"}
+                          {balanceVisible ? `$${formatHeadlineAmount(totalCommitLockedUsdc)}` : "••••"}
                         </p>
                       </div>
                       <button
@@ -2833,6 +3049,8 @@ export default function UserDashboard() {
                           vault={vault}
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
+                          onReclaim={handleVaultReclaim}
+                          reclaimBusy={vaultReclaimBusyId !== null}
                           balanceVisible={balanceVisible}
                         />
                       ))}
@@ -3619,6 +3837,23 @@ export default function UserDashboard() {
                         </div>
                         <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
                       </button>
+
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deleteAccountLoading}
+                        className="w-full text-left p-4 hover:bg-red-500/[0.06] rounded-2xl flex items-center justify-between transition-all group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 group-hover:bg-red-500/20 transition-all">
+                            {deleteAccountLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <span className="block text-xs font-bold text-red-400 uppercase tracking-wide">Delete Account</span>
+                            <span className="block text-[9px] text-white/40 font-sans mt-0.5 font-normal normal-case">Permanently erase your profile and sign out</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-white/20 group-hover:text-red-400/60 group-hover:translate-x-0.5 transition-all" />
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3635,7 +3870,7 @@ export default function UserDashboard() {
                       </button>
                       <h2 className="text-sm font-black uppercase tracking-wider text-white">KYC Verification</h2>
                     </div>
-                    <KycVerificationPanel accent="#ccff00" />
+                    <KycVerificationPanel accent="#ccff00" variant="user" />
                   </div>
                 )}
 
@@ -3769,7 +4004,8 @@ export default function UserDashboard() {
                               const res = await fetch("/api/merchant/alias", { method: "DELETE" });
                               if (res.ok) {
                                 setRegisteredDomain(null);
-                                setProfilePic(null);
+                                /* The profile picture belongs to the account, not the alias —
+                                   unregistering a name must not blank the avatar. */
                                 setDnsDomain("");
                                 setDnsSuccess("Alias removed successfully");
                                 setTimeout(() => setDnsSuccess(null), 3000);
@@ -4099,24 +4335,29 @@ export default function UserDashboard() {
                         <table className="w-full text-left font-sans text-xs">
                           <thead>
                             <tr className="border-b border-white/5 text-white/40 uppercase text-[9px] tracking-wider">
-                              <th className="pb-3">Receipt ID</th>
+                              <th className="pb-3">Payment</th>
                               <th className="pb-3">Date &amp; Time</th>
                               <th className="pb-3">Amount</th>
                               <th className="pb-3">Status</th>
-                              <th className="pb-3 text-right">Action</th>
+                              <th className="pb-3 text-right">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {settingsTransactions.length === 0 ? (
                               <tr>
                                 <td colSpan={5} className="text-center py-6 text-white/30">
-                                  No recent transaction logs.
+                                  No payments yet.
                                 </td>
                               </tr>
                             ) : (
-                              settingsTransactions.map((tx) => (
+                              settingsTransactions.map((tx) => {
+                                const counterparty = tx.counterpartyName
+                                  || formatAddress(tx.direction === "sent" ? tx.merchantAddress : tx.payerAddress);
+                                return (
                                 <tr key={tx.receiptId} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
-                                  <td className="py-4 font-mono font-semibold text-white/80">{tx.receiptId.slice(0, 8)}...</td>
+                                  <td className="py-4 font-semibold text-white/80">
+                                    {tx.direction === "sent" ? `Paid ${counterparty}` : `Received from ${counterparty}`}
+                                  </td>
                                   <td className="py-4 text-white/50">{new Date(tx.createdAt).toLocaleString()}</td>
                                   <td className="py-4 font-mono font-bold text-white">
                                     ${(Number(tx.amountUsdc) / 1_000_000).toFixed(2)} USDC
@@ -4129,18 +4370,28 @@ export default function UserDashboard() {
                                   <td className="py-4 text-right">
                                     <div className="inline-flex items-center gap-3">
                                       <a
+                                        href={`/receipt/${tx.receiptId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[#ccff00]/80 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
+                                        title="Open this receipt in a new tab"
+                                      >
+                                        View receipt
+                                      </a>
+                                      <a
                                         href={`/receipt/${tx.receiptId}?invite=1`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-white/60 hover:text-[#ccff00] hover:underline inline-flex items-center gap-1"
                                         title="Grant another address permission to view this private receipt"
                                       >
-                                        Grant
+                                        Share
                                       </a>
                                     </div>
                                   </td>
                                 </tr>
-                              ))
+                                );
+                              })
                             )}
                           </tbody>
                         </table>
@@ -4312,7 +4563,8 @@ export default function UserDashboard() {
                       )}
                     </div>
 
-                    {userSettings?.walletBackup && (
+                    {/* Key export exists only for wallet providers that expose a recoverable key. */}
+                    {userSettings?.walletBackup?.available && (
                       <div className="liquid-glass border border-white/5 bg-black/40 backdrop-blur-xl rounded-3xl p-5 sm:p-8 space-y-5 shadow-2xl">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="space-y-2">
@@ -4323,12 +4575,8 @@ export default function UserDashboard() {
                               Export the private key for your SubScript-generated email wallet. Store it offline; anyone with this key can control the wallet.
                             </p>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                            userSettings.walletBackup.available
-                              ? "border border-[#ccff00]/25 bg-[#ccff00]/10 text-[#ccff00]"
-                              : "border border-white/10 bg-white/5 text-white/45"
-                          }`}>
-                            {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                          <span className="rounded-full border border-[#ccff00]/25 bg-[#ccff00]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#ccff00]">
+                            Exportable
                           </span>
                         </div>
 
@@ -4413,11 +4661,11 @@ export default function UserDashboard() {
                           <button
                             type="button"
                             onClick={requestExportOtp}
-                            disabled={exportOtpSending || !userSettings.walletBackup.available}
+                            disabled={exportOtpSending}
                             className="w-full rounded-2xl bg-[#ccff00]/10 border border-[#ccff00]/30 text-white hover:bg-[#ccff00]/20 hover:border-[#ccff00]/50 py-3.5 text-xs font-black uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition disabled:opacity-50"
                           >
                             {exportOtpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            {userSettings.walletBackup.available ? "Export Private Key" : "Export Not Available"}
+                            Export Private Key
                           </button>
                         )}
                       </div>
@@ -4452,24 +4700,32 @@ export default function UserDashboard() {
 
                       <div className="w-full space-y-3 pt-4">
                         <a
-                          href="https://docs.subscript.com"
+                          href="https://t.me/subscriptsupport"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                        >
+                          <span>Join Telegram Support Group</span>
+                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
+                        </a>
+
+                        <a
+                          href="https://www.subscriptonarc.com/support"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span>Explore FAQs & Docs</span>
+                          <span>Help Center & FAQs</span>
                           <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
                         </a>
 
-                        <button
-                          onClick={() => {
-                            setActiveTab("inbox");
-                          }}
-                          className="w-full p-4 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/10 hover:bg-[#ccff00]/20 flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-[#ccff00]"
+                        <a
+                          href="mailto:support@subscriptonarc.com"
+                          className="w-full p-4 rounded-2xl border border-white/10 hover:bg-white/[0.03] flex items-center justify-between transition-all group font-bold text-xs uppercase tracking-wider text-white"
                         >
-                          <span>Start On-Chain Live Chat</span>
-                          <ChevronRight className="h-4 w-4 text-[#ccff00]/50 group-hover:text-[#ccff00] transition" />
-                        </button>
+                          <span>Email Support</span>
+                          <ChevronRight className="h-4 w-4 text-white/25 group-hover:text-white/60 transition" />
+                        </a>
                       </div>
                     </div>
                   </div>
@@ -5035,8 +5291,8 @@ function VaultInfoModal({ open, onClose }: { open: boolean; onClose: () => void 
               </ul>
             </div>
             <p className="text-[11px] leading-relaxed text-white/40">
-              The merchant sets the commit amount. At the end of each 30-day cycle they draw the period's
-              usage cost from your vault; you top the vault back up to keep the service running.
+              SubScript fixes the commitment at 2 USDC for each user–merchant relationship per cycle.
+              At cycle end the keeper settles reported usage and closes the vault; commit again to start the next cycle.
             </p>
             <button type="button" onClick={onClose} className="subscript-primary-button">
               Got it
@@ -5444,11 +5700,11 @@ function DmBubble({
   const displayDescription = shortenWalletsInText(dm.description);
   const senderLabel = formatPeerDisplayName(dm.senderName, dm.senderAddress);
   const lines = splitDmDescription(displayDescription);
-  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
-  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING"].includes(dm.messageType);
+  const canPay = incoming && isPending && Boolean(dm.paymentLinkId) && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
+  const canDecline = incoming && isPending && ["PAYMENT_REQUEST", "PEER_REQUEST", "EXPIRY_WARNING", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
 
   /* Parse lines to show a beautiful checkout details card for payment requests */
-  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST"].includes(dm.messageType);
+  const isRequest = ["PAYMENT_REQUEST", "PEER_REQUEST", "SUBSCRIPTION_OFFER"].includes(dm.messageType);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionItems: Array<{
     key: string;
@@ -5461,7 +5717,11 @@ function DmBubble({
   if (canPay) {
     actionItems.push({
       key: "pay",
-      label: dm.messageType === "EXPIRY_WARNING" ? "Resubscribe" : "Confirm",
+      label: dm.messageType === "EXPIRY_WARNING"
+        ? "Resubscribe"
+        : dm.messageType === "SUBSCRIPTION_OFFER"
+          ? "Review plan"
+          : "Confirm",
       onClick: onPay,
       loadingKey: `pay-${dm.id}`,
     });
@@ -5594,9 +5854,31 @@ function DmBubble({
             <>
               <h3 className="text-base font-black uppercase leading-snug text-white">{displayTitle || "SubScript message"}</h3>
               <div className="mt-3 space-y-1.5">
-                {lines.length > 0 ? lines.map((line) => (
-                  <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
-                )) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
+                {lines.length > 0 ? lines.map((line) => {
+                  /* Receipt references read as noise in a chat bubble — show a same-origin
+                     "View receipt" action and never trust a host stored in legacy DM text. */
+                  const receiptHref = receiptHrefFromDescriptionLine(line);
+                  if (receiptHref) {
+                    return (
+                      <a
+                        key={line}
+                        href={receiptHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 text-xs font-bold underline underline-offset-2 ${incoming ? "text-[#ccff00]" : "text-white"}`}
+                      >
+                        View receipt <ExternalLink className="h-3 w-3" />
+                      </a>
+                    );
+                  }
+                  /* Older receipts embedded the raw tx hash — meaningless to a person, and
+                     payment proof stays inside SubScript (the receipt page carries it), so the
+                     line is simply dropped rather than linked to an external explorer. */
+                  if (/^transaction\b/i.test(line)) return null;
+                  return (
+                    <p key={line} className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>{line}</p>
+                  );
+                }) : <p className={`text-xs leading-relaxed ${incoming ? "text-white/70" : "text-white/90"}`}>System-generated SubScript payment update.</p>}
               </div>
             </>
           )}
@@ -5831,17 +6113,17 @@ function MerchantPlanManager({
                     ? activeSubscription.amountCapUsdc === plan.amountUsdc &&
                       activeSubscription.billingIntervalSeconds === plan.periodSeconds
                     : false;
-                  let isReduction = false;
+                  let isUnavailableChange = false;
                   if (activeSubscription) {
                     try {
-                      isReduction = compareRecurringRates(
+                      isUnavailableChange = compareRecurringRates(
                         BigInt(plan.amountUsdc),
                         BigInt(plan.periodSeconds),
                         BigInt(activeSubscription.amountCapUsdc),
                         BigInt(activeSubscription.billingIntervalSeconds),
-                      ) < 0;
+                      ) <= 0;
                     } catch {
-                      isReduction = true;
+                      isUnavailableChange = true;
                     }
                   }
                   const loadingKey = hasActiveSubscription ? `switch-plan-${plan.id}` : `subscribe-plan-${plan.id}`;
@@ -5894,17 +6176,17 @@ function MerchantPlanManager({
                         transition={{ type: "spring", stiffness: 500, damping: 12, mass: 0.7 }}
                         type="button"
                         onClick={() => onSubscribe(plan)}
-                        disabled={isCurrent || isReduction || loadingAction === loadingKey}
+                        disabled={isCurrent || isUnavailableChange || loadingAction === loadingKey}
                         className={`mt-3 w-full rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
-                          isCurrent || isReduction
+                          isCurrent || isUnavailableChange
                             ? "border-white/5 bg-white/[0.03] text-white/25"
                             : "border-[#ccff00]/25 bg-[#ccff00]/10 text-white hover:bg-[#ccff00]/18"
                         } ${loadingAction === loadingKey ? "quick-action-loading" : ""}`}
                       >
                         {isCurrent
                           ? "Active now"
-                          : isReduction
-                            ? "Lower tier unavailable"
+                          : isUnavailableChange
+                            ? "Upgrade only"
                             : hasActiveSubscription
                               ? "Upgrade"
                               : "Subscribe"}
@@ -6168,7 +6450,7 @@ function DepositModal({
 
     setCctpStatus("claiming");
     setCctpMessage("Switching to Arc Testnet to complete the existing bridge...");
-    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+    await switchChainAsync({ chainId: activeArcChain.id });
     const mintHash = await writeContractAsync({
       address: ARC_MESSAGE_TRANSMITTER_ADDRESS,
       abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [{ name: "success", type: "bool" }] }],
@@ -7089,22 +7371,42 @@ function MeteredVaultRow({
   vault,
   onCommit,
   onWithdraw,
+  onReclaim,
+  reclaimBusy,
   balanceVisible,
 }: {
   vault: any;
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
+  onReclaim: (vault: any) => void;
+  reclaimBusy: boolean;
   balanceVisible: boolean;
 }) {
   const balance = Number(vault.balanceUsdc || 0);
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
+  const disputed = vault.disputed === true;
+  const cycleStartDate = vault.cycleStart ? new Date(vault.cycleStart) : null;
   const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
-  const locked = lockedUntilDate ? Date.now() < lockedUntilDate.getTime() : false;
-  const canWithdraw = balance > 0 && !locked;
-  const lockLabel = lockedUntilDate
-    ? lockedUntilDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : null;
+  const RECLAIM_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+  const reclaimDate = lockedUntilDate ? new Date(lockedUntilDate.getTime() + RECLAIM_GRACE_MS) : null;
+  const now = Date.now();
+  const locked = lockedUntilDate ? now < lockedUntilDate.getTime() : false;
+  /* Contract truth, mirrored in the UI:
+     - withdrawSurplus requires the vault to be INACTIVE and the lock elapsed;
+     - reclaimAbandonedEscrow requires an ACTIVE vault whose settle window (lockedUntil +
+       7-day grace) lapsed without keeper settlement;
+     - an active matured vault inside the grace is simply awaiting settlement. */
+  const canWithdraw = balance > 0 && blocked && !locked;
+  const awaitingSettlement = !blocked && !disputed && lockedUntilDate !== null
+    && now >= lockedUntilDate.getTime() && (reclaimDate === null || now < reclaimDate.getTime());
+  const canReclaim = !blocked && !disputed && balance > 0 && reclaimDate !== null && now >= reclaimDate.getTime();
+  /* Merchant-drawable exposure is the platform cap, never the surplus. */
+  const STANDARD_COMMIT_MICROS = 2_000_000;
+  const drawableExposure = Math.min(balance, STANDARD_COMMIT_MICROS);
+  const shortDate = (date: Date | null) => date
+    ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : "—";
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3.5 transition hover:border-white/10 hover:bg-black/35">
       <div className="flex items-start justify-between gap-3">
@@ -7119,8 +7421,8 @@ function MeteredVaultRow({
             </p>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : "Active"}
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Inactive" : disputed ? "Disputed" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 
@@ -7139,21 +7441,50 @@ function MeteredVaultRow({
           >
             {blocked ? "Re-commit" : "Add commit"}
           </button>
-          {balance > 0 && (
+          {canWithdraw && (
             <button
               type="button"
-              onClick={() => canWithdraw && onWithdraw(vault)}
-              disabled={!canWithdraw}
-              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${canWithdraw ? "bg-white/5 border-white/10 text-white/80 hover:bg-white/15" : "cursor-not-allowed border-white/5 bg-black/20 text-white/30"}`}
+              onClick={() => onWithdraw(vault)}
+              className="rounded-xl border bg-white/5 border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white/80 hover:bg-white/15 transition"
             >
-              {locked ? "Locked" : "Withdraw"}
+              Withdraw
+            </button>
+          )}
+          {canReclaim && (
+            <button
+              type="button"
+              onClick={() => !reclaimBusy && onReclaim(vault)}
+              disabled={reclaimBusy}
+              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${reclaimBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "bg-amber-400/10 border-amber-300/30 text-amber-200 hover:bg-amber-400/20"}`}
+            >
+              {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
         </div>
       </div>
-      {locked && lockLabel && (
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-white/45 sm:grid-cols-3">
+        <p>Cycle started <span className="font-bold text-white/60">{shortDate(cycleStartDate)}</span></p>
+        <p>Cycle matures <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span></p>
+        <p>Reported usage <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(vault.accruedUsageUsdc) : "•••"} USDC</span></p>
+        <p>Max drawable <span className="font-bold text-white/60">{balanceVisible ? formatUsdc(String(drawableExposure)) : "•••"} USDC</span></p>
+        <p>Settlement due by <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+        <p>Reclaimable from <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
+      </div>
+
+      {locked && !blocked && (
         <p className="text-[10px] leading-relaxed text-white/40">
-          Committed funds are locked for this cycle — withdrawable from <span className="font-bold text-white/60">{lockLabel}</span>.
+          Committed funds are locked while the cycle runs — the keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
+        </p>
+      )}
+      {awaitingSettlement && (
+        <p className="text-[10px] leading-relaxed text-sky-200/70">
+          This cycle has matured and is awaiting keeper settlement. Unused escrow returns automatically; if nothing settles by <span className="font-bold">{shortDate(reclaimDate)}</span>, a Reclaim button appears here.
+        </p>
+      )}
+      {canReclaim && (
+        <p className="text-[10px] leading-relaxed text-amber-200/70">
+          Settlement never arrived for this matured cycle. You can reclaim your full escrow now.
         </p>
       )}
       {blocked && commitNeeded > 0 && (

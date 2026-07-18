@@ -8,7 +8,9 @@ import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
 import { arcReconciliation } from "@/lib/arc/reconciliation";
 import { checkProviderRateLimit } from "@/lib/providerRateLimit";
-import { DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
 /* Validate an optional checkout return URL (https only, except localhost for dev). */
 function validateReturnUrl(label: string, value: unknown): { ok: true; value?: string } | { ok: false; error: string } {
@@ -41,6 +43,10 @@ export async function POST(request: Request) {
     /* One request ID for every error this request can produce — clients quote it, logs carry it. */
     const requestId = crypto.randomUUID();
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
+
         let merchantAddress: string | null = null;
         let apiKeyMode: ReturnType<typeof getSecretKeyMode> | null = null;
 
@@ -101,10 +107,36 @@ export async function POST(request: Request) {
             cancelUrl,
             sandbox
         } = body;
-        const isSandboxRequest = sandbox === true || apiKeyMode === "test";
+        const isTestMode = apiKeyMode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
+            return apiError({ status: 400, code: "invalid_sandbox_mode", requestId, message: "Bad Request: sandbox mode is determined by the API key" });
+        }
+        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
+            return apiError({
+                status: 409,
+                code: "test_mode_requires_testnet",
+                requestId,
+                message: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
+            });
+        }
+        const isSandboxRequest = isTestMode;
+        const isSimulationOnly = isTestMode && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase();
+        const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return apiError({ status: 400, code: "missing_title", requestId, message: "Bad Request: title is required (a short product/plan name shown on the hosted checkout page)" });
+        }
+        if (title.length > 200) {
+            return apiError({ status: 400, code: "invalid_title", requestId, message: "Bad Request: title must be 200 characters or fewer" });
+        }
+        if (description !== undefined && description !== null && (typeof description !== "string" || description.length > 2000)) {
+            return apiError({ status: 400, code: "invalid_description", requestId, message: "Bad Request: description must be a string up to 2000 characters" });
+        }
+        if (merchantName !== undefined && merchantName !== null && (typeof merchantName !== "string" || merchantName.length > 128)) {
+            return apiError({ status: 400, code: "invalid_merchant_name", requestId, message: "Bad Request: merchantName must be a string up to 128 characters" });
+        }
+        if (idempotencyKey !== undefined && idempotencyKey !== null && (typeof idempotencyKey !== "string" || idempotencyKey.length > 200)) {
+            return apiError({ status: 400, code: "invalid_idempotency_key", requestId, message: "Bad Request: idempotencyKey must be a string up to 200 characters" });
         }
         if (externalReference !== undefined && externalReference !== null &&
             (typeof externalReference !== "string" || externalReference.trim().length === 0 || externalReference.length > 256)) {
@@ -118,15 +150,17 @@ export async function POST(request: Request) {
             : amountUsdc;
         /* Only accept a plain positive decimal-integer string/number — BigInt() would otherwise
            coerce booleans, hex ("0x10"), etc., violating the micro-USDC contract. */
-        const amountText = typeof amountSource === "number" && Number.isInteger(amountSource)
-            ? String(amountSource)
-            : typeof amountSource === "string"
-                ? amountSource.trim()
-                : "";
-        if (!/^[1-9]\d*$/.test(amountText)) {
-            return apiError({ status: 400, code: "invalid_amount", requestId, message: "Bad Request: amountUsdcMicros is required and must be a positive integer in micro-USDC (e.g. \"15000000\" = 15 USDC). amountUsdc is accepted as an alias with the same unit." });
+        const amountResult = normalizeMicrouscAmount(amountSource);
+        if (!amountResult.ok) {
+            return apiError({ status: 400, code: "invalid_amount", requestId, message: `Bad Request: ${amountResult.error}` });
         }
-        const amountBigInt = BigInt(amountText);
+        const amountBigInt = amountResult.value;
+
+        const expiryResult = parsePaymentLinkExpiry(expiresAt);
+        if (!expiryResult.ok) {
+            return apiError({ status: 400, code: "invalid_expiry", requestId, message: `Bad Request: ${expiryResult.error}` });
+        }
+        const parsedExpiresAt = expiryResult.value;
 
         const successUrlCheck = validateReturnUrl("successUrl", successUrl);
         if (!successUrlCheck.ok) return apiError({ status: 400, code: "invalid_return_url", requestId, message: successUrlCheck.error });
@@ -155,6 +189,35 @@ export async function POST(request: Request) {
                 /* A subscription checkout is also a PaymentLink — never return one as a payment intent. */
                 if ((existing.stateSnapshot as { subscription?: unknown } | null)?.subscription) {
                     return apiError({ status: 409, code: "idempotency_key_conflict", requestId, message: "Conflict: idempotencyKey was used for a different resource" });
+                }
+                const requestedFingerprint = {
+                    merchantAddress,
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: null,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
+                    maxUses: parsedMaxUses,
+                    expiresAt: parsedExpiresAt?.toISOString() ?? null,
+                };
+                const storedFingerprint = (existing as any).creationFingerprint;
+                const existingCreationFingerprint = storedFingerprint ? {
+                    ...storedFingerprint,
+                    simulationOnly: storedFingerprint.simulationOnly ?? (existing as any).simulationOnly,
+                    settlementChainId: Number(storedFingerprint.settlementChainId ?? (existing as any).settlementChainId),
+                } : null;
+                if (existingCreationFingerprint
+                    && (existingCreationFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
+                        || existingCreationFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
+                        || (existingCreationFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
+                        || existingCreationFingerprint.linkKind !== requestedFingerprint.linkKind
+                        || existingCreationFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                        || existingCreationFingerprint.simulationOnly !== requestedFingerprint.simulationOnly
+                        || existingCreationFingerprint.settlementChainId !== requestedFingerprint.settlementChainId
+                        || (existingCreationFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
+                        || (existingCreationFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt)) {
+                    return apiError({ status: 409, code: "idempotency_key_conflict", requestId, message: "Conflict: idempotencyKey was used with different financial terms" });
                 }
                 const receiptToken = existing.receiptToken || generateReceiptId(existing.title);
                 if (!existing.receiptToken) {
@@ -190,7 +253,7 @@ export async function POST(request: Request) {
         const merchant = await prisma.merchant.findUnique({
             where: { walletAddress: merchantAddress }
         });
-        if (apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchant?.payoutDestination)) {
+        if (!isSandboxRequest && !isConfiguredPayoutDestination(merchant?.payoutDestination)) {
             return merchantPayoutWalletMissingResponse();
         }
         const tier = merchant?.tier || "FREE";
@@ -211,16 +274,6 @@ export async function POST(request: Request) {
             return apiError({ status: 403, code: "quota_exceeded", requestId, message: `Quota Exceeded: Active link limit of ${limit} reached for your tier. Deactivate old links or upgrade in the dashboard.` });
         }
 
-        let parsedExpiresAt: Date | null = null;
-        if (expiresAt) {
-            const num = Number(expiresAt);
-            if (!isNaN(num)) {
-                parsedExpiresAt = new Date(num < 10000000000 ? num * 1000 : num);
-            } else {
-                parsedExpiresAt = new Date(expiresAt);
-            }
-        }
-
         // 6. Insert new PaymentLink
         const newLink = await prisma.paymentLink.create({
             data: {
@@ -236,8 +289,23 @@ export async function POST(request: Request) {
                 receiptToken: generateReceiptId(title),
                 maxUses: parsedMaxUses,
                 status: "PENDING",
+                linkKind: "MERCHANT",
+                sandboxMode: isSandboxRequest,
+                simulationOnly: isSimulationOnly,
+                settlementChainId,
+                creationFingerprint: {
+                    merchantAddress,
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: null,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
+                    maxUses: parsedMaxUses,
+                    expiresAt: parsedExpiresAt?.toISOString() ?? null,
+                },
                 ...(hasReturnUrls ? { stateSnapshot: { returnUrls } } : {})
-            }
+            } as any
         });
 
         const settlement = arcReconciliation();
@@ -259,7 +327,8 @@ export async function POST(request: Request) {
                 usdcAddress: settlement.usdcAddress,
                 ...(hasReturnUrls ? { returnUrls } : {})
             },
-            sandbox: isSandboxRequest
+            sandbox: isSandboxRequest,
+            simulationOnly: isSimulationOnly,
         }, { status: 201 });
 
     } catch (error: any) {

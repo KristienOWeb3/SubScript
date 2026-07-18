@@ -842,7 +842,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       ["externalReference", "string ≤ 256", "Recommended", "Your user, order, or invoice ID. Returned in the webhook."],
                       ["idempotencyKey", "string", "Recommended", "Stable key for one logical checkout. Reuse it only when retrying that checkout."],
                       ["description", "string", "No", "Customer-facing context for the payment."],
-                      ["sandbox", "boolean", "No", "Set true while testing. sk_test_ keys imply sandbox behavior."],
+                      ["sandbox", "boolean", "No", "Credential-owned test mode. sk_test_ keys set this true and settle valueless USDC on Arc Testnet."],
                       ["successUrl", "HTTPS URL", "No", "Where checkout sends the payer after success. Not proof of payment."],
                       ["cancelUrl", "HTTPS URL", "No", "Where checkout sends the payer after cancellation."],
                       ["expiresAt", "ISO date or Unix time", "No", "When the hosted checkout should stop accepting payment."],
@@ -864,7 +864,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Status polling</p>
                 <p className="mt-2">
-                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Fulfillment should still happen from the signed webhook.
+                  Use <span className="font-mono">GET /api/intent/:id</span> for support tools, dashboards, and agent-driven test loops. The legacy query form <span className="font-mono">GET /api/intent/status?id=...</span> remains supported. Anonymous calls return aggregate status only; pass your <span className="font-mono">Authorization: Bearer sk_...</span> key (or call from a signed-in dashboard session) to also receive <span className="font-mono">latestPayment</span> — payer identity and transaction proof are visible only to the merchant who owns the checkout. Fulfillment should still happen from the signed webhook.
                 </p>
               </div>
               <CodeBlock code={intentStatusCode} language="javascript" />
@@ -951,14 +951,29 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               </div>
 
               <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
-                Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
+                Webhook events: <span className="font-mono">subscription.created</span>, <span className="font-mono">subscription.updated</span>, <span className="font-mono">subscription.renewed</span>, <span className="font-mono">subscription.payment_failed</span>, and <span className="font-mono">subscription.canceled</span>. The CLI can send signed local samples with <span className="font-mono">npx @subscriptonarc/cli trigger subscription.renewed --url http://localhost:3000/api/webhooks/subscript</span>.
+              </div>
+
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
+                <p className="font-bold text-white/85">Plan catalog: /api/v1/plans</p>
+                <p className="mt-2">
+                  A subscription checkout (above) is one payment attempt, not a catalog entry. Your published tiers live in the
+                  <span className="font-bold text-white/85"> plan catalog</span> — the same catalog the dashboard Plans tab, customer DMs, and
+                  <span className="font-mono"> /subscribe</span> links read, so plans created here and in the dashboard always stay in sync.
+                  <span className="font-mono"> GET /api/v1/plans</span> lists your plans (each with its shareable <span className="font-mono">subscribeUrl</span> and
+                  any live introductory promotion), <span className="font-mono">POST /api/v1/plans</span> creates one
+                  (<span className="font-mono">name</span>, <span className="font-mono">amountUsdc</span>, <span className="font-mono">periodDays</span>), and
+                  <span className="font-mono"> PATCH /api/v1/plans</span> updates <span className="font-mono">active</span>,{" "}
+                  <span className="font-mono">description</span>, or <span className="font-mono">detailsUrl</span>. Pass a plan&apos;s{" "}
+                  <span className="font-mono">planId</span> to <span className="font-mono">POST /api/v1/subscriptions</span> to generate checkouts against it.
+                </p>
               </div>
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">
               <h2 className="text-2xl font-bold tracking-tight text-white">Pay-per-use billing with commit vaults</h2>
               <p className="text-sm leading-relaxed text-white/70">
-                For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. You set a commit amount; the customer escrows it once; their service stays active for the cycle while you report usage. Funds are guaranteed up to the committed balance — you are not chasing per-call card charges.
+                For metered products that do not fit fixed monthly plans, SubScript uses on-chain <span className="font-bold text-white/90">commit vaults</span>. The platform fixes the commitment at 2 USDC; the customer escrows it once per cycle, and their service stays active while you report usage. Funds are guaranteed up to the committed balance — you are not chasing per-call card charges.
               </p>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 {[
@@ -975,8 +990,8 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               </div>
               <h3 className="text-sm font-semibold text-white pt-2">How a developer integrates pay-per-session</h3>
               <ol className="space-y-2 text-xs leading-relaxed text-white/65 list-decimal pl-5">
-                <li><span className="font-bold text-white/85">Set your commit.</span> In Merchant dashboard → Vault (or <span className="font-mono">POST /api/merchant/vault/commit-config</span>) set the USDC a customer must escrow to use your service.</li>
-                <li><span className="font-bold text-white/85">Customer commits once.</span> They open <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow at least the commit from their SubScript wallet. The vault goes <span className="text-emerald-300 font-bold">active</span> and your service is unlocked for the 30-day cycle.</li>
+                <li><span className="font-bold text-white/85">The commitment is platform-fixed.</span> Every customer escrows the standard <span className="font-mono">2 USDC</span> per cycle — it is not merchant-configurable (<span className="font-mono">GET /api/merchant/vault/commit-config</span> returns the policy), and your drawable settlement is capped at the same 2 USDC per customer per cycle.</li>
+                <li><span className="font-bold text-white/85">Customer commits once per cycle.</span> They open <span className="font-mono">/dashboard/user?tab=commit</span>, choose your merchant address, and escrow the standard 2 USDC from their SubScript wallet. The vault goes <span className="text-emerald-300 font-bold">active</span> for the 30-day cycle; settlement closes it, so the next cycle requires a fresh commitment.</li>
                 <li><span className="font-bold text-white/85">Check readiness.</span> Call <span className="font-mono">GET /api/user/vault/status?userAddress=0x...</span> with your secret key before rendering a metered session. It returns <span className="font-mono">NO_VAULT</span>, <span className="font-mono">VAULT_INACTIVE</span>, or <span className="font-mono">VAULT_ACTIVE</span>, plus a dashboard URL to show the customer when they need to commit.</li>
                 <li><span className="font-bold text-white/85">Report before you serve.</span> Call <span className="font-mono">POST /api/user/vault/report-usage</span> with your secret key <span className="font-bold text-white/85">before rendering each unit</span>, and serve only on a <span className="font-mono">200</span>. A <span className="font-mono">402</span> means do not serve: either the vault is inactive (<span className="font-mono">VAULT_INACTIVE</span>) or the charge would exceed the remaining escrow (<span className="font-mono">COMMIT_EXHAUSTED</span>). Reporting after you serve risks eating the last unit's cost yourself.</li>
                 <li><span className="font-bold text-white/85">Get paid at cycle end.</span> SubScript's keeper draws the accrued total from escrow; you withdraw with <span className="font-mono">merchantClaim</span>. A report that would exceed escrow is rejected outright and the response's <span className="font-mono">remainingUsdc</span> shows what's left, so the customer can never be charged past what they committed — and funds are never pulled from their main wallet.</li>
@@ -1042,7 +1057,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                 </p>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight text-white">Test, observe, and go live deliberately</h2>
                 <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/70">
-                  Build the complete test flow before swapping credentials. Sandbox and live use the same API shape, so your code should change configuration—not logic.
+                  Build the complete test flow before swapping credentials. Test and live modes use the same API shape, so your code should change configuration—not logic.
                 </p>
               </div>
 
@@ -1058,10 +1073,10 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                   </thead>
                   <tbody className="divide-y divide-white/5 text-white/65">
                     <tr>
-                      <td className="px-4 py-3 font-semibold text-[#00d2b4]">Sandbox</td>
+                      <td className="px-4 py-3 font-semibold text-[#00d2b4]">Arc Testnet</td>
                       <td className="px-4 py-3 font-mono">sk_test_…</td>
-                      <td className="px-4 py-3">Implies <span className="font-mono">sandbox: true</span>; no live payout destination required.</td>
-                      <td className="px-4 py-3">Local development, CI, end-to-end tests.</td>
+                      <td className="px-4 py-3">Implies <span className="font-mono">sandbox: true</span> and settles valueless test USDC on Arc Testnet. The shared public demo key is simulation-only.</td>
+                      <td className="px-4 py-3">Funded testnet integration, CI, and end-to-end settlement tests.</td>
                     </tr>
                     <tr>
                       <td className="px-4 py-3 font-semibold text-white">Live</td>
@@ -1113,7 +1128,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       "Configure and verify the merchant payout destination.",
                       "Use a distinct live webhook endpoint secret.",
                       "Alert on webhook 5xx responses and aged PENDING intents.",
-                      "Keep the sandbox path available for release regression tests.",
+                      "Keep the funded Arc testnet path available for release regression tests.",
                     ].map((item) => (
                       <li key={item} className="flex gap-3">
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#00d2b4]" />
@@ -1201,8 +1216,8 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <h2 className="text-2xl font-bold tracking-tight text-white">FAQ</h2>
               {[
                 ["How easy is integration?", "A no-code merchant can launch with a hosted link in minutes. A developer can add intent creation and webhook fulfillment in under an hour if their app already has user accounts."],
-                ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key or send `sandbox: true` while developing. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
-                ["Can SubScript handle usage-based products?", "Yes. Commit vaults let a customer escrow a merchant-set amount once; the merchant reports API calls, tokens, sessions, or per-item access via the usage API, which accrues the charges and gates access. SubScript draws the accrued total from escrow at the end of each 30-day cycle."],
+                ["Can I test before setting a payout wallet?", "Yes. Use a `sk_test_` key to settle valueless test USDC on Arc Testnet. The shared public demo key remains simulation-only. Live keys require a configured payout destination and return `merchant_payout_wallet_missing` if setup is incomplete."],
+                ["Can SubScript handle usage-based products?", "Yes. Commit vaults let a customer escrow the platform-fixed 2 USDC commitment once per cycle; the merchant reports API calls, tokens, sessions, or per-item access via the usage API, which accrues the charges and gates access. SubScript draws the accrued total from escrow at cycle end, closes the vault, and requires a fresh commitment for the next cycle."],
                 ["Can someone else sponsor a subscription?", "The protocol model supports sponsored payment relationships such as parents, employers, or teams covering costs while keeping the subscriber's usage context separate. Dedicated sponsor records, spending caps, and revocation policies are still deployment-scoped."],
                 ["Can users export their wallet key?", "Legacy email wallets can be exported only after fresh OTP step-up verification. Circle developer-controlled MPC wallets do not expose a raw private key. Google sign-in is paused until its identity and custody flow is verified server-side."],
                 ["How does SubScript compare to streaming payment protocols?", "SubScript uses Permit2-style bounded allowances rather than continuous locked streaming liquidity, so funds can remain liquid in the user's wallet until a billing-cycle transaction executes."],

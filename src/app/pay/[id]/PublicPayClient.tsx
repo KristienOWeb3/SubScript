@@ -134,10 +134,26 @@ export default function PublicPayClient({
         && Number(initialLinkData?.max_uses) === 1
         && Number(initialLinkData?.use_count || 0) > 0
     );
+    const isTestMode = linkData?.sandbox_mode === true;
+    const isTestnetLink = isTestMode
+        || Number(linkData?.settlement_chain_id ?? ARC_TESTNET_CHAIN_ID) === ARC_TESTNET_CHAIN_ID;
+    const isSimulationOnly = linkData?.simulation_only === true;
     const isLinkExhausted = linkData?.max_uses != null && linkData.use_count >= linkData.max_uses;
     const isLinkExpired = Boolean(linkData?.expires_at && new Date(linkData.expires_at) <= new Date());
     const isLinkInactive = linkData?.active === false || isLinkExpired;
-    const cannotPayLink = isLinkInactive || isLinkExhausted || linkData?.hosted_payments_enabled === false;
+    const hostedPaymentsDisabled = linkData?.hosted_payments_enabled === false;
+    const cannotPayLink = isSimulationOnly || isLinkInactive || isLinkExhausted || hostedPaymentsDisabled;
+    const unpayableTitle = !cannotPayLink ? null
+        : isSimulationOnly ? "Simulation-Only Link"
+        : isLinkExhausted ? "Payment Link Exhausted"
+        : hostedPaymentsDisabled ? "Payments Paused"
+        : "Payment Link Inactive";
+    const unpayableReason = !cannotPayLink ? null
+        : isSimulationOnly
+            ? "This checkout was created with the shared public demo key. It can test the integration flow, but it will not submit an Arc payment. Create your own test key to settle test USDC on Arc Testnet."
+        : isLinkExhausted ? "This payment link has reached its maximum number of uses and is no longer accepting payments."
+        : hostedPaymentsDisabled ? "Hosted payments are temporarily unavailable. Try again shortly."
+        : "This payment link is inactive or expired.";
 
     /* Derived variables — same peer/user-request predicate as the server (isPeerRequestLink). */
     const isUserRequest = Boolean(
@@ -248,6 +264,32 @@ export default function PublicPayClient({
         } catch {
             /* Settlement and known reverts remain authoritative when browser storage is denied. */
         }
+    }, [id]);
+
+    /* A RELEASED attempt UUID is terminal server-side and can never be reserved again. Mint a
+       fresh attempt, replace the sessionStorage copy and the ?attempt= URL parameter, and drop
+       pending-verification state so the next payment starts from a clean reservation. */
+    const rotateAttemptId = useCallback(() => {
+        const fresh = crypto.randomUUID();
+        paymentBroadcastRef.current = false;
+        setPendingVerification(null);
+        setReceiptId(null);
+        try {
+            sessionStorage.setItem(`subscript_checkout_attempt:${id}`, fresh);
+            sessionStorage.removeItem(`subscript_pending_verification:${id}`);
+        } catch {
+            /* In-memory state still rotates when browser storage is denied. */
+        }
+        setClientIntentId(fresh);
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("attempt", fresh);
+            window.history.replaceState(null, "", url.toString());
+            setCheckoutUrl(url.toString());
+        } catch {
+            /* URL rotation is cosmetic once sessionStorage has rotated. */
+        }
+        return fresh;
     }, [id]);
 
     useEffect(() => {
@@ -530,15 +572,7 @@ export default function PublicPayClient({
                     ? data.settlementVersion
                     : null;
                 const useCount = Number(data?.useCount || 0);
-                const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
-                const hasNewSettlement = Boolean(
-                    hasAttemptSettlement
-                    || (
-                        settlementVersion
-                        && settlementVersion !== baselineSettlementVersionRef.current
-                        && useCount > baselineUseCountRef.current
-                    )
-                );
+                const hasNewSettlement = data?.attemptSettled === true && Boolean(settlementVersion);
                 if (!cancelled && hasNewSettlement) {
                     baselineSettlementVersionRef.current = settlementVersion;
                     baselineUseCountRef.current = useCount;
@@ -556,7 +590,6 @@ export default function PublicPayClient({
                     if (data.receiptId) {
                         setReceiptId(data.receiptId);
                     }
-                    if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
                 }
             } catch (e) {
                 if (!cancelled && !expired) setRemoteStatusError("Live payment status is temporarily unavailable. Retrying automatically…");
@@ -572,7 +605,11 @@ export default function PublicPayClient({
     }, [clearPendingVerification, clientIntentId, isPaymentSettled, linkData?.id, linkData?.max_uses]);
 
     const defaultArcChainId = isProd ? 5042001 : 5042002;
-    const expectedChainId = linkData?.chain_id ? Number(linkData.chain_id) : defaultArcChainId;
+    const expectedChainId = linkData?.settlement_chain_id
+        ? Number(linkData.settlement_chain_id)
+        : linkData?.chain_id
+            ? Number(linkData.chain_id)
+            : defaultArcChainId;
     const expectedChainName = expectedChainId === 5042001 ? "Arc Mainnet" : expectedChainId === 5042002 ? "Arc Testnet" : `Chain ${expectedChainId}`;
 
     const { data: arcBalanceData } = useBalance({
@@ -580,6 +617,52 @@ export default function PublicPayClient({
         token: USDC_NATIVE_GAS_ADDRESS as `0x${string}`,
         chainId: expectedChainId,
     });
+
+    /* Server-authoritative resume: if this attempt UUID (from the URL or sessionStorage) already
+       has a transaction bound but the browser lost its local pending-verification record — new
+       device, cleared storage, crashed tab — recover from the server instead of offering Pay
+       again. A terminal (released) attempt UUID rotates immediately. */
+    const serverResumeCheckedRef = useRef(false);
+    useEffect(() => {
+        if (serverResumeCheckedRef.current) return;
+        if (!clientIntentId || !linkData?.id || !pendingVerificationHydrated) return;
+        if (pendingVerification || isPaymentSettled || !sessionInfo?.loggedIn) return;
+        serverResumeCheckedRef.current = true;
+        const controller = new AbortController();
+        (async () => {
+            try {
+                const res = await fetch(
+                    `/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(clientIntentId)}`,
+                    { cache: "no-store", signal: controller.signal },
+                );
+                if (!res.ok) return;
+                const data = await res.json().catch(() => null);
+                if (!data?.exists) return;
+                if (data.status === "RELEASED") {
+                    rotateAttemptId();
+                    return;
+                }
+                if (data.status === "SUBMITTED" && /^0x[0-9a-f]{64}$/i.test(data.txHash || "")) {
+                    persistPendingVerification({
+                        txHash: data.txHash as `0x${string}`,
+                        receiptId: isReceiptId(data.receiptId) ? data.receiptId : null,
+                        payer: sessionInfo?.wallet || "",
+                        chainId: Number(data.settlementChainId) || expectedChainId,
+                        attemptId: clientIntentId,
+                        submittedAt: new Date().toISOString(),
+                        source: "wallet",
+                        phase: "confirmed",
+                    });
+                    setSuccessTxHash(data.txHash);
+                    if (isReceiptId(data.receiptId)) setReceiptId(data.receiptId);
+                    setVerificationStatus("Payment submitted; resuming verification…");
+                }
+            } catch {
+                /* Best-effort; the reservation path reports the same state on the next Pay click. */
+            }
+        })();
+        return () => controller.abort();
+    }, [clientIntentId, expectedChainId, isPaymentSettled, linkData?.id, pendingVerification, pendingVerificationHydrated, persistPendingVerification, rotateAttemptId, sessionInfo?.loggedIn, sessionInfo?.wallet]);
 
     const arcUsdcBalance = arcBalanceData ? arcBalanceData.value : BigInt(0);
     const invoiceAmount = linkData ? (linkData.amount_usdc ? BigInt(linkData.amount_usdc) : BigInt(linkData.amount || 0)) : BigInt(0);
@@ -682,6 +765,14 @@ export default function PublicPayClient({
     }, [address, isUserRequest]);
 
     const handleConnect = async () => {
+        /* Without an injected provider the wagmi connector is still registered but can never
+           connect — attempting it produces no visible feedback. Fail with guidance instead. */
+        if (typeof window !== "undefined" && !(window as any).ethereum) {
+            setVerificationError(
+                "No browser wallet was detected in this browser. Install or unlock MetaMask or Rabby — or sign in to SubScript to pay from your email wallet.",
+            );
+            return;
+        }
         const connector = connectors.find((item) => item.id === "injected") || connectors[0];
         if (!connector) {
             setVerificationError("No browser wallet connector is available. Install or unlock a wallet extension, then try again.");
@@ -705,6 +796,78 @@ export default function PublicPayClient({
             await switchChainAsync({ chainId: requiredChainId });
         } catch (err: any) {
             setVerificationError(friendlyError(`Failed to switch network: ${err.message || "User rejected the request"}`));
+        }
+    };
+
+    type ReservationResult =
+        | { kind: "reserved"; attemptId: string; receiptId: string }
+        | { kind: "resume"; attemptId: string; txHash: `0x${string}`; receiptId: string | null }
+        | { kind: "settled"; attemptId: string; receiptId: string | null };
+
+    const reserveCheckoutAttempt = async (payer: string, attemptOverride?: string): Promise<ReservationResult> => {
+        const attemptId = attemptOverride || clientIntentId;
+        if (!linkData?.id || !attemptId) throw new Error("Checkout attempt is not ready.");
+        const response = await fetch(`/api/payment-links/${linkData.id}/attempt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attemptId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 409 && data.code === "ATTEMPT_RELEASED") {
+            /* Terminal attempt UUID: rotate once and reserve a fresh attempt in the same click. */
+            const fresh = rotateAttemptId();
+            if (!attemptOverride) return reserveCheckoutAttempt(payer, fresh);
+            throw new Error("This checkout attempt expired. Please try again.");
+        }
+        if (response.status === 409 && data.code === "ALREADY_SUBMITTED") {
+            /* A transaction hash is durably bound server-side. The only safe path is to resume
+               verification of THAT transaction — never broadcast another payment. */
+            if (/^0x[0-9a-f]{64}$/i.test(data.txHash || "")) {
+                return {
+                    kind: "resume",
+                    attemptId,
+                    txHash: data.txHash as `0x${string}`,
+                    receiptId: isReceiptId(data.receiptId) ? data.receiptId : null,
+                };
+            }
+            throw new Error("This payment was already submitted. Continue verification below; do not pay again.");
+        }
+        if (!response.ok || !data.success || !isReceiptId(data.receiptId)) {
+            throw new Error(data.error || "Unable to reserve this checkout attempt.");
+        }
+        if (data.settled === true) {
+            return { kind: "settled", attemptId, receiptId: data.receiptId };
+        }
+        /* Past this point the server has RESERVED capacity. Any validation failure below must
+           release it before throwing — otherwise the reserved (but never-broadcast) attempt keeps
+           a single-use link consumed even though no transaction was sent. */
+        if (String(data.amountUsdc) !== String(linkData.amount_usdc)
+            || String(data.merchantAddress).toLowerCase() !== String(linkData.merchant_address).toLowerCase()
+            || Number(data.settlementChainId) !== expectedChainId) {
+            await releaseUnbroadcastAttempt(attemptId);
+            throw new Error("Checkout terms changed while preparing payment. Refresh before continuing.");
+        }
+        if (!payer) {
+            await releaseUnbroadcastAttempt(attemptId);
+            throw new Error("The paying wallet is unavailable.");
+        }
+        setReceiptId(data.receiptId);
+        return { kind: "reserved", attemptId, receiptId: data.receiptId };
+    };
+
+    const releaseUnbroadcastAttempt = async (attemptId: string) => {
+        if (!linkData?.id || !attemptId || paymentBroadcastRef.current) return;
+        try {
+            const response = await fetch(`/api/payment-links/${linkData.id}/attempt?attempt=${encodeURIComponent(attemptId)}`, {
+                method: "DELETE",
+            });
+            const data = await response.json().catch(() => ({}));
+            /* A confirmed release makes this UUID terminal server-side — rotate immediately so
+               the next Pay click reserves a fresh attempt instead of replaying a dead one. */
+            if (data?.released === true) rotateAttemptId();
+        } catch {
+            /* Keep the UUID; the server-side reaper reclaims the hold and the next reservation
+               reports the terminal state, which also rotates. */
         }
     };
 
@@ -748,9 +911,7 @@ export default function PublicPayClient({
 
         if (cannotPayLink) {
             paymentSubmissionGuardRef.current = false;
-            setVerificationError(isLinkExhausted
-                ? "This payment link has reached its usage limit."
-                : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             return;
         }
 
@@ -781,15 +942,46 @@ export default function PublicPayClient({
             return;
         }
 
-        const checkoutReceiptId = linkData.receipt_token;
-        if (!isReceiptId(checkoutReceiptId)) {
+        setIsPaying(true);
+
+        let reservation: ReservationResult;
+        try {
+            reservation = await reserveCheckoutAttempt(address || "");
+        } catch (error) {
             paymentSubmissionGuardRef.current = false;
-            setVerificationError("This checkout session is missing a valid receipt token. Please ask the merchant to generate a new payment link.");
+            setIsPaying(false);
+            setVerificationError(friendlyError(error instanceof Error ? error.message : "Unable to reserve checkout."));
             return;
         }
-        setReceiptId(checkoutReceiptId);
-
-        setIsPaying(true);
+        if (reservation.kind === "resume") {
+            /* Server-authoritative recovery: a hash is already bound to this attempt. Resume the
+               existing transaction; broadcasting another payment here would double-charge. */
+            persistPendingVerification({
+                txHash: reservation.txHash,
+                receiptId: reservation.receiptId,
+                payer: address,
+                chainId: expectedChainId,
+                attemptId: reservation.attemptId,
+                submittedAt: new Date().toISOString(),
+                source: "wallet",
+                phase: "confirmed",
+            });
+            setSuccessTxHash(reservation.txHash);
+            if (reservation.receiptId) setReceiptId(reservation.receiptId);
+            setIsPaying(false);
+            setVerificationStatus("Payment submitted; resuming verification…");
+            setVerifiedHash(reservation.txHash);
+            startVerification(reservation.txHash, reservation.receiptId, address, expectedChainId, reservation.attemptId);
+            return;
+        }
+        if (reservation.kind === "settled") {
+            setIsPaying(false);
+            if (reservation.receiptId) setReceiptId(reservation.receiptId);
+            setVerificationStatus("Payment confirmed and settled successfully!");
+            return;
+        }
+        const activeAttemptId = reservation.attemptId;
+        const checkoutReceiptId = reservation.receiptId;
 
         if (isCctpChain && chainId) {
             /* CCTP Payment Flow */
@@ -818,8 +1010,7 @@ export default function PublicPayClient({
                         throw new Error("Your wallet denied the spending approval. Please try again.");
                     }
                 } else {
-                    /* Fallback: wait 15 seconds if publicClient is unavailable */
-                    await new Promise((resolve) => setTimeout(resolve, 15000));
+                    throw new Error("A network client is required to confirm token approval.");
                 }
 
                 /* Step 2: Call depositForBurn */
@@ -856,6 +1047,7 @@ export default function PublicPayClient({
                 setIsPaying(false);
 
             } catch (err: any) {
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "CCTP payment execution failed"));
                 setIsPaying(false);
@@ -883,7 +1075,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -894,6 +1086,9 @@ export default function PublicPayClient({
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
                     setVerificationStatus("Direct transfer submitted. Waiting for confirmation on the Arc Network...");
+                    /* Durably bind the hash server-side the moment it exists. The server worker
+                       owns confirmation polling from here; local receipt watching is only UI. */
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 } else {
                     const currentAllowance = publicClient
                         ? await publicClient.readContract({
@@ -905,6 +1100,9 @@ export default function PublicPayClient({
                         : BigInt(0);
 
                     if (BigInt(currentAllowance) < BigInt(linkData.amount_usdc)) {
+                        if (!publicClient) {
+                            throw new Error("A network client is required to confirm token approval.");
+                        }
                         setPaymentStep("approving");
                         setVerificationStatus("Approving merchant payment route...");
                         const approvalHash = await writeContractAsync({
@@ -914,14 +1112,12 @@ export default function PublicPayClient({
                             args: [SUBSCRIPT_ROUTER_ADDRESS, BigInt(linkData.amount_usdc)],
                         });
 
-                        if (publicClient) {
-                            const approvalReceipt = await publicClient.waitForTransactionReceipt({
-                                hash: approvalHash,
-                                timeout: 120_000,
-                            });
-                            if (approvalReceipt.status !== "success") {
-                                throw new Error("Your wallet denied the spending approval. Please try again.");
-                            }
+                        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                            hash: approvalHash,
+                            timeout: 120_000,
+                        });
+                        if (approvalReceipt.status !== "success") {
+                            throw new Error("Your wallet denied the spending approval. Please try again.");
                         }
                     }
 
@@ -939,7 +1135,7 @@ export default function PublicPayClient({
                         receiptId: nextReceiptId,
                         payer: address,
                         chainId: expectedChainId,
-                        attemptId: clientIntentId,
+                        attemptId: activeAttemptId,
                         submittedAt: new Date().toISOString(),
                         source: "wallet",
                         phase: "broadcast",
@@ -950,9 +1146,13 @@ export default function PublicPayClient({
                     setShareableReceiptUrl(receiptUrl(nextReceiptId, window.location.origin));
                     setIsVerifying(true);
                     setVerificationStatus("Transaction submitted. Waiting for confirmation on the Arc Network...");
+                    /* Durably bind the hash server-side the moment it exists. The server worker
+                       owns confirmation polling from here; local receipt watching is only UI. */
+                    startVerification(hash, nextReceiptId, address, expectedChainId, activeAttemptId);
                 }
 
             } catch (err: any) {
+                await releaseUnbroadcastAttempt(activeAttemptId);
                 if (!paymentBroadcastRef.current) paymentSubmissionGuardRef.current = false;
                 setVerificationError(friendlyError(err.message || "Payment transaction failed"));
                 setIsPaying(false);
@@ -965,7 +1165,7 @@ export default function PublicPayClient({
     /* Submit the verification job and stream settlement status. Shared by the browser-wallet flow
        (driven by the wagmi receipt effect below) and the embedded-wallet flow (handleEmbeddedPay),
        so both settle through the identical /api/payment-links/verify pipeline. */
-    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number) => {
+    const startVerification = useCallback((hash: string, rid: string | null, payer: string, chain: number, attemptId: string) => {
         if (verificationInFlightRef.current === hash) return;
         verificationInFlightRef.current = hash;
         paymentSubmissionGuardRef.current = true;
@@ -982,7 +1182,7 @@ export default function PublicPayClient({
                         payerAddress: payer || "",
                         receiptId: rid,
                         chainId: chain,
-                        checkoutAttemptId: clientIntentId,
+                        checkoutAttemptId: attemptId,
                     })
                 });
 
@@ -1082,12 +1282,16 @@ export default function PublicPayClient({
             }
         };
         run();
-    }, [clearPendingVerification, clientIntentId, friendlyError, linkData]);
+    }, [clearPendingVerification, friendlyError, linkData]);
 
     useEffect(() => {
         if (isConfirmed && txReceipt && txHash && linkData && verifiedHash !== txHash) {
             if (txReceipt.status !== "success") {
                 clearPendingVerification();
+                /* The reverted hash is bound to this attempt server-side; the durable worker
+                   marks it FAILED_TERMINAL and returns capacity. Rotate now so the retry
+                   reserves a fresh attempt instead of replaying a dead UUID. */
+                rotateAttemptId();
                 paymentSubmissionGuardRef.current = false;
                 verificationInFlightRef.current = null;
                 setTxHash(undefined);
@@ -1101,22 +1305,23 @@ export default function PublicPayClient({
             }
             const matchingPending = pendingVerification?.txHash === txHash ? pendingVerification : null;
             const payer = matchingPending?.payer || address || "";
-            if (!payer || !clientIntentId) return;
+            const activeAttemptId = matchingPending?.attemptId || clientIntentId;
+            if (!payer || !activeAttemptId) return;
             const confirmedRecord: PendingCheckoutVerification = {
                 txHash,
                 receiptId: matchingPending?.receiptId ?? receiptId,
                 payer,
                 chainId: matchingPending?.chainId ?? chainId,
-                attemptId: matchingPending?.attemptId || clientIntentId,
+                attemptId: activeAttemptId,
                 submittedAt: matchingPending?.submittedAt || new Date().toISOString(),
                 source: matchingPending?.source || "wallet",
                 phase: "confirmed",
             };
             persistPendingVerification(confirmedRecord);
             setVerifiedHash(txHash);
-            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId);
+            startVerification(txHash, confirmedRecord.receiptId, payer, confirmedRecord.chainId, confirmedRecord.attemptId);
         }
-    }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, startVerification, txHash, txReceipt, verifiedHash]);
+    }, [address, chainId, clearPendingVerification, clientIntentId, friendlyError, isConfirmed, linkData, pendingVerification, persistPendingVerification, receiptId, rotateAttemptId, startVerification, txHash, txReceipt, verifiedHash]);
 
     useEffect(() => {
         if (!pendingVerification || pendingVerification.phase !== "confirmed" || isPaymentSettled) return;
@@ -1129,6 +1334,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     }, [clientIntentId, isPaymentSettled, linkData?.id, pendingVerification, startVerification, verifiedHash]);
 
@@ -1145,7 +1351,7 @@ export default function PublicPayClient({
             return;
         }
         if (cannotPayLink) {
-            setVerificationError(isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             return;
         }
         if (isRoleMismatch || sessionInfo?.role === "ENTERPRISE") {
@@ -1204,15 +1410,7 @@ export default function PublicPayClient({
             setLastRemoteStatusCheck(new Date());
             const settlementVersion = typeof data?.settlementVersion === "string" ? data.settlementVersion : null;
             const useCount = Number(data?.useCount || 0);
-            const hasAttemptSettlement = Boolean(settlementVersion && data?.verifiedTxHash);
-            const hasNewSettlement = Boolean(
-                hasAttemptSettlement
-                || (
-                    settlementVersion
-                    && settlementVersion !== baselineSettlementVersionRef.current
-                    && useCount > baselineUseCountRef.current
-                )
-            );
+            const hasNewSettlement = data?.attemptSettled === true && Boolean(settlementVersion);
             if (hasNewSettlement) {
                 baselineSettlementVersionRef.current = settlementVersion;
                 baselineUseCountRef.current = useCount;
@@ -1228,7 +1426,6 @@ export default function PublicPayClient({
                 setRemoteStatusError(null);
                 setManualCheckMessage(null);
                 if (data.receiptId) setReceiptId(data.receiptId);
-                if (data.verifiedTxHash) setSuccessTxHash(data.verifiedTxHash);
             } else {
                 setManualCheckMessage(isPollingExpired
                     ? "No confirmed payment found yet. Refresh this page to start a new checkout session."
@@ -1256,9 +1453,7 @@ export default function PublicPayClient({
         setVerificationError(null);
         setVerificationStatus(null);
         if (cannotPayLink) {
-            setVerificationError(isLinkExhausted
-                ? "This payment link has reached its usage limit."
-                : "This payment link is inactive or expired.");
+            setVerificationError(unpayableReason);
             paymentSubmissionGuardRef.current = false;
             return;
         }
@@ -1277,6 +1472,11 @@ export default function PublicPayClient({
                 body: JSON.stringify({ clientIntentId })
             });
             const data = await res.json().catch(() => ({}));
+            if (res.status === 409 && data.code === "ATTEMPT_RELEASED") {
+                /* Terminal attempt UUID — rotate so the next click reserves a fresh attempt. */
+                rotateAttemptId();
+                throw new Error("This checkout attempt expired. Press Pay again to start a fresh attempt.");
+            }
             if (!res.ok || !data.success || !data.txHash) {
                 throw new Error(data.error || "Payment could not be completed.");
             }
@@ -1302,7 +1502,7 @@ export default function PublicPayClient({
             setPaymentStep("verifying");
             setVerificationStatus("Payment sent. Confirming settlement...");
             setVerifiedHash(hash);
-            startVerification(hash, rid, payer, expectedChainId);
+            startVerification(hash, rid, payer, expectedChainId, submittedRecord.attemptId);
         } catch (err: any) {
             setVerificationStatus(null);
             setVerificationError(friendlyError(err.message || "Payment failed"));
@@ -1322,6 +1522,7 @@ export default function PublicPayClient({
             pendingVerification.receiptId,
             pendingVerification.payer,
             pendingVerification.chainId,
+            pendingVerification.attemptId,
         );
     };
 
@@ -1474,9 +1675,13 @@ export default function PublicPayClient({
                         {checkoutUrl && (
                             <aside className="hidden lg:flex lg:w-[420px] lg:shrink-0 liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl bg-black/40 flex-col items-center justify-center text-center gap-5">
                                 <div className="space-y-1">
-                                    <p className="text-xs font-bold text-white uppercase tracking-wider">Pay on mobile</p>
+                                    <p className="text-xs font-bold text-white uppercase tracking-wider">
+                                        {cannotPayLink ? "Checkout status" : "Pay on mobile"}
+                                    </p>
                                     <p className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
-                                        Scan with your phone's wallet browser to complete this payment on mobile.
+                                        {cannotPayLink
+                                            ? "Payment controls are hidden because this link cannot submit a settlement."
+                                            : "Scan with your phone's wallet browser to complete this payment on mobile."}
                                     </p>
                                 </div>
                                 {!cannotPayLink ? <div className="bg-white rounded-2xl p-4 w-full flex items-center justify-center overflow-hidden">
@@ -1501,7 +1706,7 @@ export default function PublicPayClient({
                                 </div> : <div className="flex min-h-[352px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-8 text-red-200">
                                     <AlertTriangle className="h-10 w-10" />
                                     <p className="text-xs font-bold uppercase tracking-wider">Checkout unavailable</p>
-                                    <p className="text-[10px] text-white/50">{isLinkExhausted ? "This payment link has reached its usage limit." : "This payment link is inactive or expired."}</p>
+                                    <p className="text-[10px] text-white/50">{unpayableReason}</p>
                                 </div>}
                                 <div className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-bold ${remoteStatusError ? "border-amber-400/20 bg-amber-400/[0.05] text-amber-200" : "border-[#00d2b4]/20 bg-[#00d2b4]/[0.05] text-[#00d2b4]"}`} aria-live="polite">
                                     {cannotPayLink ? <AlertTriangle className="h-3.5 w-3.5" /> : remoteStatusError ? <AlertCircle className="h-3.5 w-3.5" /> : <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d2b4] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#00d2b4]" /></span>}
@@ -1591,12 +1796,19 @@ export default function PublicPayClient({
                             </div>
                         )}
 
-                        {/* Payment Link Exhausted */}
-                        {isLinkExhausted && (
+                        {cannotPayLink && (
                             <div className="bg-red-500/[0.06] border border-red-500/25 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3">
                                 <AlertTriangle className="w-8 h-8 text-red-400" />
-                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">Payment Link Exhausted</p>
-                                <p className="text-[10px] text-white/40 leading-relaxed">This payment link has reached its maximum number of uses and is no longer accepting payments.</p>
+                                <p className="text-xs font-bold text-red-300 uppercase tracking-wide">{unpayableTitle}</p>
+                                <p className="text-[10px] text-white/40 leading-relaxed">{unpayableReason}</p>
+                            </div>
+                        )}
+                        {isTestnetLink && !isSimulationOnly && (
+                            <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-center">
+                                <p className="text-xs font-bold uppercase tracking-wide text-amber-200">Arc Testnet Payment</p>
+                                <p className="mt-2 text-[10px] leading-relaxed text-white/50">
+                                    This payment moves test USDC on Arc Testnet. Test USDC has no monetary value.
+                                </p>
                             </div>
                         )}
 
@@ -1648,14 +1860,20 @@ export default function PublicPayClient({
 
 
                         <div ref={paymentControlsRef}>
-                        {!isConnected ? (
+                        {/* A logged-in SubScript (email/Google) account must ALWAYS be offered its
+                            embedded "pay from your SubScript wallet" path — even when a browser wallet
+                            extension has auto-connected (isConnected). Previously this whole block was
+                            gated on !isConnected, so an auto-connected extension flipped the checkout to
+                            the browser-wallet branch and forced the user to verify a DIFFERENT wallet,
+                            with no way to pay from their actual account. */}
+                        {(!isConnected || embeddedPaySession) ? (
                             <div className="space-y-4">
                               {pendingVerificationPanel ? pendingVerificationPanel : (verificationStatus && !verificationError) ? verificationPanel : (
                                 <>
                                 {/* Embedded (Circle/email) wallet: pay on-page from the SubScript wallet
                                     balance — no browser wallet to connect, and no DM detour for one-time
                                     merchant payments. */}
-                                {embeddedPaySession && (
+                                {embeddedPaySession && !cannotPayLink && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             Signed in{sessionInfo?.email ? ` as ${sessionInfo.email}` : ""}. Pay directly from your SubScript wallet — no browser wallet needed.
@@ -1683,7 +1901,7 @@ export default function PublicPayClient({
                                 {/* Peer (user-to-user) requests are conversational, so a signed-in user may
                                     open them in DMs. One-time MERCHANT payments never route to DMs — they are
                                     paid on this page. */}
-                                {isUserRequest && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
+                                {isUserRequest && !cannotPayLink && sessionInfo?.loggedIn && sessionInfo.role !== "ENTERPRISE" && (
                                     <div className="rounded-2xl border border-[#00d2b4]/25 bg-[#00d2b4]/[0.06] p-4 space-y-3">
                                         <p className="text-[11px] leading-relaxed text-white/75">
                                             You're already signed in to SubScript
@@ -1710,7 +1928,7 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {embeddedPaySession && (
+                                {embeddedPaySession && !isConnected && !cannotPayLink && (
                                     <div className="flex items-center gap-3 pt-1">
                                         <span className="h-px flex-1 bg-white/10" />
                                         <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">or pay with a browser wallet</span>
@@ -1718,7 +1936,10 @@ export default function PublicPayClient({
                                     </div>
                                 )}
 
-                                {walletConnectors.length > 1 ? (
+                                {/* The browser-wallet connect prompt only makes sense when no wallet is
+                                    connected yet. When an embedded user already has an extension connected,
+                                    they pay via the embedded card above — no "Connect Wallet" nag. */}
+                                {!isConnected && !cannotPayLink && (walletConnectors.length > 1 ? (
                                     <div className="space-y-2">
                                         <p className="text-[9px] font-bold uppercase tracking-wider text-white/40 text-center">
                                             Multiple wallets found — choose one
@@ -1758,6 +1979,22 @@ export default function PublicPayClient({
                                             {isConnecting ? "Connecting..." : "Connect Wallet"}
                                         </button>
                                     </>
+                                ))}
+                                {/* Signed-out visitors previously had NO error surface: connect failures
+                                    set verificationError, but it only rendered inside the signed-in
+                                    embedded block — so "Pay in this browser" looked dead on desktops
+                                    without a wallet extension. */}
+                                {!embeddedPaySession && verificationError && (
+                                    <p className="text-[10px] font-mono text-red-400 text-center leading-relaxed" role="alert">{verificationError}</p>
+                                )}
+                                {!embeddedPaySession && !cannotPayLink && (
+                                    <p className="text-[10px] text-white/35 text-center leading-relaxed font-sans">
+                                        Have a SubScript account?{" "}
+                                        <a href="/login" target="_blank" rel="noopener noreferrer" className="text-[#00d2b4] hover:underline font-bold">
+                                            Sign in
+                                        </a>
+                                        , then reload this page to pay from your email wallet — no extension needed.
+                                    </p>
                                 )}
                                 </>
                               )}
@@ -1911,7 +2148,7 @@ export default function PublicPayClient({
                                                 disabled={true}
                                                 className="w-full py-4 border border-red-500/20 bg-red-500/[0.02] text-red-400 font-bold rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-not-allowed"
                                             >
-                                                {isLinkExhausted ? "Payment Link Exhausted" : "Payment Link Inactive"}
+                                                {unpayableTitle}
                                             </button>
                                         ) : (merchantVerified === false && !unverifiedAccepted && !isUserRequest) ? (
                                             <button
@@ -1964,7 +2201,7 @@ export default function PublicPayClient({
 
                         {/* Inline QR toggle for mobile/tablet. On desktop (lg+) the large QR shows in the
                             left panel beside the checkout, so this redundant toggle is hidden there. */}
-                        {checkoutUrl && (
+                        {checkoutUrl && !cannotPayLink && (
                             <div className="border-t border-white/5 pt-4 space-y-3 lg:hidden">
                                 <button
                                     type="button"

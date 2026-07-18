@@ -1,4 +1,6 @@
-const ARC_TESTNET_CHAIN_ID = 5_042_002;
+/* The ACTIVE Arc chain per NEXT_PUBLIC_ENVIRONMENT — kept dependency-free because this
+   message format is shared verbatim by client and server signature verification. */
+const ACTIVE_ARC_CHAIN_ID = process.env.NEXT_PUBLIC_ENVIRONMENT === "mainnet" ? 5_042_001 : 5_042_002;
 
 export function buildWalletAuthMessage(args: {
     address: string;
@@ -13,7 +15,7 @@ export function buildWalletAuthMessage(args: {
         "Sign in to SubScript. This request will not trigger a blockchain transaction or cost gas.",
         "",
         `URI: ${args.uri}`,
-        `Chain ID: ${ARC_TESTNET_CHAIN_ID}`,
+        `Chain ID: ${ACTIVE_ARC_CHAIN_ID}`,
         `Nonce: ${args.nonce}`,
     ].join("\n");
 }

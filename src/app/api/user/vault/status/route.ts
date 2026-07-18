@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hashSecretKey } from "@/lib/apiKeys";
+import { hashSecretKey, resolveSecretKeyMode } from "@/lib/apiKeys";
 import { apiError } from "@/lib/apiErrors";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 function formatVault(vault: any) {
     return {
@@ -22,6 +23,9 @@ function formatVault(vault: any) {
         monthlySpentUsdc: vault.monthlySpentUsdc.toString(),
         cycleStart: vault.cycleStart,
         lockedUntil: vault.lockedUntil,
+        disputed: vault.disputed,
+        environment: vault.environment,
+        settlementChainId: vault.settlementChainId.toString(),
         lastTopUpAt: vault.lastTopUpAt,
         createdAt: vault.createdAt,
         updatedAt: vault.updatedAt,
@@ -42,9 +46,18 @@ export async function GET(request: Request) {
         }
 
         const secretKey = authHeader.substring(7).trim();
+        if (resolveSecretKeyMode(secretKey) !== "TEST") {
+            return apiError({
+                status: 401,
+                code: "unauthorized",
+                requestId,
+                message: "Unauthorized: only test-mode API keys are enabled on this deployment.",
+            });
+        }
         const keyRecord = await prisma.apiKey.findFirst({
             where: {
                 revoked: false,
+                mode: "TEST",
                 secretKeyHash: hashSecretKey(secretKey),
             },
         });
@@ -72,9 +85,11 @@ export async function GET(request: Request) {
         const normalizedUser = userAddress.toLowerCase();
         const vault = await prisma.meteredVault.findUnique({
             where: {
-                userAddress_merchantAddress: {
+                userAddress_merchantAddress_environment_settlementChainId: {
                     userAddress: normalizedUser,
                     merchantAddress,
+                    environment: "TEST",
+                    settlementChainId: BigInt(ARC_TESTNET_CHAIN_ID),
                 },
             },
         });

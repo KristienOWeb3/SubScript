@@ -15,7 +15,7 @@ import AnimatedGradientBg from "@/components/AnimatedGradientBg";
 function LoginChoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const safeNext = getSafeRelativePath(searchParams.get("next"));
+  const safeNext = getSafeRelativePath(searchParams?.get("next") || null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [activeSession, setActiveSession] = useState<{ wallet: string; email?: string; role: string } | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -45,7 +45,7 @@ function LoginChoiceContent() {
   }, [safeNext]);
 
   const handleChoice = (path: "/signin" | "/signup") => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || "");
     router.push(path + (params.toString() ? "?" + params.toString() : ""));
   };
 

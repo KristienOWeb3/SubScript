@@ -20,8 +20,8 @@ const envAddress = (value: string | undefined, fallback: string): `0x${string}` 
   (value && /^0x[a-fA-F0-9]{40}$/.test(value.trim()) ? value.trim() : fallback) as `0x${string}`;
 
 export const SUBSCRIPT_ROUTER_ADDRESS = envAddress(process.env.NEXT_PUBLIC_SUBSCRIPT_ROUTER_ADDRESS, "0x6946B7746c2968B195BD15319D25F67E587CAe3C");
-export const STANDARD_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS, "0x6C574a62F174b7Dc29060200Ab22afc9933FD502");
-export const CONFIDENTIAL_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS, "0x6C574a62F174b7Dc29060200Ab22afc9933FD502");
+export const STANDARD_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_STANDARD_CONTRACT_ADDRESS, "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37");
+export const CONFIDENTIAL_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_CONFIDENTIAL_CONTRACT_ADDRESS, "0x866186BE217b1bdA1aCF9755cB22D4E4793a9B37");
 export const PREMIUM_PAYMENT_RECIPIENT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_PREMIUM_PAYMENT_RECIPIENT_ADDRESS, "0x725D56151CeaC9eAd625241D13b8307B22EDDb10");
 export const PREMIUM_PLAN_ID = "premium-monthly" as const;
 export const PREMIUM_PLAN_PRICE_USDC = "10" as const;
@@ -31,7 +31,10 @@ export const USDC_NATIVE_GAS_ADDRESS = envAddress(process.env.NEXT_PUBLIC_USDC_A
 /* SubScriptVault escrow proxy (commit/draw/owed vault economics). Env-overridable. */
 export const SUBSCRIPT_VAULT_ADDRESS = (process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_ADDRESS
   || "0x853581e119dDED32DB886a4533A11789cF60bBFc") as `0x${string}`;
-export const SUBSCRIPT_VAULT_CHAIN_ID = Number(process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID || ARC_TESTNET_CHAIN_ID);
+export const SUBSCRIPT_VAULT_CHAIN_ID = Number(
+  process.env.NEXT_PUBLIC_SUBSCRIPT_VAULT_CHAIN_ID
+  || (isProd ? ARC_MAINNET_CHAIN_ID : ARC_TESTNET_CHAIN_ID),
+);
 
 export const ARC_MEMO_CONTRACT_ADDRESS = envAddress(process.env.NEXT_PUBLIC_ARC_MEMO_CONTRACT_ADDRESS, "0x5294E9927c3306DcBaDb03fe70b92e01cCede505");
 export const ARC_MESSAGE_TRANSMITTER_ADDRESS = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as const;
@@ -43,7 +46,9 @@ export const ARC_TESTNET = {
   nativeCurrency: {
     name: "USDC",
     symbol: "USDC",
-    decimals: 6,
+    /* 18 at the RPC/EVM level (verified: eth_getBalance returns 80e18 for an 80-USDC
+       wallet). The 6-decimal representation belongs to the ERC-20 USDC interface only. */
+    decimals: 18,
   },
   rpcUrls: {
     default: {
@@ -65,7 +70,8 @@ export const ARC_MAINNET = {
   nativeCurrency: {
     name: "USDC",
     symbol: "USDC",
-    decimals: 6,
+    /* 18 at the RPC/EVM level — see ARC_TESTNET note. */
+    decimals: 18,
   },
   rpcUrls: {
     default: {

@@ -69,6 +69,17 @@ function buildProviderRedirect(portalUrl: string | undefined, verificationId: st
     return redirectUrl.toString();
 }
 
+/* When the provider isn't configured (or its tables/config are missing), identity
+   verification simply hasn't launched yet — degrade to a friendly "coming with mainnet"
+   response instead of a 500 the dashboard renders as "internal server error". */
+const KYC_UNAVAILABLE_RESPONSE = {
+    success: true,
+    available: false,
+    verification: null,
+    supportedCountries: [] as string[],
+    message: "Identity verification (KYC) will be available on mainnet.",
+};
+
 export async function GET(request: Request) {
     try {
         const walletAddress = await getSessionWallet(request.headers);
@@ -76,16 +87,30 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        let configuration: ReturnType<typeof getKycConfiguration>;
+        try {
+            configuration = getKycConfiguration();
+        } catch {
+            return NextResponse.json(KYC_UNAVAILABLE_RESPONSE);
+        }
+        if (
+            process.env.NODE_ENV === "production"
+            && (configuration.provider.toLowerCase() === "manual" || !configuration.portalUrl)
+        ) {
+            return NextResponse.json(KYC_UNAVAILABLE_RESPONSE);
+        }
+
         const verification = await prisma.kycVerification.findUnique({
             where: { walletAddress: walletAddress.toLowerCase() },
         });
-        const { portalUrl, supportedCountries } = getKycConfiguration();
+        const { portalUrl, supportedCountries } = configuration;
         const redirectUrl = verification && ["PENDING", "IN_REVIEW"].includes(verification.status)
             ? buildProviderRedirect(portalUrl, verification.id)
             : undefined;
 
         return NextResponse.json({
             success: true,
+            available: true,
             verification: verification
                 ? toPublicKycDto(verification as PublicKycRecord)
                 : null,
@@ -94,7 +119,9 @@ export async function GET(request: Request) {
         });
     } catch (error) {
         console.error("Failed to load KYC verification:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        /* A schema/config fault must not surface as "internal server error" on the
+           dashboard while the feature is pre-launch anyway. */
+        return NextResponse.json(KYC_UNAVAILABLE_RESPONSE);
     }
 }
 
@@ -106,13 +133,22 @@ export async function POST(request: Request) {
         }
 
         const normalizedWallet = walletAddress.toLowerCase();
-        const { provider, consentVersion, supportedCountries, portalUrl } = getKycConfiguration();
+        let configuration: ReturnType<typeof getKycConfiguration>;
+        try {
+            configuration = getKycConfiguration();
+        } catch {
+            return NextResponse.json(
+                { error: "Identity verification (KYC) will be available on mainnet." },
+                { status: 503 }
+            );
+        }
+        const { provider, consentVersion, supportedCountries, portalUrl } = configuration;
         if (
             process.env.NODE_ENV === "production"
             && (provider.toLowerCase() === "manual" || !portalUrl)
         ) {
             return NextResponse.json(
-                { error: "KYC provider is not configured for production" },
+                { error: "Identity verification (KYC) will be available on mainnet." },
                 { status: 503 }
             );
         }

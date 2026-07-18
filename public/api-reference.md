@@ -80,17 +80,29 @@ Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 
 ### `POST /api/v1/subscriptions` — create a subscription
 Body: `amountUsdcMicros` **or** `planId`; `interval` (`daily|weekly|monthly|yearly`) **or**
-`intervalSeconds`; plus `intervalCount?`, `subscriber?`, `title?`, `externalReference?`,
-`idempotencyKey?`, `sandbox?`. Returns an `incomplete` subscription with a `checkoutUrl`; it
-becomes `active` once the subscriber authorizes it on-chain.
+`intervalSeconds`; plus `intervalCount?`, `subscriber?`, `title?`, `merchantCustomerId?`
+(`externalReference?` is the equivalent legacy name), `publishToDm?`, `idempotencyKey?`,
+and `sandbox?`.
+
+API-created subscription products are published to the merchant dashboard and the in-DM plan
+picker by default; set `publishToDm: false` to opt out. When `subscriber` is supplied, the plan
+and a pending offer DM are visible only to that wallet. `merchantCustomerId` requires
+`subscriber`, is persisted on activation, and is included in lifecycle webhooks so a DM upgrade
+updates the same account in the merchant's system. Returns an `incomplete` subscription with a
+`checkoutUrl`; it becomes `active` once the subscriber authorizes it on-chain.
+
+Customer plan changes are upgrade-only: the normalized recurring rate must increase. An upgrade
+modifies the existing on-chain subscription rather than creating a second authorization.
 
 ### `GET /api/v1/subscriptions` — read / list
 `?id=sub_<n>` reads one on-chain subscription; `?subscriber=0x…` lists a subscriber's
 subscriptions; no params lists your subscription checkout sessions.
 
 ### `DELETE /api/v1/subscriptions?id=<id>` — cancel
-`sub_<uuid>` cancels a not-yet-activated checkout session; `sub_<number>` flags an on-chain
-subscription to cancel at period end.
+`sub_<uuid>` withdraws a not-yet-accepted checkout/offer and removes its published plan.
+Active `sub_<number>` authorizations are customer-controlled; the subscriber cancels them from
+their DM or user dashboard, where cancellation is normally scheduled for the end of the paid
+period.
 
 ### `GET /api/user/vault/status?userAddress=<0x...>` — check metered vault status
 Merchant API key required. Returns whether the customer's vault exists and is active for your
@@ -148,12 +160,15 @@ timestamps outside a 5-minute tolerance. Each payload field is sent in both `sna
 |---|---|
 | `payment.succeeded` | A payment settled on-chain |
 | `subscription.created` | A subscription was created (awaiting activation) |
+| `subscription.updated` | A user upgraded the existing subscription from the DM plan flow |
 | `subscription.renewed` | A billing cycle settled |
 | `subscription.payment_failed` | A renewal payment failed (dunning) |
 | `subscription.canceled` | A subscription was canceled |
 
 Payment and subscription payloads include on-chain reconciliation fields: `chain_id`,
 `usdc_address`, `transaction_hash`, and `explorer_url`.
+Subscription lifecycle payloads also include `external_reference`/`merchant_customer_id` and
+`source_checkout_id` when the subscription originated from a merchant-assigned API plan.
 
 Verify signatures with the SDK:
 

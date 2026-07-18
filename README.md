@@ -123,7 +123,7 @@ npx @subscriptonarc/cli listen --forward-to http://localhost:3000/api/webhooks
 npx @subscriptonarc/cli trigger payment.succeeded --url http://localhost:3000/api/webhooks/subscript
 ```
 
-First API call with no account (shared sandbox demo key):
+First API call with no account (shared simulation-only demo key; create your own `sk_test_` key for funded Arc testnet settlement):
 
 ```bash
 curl -X POST https://www.subscriptonarc.com/api/intent \

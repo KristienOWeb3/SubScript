@@ -3,7 +3,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { hashSecretKey } from "@/lib/apiKeys";
-import { isValidPaymentLinkId } from "@/lib/paymentLinks/validation";
+import { isValidPaymentLinkId, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 import { merchantDisplayName } from "@/lib/identityDisplay";
 
 async function authenticateRequest(request: Request): Promise<{ wallet: string | null; error: string | null; status: number }> {
@@ -127,7 +127,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         }
 
         const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
-        if ((!link.active && link.status !== "PAID") || isExpired) {
+        if (link.deleted_at || (!link.active && link.status !== "PAID") || isExpired) {
             return NextResponse.json({ error: "Payment Link is Expired or Inactive" }, { status: 410 });
         }
 
@@ -156,6 +156,11 @@ export async function GET(request: Request, { params }: RouteContext) {
                 description: link.description,
                 amount_usdc: link.amount_usdc,
                 active: link.active,
+                /* These public settlement-mode fields let the checkout select the correct Arc
+                   network and distinguish funded testnet links from the shared demo simulation. */
+                sandbox_mode: link.sandbox_mode,
+                simulation_only: link.simulation_only,
+                settlement_chain_id: link.settlement_chain_id,
                 status: link.status,
                 expires_at: link.expires_at,
                 max_uses: link.max_uses,
@@ -166,6 +171,7 @@ export async function GET(request: Request, { params }: RouteContext) {
                 invoice_number: link.invoice_number,
                 due_date: link.due_date,
                 receipt_token: link.receipt_token,
+                link_kind: link.link_kind,
                 ...(isPeerRequestReference ? { external_reference: link.external_reference } : {}),
                 merchant_verified: merchantVerified
             }
@@ -196,6 +202,19 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         }
 
         const { title, description, active, expires_at, external_reference, max_uses } = body;
+
+        if (title !== undefined && (typeof title !== "string" || !title.trim() || title.length > 200)) {
+            return NextResponse.json({ error: "Bad Request: title must be a non-empty string up to 200 characters" }, { status: 400 });
+        }
+        if (description !== undefined && description !== null
+            && (typeof description !== "string" || description.length > 2000)) {
+            return NextResponse.json({ error: "Bad Request: description must be a string up to 2000 characters" }, { status: 400 });
+        }
+        if (external_reference !== undefined && external_reference !== null
+            && (typeof external_reference !== "string" || external_reference.length > 256
+                || external_reference.startsWith("peer-request:") || external_reference.startsWith("dm-peer-request:"))) {
+            return NextResponse.json({ error: "Bad Request: external_reference is invalid or reserved" }, { status: 400 });
+        }
 
         const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -228,15 +247,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         if (description !== undefined) updates.description = description;
         if (active !== undefined) updates.active = active;
         if (expires_at !== undefined) {
-            updates.expires_at = expires_at
-                ? (() => {
-                    const num = Number(expires_at);
-                    if (!isNaN(num)) {
-                        return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
-                    }
-                    return new Date(expires_at).toISOString();
-                })()
-                : null;
+            const expiry = parsePaymentLinkExpiry(expires_at);
+            if (!expiry.ok) {
+                return NextResponse.json({ error: `Bad Request: ${expiry.error}` }, { status: 400 });
+            }
+            updates.expires_at = expiry.value?.toISOString() ?? null;
         }
         if (external_reference !== undefined) updates.external_reference = external_reference;
         if (max_uses !== undefined) {
@@ -309,7 +324,12 @@ export async function DELETE(request: Request, { params }: RouteContext) {
 
         const { error: deleteError } = await supabase
             .from("payment_links")
-            .delete()
+            .update({
+                active: false,
+                status: "ARCHIVED",
+                deleted_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
             .eq("id", id);
 
         if (deleteError) {
@@ -317,7 +337,7 @@ export async function DELETE(request: Request, { params }: RouteContext) {
             return NextResponse.json({ error: deleteError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true, message: "Payment link deleted successfully" }, { status: 200 });
+        return NextResponse.json({ success: true, message: "Payment link archived successfully" }, { status: 200 });
 
     } catch (error: any) {
         console.error("Payment link DELETE error:", error);

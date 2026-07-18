@@ -1,17 +1,34 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, formatUnits } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
-import { STANDARD_CONTRACT_ADDRESS } from "@/lib/contracts/constants";
+import { createPublicClient, formatUnits } from "viem";
+import { activeArcChain } from "@/lib/wagmi";
+import { ProtocolConfig } from "@/lib/payments/config";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
+import { arcHttp } from "@/lib/arc/transport";
+import {
+    ARC_TESTNET_CHAIN_ID,
+    DEMO_MERCHANT_ADDRESS,
+    STANDARD_CONTRACT_ADDRESS,
+} from "@/lib/contracts/constants";
 import { prisma } from "@/lib/prisma";
-import { getSessionWallet } from "@/lib/auth";
-import { hashSecretKey } from "@/lib/apiKeys";
-import { apiError, getSecretKeyMode } from "@/lib/apiErrors";
+import { apiError } from "@/lib/apiErrors";
+import { authenticateMerchant } from "@/lib/v1/merchantAuth";
 import { buildSubscribeUrl } from "@/lib/checkoutUrl";
 import { generateReceiptId } from "@/lib/arc/memo";
 import { sanitizeInput } from "@/utils/security";
-import { dispatchMerchantWebhook } from "@/lib/webhookDispatch";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
 import { subscriptionWebhookData } from "@/lib/webhooks";
-import { readSubscriptionCheckoutMeta, type SubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
+import {
+    readSubscriptionCheckoutMeta,
+    subscriptionCheckoutPeriod,
+    type SubscriptionCheckoutMeta,
+} from "@/lib/subscriptionCheckout";
+import {
+    checkoutHasPrivatePlanTerms,
+    createCheckoutWithPublishedSitePlan,
+    publishSitePlanFromCheckout,
+    SitePlanPublicationError,
+} from "@/lib/subscriptions/sitePlans";
+import { createSubscriptionOfferDm } from "@/lib/dms/system";
 
 const SUBSCRIPT_ABI = [
     {
@@ -37,7 +54,7 @@ const SUBSCRIPT_ABI = [
     },
 ] as const;
 
-const publicClient = createPublicClient({ chain: arcTestnet, transport: http() });
+const publicClient = createPublicClient({ chain: activeArcChain, transport: arcHttp() });
 
 const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     daily: 86_400,
@@ -46,33 +63,9 @@ const NAMED_INTERVAL_SECONDS: Record<string, number> = {
     yearly: 31_536_000,
 };
 
-/* Accepts a session cookie or a Bearer sk_test_/sk_live_ key. Returns the merchant wallet
-   (lowercased) plus whether the request is in test/sandbox mode. */
-async function authenticateMerchant(request: Request): Promise<
-    { ok: true; merchantAddress: string; mode: "test" | "live" | "session" } | { ok: false; status: number; error: string }
-> {
-    const sessionWallet = await getSessionWallet(request.headers);
-    if (sessionWallet) {
-        return { ok: true, merchantAddress: sessionWallet.toLowerCase(), mode: "session" };
-    }
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return { ok: false, status: 401, error: "Unauthorized: Missing or invalid Authorization header" };
-    }
-    const secretKey = authHeader.substring(7).trim();
-    const mode = getSecretKeyMode(secretKey);
-    if (mode !== "test" && mode !== "live") {
-        return { ok: false, status: 401, error: "Unauthorized: Invalid secret API key format" };
-    }
-    const keyRecord = await prisma.apiKey.findFirst({
-        where: { revoked: false, secretKeyHash: hashSecretKey(secretKey) },
-    });
-    if (!keyRecord) {
-        return { ok: false, status: 401, error: "Unauthorized: Active secret key not found" };
-    }
-    return { ok: true, merchantAddress: keyRecord.walletAddress.toLowerCase(), mode };
-}
-
+/* authenticateMerchant lives in @/lib/v1/merchantAuth (imported above) so /api/v1/plans and
+   /api/v1/subscriptions share one implementation — including the TEST/LIVE mode isolation
+   from PR #70 (sk_live_ refused, non-TEST keys rejected). */
 function microsToDecimal(micros: bigint) {
     return formatUnits(micros, 6);
 }
@@ -221,7 +214,8 @@ export async function GET(request: Request) {
    returns an `incomplete` subscription with a `checkoutUrl` the subscriber completes on-chain;
    it becomes `active` once activation settles. Body: { amountUsdcMicros | amountUsdc | planId,
    interval | intervalSeconds, intervalCount?, subscriber?, title?, externalReference?,
-   idempotencyKey?, sandbox? }. */
+   merchantCustomerId?,
+   publishToDm?, idempotencyKey?, sandbox? }. */
 export async function POST(request: Request) {
     try {
         const auth = await authenticateMerchant(request);
@@ -236,10 +230,25 @@ export async function POST(request: Request) {
         const {
             amountUsdc, amountUsdcMicros, planId,
             interval, intervalSeconds, intervalCount,
-            subscriber, beneficiary, title, externalReference, idempotencyKey, sandbox, successUrl, cancelUrl,
+            subscriber, beneficiary, title, externalReference, merchantCustomerId,
+            idempotencyKey, sandbox, successUrl, cancelUrl,
+            publishToDm,
         } = body;
-        const isSandbox = sandbox === true || auth.mode === "test";
-
+        const isTestMode = auth.mode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
+            return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
+        }
+        if (isTestMode && merchantAddress === DEMO_MERCHANT_ADDRESS.toLowerCase()) {
+            return apiError({
+                status: 403,
+                code: "demo_key_simulation_only",
+                message: "The shared public demo key cannot create a funded subscription. Create your own test key for Arc testnet settlement.",
+            });
+        }
+        const isSandbox = isTestMode;
+        if (publishToDm !== undefined && typeof publishToDm !== "boolean") {
+            return NextResponse.json({ error: "Bad Request: publishToDm must be a boolean" }, { status: 400 });
+        }
         // 1. Resolve amount + period (a plan supplies both).
         let amountMicros: bigint | null = null;
         let periodSeconds: number | null = null;
@@ -310,7 +319,11 @@ export async function POST(request: Request) {
             }
             beneficiaryAddress = beneficiary.toLowerCase();
         }
-
+        if (publishToDm === true && beneficiaryAddress) {
+            return NextResponse.json({
+                error: "Bad Request: beneficiary-bound checkouts cannot be published as plans",
+            }, { status: 400 });
+        }
         const validateReturnUrl = (label: string, value: unknown) => {
             if (value === undefined || value === null || value === "") return { ok: true as const, value: null };
             if (typeof value !== "string" || value.length > 2048) return { ok: false as const, error: `${label} must be a URL up to 2048 characters` };
@@ -328,10 +341,33 @@ export async function POST(request: Request) {
         const cancelUrlResult = validateReturnUrl("cancelUrl", cancelUrl);
         if (!cancelUrlResult.ok) return NextResponse.json({ error: `Bad Request: ${cancelUrlResult.error}` }, { status: 400 });
 
-        if (externalReference !== undefined && externalReference !== null &&
-            (typeof externalReference !== "string" || externalReference.length > 256)) {
-            return NextResponse.json({ error: "Bad Request: externalReference must be a string up to 256 characters" }, { status: 400 });
+        for (const [label, value] of [
+            ["externalReference", externalReference],
+            ["merchantCustomerId", merchantCustomerId],
+        ] as const) {
+            if (value !== undefined && value !== null
+                && (typeof value !== "string" || value.trim().length === 0 || value.length > 256)) {
+                return NextResponse.json({ error: `Bad Request: ${label} must be a non-empty string up to 256 characters` }, { status: 400 });
+            }
         }
+        const normalizedExternalReference = typeof externalReference === "string" ? externalReference.trim() : null;
+        const normalizedMerchantCustomerId = typeof merchantCustomerId === "string" ? merchantCustomerId.trim() : null;
+        if (normalizedExternalReference && normalizedMerchantCustomerId
+            && normalizedExternalReference !== normalizedMerchantCustomerId) {
+            return NextResponse.json({
+                error: "Bad Request: externalReference and merchantCustomerId must match when both are provided",
+            }, { status: 400 });
+        }
+        const merchantAccountReference = normalizedMerchantCustomerId || normalizedExternalReference;
+        if (merchantAccountReference && !subscriberAddress) {
+            return NextResponse.json({
+                error: "Bad Request: subscriber is required when merchantCustomerId or externalReference is provided",
+            }, { status: 400 });
+        }
+        /* API-created subscription products are catalog plans by default. `false` remains a
+           backwards-compatible opt-out. Beneficiary-bound attempts stay private, while
+           subscriber-assigned checkouts publish only to that wallet. */
+        const shouldPublishToDm = publishToDm !== false && !beneficiaryAddress;
 
         // 2. Idempotency: return the existing subscription if the key was already used.
         if (idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim() !== "") {
@@ -341,6 +377,34 @@ export async function POST(request: Request) {
                 /* Reject if the same key was used for a one-time intent (different resource shape). */
                 if (!meta) {
                     return NextResponse.json({ error: "Conflict: idempotencyKey was used for a different resource" }, { status: 409 });
+                }
+                const existingSubscriber = meta.subscriber || null;
+                const existingMerchantAccount = existing.externalReference?.trim() || null;
+                if (subscriberAddress !== existingSubscriber
+                    || merchantAccountReference !== existingMerchantAccount) {
+                    return NextResponse.json({
+                        error: "Conflict: idempotencyKey was already used for a different subscriber or merchant customer/account binding",
+                    }, { status: 409 });
+                }
+                const canPublishExisting = shouldPublishToDm && !checkoutHasPrivatePlanTerms(existing, meta);
+                if (publishToDm === true && !canPublishExisting) {
+                    return NextResponse.json({
+                        error: "Bad Request: beneficiary-bound or invoice-specific checkouts cannot be published as plans",
+                    }, { status: 400 });
+                }
+                const published = canPublishExisting
+                    ? await publishSitePlanFromCheckout(merchantAddress, existing.id)
+                    : null;
+                const canonicalPlanId = published?.plan.id || meta.planId || null;
+                if (canPublishExisting && meta.subscriber) {
+                    await createSubscriptionOfferDm({
+                        merchantAddress,
+                        subscriberAddress: meta.subscriber,
+                        checkoutSessionId: existing.id,
+                        planName: existing.title,
+                        amountUsdc: existing.amountUsdc,
+                        periodSeconds: subscriptionCheckoutPeriod(meta),
+                    });
                 }
                 return NextResponse.json({
                     success: true,
@@ -355,6 +419,9 @@ export async function POST(request: Request) {
                         intervalSeconds: meta?.intervalSeconds ?? periodSeconds,
                         intervalCount: meta?.intervalCount ?? count,
                         interval: meta?.interval ?? resolvedInterval,
+                        planId: canonicalPlanId,
+                        merchantCustomerId: existing.externalReference,
+                        externalReference: existing.externalReference,
                         checkoutUrl: buildSubscribeUrl(existing.id),
                         createdAt: existing.createdAt,
                     },
@@ -375,27 +442,62 @@ export async function POST(request: Request) {
             successUrl: successUrlResult.value,
             cancelUrl: cancelUrlResult.value,
         };
-        const link = await prisma.paymentLink.create({
-            data: {
+        const linkData = {
+            merchantAddress,
+            title: (typeof title === "string" && title.trim()) ? title.trim() : "Subscription",
+            amountUsdc: amountMicros,
+            active: true,
+            status: "PENDING",
+            externalReference: merchantAccountReference,
+            idempotencyKey: (idempotencyKey && String(idempotencyKey).trim()) || null,
+            receiptToken: generateReceiptId("subscription"),
+            sandboxMode: isTestMode,
+            simulationOnly: false,
+            settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
+            creationFingerprint: {
                 merchantAddress,
-                title: (typeof title === "string" && title.trim()) ? title.trim() : "Subscription",
-                amountUsdc: amountMicros,
-                active: true,
-                status: "PENDING",
-                externalReference: externalReference || null,
-                idempotencyKey: (idempotencyKey && String(idempotencyKey).trim()) || null,
-                receiptToken: generateReceiptId("subscription"),
-                stateSnapshot: { subscription: subMeta },
+                amountUsdc: amountMicros.toString(),
+                beneficiaryAddress,
+                linkKind: "MERCHANT",
+                sandboxMode: isTestMode,
+                simulationOnly: false,
+                settlementChainId: isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID,
+                maxUses: null,
+                expiresAt: null,
             },
-        });
+            stateSnapshot: { subscription: subMeta },
+        };
+        /* Publication and checkout creation are atomic: a full public catalog cannot leave
+           behind a valid but invisible API checkout. */
+        const created = shouldPublishToDm
+            ? await createCheckoutWithPublishedSitePlan(merchantAddress, linkData)
+            : { link: await prisma.paymentLink.create({ data: linkData }), published: null };
+        const link = created.link;
 
-        await dispatchMerchantWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.created", subscriptionWebhookData({
             subscriptionId: link.id,
             status: "incomplete",
             amountUsdcMicros: amountMicros,
             subscriber: subscriberAddress,
             merchantAddress,
-        })).catch(() => { /* delivery is best-effort */ });
+            externalReference: merchantAccountReference,
+            sourceCheckoutId: link.id,
+        }), `checkout-created:${link.id}`);
+
+        /* New checkout + plan creation is atomic. The idempotency branch above still repairs
+           legacy/unpublished checkouts by retrying their unique source identity. */
+        const published = created.published;
+        const canonicalPlanId = published?.plan.id || subMeta.planId || null;
+        if (published && subscriberAddress) {
+            await createSubscriptionOfferDm({
+                merchantAddress,
+                subscriberAddress,
+                checkoutSessionId: link.id,
+                planName: link.title,
+                amountUsdc: link.amountUsdc,
+                periodSeconds: subscriptionCheckoutPeriod(subMeta),
+            });
+        }
 
         return NextResponse.json({
             success: true,
@@ -410,12 +512,18 @@ export async function POST(request: Request) {
                 intervalSeconds: periodSeconds,
                 intervalCount: count,
                 interval: resolvedInterval,
+                planId: canonicalPlanId,
+                merchantCustomerId: merchantAccountReference,
+                externalReference: merchantAccountReference,
                 checkoutUrl: buildSubscribeUrl(link.id),
                 createdAt: link.createdAt,
             },
             sandbox: isSandbox,
         }, { status: 201 });
     } catch (error: any) {
+        if (error instanceof SitePlanPublicationError) {
+            return apiError({ status: error.status, code: error.code.toLowerCase(), message: error.message });
+        }
         /* Never echo error.message — a raw ORM error in a 500 is how a schema gap goes public. */
         console.error("Subscriptions POST error:", error);
         return apiError({ status: 500, code: "internal_error", message: "Internal Server Error. Quote the request_id when reporting this." });
@@ -448,7 +556,8 @@ export async function DELETE(request: Request) {
 
         // Checkout-session subscription (uuid): cancel it only if it hasn't activated on-chain.
         const link = await prisma.paymentLink.findUnique({ where: { id: idParam } });
-        if (!link || link.merchantAddress.toLowerCase() !== merchantAddress || !readSubscriptionCheckoutMeta(link.stateSnapshot)) {
+        const linkMeta = readSubscriptionCheckoutMeta(link?.stateSnapshot);
+        if (!link || link.merchantAddress.toLowerCase() !== merchantAddress || !linkMeta) {
             return NextResponse.json({ error: "Subscription not found for this merchant" }, { status: 404 });
         }
         if (link.status !== "PENDING") {
@@ -457,17 +566,27 @@ export async function DELETE(request: Request) {
                 : "Conflict: this subscription checkout can no longer be canceled";
             return NextResponse.json({ error }, { status: 409 });
         }
-        await prisma.paymentLink.update({
-            where: { id: idParam },
-            data: { active: false, status: "CANCELED" },
-        });
-        await dispatchMerchantWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
+        await prisma.$transaction([
+            prisma.paymentLink.update({
+                where: { id: idParam },
+                data: { active: false, status: "CANCELED" },
+            }),
+            prisma.merchantPlan.updateMany({
+                where: { sourceCheckoutId: idParam },
+                data: { active: false },
+            }),
+        ]);
+        await dispatchDurableSubscriptionWebhook(merchantAddress, "subscription.canceled", subscriptionWebhookData({
             subscriptionId: idParam,
             status: "canceled",
             amountUsdcMicros: link.amountUsdc,
+            subscriber: linkMeta.subscriber,
             merchantAddress,
+            beneficiary: linkMeta.beneficiary,
+            externalReference: link.externalReference,
+            sourceCheckoutId: link.id,
             reason: "Canceled before activation",
-        })).catch(() => { /* delivery is best-effort */ });
+        }), `checkout-canceled:${idParam}`);
         return NextResponse.json({ id: `sub_${idParam}`, object: "subscription", status: "canceled" }, { status: 200 });
     } catch (error: any) {
         console.error("Subscriptions DELETE error:", error);

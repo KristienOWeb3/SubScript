@@ -27,7 +27,8 @@ import {
     formatUnits,
     parseUnits,
 } from "viem";
-import { arcTestnet } from "@/lib/wagmi";
+import { activeArcChain } from "@/lib/wagmi";
+import { arcHttp } from "@/lib/arc/transport";
 import { 
     Activity, Key, Code2, Webhook, ArrowRightLeft, 
     ShieldAlert, Copy, Check, Eye, EyeOff, RotateCw, 
@@ -39,10 +40,10 @@ import {
 } from "@/components/icons";
 import { QRCode } from "react-qrcode-logo";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
+import type { MerchantAnalyticsSummary, MerchantSubscriptionDetail } from "@/lib/analytics/merchantSubscriptions";
 import { PayrollContent } from "@/app/dashboard/payroll/PayrollContent";
 
 import {
-    ARC_TESTNET_CHAIN_ID,
     PREMIUM_PLAN_ID,
     SUBSCRIPT_ROUTER_ADDRESS,
     STANDARD_CONTRACT_ADDRESS,
@@ -56,8 +57,8 @@ import FinancialStatusBadge from "@/components/FinancialStatusBadge";
 const TEST_PUBLISHABLE_KEY = "pk_test_51Px9800Z7Z4M19XQY1R93B";
 
 const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
+    chain: activeArcChain,
+    transport: arcHttp(),
 });
 
 const ERC20_ABI = USDC_ERC20_ABI;
@@ -82,12 +83,30 @@ type TabId = "overview" | "premium" | "analytics" | "payment-links" | "plans" | 
 
 type MerchantPlan = {
     id: string;
+    targetSubscriber?: string | null;
     merchantAddress: string;
     name: string;
     description?: string | null;
     detailsUrl?: string | null;
     amountUsdc: string;
     periodSeconds: string;
+    active: boolean;
+};
+
+type PlanPromotion = {
+    id: string;
+    planId: string;
+    name: string;
+    discountType: string;
+    discountBps: number | null;
+    regularAmountUsdc: string;
+    introductoryAmountUsdc: string;
+    introductoryCycles: number;
+    startsAt: string | null;
+    expiresAt: string | null;
+    maxRedemptions: number | null;
+    redemptionCount: number;
+    newCustomersOnly: boolean;
     active: boolean;
 };
 
@@ -162,10 +181,12 @@ const shortenHash = (value: string | undefined) => {
 
 const settlementTimeframes = ["24H", "1W", "1M", "3M", "6M", "1Y"] as const;
 
+/* Same icons AND names as the desktop sidebar (`tabs`) so merchant navigation reads
+   identically on both form factors. */
 const mobileBottomTabs: ReadonlyArray<{ id: TabId; label: string; icon: typeof Home }> = [
-    { id: "overview", label: "Home", icon: SquaresFour },
+    { id: "overview", label: "Overview", icon: SquaresFour },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payment-links", label: "Plans", icon: Sliders },
+    { id: "payment-links", label: "Payments", icon: Sliders },
     { id: "apikeys", label: "API Keys", icon: Key },
 ];
 
@@ -194,6 +215,7 @@ export default function DashboardPage() {
     const [isLinksLoading, setIsLinksLoading] = useState(false);
     const [initialLinksFetched, setInitialLinksFetched] = useState(false);
     const [merchantPlans, setMerchantPlans] = useState<MerchantPlan[]>([]);
+    const [planPromotions, setPlanPromotions] = useState<PlanPromotion[]>([]);
     const [isPlansLoading, setIsPlansLoading] = useState(false);
     const [initialPlansFetched, setInitialPlansFetched] = useState(false);
     const [planName, setPlanName] = useState("");
@@ -244,6 +266,7 @@ export default function DashboardPage() {
     const [dbProvider, setDbProvider] = useState("none");
     const [sessionProvider, setSessionProvider] = useState("none");
     const [ledgerPage, setLedgerPage] = useState(0);
+    const [ledgerCursors, setLedgerCursors] = useState<Array<string | null>>([null]);
     const [linksPage, setLinksPage] = useState(0);
     const [webhooksPage, setWebhooksPage] = useState(0);
 
@@ -330,11 +353,11 @@ export default function DashboardPage() {
             }
             return data.txHash as string;
         } else {
-            if (chainId !== ARC_TESTNET_CHAIN_ID) {
+            if (chainId !== activeArcChain.id) {
                 if (switchChainAsync) {
-                    await switchChainAsync({ chainId: ARC_TESTNET_CHAIN_ID });
+                    await switchChainAsync({ chainId: activeArcChain.id });
                 } else if (switchChain) {
-                    switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+                    switchChain({ chainId: activeArcChain.id });
                 }
             }
             return await writeContractAsync({
@@ -498,62 +521,80 @@ export default function DashboardPage() {
 
 
 
+    /* Tier and confidentiality come from the database, and must not sit downstream of the chain
+       reads. All of this used to share ONE try block, with the API fetches sequenced after a
+       Promise.all of four Arc calls — and Arc's public RPC rate-limits per call while viem does not
+       retry its 429s (see lib/arc/transport). A single collision rejected the Promise.all and threw
+       before setIsPremium ever ran, so isPremium stayed false and a paying merchant was shown the
+       upgrade lock over their own API keys, checkout and webhooks. The retrying transport makes that
+       far less likely; independence makes it harmless. A chain hiccup may cost you a balance — it
+       must never cost you your tier. */
     const refetchBalancesAndTier = useCallback(async () => {
         if (!address) return;
-        try {
-            const [tierRaw, vaultRaw, payoutRaw, walletRaw] = await Promise.all([
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantTiers",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantBalances",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: SUBSCRIPT_ROUTER_ADDRESS,
-                    abi: ROUTER_ABI,
-                    functionName: "merchantPayoutDestination",
-                    args: [address as `0x${string}`],
-                }),
-                publicClient.readContract({
-                    address: USDC_NATIVE_GAS_ADDRESS,
-                    abi: ERC20_ABI,
-                    functionName: "balanceOf",
-                    args: [address as `0x${string}`],
-                }),
-            ]);
 
-            setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
-            setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
-            setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
-
-            const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
-            if (tierRes.ok) {
+        const loadTier = async () => {
+            try {
+                const tierRes = await fetch(`/api/merchant/tier?address=${address}`);
+                if (!tierRes.ok) return;
                 const tierData = await tierRes.json();
                 setIsPremium(Number(tierData.tier) >= 1);
                 setMerchantTier(Number(tierData.tier));
                 setPremiumSubId(tierData.subscriptionId ? Number(tierData.subscriptionId) : null);
-                /* SBT state update removed */
                 setCancelAtPeriodEnd(!!tierData.cancelAtPeriodEnd);
                 setCurrentPeriodEnd(tierData.nextBillingDate || null);
                 setDbSubscriptionStatus(tierData.status || null);
                 setDowngradeFailures(tierData.downgradeFailures ? Number(tierData.downgradeFailures) : 0);
+            } catch (error) {
+                console.error("Error loading merchant tier:", error);
             }
+        };
 
-            const confidentialityRes = await fetch("/api/merchant/confidentiality");
-            if (confidentialityRes.ok) {
+        const loadConfidentiality = async () => {
+            try {
+                const confidentialityRes = await fetch("/api/merchant/confidentiality");
+                if (!confidentialityRes.ok) return;
                 const confData = await confidentialityRes.json();
                 setShieldedEnabled(!!confData.shielded_payouts_enabled);
                 setIsViewKeyRegistered(!!confData.view_key_hash);
+            } catch (error) {
+                console.error("Error loading confidentiality settings:", error);
             }
-        } catch (error) {
-            console.error("Error reading contract data in background:", error);
-        }
+        };
+
+        const loadChainState = async () => {
+            try {
+                /* merchantTiers was read here too and never used — the tier below is the DB's. It was
+                   a fourth call into the limiter for nothing. */
+                const [vaultRaw, payoutRaw, walletRaw] = await Promise.all([
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantBalances",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: SUBSCRIPT_ROUTER_ADDRESS,
+                        abi: ROUTER_ABI,
+                        functionName: "merchantPayoutDestination",
+                        args: [address as `0x${string}`],
+                    }),
+                    publicClient.readContract({
+                        address: USDC_NATIVE_GAS_ADDRESS,
+                        abi: ERC20_ABI,
+                        functionName: "balanceOf",
+                        args: [address as `0x${string}`],
+                    }),
+                ]);
+
+                setVaultBalance(parseFloat(formatUnits(vaultRaw, 6)));
+                setPayoutDestination(payoutRaw && payoutRaw !== "0x0000000000000000000000000000000000000000" ? payoutRaw : null);
+                setWalletBalance(parseFloat(formatUnits(walletRaw as bigint, 6)));
+            } catch (error) {
+                console.error("Error reading contract data in background:", error);
+            }
+        };
+
+        await Promise.all([loadTier(), loadConfidentiality(), loadChainState()]);
     }, [address]);
 
     const handleDepositSuccess = () => {
@@ -569,7 +610,7 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (typeof window !== "undefined" && address) {
-            const storedKey = localStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
+            const storedKey = sessionStorage.getItem(`subscript_viewkey_${address.toLowerCase()}`);
             if (storedKey) {
                 setViewKey(storedKey);
             } else {
@@ -1174,12 +1215,19 @@ export default function DashboardPage() {
     const fetchMerchantPlans = async () => {
         setIsPlansLoading(true);
         try {
-            const res = await fetch("/api/merchant/plans");
+            const [res, promoRes] = await Promise.all([
+                fetch("/api/merchant/plans"),
+                fetch("/api/merchant/promotions"),
+            ]);
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
                 throw new Error(data.error || "Failed to load plans");
             }
             setMerchantPlans(data.plans || []);
+            const promoData = await promoRes.json().catch(() => ({}));
+            if (promoRes.ok && promoData.success) {
+                setPlanPromotions(promoData.promotions || []);
+            }
         } catch (err: any) {
             console.error("Error fetching merchant plans:", err);
             setPlanError(err.message || "Failed to load plans");
@@ -1836,14 +1884,21 @@ export default function DashboardPage() {
 
 
     const [ledgers, setLedgers] = useState<any[]>([]);
+    const [ledgerPagination, setLedgerPagination] = useState({ total: 0, totalPages: 1 });
+    const [merchantAnalytics, setMerchantAnalytics] = useState<MerchantAnalyticsSummary | null>(null);
     const [isLoadingContract, setIsLoadingContract] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const ledgerCursor = ledgerCursors[ledgerPage] || null;
 
 
     useEffect(() => {
         const merchantAddress = address;
         if (!isConnected || !merchantAddress) {
             setLedgers([]);
+            setLedgerPagination({ total: 0, totalPages: 1 });
+            setMerchantAnalytics(null);
+            setLedgerPage(0);
+            setLedgerCursors([null]);
             return;
         }
 
@@ -1854,76 +1909,71 @@ export default function DashboardPage() {
             setIsLoadingContract(true);
             if (isTestMode) {
                 setLedgers([]);
+                setLedgerPagination({ total: 0, totalPages: 1 });
+                setMerchantAnalytics(null);
                 setIsLoadingContract(false);
                 setInitialContractFetched(true);
                 return;
             }
             try {
-                const mirrorRequest = fetch("/api/merchant/subscriptions").catch(() => null);
-                const nextIdRequest = publicClient.readContract({
-                    address: STANDARD_CONTRACT_ADDRESS,
-                    abi: STANDARD_ABI,
-                    functionName: "nextSubscriptionId",
+                const cursorParam = ledgerCursor ? `&cursor=${encodeURIComponent(ledgerCursor)}` : "";
+                const mirrorResponse = await fetch(`/api/merchant/subscriptions?pageSize=5${cursorParam}`);
+                const mirrorPayload = await mirrorResponse.json().catch(() => null);
+                if (!mirrorResponse.ok || !mirrorPayload?.success) {
+                    throw new Error(mirrorPayload?.error || "Subscription analytics could not be loaded");
+                }
+
+                /* The server owns merchant scoping, complete aggregates, and page-bounded detail.
+                   This keeps browser work constant and removes every protocol-wide RPC scan. */
+                const fetchedLedgers = (mirrorPayload.subscriptions || []).map((subscription: MerchantSubscriptionDetail) => {
+                    const subscriber = subscription.subscriber || "";
+                    const shortAddress = subscriber
+                        ? `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`
+                        : "Unknown subscriber";
+                    const nextBillingTs = subscription.nextBillingDate
+                        ? Math.floor(new Date(subscription.nextBillingDate).getTime() / 1000)
+                        : 0;
+                    return {
+                        id: `agent-run-${subscription.subscriptionId}`,
+                        rawId: subscription.subscriptionId,
+                        address: subscriber,
+                        displayAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        shortSubAddress: subscription.externalReference || subscription.subscriberName || shortAddress,
+                        limit: `${formatUnits(BigInt(subscription.amountUsdcMicros), 6)} USDC / ${formatPlanPeriod(subscription.periodSeconds)}`,
+                        rawAmount: formatUnits(BigInt(subscription.amountUsdcMicros), 6),
+                        rawPeriod: subscription.periodSeconds,
+                        nextBilling: subscription.nextBillingDate
+                            ? new Date(subscription.nextBillingDate).toLocaleDateString()
+                            : "Not scheduled",
+                        nextPaymentTs: nextBillingTs,
+                        activityAt: subscription.activityAt,
+                        active: subscription.status === "ACTIVE",
+                        billingStatus: subscription.status,
+                        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+                        downgradeFailures: Number(subscription.downgradeFailures || 0),
+                    };
                 });
-                const [mirrorResponse, nextId] = await Promise.all([mirrorRequest, nextIdRequest]);
-
-                const mirrorById = new Map<string, {
-                    subscriberName: string | null;
-                    status: string;
-                    cancelAtPeriodEnd: boolean;
-                    nextBillingDate: string | null;
-                    downgradeFailures: number;
-                }>();
-                if (mirrorResponse?.ok) {
-                    const mirrorPayload = await mirrorResponse.json().catch(() => null);
-                    for (const subscription of mirrorPayload?.subscriptions || []) {
-                        mirrorById.set(String(subscription.subscriptionId), subscription);
-                    }
-                }
-                
-                const nextIdNum = Number(nextId);
-                const fetchedLedgers = [];
-                const onChainSubscriptions = await Promise.all(
-                    Array.from({ length: Math.max(0, nextIdNum - 1) }, async (_, index) => {
-                        const id = index + 1;
-                        const subscription = await publicClient.readContract({
-                            address: STANDARD_CONTRACT_ADDRESS,
-                            abi: STANDARD_ABI,
-                            functionName: "subscriptions",
-                            args: [BigInt(id)],
-                        });
-                        return { id, subscription };
-                    })
-                );
-
-                for (const { id, subscription: sub } of onChainSubscriptions) {
-                    const [subscriber, merchant, amount, period, nextPayment, isActive] = sub;
-
-                    if (merchant.toLowerCase() === merchantAddress.toLowerCase()) {
-                        const mirror = mirrorById.get(String(id));
-                        const shortAddress = `${subscriber.slice(0, 6)}...${subscriber.slice(-4)}`;
-                        fetchedLedgers.push({
-                            id: `agent-run-${id}`,
-                            rawId: String(id),
-                            address: subscriber,
-                            displayAddress: mirror?.subscriberName || shortAddress,
-                            shortSubAddress: mirror?.subscriberName || shortAddress,
-                            limit: `${formatUnits(amount, 6)} USDC / ${formatPlanPeriod(String(period))}`,
-                            rawAmount: formatUnits(amount, 6),
-                            rawPeriod: String(period),
-                            nextBilling: new Date(Number(nextPayment) * 1000).toLocaleDateString(),
-                            active: isActive,
-                            billingStatus: mirror?.status || (isActive ? "ACTIVE" : "ENDED"),
-                            cancelAtPeriodEnd: mirror?.cancelAtPeriodEnd || false,
-                            downgradeFailures: Number(mirror?.downgradeFailures || 0),
-                        });
-                    }
-                }
                 
                 if (isSubscribed) {
+                    const totalPages = Math.max(1, Number(mirrorPayload.pagination?.totalPages || 1));
+                    if (ledgerPage >= totalPages) {
+                        setLedgerPage(totalPages - 1);
+                        return;
+                    }
                     setLedgers(fetchedLedgers);
-                    if (fetchedLedgers.length > 0 && !selectedWebhook) {
-                        setSelectedWebhook(`evt_01_0`);
+                    setLedgerPagination({
+                        total: Number(mirrorPayload.pagination?.total || 0),
+                        totalPages,
+                    });
+                    const nextCursor = mirrorPayload.pagination?.nextCursor || null;
+                    setLedgerCursors((current) => {
+                        const updated = current.slice(0, ledgerPage + 1);
+                        if (nextCursor) updated[ledgerPage + 1] = String(nextCursor);
+                        return updated;
+                    });
+                    setMerchantAnalytics(mirrorPayload.analytics || null);
+                    if (fetchedLedgers.length > 0) {
+                        setSelectedWebhook((current) => current || "evt_01_0");
                     }
                 }
             } catch (err) {
@@ -1937,13 +1987,15 @@ export default function DashboardPage() {
         }
 
         fetchOnChainData();
-        const interval = setInterval(fetchOnChainData, 10000);
+        /* 45s: subscription state changes on billing-cycle timescales; a 10s poll only
+           multiplied RPC load (and 429s) without making the numbers fresher in practice. */
+        const interval = setInterval(fetchOnChainData, 45000);
 
         return () => {
             isSubscribed = false;
             clearInterval(interval);
         };
-    }, [isConnected, address, isPremium, refreshTrigger, isTestMode]);
+    }, [isConnected, address, isPremium, refreshTrigger, isTestMode, ledgerPage, ledgerCursor]);
 
     const handleCopy = (text: string, label: string) => {
         try {
@@ -2250,19 +2302,61 @@ export default function DashboardPage() {
     };
 
     const handleSaveConfidentiality = async () => {
-        if (!viewKey) return;
+        if (!viewKey || !address) return;
         setIsSavingConfidentiality(true);
         setPremiumError(null);
         try {
             const viewKeyHash = ethers.keccak256(viewKey);
 
-            /* 1. If key is not registered, perform on-chain transaction */
+            /* 1. If key is not registered, use commit-reveal to prevent front-running */
             if (!isViewKeyRegistered) {
+                /* Generate a random salt to blind the commitment */
+                const salt = ethers.hexlify(ethers.randomBytes(32));
+
+                /* commitment = keccak256(abi.encodePacked(viewKeyHash, msg.sender, salt)) */
+                const commitment = ethers.keccak256(
+                    ethers.solidityPacked(
+                        ["bytes32", "address", "bytes32"],
+                        [viewKeyHash, address, salt]
+                    )
+                );
+
+                /* Phase 1: commit the blinded hash */
                 await executeContractWrite({
                     address: CONFIDENTIAL_CONTRACT_ADDRESS,
                     abi: CONFIDENTIAL_CONTRACT_ABI,
-                    functionName: "registerViewKey",
-                    args: [viewKeyHash],
+                    functionName: "commitViewKey",
+                    args: [commitment],
+                });
+
+                /* Wait for COMMIT_DELAY blocks (~20s on Arc with ~2s blocks).
+                   Poll the chain until enough blocks have passed. */
+                const provider = new ethers.BrowserProvider((window as any).ethereum);
+                const commitBlockNum = await provider.getBlockNumber();
+                const targetBlock = commitBlockNum + 11; /* COMMIT_DELAY (10) + 1 margin */
+
+                await new Promise<void>((resolve, reject) => {
+                    const maxWait = setTimeout(() => reject(new Error("Timed out waiting for commit delay")), 120_000);
+                    const poll = setInterval(async () => {
+                        try {
+                            const current = await provider.getBlockNumber();
+                            if (current >= targetBlock) {
+                                clearInterval(poll);
+                                clearTimeout(maxWait);
+                                resolve();
+                            }
+                        } catch {
+                            /* keep polling */
+                        }
+                    }, 2000);
+                });
+
+                /* Phase 2: reveal the view key hash */
+                await executeContractWrite({
+                    address: CONFIDENTIAL_CONTRACT_ADDRESS,
+                    abi: CONFIDENTIAL_CONTRACT_ABI,
+                    functionName: "revealViewKey",
+                    args: [viewKeyHash, salt],
                 });
             }
 
@@ -2282,8 +2376,10 @@ export default function DashboardPage() {
             }
 
             setIsViewKeyRegistered(true);
+            /* Store in sessionStorage (not localStorage) — cleared on tab close to
+               reduce the XSS exposure window for the plaintext view key. */
             if (typeof window !== "undefined" && address) {
-                localStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
+                sessionStorage.setItem(`subscript_viewkey_${address.toLowerCase()}`, viewKey);
             }
             
             /* Refresh settings */
@@ -2365,7 +2461,7 @@ Please complete the following implementation tasks:
                 args: ["-y", "@subscriptonarc/mcp"],
                 env: {
                     SUBSCRIPT_MERCHANT_ADDRESS: merchantWalletAddress || "0xYOUR_CONNECTED_WALLET_ADDRESS",
-                    SUBSCRIPT_CHAIN_ID: String(ARC_TESTNET_CHAIN_ID),
+                    SUBSCRIPT_CHAIN_ID: String(activeArcChain.id),
                     SUBSCRIPT_ROUTER_ADDRESS,
                     SUBSCRIPT_USDC_NATIVE_GAS_ADDRESS: USDC_NATIVE_GAS_ADDRESS,
                 },
@@ -2383,12 +2479,20 @@ Please complete the following implementation tasks:
     };
 
 
-    const activeAllowances = ledgers.filter(l => l.active).length;
-    const revokedCount = ledgers.filter(l => !l.active).length;
-    const totalSubs = ledgers.length;
+    const activeAllowances = merchantAnalytics?.activeSubscriptions ?? ledgers.filter(l => l.active).length;
+    const totalSubs = merchantAnalytics?.totalSubscriptions ?? ledgerPagination.total;
+    const revokedCount = Math.max(0, totalSubs - activeAllowances);
     const failureRate = totalSubs > 0 ? ((revokedCount / totalSubs) * 100).toFixed(1) : "0.0";
-    const projected30DaySettlement = ledgers.reduce((acc, sub) => {
-        if (!sub.active) return acc;
+    /* Only subscriptions that will actually renew belong in a forward projection: an
+       on-chain-active sub that is mid-failed-renewal, past due, or ending at period end
+       will not collect next cycle, so counting it overstates expected volume. Mirrors
+       the isPaying definition in AnalyticsDashboard. */
+    const projected30DaySettlement = merchantAnalytics?.mrrUsdc ?? ledgers.reduce((acc, sub) => {
+        const willRenew = sub.active
+            && sub.billingStatus === "ACTIVE"
+            && Number(sub.downgradeFailures || 0) === 0
+            && !sub.cancelAtPeriodEnd;
+        if (!willRenew) return acc;
         const amountNum = parseFloat(sub.rawAmount) || 0;
         const periodNum = parseFloat(sub.rawPeriod) || 2592000;
         const monthlyEquivalent = amountNum * (2592000 / periodNum);
@@ -2881,7 +2985,7 @@ Please complete the following implementation tasks:
                                                                                             <td className="py-2 px-3 text-white/40 hover:text-[#00d2b4] transition-colors">
                                                                                                 {p.tx_hash ? (
                                                                                                     <a 
-                                                                                                        href={`https://testnet.arcscan.app/tx/${p.tx_hash}`} 
+                                                                                                        href={`${activeArcChain.blockExplorers.default.url}/tx/${p.tx_hash}`}
                                                                                                         target="_blank" 
                                                                                                         rel="noopener noreferrer"
                                                                                                     >
@@ -2954,6 +3058,14 @@ Please complete the following implementation tasks:
     const renderPlansTab = () => {
         const activePlans = merchantPlans.filter((plan) => plan.active);
         const inactivePlans = merchantPlans.filter((plan) => !plan.active);
+        /* The most recent promotion per plan (active first) drives the row's promo panel. */
+        const promotionsByPlan = new Map<string, PlanPromotion>();
+        for (const promo of planPromotions) {
+            const existing = promotionsByPlan.get(promo.planId);
+            if (!existing || (promo.active && !existing.active)) {
+                promotionsByPlan.set(promo.planId, promo);
+            }
+        }
 
         return (
             <div className="space-y-8">
@@ -3092,7 +3204,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {activePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3110,7 +3222,7 @@ Please complete the following implementation tasks:
                         ) : (
                             <div className="space-y-3">
                                 {inactivePlans.map((plan) => (
-                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} />
+                                    <MerchantPlanRow key={plan.id} plan={plan} busy={isPlansLoading} onToggle={handleTogglePlanActive} onShare={setSharingPlan} promotion={promotionsByPlan.get(plan.id) ?? null} onPromotionsChanged={fetchMerchantPlans} />
                                 ))}
                             </div>
                         )}
@@ -3248,59 +3360,57 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
 
-                    {/* Merchant Verification Tier Matrix */}
+                    {/* Verification tier and plan are independent tracks: KYC is a trust badge,
+                        the plan gates product features. Each card always reflects the real DB
+                        state, so a Premium-but-unverified merchant sees both facts correctly. */}
                     <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Merchant Verification & Tiers</h3>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-wider">Verification & Plan</h3>
                         <p className="text-[10px] text-white/40 leading-relaxed font-sans max-w-sm">
-                            Provider verification adds a public trust badge. Product access remains governed by your plan and each feature's own eligibility rules.
+                            Verification (KYC) adds a public trust badge. Your plan controls which product features are unlocked. They are independent — you can hold either without the other.
                         </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {/* Tier 1 Card */}
-                            <div className={`p-4 rounded-2xl border ${!userSettings.verified ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* KYC track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.verified ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 1: Free Unverified</h4>
-                                    {!userSettings.verified && (
-                                        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-bold text-amber-300">Active</span>
-                                    )}
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">KYC Tier</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.verified ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                        {userSettings.verified ? 'Verified' : 'Unverified'}
+                                    </span>
                                 </div>
                                 <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-white/60">• Payment links remain available</li>
-                                    <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
-                                    <li className="flex items-center gap-1 text-white/60">• Regulated rails may stay limited</li>
+                                    {userSettings.verified ? (
+                                        <>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Verified badge on your public profile</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Customers can commit without a risk warning</li>
+                                            <li className="flex items-center gap-1 text-emerald-400">✓ Ready for regulated rails as they launch</li>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <li className="flex items-center gap-1 text-white/60">• Public profile shows unverified</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Customers see a warning before committing funds</li>
+                                            <li className="flex items-center gap-1 text-white/60">• Complete business verification below to upgrade</li>
+                                        </>
+                                    )}
                                 </ul>
                             </div>
 
-                            {/* Tier 2 Card */}
-                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'FREE') ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
+                            {/* Plan track */}
+                            <div className={`p-4 rounded-2xl border ${userSettings.tier === 'PREMIUM' ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 2: Verified Merchant</h4>
-                                    {userSettings.verified && userSettings.tier === 'FREE' && (
-                                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[8px] font-bold text-emerald-300">Active</span>
-                                    )}
+                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Plan</h4>
+                                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${userSettings.tier === 'PREMIUM' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/10 text-white/60'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? 'Premium' : 'Free'}
+                                    </span>
                                 </div>
                                 <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
                                     <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No API/Webhooks access</li>
-                                    <li className="flex items-center gap-1 text-red-400">✗ No vault commits</li>
-                                </ul>
-                                {!userSettings.verified && (
-                                    <p className="text-[8px] text-white/40 italic pt-1 font-sans">Submit business registry KYC to upgrade.</p>
-                                )}
-                            </div>
-
-                            {/* Tier 3 Card */}
-                            <div className={`p-4 rounded-2xl border ${(userSettings.verified && userSettings.tier === 'PREMIUM') ? 'border-purple-500/30 bg-purple-500/5' : 'border-white/5 bg-white/[0.02]'} space-y-2`}>
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[10px] font-black uppercase tracking-wider text-white">Tier 3: Premium Plan</h4>
-                                    {userSettings.verified && userSettings.tier === 'PREMIUM' && (
-                                        <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[8px] font-bold text-purple-300">Active</span>
-                                    )}
-                                </div>
-                                <ul className="space-y-1 text-[9px] text-white/50 leading-relaxed font-sans">
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Create unlimited payment links</li>
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ API Keys & Webhook endpoints</li>
-                                    <li className="flex items-center gap-1 text-emerald-400">✓ Customer commitment vaults</li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} API Keys &amp; Webhook endpoints
+                                    </li>
+                                    <li className={`flex items-center gap-1 ${userSettings.tier === 'PREMIUM' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {userSettings.tier === 'PREMIUM' ? '✓' : '✗'} Customer commitment vaults
+                                    </li>
                                 </ul>
                                 {userSettings.tier !== 'PREMIUM' && (
                                     <p className="text-[8px] text-white/40 italic pt-1 font-sans">Upgrade plan under the "Premium" tab.</p>
@@ -3317,7 +3427,7 @@ Please complete the following implementation tasks:
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider">SubScript DNS Registration</h3>
                         <p className="text-[10px] leading-relaxed text-amber-300/80 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-sans">
                             {merchantAliasNextChange
-                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change or unregister it again then.</>
+                                ? <>Your DNS name is locked until <strong>{new Date(merchantAliasNextChange).toLocaleDateString()}</strong> — you can change it again then. Business names cannot be unregistered.</>
                                 : <>Heads up: a DNS name can only be changed <strong>once every 365 days</strong>. Choose carefully — after a change you won't be able to switch again for a year.</>}
                         </p>
                         {userSettings.alias ? (
@@ -3326,33 +3436,11 @@ Please complete the following implementation tasks:
                                     <p className="text-[9px] uppercase tracking-wider font-bold text-[#00d2b4]/70">Registered Alias</p>
                                     <h4 className="font-mono text-lg font-bold text-[#00d2b4] mt-1">{userSettings.alias}</h4>
                                 </div>
-                                <button
-                                    onClick={async () => {
-                                        setDnsLoading(true);
-                                        setDnsError(null);
-                                        try {
-                                            const res = await fetch("/api/merchant/alias", { method: "DELETE" });
-                                            const data = await res.json().catch(() => ({}));
-                                            if (res.ok) {
-                                                setUserSettings((prev: any) => ({ ...prev, alias: null }));
-                                                setMerchantAlias(null);
-                                                setDnsDomain("");
-                                                setDnsSuccess("Alias removed successfully");
-                                                setTimeout(() => setDnsSuccess(null), 3000);
-                                            } else {
-                                                setDnsError(data.error || "Could not unregister this name.");
-                                            }
-                                        } catch (err) {
-                                            console.error(err);
-                                            setDnsError("Network error removing DNS name.");
-                                        } finally {
-                                            setDnsLoading(false);
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all"
-                                >
-                                    {dnsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unregister"}
-                                </button>
+                                {/* Merchants can never unregister: the registered business name is the
+                                    identity customers pay to, and the API refuses the DELETE too. */}
+                                <span className="px-3 py-1.5 border border-white/10 text-white/40 text-[10px] font-bold uppercase tracking-wider rounded-xl select-none">
+                                    Permanent
+                                </span>
                             </div>
                         ) : dnsConfirmPending ? (
                             <div className="p-5 rounded-2xl border border-[#ccff00]/25 bg-[#ccff00]/[0.04] space-y-4">
@@ -3427,7 +3515,7 @@ Please complete the following implementation tasks:
                 </div>
 
                 {/* Wallet Recovery & Backup */}
-                {userSettings.walletBackup && (
+                {userSettings.walletBackup?.available && (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 shadow-2xl space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -3441,12 +3529,8 @@ Please complete the following implementation tasks:
                                     opens this same merchant account.
                                 </p>
                             </div>
-                            <span className={`self-start rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${
-                                userSettings.walletBackup.available
-                                    ? "border border-[#00d2b4]/25 bg-[#00d2b4]/10 text-[#00d2b4]"
-                                    : "border border-white/10 bg-white/5 text-white/45"
-                            }`}>
-                                {userSettings.walletBackup.available ? "Exportable" : "Managed"}
+                            <span className="self-start rounded-full border border-[#00d2b4]/25 bg-[#00d2b4]/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#00d2b4]">
+                                Exportable
                             </span>
                         </div>
 
@@ -3535,14 +3619,10 @@ Please complete the following implementation tasks:
                             <button
                                 type="button"
                                 onClick={requestMerchantExportOtp}
-                                disabled={merchantExportOtpSending || !userSettings.walletBackup.available}
+                                disabled={merchantExportOtpSending}
                                 className="w-full rounded-2xl border border-[#00d2b4]/30 bg-[#00d2b4]/10 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#00d2b4]/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {merchantExportOtpSending
-                                    ? "Sending verification code…"
-                                    : userSettings.walletBackup.available
-                                        ? "Verify email & export wallet"
-                                        : "Private-key export unavailable"}
+                                {merchantExportOtpSending ? "Sending verification code…" : "Verify email & export wallet"}
                             </button>
                         )}
                     </div>
@@ -3780,7 +3860,7 @@ Please complete the following implementation tasks:
                                                             Grant access
                                                         </a>
                                                         <a
-                                                            href={`https://explorer.testnet.arc.network/tx/${tx.txHash}`}
+                                                            href={`${activeArcChain.blockExplorers.default.url}/tx/${tx.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-[#00d2b4] hover:underline inline-flex items-center gap-1"
@@ -4131,6 +4211,7 @@ Please complete the following implementation tasks:
                         walletBalance={walletBalance}
                         vaultBalance={vaultBalance}
                         ledgers={ledgers}
+                        analytics={merchantAnalytics}
                         onRetryCharge={handleRetryCharge}
                         merchantAddress={address || ""}
                     />
@@ -4283,9 +4364,7 @@ Please complete the following implementation tasks:
                                                 </tr>
                                             ) : (
                                                 (() => {
-                                                    const ledgerPageSize = 5;
-                                                    const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                                    return paginatedLedgers.map((item) => (
+                                                    return ledgers.map((item) => (
                                                         <tr key={item.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-colors">
                                                             <td className="py-4 font-semibold text-white">{item.id}</td>
                                                             <td className="py-4 text-white/40">{item.displayAddress || item.shortSubAddress}</td>
@@ -4314,8 +4393,7 @@ Please complete the following implementation tasks:
                                 </div>
 
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5 font-sans">
@@ -4464,12 +4542,14 @@ Please complete the following implementation tasks:
 
                             {/* Quick Actions Grid (Circles) */}
                             <div className="grid grid-cols-4 gap-3 py-2 text-center">
+                                {/* Quick-action icons mirror the desktop sidebar so the same
+                                    destination always carries the same icon on every screen. */}
                                 <div>
                                     <button
                                         onClick={() => setActiveTab("payment-links")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUpRight className="w-5 h-5" />
+                                        <Sliders className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Payments Link</span>
                                 </div>
@@ -4478,7 +4558,7 @@ Please complete the following implementation tasks:
                                         onClick={() => setActiveTab("webhooks")}
                                         className="mx-auto w-12 h-12 rounded-full border border-[#00d2b4]/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#00d2b4] flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-95"
                                     >
-                                        <ArrowUp className="w-5 h-5" />
+                                        <Broadcast className="w-5 h-5" />
                                     </button>
                                     <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest block mt-2 leading-tight">Webhooks</span>
                                 </div>
@@ -4523,9 +4603,7 @@ Please complete the following implementation tasks:
                                         </div>
                                     ) : (
                                         (() => {
-                                            const ledgerPageSize = 5;
-                                            const paginatedLedgers = ledgers.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize);
-                                            return paginatedLedgers.map((item) => (
+                                            return ledgers.map((item) => (
                                                 <div key={item.id} className="p-4 bg-white/[0.01] border border-white/5 rounded-2xl relative space-y-3">
                                                     <div className="flex justify-between items-start pr-8">
                                                         <div>
@@ -4561,8 +4639,7 @@ Please complete the following implementation tasks:
                                     )}
                                 </div>
                                 {(() => {
-                                    const ledgerPageSize = 5;
-                                    const totalPages = Math.ceil(ledgers.length / ledgerPageSize);
+                                    const totalPages = ledgerPagination.totalPages;
                                     if (totalPages <= 1) return null;
                                     return (
                                         <div className="flex items-center justify-between pt-3 border-t border-white/5 font-sans">
@@ -5059,6 +5136,13 @@ Please complete the following implementation tasks:
                 const activeKey = apiKeys.find(k => !k.revoked) || null;
                 const activePublishableKey = activeKey ? activeKey.publishableKey : "";
                 const activeSecretKey = activeKey ? activeKey.secretKeyPlain : "";
+                /* Secrets are hashed at rest: only secret_key_hash and an "sk_test_1234...2345" hint
+                   are stored, so GET /api/keys can never return a usable key and always reports
+                   secretKeyAvailable: false. It is true only for a key minted in this session.
+                   This flag was returned by the API but never read here, so the hint was rendered
+                   behind the same dots-and-eye affordance as a real secret — revealing it produced a
+                   fingerprint, and Copy silently put that unusable string on the clipboard. */
+                const activeSecretAvailable = Boolean(activeKey?.secretKeyAvailable && activeSecretKey);
 
                 return (
                     <div className="liquid-glass border border-white/5 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
@@ -5136,29 +5220,50 @@ Please complete the following implementation tasks:
                                             {copiedText === "Secret Key" && (
                                                 <span className="text-[10px] text-[#00d2b4] font-bold">Copied</span>
                                             )}
-                                            <button
-                                                onClick={() => setRevealSecret(!revealSecret)}
-                                                className="text-white/40 hover:text-white transition-colors"
-                                            >
-                                                {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                            </button>
+                                            {activeSecretAvailable && (
+                                                <button
+                                                    onClick={() => setRevealSecret(!revealSecret)}
+                                                    className="text-white/40 hover:text-white transition-colors"
+                                                >
+                                                    {revealSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
-                                        <code className="text-xs text-white/80 break-all">
-                                            {revealSecret 
-                                                ? activeSecretKey 
-                                                : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
-                                            }
-                                        </code>
-                                        <button 
-                                            onClick={() => handleCopy(activeSecretKey, "Secret Key")}
-                                            disabled={!revealSecret}
-                                            className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
-                                        >
-                                            <Copy className="w-4 h-4" />
-                                        </button>
-                                    </div>
+                                    {activeSecretAvailable ? (
+                                        <>
+                                            <div className="flex items-center justify-between gap-4 bg-black/60 rounded-xl p-3 border border-white/5 font-mono">
+                                                <code className="text-xs text-white/80 break-all">
+                                                    {revealSecret
+                                                        ? activeSecretKey
+                                                        : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                                                    }
+                                                </code>
+                                                <button
+                                                    onClick={() => handleCopy(activeSecretKey, "Secret Key")}
+                                                    disabled={!revealSecret}
+                                                    className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                                >
+                                                    <Copy className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-yellow-400/80">
+                                                Copy this now. It is only readable while this page stays open — the key is stored
+                                                hashed, so it cannot be shown again.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-black/60 p-3 font-mono">
+                                                <code className="break-all text-xs text-white/45">{activeSecretKey}</code>
+                                            </div>
+                                            <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                                                This is a fingerprint of the live key, not the key itself — enough to tell which one
+                                                your integration should be using. The secret is stored hashed and is shown only once,
+                                                when it is created. If you no longer have it, roll the key below to issue a new one.
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
 
                                 {/* Roll Keys */}
@@ -5167,6 +5272,7 @@ Please complete the following implementation tasks:
                                         <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Rotation / Roll Credentials</h3>
                                         <p className="text-[10px] text-white/40 max-w-md">
                                             Roll your API key pair instantly. Old keys are immediately invalidated for safety in this sandbox.
+                                            {!activeSecretAvailable && " This is also how you get a readable secret if you no longer have the current one — the new key is revealed and copied once, here."}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
@@ -6102,11 +6208,15 @@ function MerchantPlanRow({
     busy,
     onToggle,
     onShare,
+    promotion = null,
+    onPromotionsChanged,
 }: {
     plan: MerchantPlan;
     busy: boolean;
     onToggle: (plan: MerchantPlan) => void;
     onShare: (plan: MerchantPlan) => void;
+    promotion?: PlanPromotion | null;
+    onPromotionsChanged?: () => void;
 }) {
     const [copied, setCopied] = useState(false);
     const subscribeUrl = buildSubscribeUrl(plan.id, typeof window !== "undefined" ? window.location.origin : undefined);
@@ -6126,7 +6236,9 @@ function MerchantPlanRow({
                         {formatPlanAmount(plan.amountUsdc)} USDC / {formatPlanPeriod(plan.periodSeconds)}
                     </p>
                     <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">
-                        {plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
+                        {plan.targetSubscriber
+                            ? `${plan.active ? "Assigned API offer" : "Assigned offer closed"} — ${plan.targetSubscriber.slice(0, 6)}…${plan.targetSubscriber.slice(-4)}`
+                            : plan.active ? "Live — accepting subscribers" : "Hidden from new subscribers"}
                     </p>
                 </div>
                 <button
@@ -6161,7 +6273,7 @@ function MerchantPlanRow({
                 </div>
             )}
 
-            {plan.active && (
+            {plan.active && !plan.targetSubscriber && (
                 <div data-testid="merchant-plan-link-strip" className="mt-3 grid min-w-0 gap-2 overflow-hidden rounded-xl border border-white/5 bg-black/30 p-2 sm:flex sm:items-center sm:px-3 sm:py-2">
                     <span className="block min-w-0 max-w-full truncate border-b border-white/5 pb-1.5 font-mono text-[10px] text-white/45 sm:flex-1 sm:border-none sm:pb-0">{subscribeUrl}</span>
                     <div className="grid w-full min-w-0 grid-cols-2 gap-2 pt-1 sm:flex sm:w-auto sm:items-center sm:justify-end sm:pt-0">
@@ -6185,6 +6297,231 @@ function MerchantPlanRow({
                         </button>
                     </div>
                 </div>
+            )}
+
+            {(plan.active || promotion) && (
+                <PlanPromotionPanel plan={plan} promotion={promotion ?? null} onChanged={onPromotionsChanged} />
+            )}
+        </div>
+    );
+}
+
+/* Introductory-offer controls for one plan: create, edit, activate/deactivate a promotion.
+   Edits only affect FUTURE subscribers — terms already authorized are snapshotted per
+   subscription and enforced on-chain, so existing subscribers never reprice. */
+function PlanPromotionPanel({
+    plan,
+    promotion,
+    onChanged,
+}: {
+    plan: MerchantPlan;
+    promotion: PlanPromotion | null;
+    onChanged?: () => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [promoName, setPromoName] = useState(promotion?.name || "");
+    const [discountType, setDiscountType] = useState(promotion?.discountType || "PERCENT");
+    const [percentOff, setPercentOff] = useState(
+        promotion?.discountBps ? String(promotion.discountBps / 100) : "40",
+    );
+    const [introPriceUsdc, setIntroPriceUsdc] = useState(
+        promotion && promotion.discountType === "FIXED_PRICE"
+            ? formatPlanAmount(promotion.introductoryAmountUsdc)
+            : "",
+    );
+    const [introCycles, setIntroCycles] = useState(String(promotion?.introductoryCycles || 1));
+    const [expiresAt, setExpiresAt] = useState(
+        promotion?.expiresAt ? promotion.expiresAt.slice(0, 16) : "",
+    );
+    const [maxRedemptions, setMaxRedemptions] = useState(
+        promotion?.maxRedemptions ? String(promotion.maxRedemptions) : "",
+    );
+    const [newCustomersOnly, setNewCustomersOnly] = useState(promotion?.newCustomersOnly ?? true);
+
+    const regularMicros = (() => {
+        try { return BigInt(plan.amountUsdc); } catch { return BigInt(0); }
+    })();
+    const previewIntroMicros = (() => {
+        if (discountType === "FREE_TRIAL") return BigInt(0);
+        if (discountType === "PERCENT") {
+            const pct = Number(percentOff);
+            if (!Number.isFinite(pct) || pct < 1 || pct > 100) return null;
+            return (regularMicros * BigInt(10000 - Math.round(pct * 100))) / BigInt(10000);
+        }
+        const price = Number(introPriceUsdc);
+        if (!Number.isFinite(price) || price < 0) return null;
+        return BigInt(Math.round(price * 1_000_000));
+    })();
+    const cadence = formatPlanPeriod(plan.periodSeconds);
+
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError(null);
+        if (!promoName.trim()) { setError("Promotion name is required."); return; }
+        if (previewIntroMicros === null) { setError("Enter a valid discount."); return; }
+        if (previewIntroMicros >= regularMicros) { setError("Introductory price must be below the regular price."); return; }
+        setSaving(true);
+        try {
+            const payload: Record<string, unknown> = {
+                name: promoName.trim(),
+                discountType,
+                introductoryCycles: Number(introCycles) || 1,
+                expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+                maxRedemptions: maxRedemptions ? Number(maxRedemptions) : null,
+                newCustomersOnly,
+            };
+            if (discountType === "PERCENT") payload.percentOff = Number(percentOff);
+            if (discountType === "FIXED_PRICE") payload.introPriceUsdc = introPriceUsdc;
+            const res = await fetch("/api/merchant/promotions", {
+                method: promotion ? "PATCH" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(promotion ? { ...payload, promotionId: promotion.id } : { ...payload, planId: plan.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to save promotion.");
+            setEditing(false);
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to save promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const toggleActive = async () => {
+        if (!promotion) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/merchant/promotions", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ promotionId: promotion.id, active: !promotion.active }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update promotion.");
+            onChanged?.();
+        } catch (err: any) {
+            setError(err.message || "Failed to update promotion.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const summaryLabel = promotion
+        ? promotion.discountType === "FREE_TRIAL"
+            ? `Free for the first ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : cadence}`
+            : promotion.discountType === "PERCENT"
+                ? `${(promotion.discountBps || 0) / 100}% off → ${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+                : `${formatPlanAmount(promotion.introductoryAmountUsdc)} USDC for ${promotion.introductoryCycles > 1 ? `${promotion.introductoryCycles} cycles` : `the first ${cadence}`}`
+        : null;
+
+    return (
+        <div data-testid="plan-promotion-panel" className="mt-3 rounded-xl border border-amber-300/10 bg-amber-400/[0.03] p-3 font-sans">
+            {!editing && promotion && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-300/70">
+                            Promotion · {promotion.active ? "Live" : "Off"} · {promotion.redemptionCount}{promotion.maxRedemptions ? `/${promotion.maxRedemptions}` : ""} redeemed
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] font-bold text-white/80">{promotion.name}: {summaryLabel}, then {formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</p>
+                        {promotion.expiresAt && (
+                            <p className="text-[9px] text-white/35">Offer ends {new Date(promotion.expiresAt).toLocaleDateString()}</p>
+                        )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={() => setEditing(true)} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-white/70 transition hover:text-white disabled:opacity-50">
+                            Edit
+                        </button>
+                        <button type="button" onClick={toggleActive} disabled={saving}
+                            className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition disabled:opacity-50 ${promotion.active ? "border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/15" : "border-[#00d2b4]/20 bg-[#00d2b4]/10 text-[#00d2b4] hover:bg-[#00d2b4]/15"}`}>
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion.active ? "Turn off" : "Turn on"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {!editing && !promotion && plan.active && (
+                <button type="button" onClick={() => setEditing(true)}
+                    className="w-full rounded-lg border border-dashed border-amber-300/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-amber-200/70 transition hover:border-amber-300/40 hover:text-amber-200">
+                    + Add introductory offer (discount or free trial)
+                </button>
+            )}
+
+            {editing && (
+                <form onSubmit={submit} className="space-y-3 text-xs">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer name</label>
+                            <input type="text" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder="Launch offer"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer type</label>
+                            <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none">
+                                <option value="PERCENT">Percentage off</option>
+                                <option value="FIXED_PRICE">Fixed intro price</option>
+                                <option value="FREE_TRIAL">Free trial</option>
+                            </select>
+                        </div>
+                        {discountType === "PERCENT" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Percent off (customer pays the rest)</label>
+                                <input type="number" min="1" max="100" step="1" value={percentOff} onChange={(e) => setPercentOff(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        {discountType === "FIXED_PRICE" && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Intro price (USDC)</label>
+                                <input type="number" min="0" step="0.01" value={introPriceUsdc} onChange={(e) => setIntroPriceUsdc(e.target.value)}
+                                    className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                            </div>
+                        )}
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Discounted cycles</label>
+                            <input type="number" min="1" max="36" value={introCycles} onChange={(e) => setIntroCycles(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Offer ends (optional)</label>
+                            <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wide text-white/50">Max redemptions (optional)</label>
+                            <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)} placeholder="Unlimited"
+                                className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-white focus:border-[#00d2b4] focus:outline-none" />
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-[10px] text-white/60">
+                        <input type="checkbox" checked={newCustomersOnly} onChange={(e) => setNewCustomersOnly(e.target.checked)} className="accent-[#00d2b4]" />
+                        New customers only (subscribers who never had a plan with you)
+                    </label>
+                    {previewIntroMicros !== null && previewIntroMicros < regularMicros && (
+                        <p className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[10px] text-white/60">
+                            Customers pay <span className="font-bold text-[#00d2b4]">{formatPlanAmount(previewIntroMicros.toString())} USDC</span>
+                            {Number(introCycles) > 1 ? ` per ${cadence} for ${introCycles} cycles` : " today"}, then{" "}
+                            <span className="font-bold text-white/85">{formatPlanAmount(plan.amountUsdc)} USDC / {cadence}</span>. Both prices are
+                            disclosed and authorized at checkout; the switch to full price is enforced on-chain.
+                        </p>
+                    )}
+                    {error && <p className="text-[10px] font-bold text-red-400">{error}</p>}
+                    <div className="flex items-center justify-end gap-2">
+                        <button type="button" onClick={() => { setEditing(false); setError(null); }} disabled={saving}
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white/60 transition hover:text-white disabled:opacity-50">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={saving}
+                            className="rounded-lg bg-[#00d2b4] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-black transition hover:bg-[#00d2b4]/85 disabled:opacity-50">
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : promotion ? "Save changes" : "Launch offer"}
+                        </button>
+                    </div>
+                </form>
             )}
         </div>
     );

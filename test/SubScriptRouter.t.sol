@@ -96,6 +96,55 @@ contract SubScriptRouterTest is Test {
         router.withdraw();
     }
 
+    function _depositForMerchant(uint256 amount) internal {
+        usdc.mint(subscriber, amount);
+        vm.startPrank(subscriber);
+        usdc.approve(address(router), amount);
+        router.depositForMerchant(merchant, amount, "rcpt-dust");
+        vm.stopPrank();
+    }
+
+    /* Payment links accept sub-1-USDC amounts, so the router must let merchants withdraw any
+       positive balance — a 1 USDC minimum stranded small balances forever. */
+    function testDustBalanceIsWithdrawable() public {
+        _depositForMerchant(0.40e6); // 0.40 USDC
+
+        uint256 merchantBefore = usdc.balanceOf(merchant);
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+        vm.prank(merchant);
+        router.withdraw();
+
+        /* 1% fee on 400_000 micro = 4_000; net 396_000. */
+        assertEq(usdc.balanceOf(merchant), merchantBefore + 396_000);
+        assertEq(usdc.balanceOf(treasury), treasuryBefore + 4_000);
+        assertEq(router.merchantBalances(merchant), 0);
+    }
+
+    /* Fee floors to zero below 100 micro-USDC; the merchant still receives everything. */
+    function testMicroDustWithdrawsWithZeroFee() public {
+        _depositForMerchant(99); // 99 micro-USDC
+
+        uint256 merchantBefore = usdc.balanceOf(merchant);
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+        vm.prank(merchant);
+        router.withdraw();
+
+        assertEq(usdc.balanceOf(merchant), merchantBefore + 99);
+        assertEq(usdc.balanceOf(treasury), treasuryBefore);
+        assertEq(router.merchantBalances(merchant), 0);
+    }
+
+    /* withdrawTo applies the same dust policy for Premium merchants. */
+    function testDustWithdrawTo() public {
+        vm.prank(owner);
+        router.setMerchantTier(merchant, 1);
+        _depositForMerchant(0.25e6);
+
+        vm.prank(merchant);
+        router.withdrawTo(redirectDestination);
+        assertEq(usdc.balanceOf(redirectDestination), 247_500); // 0.25 USDC less 1%
+    }
+
     /* Test: Setting treasury address */
     function testSetTreasury() public {
         address newTreasury = address(0x9999999999999999999999999999999999999999);

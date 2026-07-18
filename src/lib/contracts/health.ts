@@ -62,6 +62,10 @@ export const EXPECTED_CONTRACTS: ContractSpec[] = [
         functions: ["registerViewKey(bytes32)"],
     },
     {
+        /* NOTE: this list tracks the DEPLOYED testnet implementation, which still carries the
+           legacy merchant levers (drawUsage / setRequiredCommit / requiredCommit). The V3
+           source in contracts/SubScriptVault.sol removes them; when the proxy is upgraded,
+           replace those selectors with STANDARD_COMMIT()/raiseDispute()/resolveDispute(). */
         name: "SubScriptVault",
         address: SUBSCRIPT_VAULT_ADDRESS,
         functions: [

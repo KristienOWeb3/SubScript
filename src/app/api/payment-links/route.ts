@@ -8,7 +8,10 @@ import { getSecretKeyMode, isConfiguredPayoutDestination, merchantPayoutWalletMi
 import { generateReceiptId } from "@/lib/arc/memo";
 import { buildCheckoutUrl } from "@/lib/checkoutUrl";
 import { hashSecretKey } from "@/lib/apiKeys";
+import { ARC_TESTNET_CHAIN_ID, DEMO_MERCHANT_ADDRESS } from "@/lib/contracts/constants";
+import { assertFinancialNetworkReady } from "@/lib/network/registry";
 import { validateBeneficiaryAddress } from "@/lib/paymentLinks/beneficiary";
+import { normalizeMicrouscAmount, parsePaymentLinkExpiry } from "@/lib/paymentLinks/validation";
 
 async function authenticateRequest(request: Request): Promise<{
     wallet: string | null;
@@ -161,6 +164,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        /* Fail-closed: mainnet mode with incomplete network config must not serve financial
+           routes (never silently fall back to a testnet address). No-op on testnet. */
+        assertFinancialNetworkReady();
         const auth = await authenticateRequest(request);
         if (auth.error) {
             return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -195,10 +201,57 @@ export async function POST(request: Request) {
             payer_email,
             payerEmail,
         } = body;
-        const isSandboxRequest = sandbox === true || auth.apiKeyMode === "test";
+        /* Settlement mode is credential-owned. A caller cannot label a live/session checkout as
+           sandbox to bypass payout-destination enforcement. */
+        const isTestMode = auth.apiKeyMode === "test";
+        if (sandbox !== undefined && sandbox !== isTestMode) {
+            return NextResponse.json({ error: "Bad Request: sandbox mode is determined by the API key" }, { status: 400 });
+        }
+        if (isTestMode && ProtocolConfig.CHAIN_ID !== ARC_TESTNET_CHAIN_ID) {
+            return NextResponse.json({
+                error: "Test API keys can settle Arc testnet USDC only. Use the testnet deployment or a live key for the configured network.",
+                code: "test_mode_requires_testnet",
+            }, { status: 409 });
+        }
+        const isSandboxRequest = isTestMode;
+        const isSimulationOnly = isTestMode && merchantAddress.toLowerCase() === DEMO_MERCHANT_ADDRESS.toLowerCase();
+        const settlementChainId = isTestMode ? ARC_TESTNET_CHAIN_ID : ProtocolConfig.CHAIN_ID;
 
         if (!title || typeof title !== "string" || title.trim() === "") {
             return NextResponse.json({ error: "Bad Request: Title is required" }, { status: 400 });
+        }
+
+        /* Reserved peer-request sentinels: these classify a link as a user-to-user request
+           (isPeerRequestLink), which settles as a direct USDC transfer and bypasses the router
+           and its fee/ledger accounting. Only the internal peer-request flow may set them — a
+           merchant checkout must never self-classify, or a merchant could dodge the router fee. */
+        if (typeof merchant_name === "string" && merchant_name.trim() === "SubScript user request") {
+            return NextResponse.json({ error: "Bad Request: merchant_name uses a reserved value" }, { status: 400 });
+        }
+        if (typeof external_reference === "string" &&
+            (external_reference.startsWith("peer-request:") || external_reference.startsWith("dm-peer-request:"))) {
+            return NextResponse.json({ error: "Bad Request: external_reference uses a reserved prefix" }, { status: 400 });
+        }
+
+        /* Bound free-text/identifier inputs so oversized payloads can't amplify storage or 500. */
+        if (title.length > 200) {
+            return NextResponse.json({ error: "Bad Request: title must be 200 characters or fewer" }, { status: 400 });
+        }
+        if (description !== undefined && description !== null &&
+            (typeof description !== "string" || description.length > 2000)) {
+            return NextResponse.json({ error: "Bad Request: description must be a string of 2000 characters or fewer" }, { status: 400 });
+        }
+        if (external_reference !== undefined && external_reference !== null &&
+            (typeof external_reference !== "string" || external_reference.length > 256)) {
+            return NextResponse.json({ error: "Bad Request: external_reference must be a string of 256 characters or fewer" }, { status: 400 });
+        }
+        if (merchant_name !== undefined && merchant_name !== null &&
+            (typeof merchant_name !== "string" || merchant_name.length > 128)) {
+            return NextResponse.json({ error: "Bad Request: merchant_name must be a string of 128 characters or fewer" }, { status: 400 });
+        }
+        if (idempotency_key !== undefined && idempotency_key !== null &&
+            (typeof idempotency_key !== "string" || idempotency_key.length > 200)) {
+            return NextResponse.json({ error: "Bad Request: idempotency_key must be a string of 200 characters or fewer" }, { status: 400 });
         }
 
         if (
@@ -221,16 +274,20 @@ export async function POST(request: Request) {
         }
         const normalizedBeneficiary = beneficiaryValidation.address;
 
-        /* Parse and validate amount_usdc as positive bigint */
-        let amountBigInt: bigint;
-        try {
-            amountBigInt = BigInt(amount_usdc);
-            if (amountBigInt <= BigInt(0)) {
-                return NextResponse.json({ error: "Bad Request: Amount must be greater than 0" }, { status: 400 });
-            }
-        } catch {
-            return NextResponse.json({ error: "Bad Request: Invalid amount_usdc" }, { status: 400 });
+        /* Parse and validate amount_usdc (micro-USDC) strictly. BigInt() would coerce booleans
+           (true->1), hex strings ("0x10"->16), and whitespace, so validate the shape first: a
+           plain non-negative integer, given as a digit string or a safe-integer number. */
+        const amountResult = normalizeMicrouscAmount(amount_usdc);
+        if (!amountResult.ok) {
+            return NextResponse.json({ error: `Bad Request: ${amountResult.error}` }, { status: 400 });
         }
+        const amountBigInt = amountResult.value;
+
+        const expiryResult = parsePaymentLinkExpiry(expires_at);
+        if (!expiryResult.ok) {
+            return NextResponse.json({ error: `Bad Request: ${expiryResult.error}` }, { status: 400 });
+        }
+        const normalizedExpiry = expiryResult.value?.toISOString() ?? null;
 
         /* Invoice fields (v1): optional number, due date, and payer identity ride the
            existing link/receipt/webhook lifecycle so a payment link can serve as an invoice. */
@@ -314,6 +371,52 @@ export async function POST(request: Request) {
                         { status: 409 },
                     );
                 }
+                /* Fingerprint the financial terms too — silently returning the old link when the
+                   caller changed the amount would let a stale key mask a different-price checkout. */
+                const requestedFingerprint = {
+                    merchantAddress: merchantAddress.toLowerCase(),
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: normalizedBeneficiary,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
+                    maxUses,
+                    expiresAt: normalizedExpiry,
+                };
+                /* Legacy rows created before creation_fingerprint existed: derive an equivalent
+                   fingerprint from the stored columns so the SAME full comparison runs. Comparing
+                   only the amount let a legacy key silently return a link with a changed expiry,
+                   max_uses, sandbox mode, or link kind. */
+                const existingFingerprint = existingLink.creation_fingerprint ?? {
+                    merchantAddress: String(existingLink.merchant_address || "").toLowerCase(),
+                    amountUsdc: String(existingLink.amount_usdc),
+                    beneficiaryAddress: existingLink.beneficiary_address
+                        ? String(existingLink.beneficiary_address).toLowerCase()
+                        : null,
+                    linkKind: existingLink.link_kind ?? "MERCHANT",
+                    sandboxMode: Boolean(existingLink.sandbox_mode),
+                    simulationOnly: Boolean(existingLink.simulation_only),
+                    settlementChainId: Number(existingLink.settlement_chain_id ?? ARC_TESTNET_CHAIN_ID),
+                    maxUses: existingLink.max_uses ?? null,
+                    expiresAt: existingLink.expires_at
+                        ? new Date(existingLink.expires_at).toISOString()
+                        : null,
+                };
+                if (existingFingerprint.merchantAddress !== requestedFingerprint.merchantAddress
+                    || existingFingerprint.amountUsdc !== requestedFingerprint.amountUsdc
+                    || (existingFingerprint.beneficiaryAddress ?? null) !== requestedFingerprint.beneficiaryAddress
+                    || existingFingerprint.linkKind !== requestedFingerprint.linkKind
+                    || existingFingerprint.sandboxMode !== requestedFingerprint.sandboxMode
+                    || existingFingerprint.simulationOnly !== requestedFingerprint.simulationOnly
+                    || existingFingerprint.settlementChainId !== requestedFingerprint.settlementChainId
+                    || (existingFingerprint.maxUses ?? null) !== requestedFingerprint.maxUses
+                    || (existingFingerprint.expiresAt ?? null) !== requestedFingerprint.expiresAt) {
+                    return NextResponse.json(
+                        { error: "Conflict: Idempotency key was used with different financial terms" },
+                        { status: 409 },
+                    );
+                }
                 let link = existingLink;
                 if (!link.receipt_token) {
                     const receiptToken = generateReceiptId(link.title);
@@ -357,7 +460,7 @@ export async function POST(request: Request) {
         /* Verification is a manual trust badge, not a functional gate — merchants can create links
            without it. Access is gated only by the tier system (active-link quota below) and, for
            live keys, a configured payout destination. */
-        if (auth.apiKeyMode === "live" && !isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
+        if (!isSandboxRequest && !isConfiguredPayoutDestination(merchantRes.data?.payout_destination)) {
             return merchantPayoutWalletMissingResponse();
         }
 
@@ -380,15 +483,7 @@ export async function POST(request: Request) {
                 description: description || null,
                 amount_usdc: amountBigInt.toString(),
                 active: true,
-                expires_at: expires_at
-                    ? (() => {
-                        const num = Number(expires_at);
-                        if (!isNaN(num)) {
-                            return new Date(num < 10000000000 ? num * 1000 : num).toISOString();
-                        }
-                        return new Date(expires_at).toISOString();
-                    })()
-                    : null,
+                expires_at: normalizedExpiry,
                 external_reference: external_reference || null,
                 idempotency_key: idempotency_key || null,
                 merchant_name_snapshot: merchant_name || null,
@@ -398,16 +493,38 @@ export async function POST(request: Request) {
                 invoice_number: normalizedInvoiceNumber,
                 due_date: normalizedDueDate,
                 payer_email: normalizedPayerEmail,
+                link_kind: "MERCHANT",
+                sandbox_mode: isSandboxRequest,
+                simulation_only: isSimulationOnly,
+                settlement_chain_id: settlementChainId,
+                creation_fingerprint: {
+                    merchantAddress: merchantAddress.toLowerCase(),
+                    amountUsdc: amountBigInt.toString(),
+                    beneficiaryAddress: normalizedBeneficiary,
+                    linkKind: "MERCHANT",
+                    sandboxMode: isSandboxRequest,
+                    simulationOnly: isSimulationOnly,
+                    settlementChainId,
+                    maxUses,
+                    expiresAt: normalizedExpiry,
+                },
             })
             .select()
             .single();
 
         if (insertError) {
+            if (/payment link quota exceeded/i.test(insertError.message)) {
+                return NextResponse.json({ error: `Quota Exceeded: Active link limit of ${limit} reached for your merchant tier.` }, { status: 403 });
+            }
             console.error("Error inserting payment link:", insertError.message);
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ link: formatPaymentLinkResponse(newLink), sandbox: isSandboxRequest }, { status: 201 });
+        return NextResponse.json({
+            link: formatPaymentLinkResponse(newLink),
+            sandbox: isSandboxRequest,
+            simulationOnly: isSimulationOnly,
+        }, { status: 201 });
 
     } catch (error: any) {
         console.error("Payment links POST error:", error);

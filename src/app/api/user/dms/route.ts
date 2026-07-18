@@ -10,6 +10,9 @@ import { parseUsdcToMicros } from "@/lib/dms/system";
 import { createDmAndNotify } from "@/lib/dms/notifications";
 import { sendSubscriptionCancellationReasonEmail } from "@/lib/email/transactional";
 import { USDC_NATIVE_GAS_ADDRESS } from "@/lib/contracts/constants";
+import { readSubscriptionCheckoutMeta } from "@/lib/subscriptionCheckout";
+import { dispatchDurableSubscriptionWebhook } from "@/lib/subscriptions/webhookDelivery";
+import { subscriptionWebhookData } from "@/lib/webhooks";
 
 export const maxDuration = 60;
 
@@ -333,10 +336,84 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Cannot reset a system DM to pending" }, { status: 400 });
         }
 
-        const updatedDm = await prisma.subscriptDm.update({
-            where: { id: dmId },
-            data: { status }
-        });
+        if (existingDm.messageType === "SUBSCRIPTION_OFFER" && status === "APPROVED") {
+            return NextResponse.json(
+                { error: "Accept this subscription through its review flow so payment and authorization are completed safely." },
+                { status: 409 },
+            );
+        }
+
+        let updatedDm;
+        let declinedOffer: {
+            id: string;
+            merchantAddress: string;
+            amountUsdc: bigint;
+            externalReference: string | null;
+        } | null = null;
+
+        if (existingDm.messageType === "SUBSCRIPTION_OFFER" && status === "DECLINED") {
+            if (!existingDm.paymentLinkId) {
+                return NextResponse.json({ error: "This subscription offer is missing its checkout." }, { status: 409 });
+            }
+            const checkout = await prisma.paymentLink.findUnique({ where: { id: existingDm.paymentLinkId } });
+            const checkoutMeta = readSubscriptionCheckoutMeta(checkout?.stateSnapshot);
+            if (
+                !checkout
+                || !checkoutMeta
+                || checkout.merchantAddress.toLowerCase() !== existingDm.senderAddress.toLowerCase()
+                || checkoutMeta.subscriber !== normalizedWallet
+            ) {
+                return NextResponse.json({ error: "This subscription offer is not assigned to this account." }, { status: 403 });
+            }
+            if (!checkout.active || checkout.status !== "PENDING") {
+                return NextResponse.json({ error: "This subscription offer is no longer available." }, { status: 409 });
+            }
+
+            updatedDm = await prisma.$transaction(async (tx) => {
+                const canceled = await tx.paymentLink.updateMany({
+                    where: { id: checkout.id, active: true, status: "PENDING" },
+                    data: { active: false, status: "CANCELED" },
+                });
+                if (canceled.count !== 1) throw new Error("Subscription offer changed while it was being declined.");
+                await tx.merchantPlan.updateMany({
+                    where: { sourceCheckoutId: checkout.id },
+                    data: { active: false },
+                });
+                return tx.subscriptDm.update({
+                    where: { id: dmId },
+                    data: { status: "DECLINED" },
+                });
+            });
+            declinedOffer = {
+                id: checkout.id,
+                merchantAddress: checkout.merchantAddress.toLowerCase(),
+                amountUsdc: checkout.amountUsdc,
+                externalReference: checkout.externalReference,
+            };
+        } else {
+            updatedDm = await prisma.subscriptDm.update({
+                where: { id: dmId },
+                data: { status }
+            });
+        }
+
+        if (declinedOffer) {
+            await dispatchDurableSubscriptionWebhook(
+                declinedOffer.merchantAddress,
+                "subscription.canceled",
+                subscriptionWebhookData({
+                    subscriptionId: declinedOffer.id,
+                    status: "canceled",
+                    amountUsdcMicros: declinedOffer.amountUsdc,
+                    subscriber: normalizedWallet,
+                    merchantAddress: declinedOffer.merchantAddress,
+                    externalReference: declinedOffer.externalReference,
+                    sourceCheckoutId: declinedOffer.id,
+                    reason: "Declined by assigned subscriber",
+                }),
+                `offer-declined:${declinedOffer.id}`,
+            ).catch((error) => console.error("[dms] declined subscription webhook failed:", error));
+        }
 
         /* Exit-survey reason → email the merchant (only if a real reason was chosen).
            "Prefer not to answer" submits DISMISSED, which sends nothing. */

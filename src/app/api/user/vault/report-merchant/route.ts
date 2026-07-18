@@ -9,6 +9,7 @@ import { getSessionWallet } from "@/lib/auth";
 import { requireAccountRole } from "@/lib/accounts/roles";
 import { sanitizeInput } from "@/utils/security";
 import { prisma } from "@/lib/prisma";
+import { ARC_TESTNET_CHAIN_ID } from "@/lib/contracts/constants";
 
 export async function POST(request: Request) {
     try {
@@ -41,7 +42,14 @@ export async function POST(request: Request) {
         /* Only commit merchants can be reported, and only by a user who actually committed to them:
            a vault row proves the relationship and scopes reports to the metered-billing surface. */
         const vault = await prisma.meteredVault.findUnique({
-            where: { userAddress_merchantAddress: { userAddress: reporter, merchantAddress: merchant } },
+            where: {
+                userAddress_merchantAddress_environment_settlementChainId: {
+                    userAddress: reporter,
+                    merchantAddress: merchant,
+                    environment: "TEST",
+                    settlementChainId: BigInt(ARC_TESTNET_CHAIN_ID),
+                },
+            },
             select: { id: true },
         });
         if (!vault) {
