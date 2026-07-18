@@ -456,12 +456,16 @@ test.describe("mobile overflow audit", () => {
       if (!scrollingElement) {
         return { scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
       }
+      const previousScrollBehavior = (scrollingElement as HTMLElement).style.scrollBehavior;
+      (scrollingElement as HTMLElement).style.scrollBehavior = "auto";
       scrollingElement.scrollTop = scrollingElement.scrollHeight;
-      return {
+      const result = {
         scrollTop: scrollingElement.scrollTop,
         scrollHeight: scrollingElement.scrollHeight,
         clientHeight: scrollingElement.clientHeight,
       };
+      (scrollingElement as HTMLElement).style.scrollBehavior = previousScrollBehavior;
+      return result;
     });
     expect(pageScroll.scrollHeight).toBeGreaterThan(pageScroll.clientHeight);
     expect(pageScroll.scrollTop).toBeGreaterThan(0);
