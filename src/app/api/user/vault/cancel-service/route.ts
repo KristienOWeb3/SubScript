@@ -84,21 +84,34 @@ export async function POST(request: Request) {
             data: { cancelRequestedAt: cancelledAt, cancelReason: cleanReason },
         });
 
-        /* Notify the merchant in-app: stop rendering service, stop billing new usage. */
+        /* Two in-app notifications: the merchant is told to stop rendering + billing, and the
+           user's own thread gets a SERVICE_PAUSED card (rendered as a pause banner with
+           Resume / Top-up actions in the DM view). */
         let dmNotification: Awaited<ReturnType<typeof insertPgDm>> | null = null;
         try {
-            dmNotification = await withPgClient((client) =>
-                insertPgDm(client, {
+            dmNotification = await withPgClient(async (client) => {
+                const merchantDm = await insertPgDm(client, {
                     sender_address: user,
                     receiver_address: merchant,
                     message_type: "SERVICE_CANCELED",
                     status: "PENDING",
                     amount_usdc: null,
-                    title: "Customer cancelled the service",
+                    title: "Customer paused the service",
                     description:
-                        "This customer has cancelled your metered service. Stop rendering service and stop reporting new usage — further usage reports will be rejected. You'll be settled for usage already reported this cycle.",
-                }),
-            );
+                        "This customer has paused your metered service. Stop rendering service and stop reporting new usage — further usage reports will be rejected. You'll be settled for usage already reported this cycle.",
+                });
+                await insertPgDm(client, {
+                    sender_address: merchant,
+                    receiver_address: user,
+                    message_type: "SERVICE_PAUSED",
+                    status: "PENDING",
+                    amount_usdc: null,
+                    title: "Service plan paused",
+                    description:
+                        "You paused payments for this merchant's service, so you can't use it while paused. Resume anytime, or top up your commit if it's below the platform minimum.",
+                });
+                return merchantDm;
+            });
         } catch (dmError) {
             /* Notification is best-effort; the cancellation itself already persisted. */
             console.error("cancel-service DM insert failed:", dmError);
