@@ -451,11 +451,20 @@ test.describe("mobile overflow audit", () => {
 
     await page.getByRole("button", { name: "Close Menu" }).click();
     await expect(page.getByRole("button", { name: "Open Menu" })).toBeVisible();
-    const pageScrollTop = await page.evaluate(() => {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      return window.scrollY;
+    const pageScroll = await page.evaluate(() => {
+      const scrollingElement = document.scrollingElement;
+      if (!scrollingElement) {
+        return { scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+      }
+      scrollingElement.scrollTop = scrollingElement.scrollHeight;
+      return {
+        scrollTop: scrollingElement.scrollTop,
+        scrollHeight: scrollingElement.scrollHeight,
+        clientHeight: scrollingElement.clientHeight,
+      };
     });
-    expect(pageScrollTop).toBeGreaterThan(0);
+    expect(pageScroll.scrollHeight).toBeGreaterThan(pageScroll.clientHeight);
+    expect(pageScroll.scrollTop).toBeGreaterThan(0);
     await context.close();
   });
 
