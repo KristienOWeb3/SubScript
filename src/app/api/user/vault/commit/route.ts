@@ -207,11 +207,13 @@ export async function POST(request: Request) {
             data: { usageNotifiedBps: 0, cancelRequestedAt: null, cancelReason: null },
         }).catch(() => {});
         if (v.active) {
+            /* A funding commit resolves both nag cards: the exhausted-balance one and the
+               paused-service one (the updateMany above already cleared the pause flag). */
             await prisma.subscriptDm.updateMany({
                 where: {
                     senderAddress: merchantAddress.toLowerCase(),
                     receiverAddress: wallet.toLowerCase(),
-                    messageType: "COMMIT_EXHAUSTED",
+                    messageType: { in: ["COMMIT_EXHAUSTED", "SERVICE_PAUSED"] },
                     status: "PENDING",
                 },
                 data: { status: "DISMISSED" },
