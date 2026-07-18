@@ -133,7 +133,8 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
       templateVersion: TEMPLATE_VERSION,
       requestId,
       generationTimestamp,
-      mode
+      mode,
+      billingMode: "subscription",
     });
     await updateFile(buttonPath, "SubScriptCheckoutButton.tsx", checkoutContent);
 
@@ -156,7 +157,8 @@ export async function runUpdate(options: { noTelemetry?: boolean }) {
         templateVersion: TEMPLATE_VERSION,
         requestId,
         generationTimestamp,
-        framework
+        framework,
+        billingMode: "subscription",
       });
       await updateFile(paths.checkoutPath, path.basename(paths.checkoutPath), checkoutRouteContent);
 

@@ -92,11 +92,11 @@ const quickstartCurl = `curl --request POST \\
   --header "Authorization: Bearer sk_test_your_secret_key" \\
   --header "Content-Type: application/json" \\
   --data '{
-    "title": "Premium Plan",
-    "description": "Monthly access",
+    "title": "Order #1042",
+    "description": "One-time account activation",
     "amountUsdcMicros": "15000000",
-    "externalReference": "user_123",
-    "idempotencyKey": "checkout_user_123_premium_v1",
+    "externalReference": "order_1042",
+    "idempotencyKey": "checkout_order_1042",
     "sandbox": true,
     "successUrl": "https://yourapp.com/billing/success",
     "cancelUrl": "https://yourapp.com/pricing"
@@ -108,7 +108,10 @@ const intentResponseCode = `{
   "intent": {
     "id": "clx_intent_123",
     "checkoutSessionId": "clx_intent_123",
-    "title": "Premium Plan",
+    "object": "payment_intent",
+    "paymentType": "one_time",
+    "appearsInDmPlanPicker": false,
+    "title": "Order #1042",
     "amountUsdcMicros": "15000000",
     "status": "PENDING",
     "receiptToken": "rcpt-7e10c918a3aa672eb783f1b965914b12",
@@ -136,11 +139,11 @@ const response = await fetch("https://www.subscriptonarc.com/api/intent", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    title: "Premium Plan",
+    title: "Order #1042",
     amountUsdcMicros: "15000000", // 15 USDC; always an integer string
-    description: "Monthly access for user_123",
-    externalReference: "user_123",
-    idempotencyKey: "checkout_user_123_premium_v1",
+    description: "One-time account activation",
+    externalReference: "order_1042",
+    idempotencyKey: "checkout_order_1042",
     sandbox: true,
     successUrl: "https://yourapp.com/billing/success",
     cancelUrl: "https://yourapp.com/pricing",
@@ -184,7 +187,9 @@ const subscriptionCode = `const response = await fetch("https://www.subscriptona
     title: "Kris's Script Pro",
     amountUsdcMicros: "7000000",
     interval: "weekly",
-    externalReference: "user_123:pro_weekly",
+    subscriber: "0xCustomerWallet...",
+    merchantCustomerId: "user_123",
+    publishToDm: true,
     idempotencyKey: "sub_user_123_pro_weekly",
     sandbox: true,
   }),
@@ -204,7 +209,7 @@ const subscriptionResponseCode = `{
     "object": "subscription",
     "status": "incomplete",
     "merchantAddress": "0xMerchant...",
-    "subscriber": null,
+    "subscriber": "0xCustomerWallet...",
     "amountUsdcMicros": "7000000",
     "amountUsdc": "7",
     "intervalSeconds": 604800,
@@ -213,6 +218,39 @@ const subscriptionResponseCode = `{
     "checkoutUrl": "https://www.subscriptonarc.com/pay/7f9c5f1e-4a1f-4b4f-bbc1-761b34c0eebb"
   }
 }`;
+
+const planCatalogCode = `// Create the reusable tier once. It appears in the merchant dashboard
+// and in the plan controls of every existing user DM with this merchant.
+const response = await fetch("https://www.subscriptonarc.com/api/v1/plans", {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    name: "Kris's Script Pro — Weekly",
+    amountUsdcMicros: "7000000",
+    periodDays: 7,
+    description: "Recurring weekly Pro access",
+  }),
+});
+
+const { plan } = await response.json();
+
+// Later, create a customer checkout against the canonical plan:
+await fetch("https://www.subscriptonarc.com/api/v1/subscriptions", {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${process.env.SUBSCRIPT_SECRET_KEY}\`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    planId: plan.id,
+    subscriber: "0xCustomerWallet...",
+    merchantCustomerId: "user_123",
+    idempotencyKey: "sub_user_123_kris_pro_weekly",
+  }),
+});`;
 
 const webhookCode = `import crypto from "crypto";
 
@@ -282,24 +320,34 @@ const webhookPayloadCode = `{
 
 const vibePrompt = `You are integrating SubScript into my app.
 
+First classify the billing model. Never choose an endpoint from the product title alone:
+- ONE-TIME order, activation fee, invoice, or intentionally non-renewing pass:
+  POST /api/intent. It never creates a recurring plan and never appears in DM plan controls.
+- REUSABLE recurring weekly/monthly/yearly tier:
+  POST /api/v1/plans once, then POST /api/v1/subscriptions with planId.
+- CUSTOMER-SPECIFIC recurring offer:
+  POST /api/v1/subscriptions with amount + interval + subscriber + merchantCustomerId.
+
 Goal:
-- Add a "Pay with SubScript" button to my pricing page.
-- My backend should create a Checkout Intent for the logged-in user.
-- Store intent_id in my database beside the user's account.
-- Store intent_id, externalReference, and receiptToken beside the user's account or order before redirecting.
-- Redirect the user to the SubScript checkoutUrl.
+- Add the correct SubScript checkout button for my billing model.
+- Store the returned resource id and my external account/order reference before redirecting.
+- Redirect the user to the returned checkoutUrl.
 - Add a webhook route that reads the raw body, verifies the timestamped x-subscript-signature, and atomically claims event.id.
-- When payment.succeeded arrives (check event.type), look up data.intent_id and unlock the plan.
+- For one-time payments, fulfill only after payment.succeeded.
+- For recurring access, process subscription.created/updated/renewed/payment_failed/canceled.
 
 Use:
 - Amount: 15 USDC
-- Product: Premium Plan
+- Product: decide whether this is a one-time purchase or a recurring plan before coding
 - Webhook path: /api/subscript-webhook
 - Env vars: SUBSCRIPT_SECRET_KEY and SUBSCRIPT_WEBHOOK_SECRET
 
 Important:
 - Do not ask the merchant to know the payer wallet.
-- Use intent_id as the source of truth.
+- Use intent_id only for one-time payments; use planId/subscription_id for recurring billing.
+- Never send interval, subscriber, planId, publishToDm, or recurring products to /api/intent.
+- Never label a Checkout Intent "weekly", "monthly", or "subscription" unless it is intentionally
+  a one-time pass and confirmOneTime: true is supplied.
 - Send amountUsdcMicros as an integer string ("15000000" = 15 USDC).
 - Use one stable idempotencyKey per logical checkout and reuse it only for retries.
 - Never fulfill from the success redirect; fulfill only from the verified webhook.
@@ -583,6 +631,16 @@ export default function DocsPage() {
                   </div>
                 ))}
               </div>
+
+              <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5 text-xs leading-relaxed text-amber-50/85">
+                <p className="font-bold text-amber-100">Endpoint decision — make this before writing the request</p>
+                <p className="mt-2">
+                  <span className="font-mono">/api/intent</span> is one-time only and never appears in DM plan controls.
+                  Use <span className="font-mono">/api/v1/plans</span> for reusable recurring tiers and{" "}
+                  <span className="font-mono">/api/v1/subscriptions</span> for recurring authorization. Recurring-only
+                  fields are rejected by the intent endpoint; recurring-looking titles require an explicit one-time confirmation.
+                </p>
+              </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {[
                   ["OpenAPI", "/openapi.json"],
@@ -837,7 +895,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                   </thead>
                   <tbody className="divide-y divide-white/5 text-white/65">
                     {[
-                      ["title", "string", "Yes", "Short product or plan name shown at checkout."],
+                      ["title", "string", "Yes", "Short one-time purchase name shown at checkout."],
                       ["amountUsdcMicros", "integer string", "Yes", "Canonical six-decimal amount. \"15000000\" = 15 USDC."],
                       ["externalReference", "string ≤ 256", "Recommended", "Your user, order, or invoice ID. Returned in the webhook."],
                       ["idempotencyKey", "string", "Recommended", "Stable key for one logical checkout. Reuse it only when retrying that checkout."],
@@ -847,6 +905,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       ["cancelUrl", "HTTPS URL", "No", "Where checkout sends the payer after cancellation."],
                       ["expiresAt", "ISO date or Unix time", "No", "When the hosted checkout should stop accepting payment."],
                       ["maxUses", "integer 1–10000", "No", "Maximum successful uses for a reusable link."],
+                      ["confirmOneTime", "boolean", "Only for ambiguous titles", "Set true only when wording such as “1 week pass” is intentionally non-renewing."],
                     ].map(([field, type, required, meaning]) => (
                       <tr key={field}>
                         <td className="px-4 py-3 font-mono font-semibold text-[#00d2b4]">{field}</td>
@@ -901,6 +960,12 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <p className="text-sm leading-relaxed text-white/70">
                 SubScript supports fixed-schedule subscription checkouts today. Create a subscription from your backend, redirect the customer to the hosted checkout, and listen for subscription lifecycle webhooks. Metered vaults are a separate usage-based product, not a workaround for subscriptions.
               </p>
+              <div className="rounded-2xl border border-[#00d2b4]/20 bg-[#00d2b4]/10 p-5 text-xs leading-relaxed text-white/75">
+                Recurring products publish to the merchant dashboard and DM plan picker by default. Supplying{" "}
+                <span className="font-mono">subscriber</span> creates a targeted plan and offer DM; set{" "}
+                <span className="font-mono">publishToDm: false</span> only when the checkout is intentionally private.
+                Customer plan changes are upgrade-only; do not build or expose a downgrade action.
+              </div>
 
               <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
                 <table className="w-full min-w-[720px] text-left text-xs">
@@ -920,7 +985,8 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                       ["intervalSeconds", "integer", "Optional", "Custom schedule in seconds."],
                       ["intervalCount", "integer", "Optional", "Multiplier for the interval; defaults to 1."],
                       ["subscriber", "0x address", "Optional", "Preselect the expected subscriber wallet."],
-                      ["externalReference", "string ≤ 256", "Recommended", "Your user, account, or entitlement reference."],
+                      ["merchantCustomerId", "string ≤ 256", "With subscriber", "Your durable user/account binding. Persists through DM upgrades and webhooks."],
+                      ["publishToDm", "boolean", "No; defaults true", "Publishes the product to dashboard/DM controls. Subscriber-assigned products are targeted."],
                       ["idempotencyKey", "string", "Recommended", "Stable key for one logical subscription checkout."],
                     ].map(([field, type, required, meaning]) => (
                       <tr key={field}>
@@ -957,8 +1023,9 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
               <div className="rounded-2xl border border-white/5 bg-black/30 p-5 text-xs leading-relaxed text-white/65">
                 <p className="font-bold text-white/85">Plan catalog: /api/v1/plans</p>
                 <p className="mt-2">
-                  A subscription checkout (above) is one payment attempt, not a catalog entry. Your published tiers live in the
-                  <span className="font-bold text-white/85"> plan catalog</span> — the same catalog the dashboard Plans tab, customer DMs, and
+                  A subscription checkout and its reusable catalog plan are distinct records. Amount-plus-interval subscription
+                  requests publish the companion plan by default; create stable tiers directly in the
+                  <span className="font-bold text-white/85"> plan catalog</span>. This is the same catalog the dashboard Plans tab, customer DMs, and
                   <span className="font-mono"> /subscribe</span> links read, so plans created here and in the dashboard always stay in sync.
                   <span className="font-mono"> GET /api/v1/plans</span> lists your plans (each with its shareable <span className="font-mono">subscribeUrl</span> and
                   any live introductory promotion), <span className="font-mono">POST /api/v1/plans</span> creates one
@@ -968,6 +1035,7 @@ SUBSCRIPT_WEBHOOK_SECRET=whsec_your_endpoint_secret`}
                   <span className="font-mono">planId</span> to <span className="font-mono">POST /api/v1/subscriptions</span> to generate checkouts against it.
                 </p>
               </div>
+              <CodeBlock code={planCatalogCode} language="javascript" />
             </section>
 
             <section id="usage" className="scroll-mt-24 space-y-6">

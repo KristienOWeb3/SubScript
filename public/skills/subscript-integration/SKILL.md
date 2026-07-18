@@ -24,6 +24,23 @@ in valueless testnet USDC, and integrations carry over to mainnet with a configu
   (or `add checkout` / `add webhook` for individual pieces). `npx @subscriptonarc/cli doctor`
   diagnoses an existing integration and exits 1 with fixes on stderr.
 
+## Billing-model decision (mandatory)
+
+Classify the product before writing code. Do not infer billing behavior from a product title.
+
+| Requirement | Use | Result |
+|---|---|---|
+| Charge once for an order, invoice, ticket, or deliberately fixed-duration pass | `POST /api/intent` / `create_intent` | One-time checkout and receipt; never a DM plan |
+| Publish a reusable recurring product | `POST /api/v1/plans` / `create_plan` | Merchant dashboard plan and in-DM plan picker entry |
+| Create or assign a recurring checkout | `POST /api/v1/subscriptions` / `create_subscription` | Incomplete subscription that becomes active after authorization |
+
+**Never model weekly, monthly, yearly, membership, renewable, or subscription access with
+`/api/intent`, even if the title includes the interval.** An intent named
+`"Pro — 1 Week"` remains one-time, does not appear in the DM plan picker, cannot renew, and
+cannot be upgraded as an existing subscription. The API rejects subscription-only fields on
+intents and asks for `confirmOneTime: true` when recurring-looking wording is deliberately used
+for a one-time pass.
+
 ## Core flow (one-time payment)
 
 1. `POST /api/intent` with `{ title, amountUsdcMicros, successUrl?, externalReference?, idempotencyKey? }`
@@ -44,8 +61,15 @@ subscriber) and `simulated: true` + `test_clock_id` (test-clock events — never
 
 ## Subscriptions
 
+- Create a reusable catalog plan with `POST /api/v1/plans`
+  `{ name, amountUsdcMicros, periodDays | intervalSeconds }`. It appears in the merchant dashboard
+  and in-DM plan picker.
 - `POST /api/v1/subscriptions` `{ amountUsdcMicros | planId, interval | intervalSeconds, subscriber? }`
   → `incomplete` + `checkoutUrl`; becomes `active` after on-chain authorization.
+- API-created subscription products publish to the dashboard and DM by default. Set
+  `publishToDm: false` only when the checkout must stay private. For account-bound offers, send
+  both `subscriber` and `merchantCustomerId`; DM upgrades then update that same merchant account.
+- Plan changes are upgrade-only. Do not implement downgrade controls.
 - Cancel: `DELETE /api/v1/subscriptions?id=…`. Users can always cancel from their dashboard;
   cancellation revokes the on-chain authorization itself. Billing is sequence-idempotent: a
   period can never be charged twice and lapsed periods are never back-charged.
@@ -68,8 +92,9 @@ subscriber) and `simulated: true` + `test_clock_id` (test-clock events — never
 - Invoices: add `invoice_number`, `due_date`, `payer_email` to `POST /api/payment-links` —
   rendered on the hosted checkout page.
 - Errors: machine-readable envelope `{ code, message, request_id, doc_url }`.
-- MCP server for agents: `@subscriptonarc/mcp` (tools: create_intent, get_payment_status,
-  report_usage, verify_webhook). Full references: `/llms.txt` (index) and `/llms-full.txt` (deep).
+- MCP server for agents: `@subscriptonarc/mcp` (tools: create_intent, create_plan, list_plans,
+  create_subscription, get_payment_status, report_usage, verify_webhook). Full references:
+  `/llms.txt` (index) and `/llms-full.txt` (deep).
 
 ## Support
 

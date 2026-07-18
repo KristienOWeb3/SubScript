@@ -1,7 +1,7 @@
 # @subscriptonarc/cli
 
 The integration CLI for [SubScript](https://www.subscriptonarc.com) — programmable USDC payments on Arc.
-Scaffold a working checkout intent route, a signed webhook receiver, and a checkout button in seconds.
+Scaffold a working recurring subscription route, a signed webhook receiver, and a checkout button in seconds.
 
 SubScript integrates over a plain REST API — **there is no SDK to install**. The generated server
 route and checkout button use the built-in `fetch`, so a standard hosted-checkout integration adds
@@ -21,15 +21,20 @@ The wizard detects your framework (Next.js App/Pages Router, React SPA, Express)
 files you need, and writes a `.env.local` with your keys. Without a TTY the wizard never starts —
 you get the exact non-interactive command instead.
 
+`init` is the recurring-product workflow: its `--plan-name`, `--amount`, and `--interval` values
+generate a route that calls `/api/v1/subscriptions` and publishes to the dashboard/DM by default.
+`add checkout` is deliberately the one-time workflow and calls `/api/intent`. Do not use
+`add checkout` to build a renewable plan.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `npx @subscriptonarc/cli` | Interactive setup wizard (default). |
-| `npx @subscriptonarc/cli init --key <sk_...> --merchant <0x...> --yes` | Fully non-interactive setup. |
+| `npx @subscriptonarc/cli init --key <sk_...> --merchant <0x...> --yes` | Fully non-interactive recurring-subscription setup. |
 | `npx @subscriptonarc/cli init --offline --yes` | Scaffold with placeholder env values — no key, no network. |
 | `npx @subscriptonarc/cli init --session <token>` | Non-interactive setup using a token from your merchant dashboard. |
-| `npx @subscriptonarc/cli add checkout` | Scaffold the checkout intent server route + button. Works in a fresh repo — no `init` or config file required. |
+| `npx @subscriptonarc/cli add checkout` | Scaffold a one-time payment-intent route + button. Works in a fresh repo — no `init` or config file required. |
 | `npx @subscriptonarc/cli add webhook` | Scaffold the signed webhook receiver route. Also works without `init`. |
 | `npx @subscriptonarc/cli doctor` | Diagnose an existing integration (CLI-generated *or* hand-written). Exits `1` when issues are found. |
 | `npx @subscriptonarc/cli verify` | Verify generated files against the protocol templates. Exits `1` on FAIL. |
@@ -87,13 +92,19 @@ npx @subscriptonarc/cli init --offline --yes --json
 
 ## How the integration works
 
-1. Your server route calls `POST {SUBSCRIPT_BASE_URL}/api/intent` with an
-   `Authorization: Bearer ${SUBSCRIPT_SECRET_KEY}` header.
-2. Store the returned `intentId` next to your order/user and redirect the browser to `checkoutUrl`.
+1. `init` generates a recurring route that calls `POST /api/v1/subscriptions`; `add checkout`
+   generates a one-time route that calls `POST /api/intent`. Both use
+   `Authorization: Bearer ${SUBSCRIPT_SECRET_KEY}`.
+2. Store the returned `subscriptionId` or `intentId` next to your account/order and redirect the
+   browser to `checkoutUrl`.
 3. SubScript settles the USDC payment on Arc and sends a signed webhook. The canonical event name
    is `type: "payment.succeeded"` (`event: "payment.success"` is a deprecated back-compat alias).
 4. Your webhook route verifies the signature against the raw body, enforces idempotency, and unlocks
    the entitlement.
+
+The endpoint distinction is part of the data model: an intent is always one-time and never
+appears as a DM plan. Recurring products must use `/api/v1/plans` or
+`/api/v1/subscriptions`. Customer plan changes are upgrade-only.
 
 ## License
 

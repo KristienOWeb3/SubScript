@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "utf8");
+
+test("payment intents reject recurring fields and ambiguous recurring products", () => {
+  const semantics = read("src/lib/paymentIntentSemantics.ts");
+  const route = read("src/app/api/intent/route.ts");
+
+  for (const field of [
+    "interval",
+    "intervalSeconds",
+    "intervalCount",
+    "periodDays",
+    "planId",
+    "publishToDm",
+    "subscriber",
+    "merchantCustomerId",
+  ]) {
+    assert.match(semantics, new RegExp(`"${field}"`));
+  }
+
+  assert.match(semantics, /subscription\|subscribe\|subscriber\|recurring/);
+  assert.match(semantics, /daily\|weekly\|monthly\|quarterly\|yearly/);
+  assert.match(route, /subscription_fields_on_payment_intent/);
+  assert.match(route, /ambiguous_recurring_product/);
+  assert.match(route, /confirmOneTime !== true/);
+  assert.match(route, /paymentType:\s*"one_time"/);
+  assert.match(route, /appearsInDmPlanPicker:\s*false/);
+});
+
+test("CLI keeps recurring init and one-time add-checkout on different endpoints", () => {
+  const scaffold = read("packages/cli/src/commands/scaffold.ts");
+  const addCheckout = read("packages/cli/src/commands/addCheckout.ts");
+  const routeTemplate = read("packages/cli/src/templates/checkoutRouteTemplate.ts");
+  const doctor = read("packages/cli/src/commands/doctor.ts");
+
+  assert.match(scaffold, /billingMode:\s*"subscription"/);
+  assert.match(addCheckout, /billingMode:\s*"one_time"/);
+  assert.match(routeTemplate, /"\/api\/v1\/subscriptions"/);
+  assert.match(routeTemplate, /"\/api\/intent"/);
+  assert.match(routeTemplate, /confirmOneTime:\s*true/);
+  assert.match(routeTemplate, /publishToDm:\s*true/);
+  assert.match(doctor, /recurring_fields_on_payment_intent/);
+  assert.match(doctor, /\/api\/v1\/plans/);
+});
+
+test("SDK, MCP, and OpenAPI expose first-class recurring plan operations", () => {
+  const sdk = read("packages/sdk/src/index.ts");
+  const mcp = read("mcp-server/index.js");
+  const openapi = read("src/app/api/openapi/route.ts");
+
+  assert.match(sdk, /readonly plans =/);
+  assert.match(sdk, /"POST", "\/api\/v1\/plans"/);
+  assert.match(sdk, /"POST", "\/api\/v1\/subscriptions"/);
+  for (const tool of ["create_plan", "list_plans", "create_subscription"]) {
+    assert.match(mcp, new RegExp(`name: "${tool}"`));
+  }
+  assert.match(mcp, /Create a ONE-TIME payment intent only/);
+  assert.match(openapi, /"\/api\/v1\/plans"/);
+  assert.match(openapi, /summary: "Create a one-time payment intent"/);
+  assert.match(openapi, /"422":/);
+});
+
+test("developer and agent docs state the endpoint decision and DM behavior", () => {
+  const documentation = [
+    "README.md",
+    "public/api-reference.md",
+    "public/quickstart.md",
+    "public/llms.txt",
+    "public/llms-full.txt",
+    "public/skills/subscript-integration/SKILL.md",
+    "packages/cli/README.md",
+    "packages/sdk/README.md",
+  ];
+
+  for (const relativePath of documentation) {
+    const content = read(relativePath);
+    assert.match(content, /\/api\/intent/);
+    assert.match(content, /\/api\/v1\/(plans|subscriptions)/);
+    assert.match(content, /one-time/i);
+    assert.match(content, /(DM|plan picker|recurring)/i);
+  }
+
+  for (const agentDoc of [
+    "public/llms.txt",
+    "public/llms-full.txt",
+    "public/skills/subscript-integration/SKILL.md",
+  ]) {
+    const content = read(agentDoc);
+    assert.match(content, /Never (use|create|model)/i);
+    assert.match(content, /upgrade-only/i);
+    assert.match(content, /merchantCustomerId/);
+  }
+});

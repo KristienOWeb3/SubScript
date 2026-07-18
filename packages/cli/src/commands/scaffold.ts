@@ -108,9 +108,13 @@ SUBSCRIPT_INTERVAL=2592000
 You are operating in a codebase integrating the SubScript Protocol on the Arc Network. You must strictly adhere to the following architectural laws:
 1. INTEGRATION TRUTH: The generated files integrate over a plain REST API with zero dependencies.
    A typed client, \`@subscriptonarc/sdk\`, is also published if you prefer it over raw \`fetch\`.
-   - From a server route, call \`POST {SUBSCRIPT_BASE_URL}/api/intent\` with a
+   - This scaffold is a RECURRING SUBSCRIPTION. From a server route, call
+     \`POST {SUBSCRIPT_BASE_URL}/api/v1/subscriptions\` with \`amountUsdc\`,
+     \`intervalSeconds\`, and \`publishToDm: true\`. Never replace it with \`/api/intent\`;
+     payment intents are one-time and never become dashboard/DM plans.
+   - Authenticate with an
      \`Authorization: Bearer \${SUBSCRIPT_SECRET_KEY}\` header (plain \`fetch\` or the SDK).
-   - Store the returned \`intentId\` beside the user/order and redirect the browser to \`checkoutUrl\`.
+   - Store the returned subscription checkout id and redirect the browser to \`checkoutUrl\`.
    - Verify webhook signatures against the exact raw request body before handling payloads.
 2. HOSTED CHECKOUT TRUTH: Hosted payment links settle through direct Arc USDC. Do not promise CCTP checkout until Arc-side memo settlement is available.
 3. WEBHOOK IDEMPOTENCY: Always enforce idempotency. Use \`event.id\` and \`data.intent_id\` to check against the local database before crediting users.
@@ -145,6 +149,7 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
             requestId,
             generationTimestamp,
             mode: opts.mode,
+            billingMode: "subscription",
         });
         await writeTracked(path.join(paths.componentsDir, "SubScriptCheckoutButton.tsx"), checkoutContent, cwd, "Generated checkout button");
 
@@ -193,8 +198,9 @@ You are operating in a codebase integrating the SubScript Protocol on the Arc Ne
             requestId,
             generationTimestamp,
             framework: opts.framework as Framework,
+            billingMode: "subscription",
         });
-        await writeTracked(paths.checkoutPath, checkoutRoute, cwd, "Checkout intent route generated");
+        await writeTracked(paths.checkoutPath, checkoutRoute, cwd, "Subscription checkout route generated");
 
         await mkdir(path.dirname(paths.webhookPath), { recursive: true });
         const webhook = generateWebhookTemplate({

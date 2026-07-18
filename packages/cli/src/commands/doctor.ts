@@ -20,12 +20,21 @@ const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const MAX_SCAN_FILES = 400;
 
 interface ScanResult {
-    intentCallers: string[];   // files that call the checkout intent API
-    webhookHandlers: string[]; // files that verify SubScript webhook signatures
+    checkoutCallers: string[];          // files that call any checkout API
+    intentCallers: string[];            // files that call the one-time intent API
+    subscriptionCallers: string[];      // files that call the recurring subscription API
+    suspiciousIntentCallers: string[];  // intent callers that also send recurring-only fields
+    webhookHandlers: string[];          // files that verify SubScript webhook signatures
 }
 
 async function scanForIntegration(cwd: string): Promise<ScanResult> {
-    const result: ScanResult = { intentCallers: [], webhookHandlers: [] };
+    const result: ScanResult = {
+        checkoutCallers: [],
+        intentCallers: [],
+        subscriptionCallers: [],
+        suspiciousIntentCallers: [],
+        webhookHandlers: [],
+    };
     let filesRead = 0;
 
     async function walk(dir: string, depth: number) {
@@ -51,8 +60,22 @@ async function scanForIntegration(cwd: string): Promise<ScanResult> {
                     continue;
                 }
                 const rel = path.relative(cwd, full);
-                if (content.includes("/api/intent") || content.includes("SUBSCRIPT_SECRET_KEY")) {
+                const callsIntent = content.includes("/api/intent");
+                const callsSubscription = content.includes("/api/v1/subscriptions");
+                if (callsIntent || callsSubscription || content.includes("SUBSCRIPT_SECRET_KEY")) {
+                    result.checkoutCallers.push(rel);
+                }
+                if (callsIntent) {
                     result.intentCallers.push(rel);
+                }
+                if (callsSubscription) {
+                    result.subscriptionCallers.push(rel);
+                }
+                if (
+                    callsIntent
+                    && /["']?\b(interval|intervalSeconds|intervalCount|periodDays|planId|publishToDm|subscriber|merchantCustomerId)\b["']?\s*:/.test(content)
+                ) {
+                    result.suspiciousIntentCallers.push(rel);
                 }
                 if (content.includes("x-subscript-signature") || content.includes("SUBSCRIPT_WEBHOOK_SECRET")) {
                     result.webhookHandlers.push(rel);
@@ -161,22 +184,35 @@ export async function runDoctor() {
     }
 
     /* 3. Find the actual integration surface — CLI-generated files or hand-written code that
-       calls /api/intent or verifies webhook signatures. */
+       calls a checkout API or verifies webhook signatures. */
     const scan = await scanForIntegration(cwd);
     const cliCheckoutRoute = paths && paths.hasBackend && existsSync(paths.checkoutPath);
     const cliWebhookRoute = paths && paths.hasBackend && existsSync(paths.webhookPath);
-    const hasCheckout = cliCheckoutRoute || scan.intentCallers.length > 0;
+    const hasCheckout = cliCheckoutRoute || scan.checkoutCallers.length > 0;
     const hasWebhook = cliWebhookRoute || scan.webhookHandlers.length > 0;
 
     if (hasCheckout) {
+        const detectedBillingModel = scan.subscriptionCallers.length > 0
+            ? "recurring subscription"
+            : scan.intentCallers.length > 0
+                ? "one-time intent"
+                : "checkout";
         notes.push(cliCheckoutRoute
-            ? `Checkout intent route: ${path.relative(cwd, paths!.checkoutPath)}`
-            : `Checkout integration (hand-written): ${scan.intentCallers[0]}`);
+            ? `${detectedBillingModel[0].toUpperCase()}${detectedBillingModel.slice(1)} route: ${path.relative(cwd, paths!.checkoutPath)}`
+            : `${detectedBillingModel[0].toUpperCase()}${detectedBillingModel.slice(1)} integration (hand-written): ${scan.checkoutCallers[0]}`);
     } else {
         issues.push({
             code: "no_checkout_integration",
-            issue: "No checkout integration found (no CLI-generated intent route and no code calling /api/intent).",
-            fix: "Scaffold one: npx @subscriptonarc/cli add checkout",
+            issue: "No checkout integration found (no code calling /api/intent or /api/v1/subscriptions).",
+            fix: "For recurring billing run `npx @subscriptonarc/cli init`; for a one-time payment run `npx @subscriptonarc/cli add checkout`.",
+        });
+    }
+
+    if (scan.suspiciousIntentCallers.length > 0) {
+        issues.push({
+            code: "recurring_fields_on_payment_intent",
+            issue: `${scan.suspiciousIntentCallers[0]} calls the one-time /api/intent endpoint while sending recurring-only fields. That checkout cannot renew or appear as a DM plan.`,
+            fix: "Use POST /api/v1/plans for a reusable catalog plan or POST /api/v1/subscriptions for recurring checkout. Keep /api/intent only for one-time payments.",
         });
     }
 
@@ -196,7 +232,7 @@ export async function runDoctor() {
     if (hasCheckout && !(await readEnvVar(cwd, "SUBSCRIPT_SECRET_KEY"))) {
         issues.push({
             code: "missing_secret_key",
-            issue: "SUBSCRIPT_SECRET_KEY is missing (or a placeholder) in .env.local — the checkout route can't create intents.",
+            issue: "SUBSCRIPT_SECRET_KEY is missing (or a placeholder) in .env.local — the checkout route can't create payment or subscription checkouts.",
             fix: "Copy your sk_test_/sk_live_ key from Dashboard → Developers → API keys into .env.local.",
         });
     }

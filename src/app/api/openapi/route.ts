@@ -26,13 +26,21 @@ const spec = {
         schemas: {
             Error: {
                 type: "object",
-                properties: { error: { type: "string" } },
+                properties: {
+                    error: { type: "string" },
+                    code: { type: "string" },
+                    request_id: { type: "string" },
+                    doc_url: { type: "string", format: "uri" },
+                },
                 required: ["error"],
             },
             Intent: {
                 type: "object",
                 properties: {
                     id: { type: "string", description: "Intent / checkout session id." },
+                    object: { type: "string", const: "payment_intent" },
+                    paymentType: { type: "string", const: "one_time" },
+                    appearsInDmPlanPicker: { type: "boolean", const: false },
                     checkoutSessionId: { type: "string" },
                     title: { type: "string" },
                     description: { type: ["string", "null"] },
@@ -48,6 +56,25 @@ const spec = {
                         type: "object",
                         properties: { successUrl: { type: "string" }, cancelUrl: { type: "string" } },
                     },
+                },
+            },
+            Plan: {
+                type: "object",
+                description: "Reusable recurring catalog plan shown in the merchant dashboard and user DM plan picker.",
+                properties: {
+                    id: { type: "string", format: "uuid" },
+                    object: { type: "string", const: "plan" },
+                    name: { type: "string" },
+                    description: { type: ["string", "null"] },
+                    detailsUrl: { type: ["string", "null"], format: "uri" },
+                    merchantAddress: { type: "string" },
+                    amountUsdc: { type: "string", description: "Decimal USDC." },
+                    amountUsdcMicros: { type: "string", description: "Integer micro-USDC." },
+                    periodSeconds: { type: "integer" },
+                    minCommitmentSeconds: { type: "integer" },
+                    active: { type: "boolean" },
+                    subscribeUrl: { type: "string", format: "uri" },
+                    createdAt: { type: "string", format: "date-time" },
                 },
             },
             PaymentLink: {
@@ -303,7 +330,7 @@ const spec = {
         "/api/intent": {
             post: {
                 summary: "Create a one-time payment intent",
-                description: "Creates a hosted checkout. `amountUsdcMicros` is canonical integer micro-USDC (`amountUsdc` is an accepted alias).",
+                description: "Creates a one-time hosted checkout. It never creates a recurring plan and never appears in the merchant dashboard or DM plan picker. Use `/api/v1/plans` for reusable recurring tiers and `/api/v1/subscriptions` to start recurring authorization. Recurring-only fields are rejected; recurring-looking titles require `confirmOneTime: true` when the purchase is intentionally a one-time pass.",
                 requestBody: {
                     required: true,
                     content: {
@@ -326,6 +353,7 @@ const spec = {
                                     successUrl: { type: "string", format: "uri", description: "https URL to return to after payment." },
                                     cancelUrl: { type: "string", format: "uri", description: "https URL to return to on cancel." },
                                     idempotencyKey: { type: "string" },
+                                    confirmOneTime: { type: "boolean", description: "Set true only to confirm that recurring-looking wording describes an intentional one-time purchase." },
                                     sandbox: { type: "boolean", description: "True for sk_test_ resources. Test mode settles valueless USDC on Arc Testnet; the shared public demo key is simulation-only." },
                                 },
                             },
@@ -335,6 +363,7 @@ const spec = {
                 responses: {
                     "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" }, sandbox: { type: "boolean" }, simulationOnly: { type: "boolean" } } } } } },
                     "400": { description: "Bad request", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "422": { description: "The product looks recurring; choose a plan/subscription endpoint or explicitly confirm a one-time pass.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                     "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
@@ -359,6 +388,83 @@ const spec = {
                 responses: {
                     "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, intent: { $ref: "#/components/schemas/Intent" } } } } } },
                     "404": { description: "Not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+        },
+        "/api/v1/plans": {
+            get: {
+                summary: "List recurring catalog plans",
+                description: "Lists the same merchant plan catalog shown in the dashboard and user DM plan picker.",
+                parameters: [
+                    { name: "active", in: "query", required: false, schema: { type: "boolean" } },
+                ],
+                responses: {
+                    "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { object: { type: "string", const: "list" }, data: { type: "array", items: { $ref: "#/components/schemas/Plan" } } } } } } },
+                    "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            post: {
+                summary: "Create a reusable recurring catalog plan",
+                description: "Creates a plan that immediately appears in the merchant dashboard and in the plan controls of existing user DM threads with this merchant.",
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["name"],
+                                oneOf: [
+                                    { required: ["amountUsdcMicros"] },
+                                    { required: ["amountUsdc"] },
+                                ],
+                                anyOf: [
+                                    { required: ["periodDays"] },
+                                    { required: ["intervalSeconds"] },
+                                ],
+                                properties: {
+                                    name: { type: "string", maxLength: 60 },
+                                    amountUsdcMicros: { type: "string", description: "Recurring charge per period in integer micro-USDC." },
+                                    amountUsdc: { type: "string", description: "Decimal USDC alias." },
+                                    periodDays: { type: "integer", minimum: 1, maximum: 366 },
+                                    intervalSeconds: { type: "integer", minimum: 86400, maximum: 31622400 },
+                                    description: { type: "string", maxLength: 300 },
+                                    detailsUrl: { type: "string", format: "uri" },
+                                    minCommitmentDays: { type: "integer", minimum: 0, maximum: 30 },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "201": { description: "Created and DM-visible", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, plan: { $ref: "#/components/schemas/Plan" } } } } } },
+                    "400": { description: "Bad request", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                },
+            },
+            patch: {
+                summary: "Update plan visibility or descriptive fields",
+                description: "Price and period are immutable. Set `active: false` to remove a plan from DM choices; create a new plan for new financial terms.",
+                requestBody: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                required: ["planId"],
+                                properties: {
+                                    planId: { type: "string", format: "uuid" },
+                                    active: { type: "boolean" },
+                                    description: { type: ["string", "null"], maxLength: 300 },
+                                    detailsUrl: { type: ["string", "null"], format: "uri" },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    "200": { description: "Updated", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, plan: { $ref: "#/components/schemas/Plan" } } } } } },
+                    "400": { description: "Bad request", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+                    "404": { description: "Plan not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
                 },
             },
         },

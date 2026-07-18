@@ -91,7 +91,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "create_intent",
-        description: "Create a one-time payment intent (hosted checkout). Returns a checkoutUrl and intent id. Amount is integer micro-USDC (e.g. 15000000 = 15 USDC).",
+        description: "Create a ONE-TIME payment intent only. It never creates a recurring plan and never appears in the merchant dashboard/DM plan picker. For weekly/monthly/yearly products use create_plan or create_subscription.",
         inputSchema: {
           type: "object",
           properties: {
@@ -102,9 +102,71 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             successUrl: { type: "string", description: "Optional https URL to return to after payment." },
             cancelUrl: { type: "string", description: "Optional https URL to return to on cancel." },
             idempotencyKey: { type: "string" },
+            confirmOneTime: { type: "boolean", description: "Set true only when recurring-looking wording (for example '1 week pass') is intentionally a one-time purchase." },
             sandbox: { type: "boolean" },
           },
           required: ["title", "amountUsdcMicros"],
+        },
+      },
+      {
+        name: "create_plan",
+        description: "Create a reusable recurring catalog plan. This is the correct tool for a tier such as Pro Weekly or Premium Monthly; the plan appears in the merchant dashboard and user DM plan picker.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Customer-facing recurring plan name." },
+            amountUsdcMicros: { type: "string", description: "Recurring charge per billing period in integer micro-USDC." },
+            periodDays: { type: "integer", minimum: 1, maximum: 366, description: "Billing period in whole days." },
+            intervalSeconds: { type: "integer", minimum: 86400, maximum: 31622400, description: "Alternative custom billing period; do not send with periodDays." },
+            description: { type: "string" },
+            detailsUrl: { type: "string" },
+            minCommitmentDays: { type: "integer", minimum: 0, maximum: 30 },
+          },
+          required: ["name", "amountUsdcMicros"],
+          anyOf: [
+            { required: ["periodDays"] },
+            { required: ["intervalSeconds"] },
+          ],
+        },
+      },
+      {
+        name: "list_plans",
+        description: "List this merchant's recurring catalog plans, including whether each plan is active and its DM-visible subscribe URL.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            active: { type: "boolean", description: "Optional active-state filter." },
+          },
+        },
+      },
+      {
+        name: "create_subscription",
+        description: "Create a recurring subscription checkout. Use planId for an existing catalog plan, or provide amount plus interval. Products publish to the dashboard/DM picker by default; subscriber-assigned products also create a targeted offer DM.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            planId: { type: "string", description: "Existing catalog plan id. When supplied, amount and interval come from the plan." },
+            amountUsdcMicros: { type: "string", description: "Recurring charge per billing period in integer micro-USDC." },
+            interval: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
+            intervalSeconds: { type: "integer", minimum: 1 },
+            intervalCount: { type: "integer", minimum: 1, maximum: 365 },
+            subscriber: { type: "string", description: "Optional target subscriber wallet. Required with merchantCustomerId." },
+            title: { type: "string" },
+            merchantCustomerId: { type: "string", description: "Merchant-owned customer/account id; requires subscriber." },
+            publishToDm: { type: "boolean", description: "Defaults true. Set false only for an intentionally private checkout." },
+            idempotencyKey: { type: "string" },
+            sandbox: { type: "boolean" },
+          },
+          anyOf: [
+            { required: ["planId"] },
+            {
+              required: ["amountUsdcMicros"],
+              anyOf: [
+                { required: ["interval"] },
+                { required: ["intervalSeconds"] },
+              ],
+            },
+          ],
         },
       },
       {
@@ -193,10 +255,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "create_intent") {
-      const { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, sandbox } = request.params.arguments || {};
+      const { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, confirmOneTime, sandbox } = request.params.arguments || {};
       const { status, json } = await callSubscriptApi("/api/intent", {
         method: "POST",
-        body: { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, sandbox },
+        body: { title, amountUsdcMicros, description, externalReference, successUrl, cancelUrl, idempotencyKey, confirmOneTime, sandbox },
+      });
+      return jsonResult({ httpStatus: status, ...json });
+    }
+
+    if (name === "create_plan") {
+      const args = request.params.arguments || {};
+      const { status, json } = await callSubscriptApi("/api/v1/plans", {
+        method: "POST",
+        body: args,
+      });
+      return jsonResult({ httpStatus: status, ...json });
+    }
+
+    if (name === "list_plans") {
+      const { active } = request.params.arguments || {};
+      const query = typeof active === "boolean" ? `?active=${active}` : "";
+      const { status, json } = await callSubscriptApi(`/api/v1/plans${query}`);
+      return jsonResult({ httpStatus: status, ...json });
+    }
+
+    if (name === "create_subscription") {
+      const args = request.params.arguments || {};
+      const { status, json } = await callSubscriptApi("/api/v1/subscriptions", {
+        method: "POST",
+        body: args,
       });
       return jsonResult({ httpStatus: status, ...json });
     }
@@ -241,14 +328,26 @@ SubScript settles USDC payments on the Arc Network. USDC is the gas token, and a
 fee (100 basis points) is deducted at settlement, so the merchant receives 99%. Amounts are
 always integer micro-USDC (1 USDC = 1000000).
 
-There are two ways to integrate. Hosted checkout is recommended for almost everyone.
+Choose the billing resource before writing code:
+
+- A cart order, invoice, activation fee, or single access pass is ONE-TIME: use
+  \`create_intent\`. It never appears as a recurring plan in a merchant dashboard or user DM.
+- A reusable weekly/monthly/yearly tier is a PLAN: use \`create_plan\`. It appears in the
+  merchant dashboard and DM plan picker.
+- A checkout that starts recurring authorization is a SUBSCRIPTION: use
+  \`create_subscription\`, preferably with a \`planId\`.
+
+Never simulate recurring billing by putting words such as "weekly", "monthly", "subscription",
+or "1 week" in an intent title. A title does not create billing terms.
+
+There are two settlement approaches. Hosted checkout is recommended for almost everyone.
 
 ## Option A — Hosted checkout (recommended, no contract calls)
 
 Your backend creates a payment intent; the payer completes payment on SubScript's hosted page;
 you learn the result by polling status and/or receiving a signed webhook.
 
-1. Create an intent (use the \`create_intent\` tool, or POST /api/intent) with an integer
+1. For a one-time purchase, create an intent (use \`create_intent\`, or POST /api/intent) with an integer
    micro-USDC amount and your own \`externalReference\`. You get back a \`checkoutUrl\` and an
    intent \`id\`. Send the payer to \`checkoutUrl\`.
 2. Poll the \`get_payment_status\` tool (or GET /api/intent/status?id=...) until the status is
@@ -256,6 +355,11 @@ you learn the result by polling status and/or receiving a signed webhook.
    never handle keys or calldata.
 3. Optionally verify the \`payment.succeeded\` webhook with the \`verify_webhook\` tool before
    granting access. Webhooks are the settlement authority; treat the signature as required.
+
+For recurring billing, create the reusable tier with \`create_plan\`, then call
+\`create_subscription\` with its \`planId\`. An amount+interval subscription also publishes a plan
+by default. Subscriber-assigned subscriptions create a targeted offer DM; public plans are visible
+in every existing DM thread with that merchant.
 
 ## Option B — Direct on-chain (advanced)
 

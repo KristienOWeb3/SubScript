@@ -34,6 +34,15 @@ test("docs present subscriptions as a first-class shipped API", () => {
   assert.match(docs, /subscription\.renewed/);
 });
 
+test("docs prevent one-time intents from being mistaken for recurring DM plans", () => {
+  assert.match(docs, /\/api\/v1\/plans/);
+  assert.match(docs, /\/api\/intent<\/span> is one-time only/i);
+  assert.match(docs, /never creates a recurring plan/i);
+  assert.match(docs, /publishToDm:\s*true/);
+  assert.match(docs, /merchantCustomerId/);
+  assert.match(docs, /upgrade-only/i);
+});
+
 test("docs explain the identifiers developers must persist", () => {
   for (const identifier of ["intent.id", "externalReference", "receiptToken", "request_id"]) {
     assert.match(docs, new RegExp(identifier.replace(".", "\\.")));

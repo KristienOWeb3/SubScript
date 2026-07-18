@@ -36,6 +36,24 @@ For a single-file integration guide, load the drop-in agent skill:
 https://www.subscriptonarc.com/skills/subscript-integration/SKILL.md
 Machine-readable API contract: https://www.subscriptonarc.com/openapi.json
 
+### Mandatory billing endpoint selection
+
+Agents MUST classify the billing model before generating code:
+
+1. One-time order/invoice/ticket/fixed pass → `POST /api/intent` (`create_intent`).
+   It returns a one-time checkout and never creates a dashboard/DM plan.
+2. Reusable recurring product → `POST /api/v1/plans` (`create_plan`).
+   It creates the merchant catalog entry shown in the merchant dashboard and DM plan picker.
+3. Recurring checkout or user-assigned offer → `POST /api/v1/subscriptions`
+   (`create_subscription`). It becomes an active subscription after user authorization.
+
+Never use `/api/intent` for weekly, monthly, yearly, renewable, membership, or subscription
+access. A recurring-looking title does not add recurrence. The intent API rejects recurring-only
+fields and requires `confirmOneTime: true` when recurring-looking wording is intentionally used
+for a one-time pass. For account-bound subscriptions, send both `subscriber` and
+`merchantCustomerId`; DM upgrades update the same merchant account. Customer plan changes are
+upgrade-only; never generate a downgrade action.
+
 ## Core Pages
 
 - [Home](https://www.subscriptonarc.com/): Product overview for SubScript's Arc-native USDC payment layer.
@@ -57,7 +75,7 @@ Machine-readable API contract: https://www.subscriptonarc.com/openapi.json
 - [OpenAPI 3.1 Spec](https://www.subscriptonarc.com/openapi.json): Machine-readable contract for the REST API — generate typed clients, Postman collections, and agent tools from it.
 - [API Reference](https://www.subscriptonarc.com/api-reference.md): Prose reference — auth, amount units, idempotency, rate limits, error codes, endpoints, and webhook events.
 - [TypeScript SDK](https://www.npmjs.com/package/@subscriptonarc/sdk): `@subscriptonarc/sdk` — typed client for intents, subscriptions, usage, and webhook verification.
-- [MCP Server](https://github.com/KristienOWeb3/SubScript/tree/main/mcp-server): `@subscriptonarc/mcp` exposes create_intent, get_payment_status, report_usage, and verify_webhook tools for AI agents.
+- [MCP Server](https://github.com/KristienOWeb3/SubScript/tree/main/mcp-server): `@subscriptonarc/mcp` exposes create_intent, create_plan, list_plans, create_subscription, get_payment_status, report_usage, and verify_webhook tools for AI agents.
 - [Full LLM Reference](https://www.subscriptonarc.com/llms-full.txt): Extended API, protocol, webhook, and integration reference.
 - [Agent Integration Skill](https://www.subscriptonarc.com/skills/subscript-integration/SKILL.md): Drop-in SKILL.md for AI coding agents — keys, intent lifecycle, webhook verification, test clocks, and local webhook forwarding in one file.
 - [Sitemap](https://www.subscriptonarc.com/sitemap.xml): Search crawler sitemap.
@@ -69,7 +87,8 @@ Authenticate with `Authorization: Bearer sk_test_…` (sandbox) or `sk_live_…`
 
 - One-time payment: `POST /api/intent` with `{ title, amountUsdcMicros, successUrl?, cancelUrl?, externalReference?, idempotencyKey?, sandbox? }`. Returns `intent.checkoutUrl`, `intent.id`, `chainId`, and `usdcAddress`.
 - Payment status: `GET /api/intent/<intentId>` returns `status` (PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE), `latestPayment.txHash`, and `latestPayment.explorerUrl`. Legacy query form `GET /api/intent/status?id=<intentId>` remains supported.
-- Subscriptions: `POST /api/v1/subscriptions` with `{ amountUsdcMicros | planId, interval (daily|weekly|monthly|yearly) | intervalSeconds, intervalCount?, subscriber? }` returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` after on-chain authorization. List via `GET /api/v1/subscriptions` (`?id=sub_<n>` or `?subscriber=0x…`); cancel via `DELETE /api/v1/subscriptions?id=sub_<id>`.
+- Plans: `POST /api/v1/plans` with `{ name, amountUsdcMicros, periodDays | intervalSeconds }` creates a reusable recurring merchant plan; `GET /api/v1/plans` lists the catalog and `PATCH /api/v1/plans` with `{ planId, active? | description? | detailsUrl? }` updates or deactivates it. Price and period are immutable; create a new higher-priced plan for an upgrade.
+- Subscriptions: `POST /api/v1/subscriptions` with `{ amountUsdcMicros | planId, interval (daily|weekly|monthly|yearly) | intervalSeconds, intervalCount?, subscriber?, merchantCustomerId?, publishToDm? }` returns an `incomplete` subscription with a `checkoutUrl`; it becomes `active` after on-chain authorization. Dashboard/DM publication defaults on. List via `GET /api/v1/subscriptions` (`?id=sub_<n>` or `?subscriber=0x…`); cancel via `DELETE /api/v1/subscriptions?id=sub_<id>`.
 - Metered usage status: `GET /api/user/vault/status?userAddress=0x...` with a merchant secret key returns `NO_VAULT`, `VAULT_INACTIVE`, or `VAULT_ACTIVE`, plus active balance/commit/remaining fields and a commit-dashboard URL when customer action is needed.
 - Metered usage reporting: `POST /api/user/vault/report-usage` with `{ userAddress, amountUsdcMicros }` accrues usage only after your app decides to grant access.
 - Webhooks: signed with `x-subscript-signature: t=<unix>,v1=<hex>` = HMAC-SHA256 of `${t}.${rawBody}`. Canonical event name is `type: "payment.succeeded"` (`event: "payment.success"` is a back-compat alias); each field is sent in both snake_case (canonical) and camelCase. Payloads carry `chain_id`, `usdc_address`, `transaction_hash`, and `explorer_url` for on-chain reconciliation.

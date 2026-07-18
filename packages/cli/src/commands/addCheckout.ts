@@ -64,7 +64,8 @@ export async function runAddCheckout(options: { noTelemetry?: boolean; framework
             templateVersion: TEMPLATE_VERSION,
             requestId,
             generationTimestamp,
-            mode
+            mode,
+            billingMode: "one_time",
         });
 
         await mkdir(paths.componentsDir, { recursive: true });
@@ -80,7 +81,8 @@ export async function runAddCheckout(options: { noTelemetry?: boolean; framework
                 templateVersion: TEMPLATE_VERSION,
                 requestId,
                 generationTimestamp,
-                framework
+                framework,
+                billingMode: "one_time",
             });
             await writeFile(paths.checkoutPath, routeContent, "utf8");
             recordFile(path.relative(cwd, paths.checkoutPath));

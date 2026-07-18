@@ -65,10 +65,32 @@ Errors return a JSON body `{ "error": "message" }` (some also include a `code`).
 
 ## Endpoints
 
-### `POST /api/intent` — create a payment intent
+### Choose the billing endpoint first
+
+This decision is mandatory. Product names such as “Pro”, “Weekly”, or “1 Month” do not turn a
+one-time intent into a subscription.
+
+| Product behavior | Endpoint | Merchant dashboard | User DM plan picker | Can renew |
+|---|---|---|---|---|
+| One charge for an order, invoice, ticket, or fixed pass | `POST /api/intent` | Payment/receipt only | No | No |
+| Reusable recurring plan in the merchant catalog | `POST /api/v1/plans` | Yes | Yes by default | When subscribed |
+| Subscription checkout or plan assigned to a user | `POST /api/v1/subscriptions` | Yes | Yes by default | Yes |
+
+**Never use `/api/intent` to represent a recurring product.** A title such as
+`"Kris's Script Pro — 1 Week"` is still a one-time payment unless it is created through the
+plans/subscriptions API. The intent API rejects subscription-only fields and returns
+`422 ambiguous_recurring_product` when recurring language is detected. If the product really is
+a one-time pass despite that wording, send `confirmOneTime: true`.
+
+### `POST /api/intent` — create a one-time payment intent
 Body: `title` (required), `amountUsdcMicros` (required), `description?`, `externalReference?`,
-`maxUses?`, `expiresAt?`, `successUrl?`, `cancelUrl?`, `idempotencyKey?`, `sandbox?`.
-Returns `intent` with `id`, `checkoutUrl`, `chainId`, `usdcAddress`, and (if set) `returnUrls`.
+`maxUses?`, `expiresAt?`, `successUrl?`, `cancelUrl?`, `idempotencyKey?`, `sandbox?`, and
+`confirmOneTime?`. Returns `intent` with `object: "payment_intent"`,
+`paymentType: "one_time"`, `appearsInDmPlanPicker: false`, `id`, `checkoutUrl`, `chainId`,
+`usdcAddress`, and (if set) `returnUrls`.
+
+Do not send `interval`, `intervalSeconds`, `planId`, `subscriber`, `merchantCustomerId`, or
+`publishToDm` here. Those fields belong to recurring endpoints and are rejected.
 
 ### `GET /api/intent/:id` — payment status (public)
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
@@ -77,6 +99,33 @@ Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 ### `GET /api/intent/status?id=<id>` — payment status legacy query form (public)
 Returns `status` (`PENDING|PAID|EXPIRED|EXHAUSTED|INACTIVE`) and, once paid,
 `latestPayment.txHash` + `latestPayment.explorerUrl`.
+
+### `POST /api/v1/plans` — create a reusable recurring plan
+Body: `name` (required), `amountUsdcMicros` (required), `periodDays` **or**
+`intervalSeconds`; plus `description?`, `detailsUrl?`, and `minCommitmentDays?`.
+
+The plan is written to the merchant plan catalog and is visible in the merchant dashboard and
+in-DM plan picker. Use this endpoint for products that customers should discover and subscribe
+to from a merchant DM.
+
+```bash
+curl -X POST https://www.subscriptonarc.com/api/v1/plans \
+  -H "Authorization: Bearer sk_test_…" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Kris Script Pro",
+    "amountUsdcMicros": "10000000",
+    "periodDays": 7,
+    "description": "Recurring weekly access"
+  }'
+```
+
+### `GET /api/v1/plans` / `PATCH /api/v1/plans` — list or update plans
+`GET` lists the authenticated merchant's plan catalog. `PATCH` accepts `planId` in the JSON body
+and updates `active`, `description`, or `detailsUrl`. Price and period are immutable because
+existing subscribers authorized those exact terms; create a new higher-priced plan for an
+upgrade. Deactivating a plan removes it from new plan selection without downgrading existing
+subscriptions.
 
 ### `POST /api/v1/subscriptions` — create a subscription
 Body: `amountUsdcMicros` **or** `planId`; `interval` (`daily|weekly|monthly|yearly`) **or**
