@@ -35,10 +35,54 @@ test("endpoint inventory links health to a non-secret API-key fingerprint", () =
     assert.doesNotMatch(route, /\.select\([^)]*secret_key_plain/);
     assert.match(route, /fingerprint: activeKey\.secret_key_hint/);
     assert.match(route, /latestDelivery:/);
-    assert.match(route, /\.in\("webhook_endpoint_id", endpointIds\)/);
+    assert.match(route, /CROSS JOIN LATERAL/);
+    assert.match(route, /WHERE webhook_endpoint_id = requested\.id[\s\S]*LIMIT 1/);
+    assert.match(route, /Prisma\.join\(/);
+    assert.doesNotMatch(route, /\.from\("webhook_events"\)/);
     assert.match(route, /latestDeliveryByEndpoint/);
-    assert.match(route, /lastAttemptAt: latestDelivery\.created_at/);
-    assert.match(route, /responseBody: latestDelivery\.response_body/);
+    assert.match(route, /lastAttemptAt: latestDelivery\.createdAt/);
+    assert.match(route, /responseBody: latestDelivery\.responseBody/);
+});
+
+test("dashboard webhook credentials stay scoped and masked", () => {
+    const dashboard = source("src/app/dashboard/page.tsx");
+    assert.match(dashboard, /case "apikeys": \{/);
+    assert.match(dashboard, /case "webhooks": \{/);
+    assert.match(dashboard, /formatApiKeyFingerprint\(webhookActiveKey\?\.secretKeyPlain\)/);
+    assert.doesNotMatch(
+        dashboard,
+        /const webhookKeyFingerprint = webhookActiveKey\?\.secretKeyPlain/,
+        "a freshly created plaintext secret must never be rendered as a fingerprint",
+    );
+    assert.match(
+        dashboard,
+        /ep\.secretAvailable && revealWebhookSecret === ep\.id[\s\S]{0,120}\? ep\.secret[\s\S]{0,120}: "whsec_••••••••"/,
+    );
+    assert.doesNotMatch(
+        dashboard,
+        /: ep\.secret \|\| "whsec_••••••••"/,
+        "a newly created webhook secret remains masked until explicit reveal",
+    );
+});
+
+test("OpenAPI matches webhook observability response and replay failure contracts", () => {
+    const openapi = source("src/app/api/openapi/route.ts");
+    const replayStart = openapi.indexOf('"/api/webhooks/events/replay"');
+    const replayEnd = openapi.indexOf('"/api/webhooks/test"', replayStart);
+    const replay = openapi.slice(replayStart, replayEnd);
+    assert.match(openapi, /WebhookApiKeyLinkage:/);
+    assert.match(openapi, /fingerprint:[\s\S]{0,180}never a usable API secret/);
+    assert.match(openapi, /merchant:[\s\S]{0,500}walletAddress:[\s\S]{0,500}WebhookApiKeyLinkage/);
+    assert.match(openapi, /originalEventId:/);
+    for (const status of ["401", "403", "409"]) {
+        assert.match(
+            replay,
+            new RegExp(`"${status}": \\{ description: "[^"]+"`),
+            `replay contract documents HTTP ${status}`,
+        );
+    }
+    assert.match(openapi, /eventType:[\s\S]{0,180}payment\.succeeded/);
+    assert.match(openapi, /responseBody:[\s\S]{0,120}success: \{ type: "boolean" \}/);
 });
 
 test("API-key setup validates an optional webhook and never hides the one-time key on registration failure", () => {

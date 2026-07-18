@@ -64,8 +64,11 @@ subscriber) and `simulated: true` + `test_clock_id` (test-clock events — never
 - Create a reusable catalog plan with `POST /api/v1/plans`
   `{ name, amountUsdcMicros, periodDays | intervalSeconds }`. It appears in the merchant dashboard
   and in-DM plan picker.
-- `POST /api/v1/subscriptions` `{ amountUsdcMicros | planId, interval | intervalSeconds, subscriber? }`
-  → `incomplete` + `checkoutUrl`; becomes `active` after on-chain authorization.
+- Plan-based subscription: `POST /api/v1/subscriptions` `{ planId, subscriber? }`.
+  Amount and cadence come from the plan; do not send inline pricing or cadence fields.
+- Inline subscription: `POST /api/v1/subscriptions`
+  `{ amountUsdcMicros, interval | intervalSeconds, subscriber? }`. Do not also send `planId`.
+  Either shape returns `incomplete` + `checkoutUrl` and becomes `active` after authorization.
 - API-created subscription products publish to the dashboard and DM by default. Set
   `publishToDm: false` only when the checkout must stay private. For account-bound offers, send
   both `subscriber` and `merchantCustomerId`; DM upgrades then update that same merchant account.

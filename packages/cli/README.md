@@ -97,8 +97,10 @@ npx @subscriptonarc/cli init --offline --yes --json
    `Authorization: Bearer ${SUBSCRIPT_SECRET_KEY}`.
 2. Store the returned `subscriptionId` or `intentId` next to your account/order and redirect the
    browser to `checkoutUrl`.
-3. SubScript settles the USDC payment on Arc and sends a signed webhook. The canonical event name
-   is `type: "payment.succeeded"` (`event: "payment.success"` is a deprecated back-compat alias).
+3. SubScript sends signed webhooks for the selected billing model. A one-time intent settles with
+   `type: "payment.succeeded"` (`event: "payment.success"` is a deprecated back-compat alias).
+   A recurring checkout starts with `type: "subscription.created"` and subsequent cycles use
+   `subscription.renewed`; also handle `subscription.payment_failed` and `subscription.canceled`.
 4. Your webhook route verifies the signature against the raw body, enforces idempotency, and unlocks
    the entitlement.
 

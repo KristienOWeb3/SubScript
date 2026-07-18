@@ -112,6 +112,13 @@ type PlanPromotion = {
 
 const PLAN_DESCRIPTION_MAX = 300;
 
+const formatApiKeyFingerprint = (value: string | null | undefined) => {
+    if (!value) return null;
+    if (value.includes("...")) return value;
+    if (value.length <= 12) return "••••••••";
+    return `${value.slice(0, 12)}...${value.slice(-4)}`;
+};
+
 const formatPlanAmount = (micros: string) => {
     try {
         return Number(formatUnits(BigInt(micros), 6)).toLocaleString("en-US", {
@@ -5164,7 +5171,7 @@ Please complete the following implementation tasks:
                     </div>
                 );
 
-            case "apikeys":
+            case "apikeys": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
@@ -5369,6 +5376,7 @@ Please complete the following implementation tasks:
                         )}
                     </div>
                 );
+            }
 
             case "checkout":
                 return (
@@ -5622,7 +5630,7 @@ Please complete the following implementation tasks:
                     </div>
                 );
 
-            case "webhooks":
+            case "webhooks": {
                 if (isConnected && address && !sessionWallet && !embeddedWallet) {
                     return (
                         <div className="liquid-glass border border-[#00d2b4]/20 rounded-3xl p-6 sm:p-8 text-center max-w-md mx-auto space-y-6 py-12 shadow-2xl bg-black/40 font-sans">
@@ -5645,7 +5653,9 @@ Please complete the following implementation tasks:
 
                 const selectedPayload = webhookEvents.find(w => w.id === selectedWebhook);
                 const webhookActiveKey = apiKeys.find((key) => !key.revoked) || null;
-                const webhookKeyFingerprint = webhookActiveKey?.secretKeyPlain || "No active API key";
+                const webhookKeyFingerprint = formatApiKeyFingerprint(webhookActiveKey?.secretKeyPlain)
+                    || webhookActiveKey?.publishableKey
+                    || "No active API key";
 
                 return (
                     <div className="space-y-8">
@@ -5723,7 +5733,9 @@ Please complete the following implementation tasks:
                                                 <div className="flex items-center gap-3 text-[10px] text-white/40">
                                                     <span>Secret: </span>
                                                     <code className="font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
-                                                        {ep.secretAvailable && revealWebhookSecret === ep.id ? ep.secret : ep.secret || "whsec_••••••••"}
+                                                        {ep.secretAvailable && revealWebhookSecret === ep.id
+                                                            ? ep.secret
+                                                            : "whsec_••••••••"}
                                                     </code>
                                                     {ep.secretAvailable && (
                                                         <>
@@ -5950,6 +5962,7 @@ Please complete the following implementation tasks:
                         </div>
                     </div>
                 );
+            }
         }
     };
 

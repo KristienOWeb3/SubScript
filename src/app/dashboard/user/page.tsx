@@ -877,11 +877,13 @@ export default function UserDashboard() {
     }
   };
 
+  const dmRequestSequence = useRef(0);
   const loadDms = useCallback(async () => {
+    const requestSequence = ++dmRequestSequence.current;
     try {
       const res = await fetch("/api/user/dms");
       const data = await res.json();
-      if (data.success) setDms(data.dms);
+      if (data.success && requestSequence === dmRequestSequence.current) setDms(data.dms);
     } catch (err) {
       console.error("Failed to load DMs:", err);
     }
@@ -2236,6 +2238,9 @@ export default function UserDashboard() {
         },
       ] as const;
 
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
       for (let i = 0; i < resolvedRows.length; i++) {
         const row = resolvedRows[i];
         setBatchProgress(`Sending transfer ${i + 1} of ${resolvedRows.length}...`);
@@ -3117,7 +3122,6 @@ export default function UserDashboard() {
                 }`}
               >
                 {isMobile ? (
-                  /* Mobile View Thread Selection Toggle */
                   <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden w-full">
                     {!selectedDmPeer ? (
                       <div className="w-full space-y-4 pb-20">
@@ -5093,6 +5097,8 @@ export default function UserDashboard() {
         sepoliaUsdc={sepoliaUsdc}
         userWallet={userWallet}
         isEmbeddedWalletSession={isEmbeddedWalletSession}
+        chainId={chainId}
+        switchChainAsync={switchChainAsync}
         writeContractAsync={writeContractAsync}
         refetchUsdc={refetchUsdc}
       />
@@ -6988,6 +6994,8 @@ function SendFundsModal({
   sepoliaUsdc,
   userWallet,
   isEmbeddedWalletSession,
+  chainId,
+  switchChainAsync,
   writeContractAsync,
   refetchUsdc,
 }: {
@@ -6998,6 +7006,8 @@ function SendFundsModal({
   sepoliaUsdc: number;
   userWallet: string | null;
   isEmbeddedWalletSession: boolean;
+  chainId: number | undefined;
+  switchChainAsync: (parameters: { chainId: number }) => Promise<unknown>;
   writeContractAsync: any;
   refetchUsdc: () => void;
 }) {
@@ -7103,6 +7113,9 @@ function SendFundsModal({
         },
       ] as const;
 
+      if (chainId !== activeArcChain.id) {
+        await switchChainAsync({ chainId: activeArcChain.id });
+      }
       const hash = await writeContractAsync({
         address: USDC_NATIVE_GAS_ADDRESS,
         abi: usdcAbi,

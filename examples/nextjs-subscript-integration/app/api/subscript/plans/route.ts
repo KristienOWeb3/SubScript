@@ -1,27 +1,32 @@
 import { NextResponse } from "next/server";
+import { requireApplicationUser } from "../_lib/applicationAuth";
+import {
+  applicationErrorResponse,
+  subscriptRejectedResponse,
+  subscriptRequest,
+} from "../_lib/subscriptClient";
 
-const SUBSCRIPT_BASE_URL = process.env.SUBSCRIPT_BASE_URL || "https://www.subscriptonarc.com";
+export async function POST(request: Request) {
+  try {
+    requireApplicationUser(request, { admin: true, mutation: true });
 
-export async function POST() {
-  const secretKey = process.env.SUBSCRIPT_SECRET_KEY;
-  if (!secretKey) {
-    return NextResponse.json({ error: "SUBSCRIPT_SECRET_KEY is not configured" }, { status: 500 });
+    // Catalog financial terms are application-owned constants. Do not accept arbitrary
+    // amount, period, or visibility fields from an untrusted browser request.
+    const result = await subscriptRequest("/api/v1/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Kris Script Pro",
+        description: "Recurring weekly access",
+        amountUsdcMicros: "2000000",
+        periodDays: 7,
+      }),
+    });
+    if (!result.ok) {
+      return subscriptRejectedResponse(result, "SubScript plan creation failed");
+    }
+    return NextResponse.json(result.payload, { status: result.status });
+  } catch (error) {
+    return applicationErrorResponse(error);
   }
-
-  const response = await fetch(`${SUBSCRIPT_BASE_URL}/api/v1/plans`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: "Kris Script Pro",
-      description: "Recurring weekly access",
-      amountUsdcMicros: "2000000",
-      periodDays: 7,
-    }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  return NextResponse.json(payload, { status: response.status });
 }

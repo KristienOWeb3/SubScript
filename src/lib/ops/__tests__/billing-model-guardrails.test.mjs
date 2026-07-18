@@ -44,8 +44,11 @@ test("CLI keeps recurring init and one-time add-checkout on different endpoints"
   assert.match(addCheckout, /billingMode:\s*"one_time"/);
   assert.match(routeTemplate, /"\/api\/v1\/subscriptions"/);
   assert.match(routeTemplate, /"\/api\/intent"/);
-  assert.match(routeTemplate, /confirmOneTime:\s*true/);
+  assert.doesNotMatch(routeTemplate, /confirmOneTime:\s*true/);
   assert.match(routeTemplate, /publishToDm:\s*true/);
+  assert.match(routeTemplate, /authorizeSubscriptionCheckout/);
+  assert.match(routeTemplate, /Never copy these values from request JSON/);
+  assert.doesNotMatch(routeTemplate, /body\?\.(subscriber|merchantCustomerId|intervalSeconds)/);
   assert.match(doctor, /recurring_fields_on_payment_intent/);
   assert.match(doctor, /\/api\/v1\/plans/);
 });
@@ -81,6 +84,46 @@ test("SDK, MCP, and OpenAPI expose first-class recurring plan operations", () =>
   assert.match(openapi, /webhookUrl/);
   assert.match(openapi, /webhookWarning/);
   assert.match(openapi, /latest:\s*\{ type: "boolean"/);
+});
+
+test("integration schemas and generated updates preserve exclusive billing choices", () => {
+  const sdk = read("packages/sdk/src/index.ts");
+  const mcp = read("mcp-server/index.js");
+  const update = read("packages/cli/src/commands/update.ts");
+  const doctor = read("packages/cli/src/commands/doctor.ts");
+
+  assert.match(sdk, /periodDays: number;\s*intervalSeconds\?: never/);
+  assert.match(sdk, /periodDays\?: never;\s*intervalSeconds: number/);
+  assert.match(mcp, /oneOf:[\s\S]*required: \["periodDays"\][\s\S]*required: \["intervalSeconds"\]/);
+  assert.match(mcp, /required: \["planId"\][\s\S]*not:[\s\S]*required: \["amountUsdcMicros"\]/);
+
+  assert.match(update, /generatedContent\.match\([\s\S]*billingMode/);
+  assert.match(update, /billingModeMatch\[1\]/);
+  assert.doesNotMatch(update, /billingMode:\s*"subscription"/);
+
+  assert.match(doctor, /findCheckoutApiCalls\(content\)/);
+  assert.match(doctor, /intentCalls\.some\(\(call\)/);
+  assert.doesNotMatch(doctor, /content\.includes\("SUBSCRIPT_SECRET_KEY"\)/);
+});
+
+test("public integration docs distinguish recurring request and webhook shapes", () => {
+  const cliReadme = read("packages/cli/README.md");
+  const quickstart = read("public/quickstart.md");
+  const skill = read("public/skills/subscript-integration/SKILL.md");
+  const apiReference = read("public/api-reference.md");
+
+  assert.match(cliReadme, /one-time intent[\s\S]*payment\.succeeded/i);
+  assert.match(cliReadme, /recurring checkout[\s\S]*subscription\.created/i);
+  assert.match(quickstart, /case "subscription\.created"/);
+  assert.match(skill, /Plan-based subscription:[\s\S]*\{ planId, subscriber\? \}/);
+  assert.match(skill, /Inline subscription:[\s\S]*\{ amountUsdcMicros, interval \| intervalSeconds, subscriber\? \}/);
+
+  const lines = apiReference.split(/\r?\n/);
+  for (let index = 0; index < lines.length - 1; index++) {
+    if (/^#{1,6}\s/.test(lines[index])) {
+      assert.equal(lines[index + 1], "", `heading at line ${index + 1} must be followed by a blank line`);
+    }
+  }
 });
 
 test("developer and agent docs state the endpoint decision and DM behavior", () => {
