@@ -1641,6 +1641,42 @@ export default function UserDashboard() {
     }
   };
 
+  /* Cancel a metered service: tell the merchant to stop rendering + stop billing new usage.
+     The escrow stays locked until the cycle ends (contract rule) — the user withdraws the
+     unused remainder after that. Only usage already reported this cycle is settled. */
+  const [vaultCancelBusyId, setVaultCancelBusyId] = useState<string | null>(null);
+  const handleCancelService = (vault: any) => {
+    setConfirmModal({
+      open: true,
+      variant: "warning",
+      title: "Cancel this service",
+      description:
+        "We'll notify the merchant to stop rendering service and stop billing new usage — further usage reports are rejected immediately. You're charged only for usage already reported this cycle. When the cycle ends, the merchant is settled that amount and your unused balance returns to you automatically. Re-committing later restarts the service.",
+      confirmLabel: "Cancel service",
+      onConfirm: async () => {
+        const id = String(vault.id || vault.merchantAddress);
+        setVaultCancelBusyId(id);
+        try {
+          const res = await fetch("/api/user/vault/cancel-service", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ merchantAddress: vault.merchantAddress }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) throw new Error(data.error || "Could not cancel the service.");
+          triggerToast("Service cancelled — the merchant has been notified.");
+          await loadVaults();
+        } catch (err: any) {
+          triggerToast(err?.message || "Could not cancel the service.");
+        } finally {
+          setVaultCancelBusyId(null);
+          setConfirmModal(null);
+        }
+      },
+      onCancel: () => setConfirmModal(null),
+    });
+  };
+
   /* Stable per commit attempt: a retry after a timed-out response reuses the key, so the
      server-side Circle idempotency key dedupes instead of escrowing the amount twice. */
   const vaultCommitRequestKey = useRef<string | null>(null);
@@ -3067,6 +3103,8 @@ export default function UserDashboard() {
                           onCommit={(v) => openVaultCommit(v.merchantAddress)}
                           onWithdraw={(v) => openVaultWithdraw(v.merchantAddress)}
                           onReclaim={handleVaultReclaim}
+                          onCancelService={handleCancelService}
+                          cancelBusy={vaultCancelBusyId !== null}
                           reclaimBusy={vaultReclaimBusyId !== null}
                           balanceVisible={balanceVisible}
                         />
@@ -7411,6 +7449,8 @@ function MeteredVaultRow({
   onCommit,
   onWithdraw,
   onReclaim,
+  onCancelService,
+  cancelBusy,
   reclaimBusy,
   balanceVisible,
 }: {
@@ -7418,6 +7458,8 @@ function MeteredVaultRow({
   onCommit: (vault: any) => void;
   onWithdraw: (vault: any) => void;
   onReclaim: (vault: any) => void;
+  onCancelService: (vault: any) => void;
+  cancelBusy: boolean;
   reclaimBusy: boolean;
   balanceVisible: boolean;
 }) {
@@ -7425,6 +7467,7 @@ function MeteredVaultRow({
   const commitNeeded = Number(vault.commitUsdc || 0);
   const blocked = !vault.active;
   const disputed = vault.disputed === true;
+  const cancelled = Boolean(vault.cancelRequestedAt);
   const cycleStartDate = vault.cycleStart ? new Date(vault.cycleStart) : null;
   const lockedUntilDate = vault.lockedUntil ? new Date(vault.lockedUntil) : null;
   const RECLAIM_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -7460,8 +7503,8 @@ function MeteredVaultRow({
             </p>
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-          {blocked ? "Inactive" : disputed ? "Disputed" : awaitingSettlement ? "Settling" : "Active"}
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${blocked ? "bg-amber-500/15 text-amber-300" : disputed ? "bg-red-500/15 text-red-300" : cancelled ? "bg-orange-500/15 text-orange-300" : awaitingSettlement ? "bg-sky-500/15 text-sky-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+          {blocked ? "Inactive" : disputed ? "Disputed" : cancelled ? "Cancelling" : awaitingSettlement ? "Settling" : "Active"}
         </span>
       </div>
 
@@ -7499,6 +7542,17 @@ function MeteredVaultRow({
               {reclaimBusy ? "Reclaiming…" : "Reclaim escrow"}
             </button>
           )}
+          {/* Stop the service: only while it's active and not already cancelled/disputed. */}
+          {!blocked && !cancelled && !disputed && (
+            <button
+              type="button"
+              onClick={() => !cancelBusy && onCancelService(vault)}
+              disabled={cancelBusy}
+              className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${cancelBusy ? "cursor-not-allowed border-white/5 bg-black/20 text-white/30" : "border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"}`}
+            >
+              {cancelBusy ? "Cancelling…" : "Cancel service"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -7511,7 +7565,12 @@ function MeteredVaultRow({
         <p>Reclaimable from <span className="font-bold text-white/60">{shortDate(reclaimDate)}</span></p>
       </div>
 
-      {locked && !blocked && (
+      {cancelled && (
+        <p className="text-[10px] leading-relaxed text-orange-200/70">
+          Service cancelled — the merchant has been told to stop rendering service and can no longer bill new usage. You&apos;re charged only for usage already reported this cycle. When the cycle ends after <span className="font-bold">{shortDate(lockedUntilDate)}</span>, the merchant is settled that amount and your unused balance returns to you automatically. Re-commit to restart the service.
+        </p>
+      )}
+      {locked && !blocked && !cancelled && (
         <p className="text-[10px] leading-relaxed text-white/40">
           Committed funds are locked while the cycle runs. The keeper settles usage after <span className="font-bold text-white/60">{shortDate(lockedUntilDate)}</span> and unused escrow returns to you automatically.
         </p>
